@@ -8,7 +8,7 @@ dockerfile = "Dockerfile"
 auto_start_machines = true
 auto_stop_machines = true
 force_https = true
-internal_port = 8_080
+internal_port = 80
 min_machines_running = 0
 
 [[vm]]

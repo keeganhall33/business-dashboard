@@ -1,0 +1,7 @@
+node_modules
+build
+.git
+.gitignore
+fly.toml
+.DS_Store
+supabase-config.json

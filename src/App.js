@@ -1,12 +1,8 @@
 import React from 'react';
-import { Container, Typography } from '@mui/material';
+import Dashboard from './Dashboard';
 
 const App = () => {
-    return (
-        <Container>
-            <Typography variant='h4'>Business Dashboard</Typography>
-        </Container>
-    );
+    return <Dashboard />;
 };
 
 export default App;
