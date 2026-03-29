@@ -1,16 +1,27 @@
-# Build stage
-FROM node:20-alpine AS build
+# Install dependencies
+FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
+
+# Build the Next.js app
+FROM node:20-alpine AS builder
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# Serve stage
-FROM nginx:1.27-alpine
-COPY --from=build /app/build /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-EXPOSE 80
-ENTRYPOINT ["/entrypoint.sh"]
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copy the standalone build output
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+EXPOSE 3000
+CMD ["node", "server.js"]

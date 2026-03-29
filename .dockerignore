@@ -1,7 +1,9 @@
 node_modules
-build
-.git
-.gitignore
+npm-debug.log
+.next
+out
+legacy-business-dashboard
+legacy-cra
+*.log
+Dockerfile
 fly.toml
-.DS_Store
-supabase-config.json
