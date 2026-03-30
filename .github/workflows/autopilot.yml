@@ -1,0 +1,54 @@
+name: Autopilot Scheduler
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  run-scheduler:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ secrets.SCHEDULER_BASE_URL }}
+      SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+    steps:
+      - name: Validate secrets
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$SCHEDULER_SECRET" ]; then
+            echo "BASE_URL and SCHEDULER_SECRET must be set as repository secrets." >&2
+            exit 1
+          fi
+      - name: Compute Pacific time markers
+        id: time
+        run: |
+          NOW_PST=$(TZ=America/Los_Angeles date +'%H:%M')
+          DOW_PST=$(TZ=America/Los_Angeles date +'%u')
+          echo "now=$NOW_PST" >> "$GITHUB_OUTPUT"
+          echo "dow=$DOW_PST" >> "$GITHUB_OUTPUT"
+      - name: Daily health check (06:15 PT)
+        if: steps.time.outputs.now == '06:15'
+        run: |
+          curl -sS --fail -X POST \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "$BASE_URL/api/scheduler/daily-health-check"
+      - name: Weekly command cycle (Mon 07:00 PT)
+        if: steps.time.outputs.dow == '1' && steps.time.outputs.now == '07:00'
+        run: |
+          curl -sS --fail -X POST \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "$BASE_URL/api/scheduler/weekly-command-cycle"
+      - name: Midweek opportunity pulse (Wed 11:30 PT)
+        if: steps.time.outputs.dow == '3' && steps.time.outputs.now == '11:30'
+        run: |
+          curl -sS --fail -X POST \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "$BASE_URL/api/scheduler/midweek-opportunity-pulse"
+      - name: Evening closeout (19:30 PT)
+        if: steps.time.outputs.now == '19:30'
+        run: |
+          curl -sS --fail -X POST \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "$BASE_URL/api/scheduler/evening-closeout"
