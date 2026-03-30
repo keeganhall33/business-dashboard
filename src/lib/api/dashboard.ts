@@ -1,9 +1,22 @@
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 
 function getAppUrl() {
-  // Server-side: prefer explicit URL so fetch hits the same host in prod.
-  // Client-side: relative fetch is fine.
-  return process.env.NEXT_PUBLIC_APP_URL ?? "";
+  // Client-side: use relative fetches.
+  if (typeof window !== "undefined") {
+    return "";
+  }
+
+  // Server-side: prefer explicit public URL, otherwise fall back to Vercel host.
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  // Local dev fallback.
+  return "http://localhost:3000";
 }
 
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
