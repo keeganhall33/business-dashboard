@@ -1,5 +1,7 @@
 export type MetricStatus = "healthy" | "on_track" | "warning" | "critical";
 
+export type RangePreset = "7d" | "30d" | "90d" | "custom";
+
 export type HeaderMetric = {
   metricKey: string;
   metricName: string;
@@ -86,9 +88,81 @@ export type SystemHealth = {
   agents: AgentHealth[];
 };
 
+export type WooSummary = {
+  revenue: number | null;
+  orders: number | null;
+  avgOrderValue: number | null;
+  discountTotal: number | null;
+  shippingTotal: number | null;
+  taxTotal: number | null;
+  items: number | null;
+};
+
+export type WooTimeseriesPoint = {
+  date: string;
+  revenue: number;
+  orders: number;
+};
+
+export type GaSummary = {
+  revenue: number | null;
+  sessions: number | null;
+  engagedSessions: number | null;
+  eventCount: number | null;
+  avgEngagementSeconds: number | null;
+};
+
+export type GaTimeseriesPoint = {
+  date: string;
+  revenue: number;
+  sessions: number;
+  engagedSessions: number;
+};
+
+export type FunnelSummary = {
+  entries: number | null;
+  completions: number | null;
+  conversionRate: number | null;
+  upsellOffers: number | null;
+  upsellAccepts: number | null;
+  upsellTakeRate: number | null;
+};
+
+export type FunnelTimeseriesPoint = {
+  date: string;
+  entries: number;
+  completions: number;
+  conversionRate: number | null;
+};
+
+export type CommerceTelemetry = {
+  range: {
+    preset: RangePreset;
+    startDate: string;
+    endDate: string;
+  };
+  woo?: {
+    summary: WooSummary;
+    timeseries: WooTimeseriesPoint[];
+  };
+  ga4?: {
+    summary: GaSummary;
+    timeseries: GaTimeseriesPoint[];
+  };
+  funnel?: {
+    summary: FunnelSummary;
+    timeseries: FunnelTimeseriesPoint[];
+  };
+};
+
 export type DashboardOverviewResponse = {
   ok: boolean;
   timestamp: string;
+  range: {
+    preset: RangePreset;
+    startDate: string;
+    endDate: string;
+  };
   headerMetrics: HeaderMetric[];
   executiveCommand: ExecutiveCommand;
   revenueEngine: RevenueEngine;
@@ -96,6 +170,5 @@ export type DashboardOverviewResponse = {
   opportunityRadar: OpportunityRadar;
   tasks: TaskSummary[];
   systemHealth: SystemHealth;
-  commerceTelemetry?: unknown;
+  commerceTelemetry?: CommerceTelemetry;
 };
-

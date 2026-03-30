@@ -23,31 +23,21 @@ export async function getLatestScoreboardMetrics() {
   return data ?? [];
 }
 
-function isoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-export async function getCommerceTelemetry(rangeDays = 30) {
+export async function getCommerceTelemetry(range: { startDate: string; endDate: string }) {
   const supabase = getSupabaseServerClient();
-  const endDate = new Date();
-  const startDate = new Date(endDate);
-  startDate.setUTCDate(startDate.getUTCDate() - Math.max(rangeDays - 1, 0));
-
-  const start = isoDate(startDate);
-  const end = isoDate(endDate);
 
   const [woo, ga4, funnel] = await Promise.all([
-    supabase.rpc("get_woo_metrics", { start_date: start, end_date: end }),
-    supabase.rpc("get_ga4_metrics", { start_date: start, end_date: end }),
-    supabase.rpc("get_funnelkit_metrics", { start_date: start, end_date: end })
+    supabase.rpc("get_woo_metrics", { start_date: range.startDate, end_date: range.endDate }),
+    supabase.rpc("get_ga4_metrics", { start_date: range.startDate, end_date: range.endDate }),
+    supabase.rpc("get_funnelkit_metrics", { start_date: range.startDate, end_date: range.endDate })
   ]);
 
   const error = woo.error ?? ga4.error ?? funnel.error;
   if (error) throw error;
 
   return {
-    startDate: start,
-    endDate: end,
+    startDate: range.startDate,
+    endDate: range.endDate,
     woo: woo.data ?? {},
     ga4: ga4.data ?? {},
     funnel: funnel.data ?? {}

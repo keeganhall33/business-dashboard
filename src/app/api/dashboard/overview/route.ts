@@ -7,6 +7,7 @@ import {
   getOpenTasks,
   getCommerceTelemetry
 } from "@/lib/supabase/queries";
+import { RangePreset } from "@/lib/types/dashboard";
 
 type ScoreboardMetricRow = {
   metric_key: string;
@@ -65,15 +66,53 @@ function statusFromGap(current: number | null, target: number | null) {
   return "healthy" as const;
 }
 
-export async function GET() {
+function formatIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function isIsoDate(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
+  const presets: Record<string, { preset: RangePreset; days: number }> = {
+    "7d": { preset: "7d", days: 7 },
+    "30d": { preset: "30d", days: 30 },
+    "90d": { preset: "90d", days: 90 }
+  };
+
+  if (rangeParam === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
+    const startDate = startParam;
+    const endDate = endParam;
+    if (startDate <= endDate) {
+      return { preset: "custom" as RangePreset, startDate, endDate };
+    }
+  }
+
+  const fallback = presets[rangeParam ?? ""] ?? presets["30d"];
+  const today = new Date();
+  const endDate = formatIsoDate(today);
+  const start = new Date(today);
+  start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
+  const startDate = formatIsoDate(start);
+  return { preset: fallback.preset, startDate, endDate };
+}
+
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const rangeParam = url.searchParams.get("range");
+    const startParam = url.searchParams.get("start");
+    const endParam = url.searchParams.get("end");
+    const range = resolveRange(rangeParam, startParam, endParam);
+
     const [metrics, tasks, opportunities, directive, agentHealth, commerceTelemetry] = await Promise.all([
       getLatestScoreboardMetrics() as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
       getActiveOpportunities(25) as Promise<OpportunityRow[]>,
       getLatestAgentDirective(),
       getAgentHealth(),
-      getCommerceTelemetry(30)
+      getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate })
     ]);
 
     const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
@@ -242,21 +281,27 @@ export async function GET() {
       agents: agentHealth
     };
 
+    const responseRange = {
+      preset: range.preset,
+      startDate: range.startDate,
+      endDate: range.endDate
+    };
+
     const commercePayload = commerceTelemetry
       ? {
-          range: {
-            startDate: commerceTelemetry.startDate,
-            endDate: commerceTelemetry.endDate
-          },
-          woo: commerceTelemetry.woo ?? {},
-          ga4: commerceTelemetry.ga4 ?? {},
-          funnel: commerceTelemetry.funnel ?? {}
+          range: responseRange,
+          woo: commerceTelemetry.woo ?? undefined,
+          ga4: commerceTelemetry.ga4 ?? undefined,
+          funnel: commerceTelemetry.funnel ?? undefined
         }
-      : null;
+      : {
+          range: responseRange
+        };
 
     return ok({
       ok: true,
       timestamp: new Date().toISOString(),
+      range: responseRange,
       headerMetrics,
       executiveCommand,
       revenueEngine,

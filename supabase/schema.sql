@@ -305,24 +305,151 @@ create or replace function get_woo_metrics(start_date date, end_date date)
 returns jsonb
 language sql
 stable
+security definer
+set search_path = public, exec_dashboard
 as $$
-  select '{}'::jsonb;
+  with orders as (
+    select *
+    from exec_dashboard.raw_woocommerce_orders
+    where created_at::date between start_date and end_date
+      and coalesce(status, '') not in ('trash','refunded','cancelled','failed')
+  ),
+  ts as (
+    select
+      created_at::date as bucket,
+      coalesce(sum(total), 0)::numeric as revenue,
+      count(*)::numeric as orders
+    from orders
+    group by created_at::date
+    order by bucket
+  ),
+  agg as (
+    select
+      count(*)::numeric as orders,
+      coalesce(sum(total), 0)::numeric as revenue,
+      coalesce(sum(discount_total), 0)::numeric as discounts,
+      coalesce(sum(shipping_total), 0)::numeric as shipping,
+      coalesce(sum(tax_total), 0)::numeric as taxes,
+      coalesce(sum(total_items), 0)::numeric as items
+    from orders
+  )
+  select jsonb_build_object(
+    'summary', jsonb_build_object(
+      'orders', orders,
+      'revenue', revenue,
+      'avgOrderValue', case when orders > 0 then revenue / orders else null end,
+      'discountTotal', discounts,
+      'shippingTotal', shipping,
+      'taxTotal', taxes,
+      'items', items
+    ),
+    'timeseries', coalesce(
+      (select jsonb_agg(jsonb_build_object(
+        'date', to_char(bucket, 'YYYY-MM-DD'),
+        'revenue', revenue,
+        'orders', orders
+      )) from ts), '[]'::jsonb)
+  )
+  from agg;
 $$;
 
 create or replace function get_ga4_metrics(start_date date, end_date date)
 returns jsonb
 language sql
 stable
+security definer
+set search_path = public, exec_dashboard
 as $$
-  select '{}'::jsonb;
+  with source as (
+    select *
+    from exec_dashboard.raw_ga4_events
+    where event_date between start_date and end_date
+  ),
+  ts as (
+    select
+      event_date as bucket,
+      coalesce(sum(sessions), 0)::numeric as sessions,
+      coalesce(sum(engaged_sessions), 0)::numeric as engaged_sessions,
+      coalesce(sum(revenue), 0)::numeric as revenue
+    from source
+    group by event_date
+    order by bucket
+  ),
+  agg as (
+    select
+      coalesce(sum(sessions), 0)::numeric as sessions,
+      coalesce(sum(engaged_sessions), 0)::numeric as engaged_sessions,
+      coalesce(sum(event_count), 0)::numeric as events,
+      coalesce(avg(user_engagement_duration_ms), 0)::numeric as avg_engagement_ms,
+      coalesce(sum(revenue), 0)::numeric as revenue
+    from source
+  )
+  select jsonb_build_object(
+    'summary', jsonb_build_object(
+      'sessions', sessions,
+      'engagedSessions', engaged_sessions,
+      'eventCount', events,
+      'avgEngagementSeconds', case when avg_engagement_ms > 0 then avg_engagement_ms / 1000 else null end,
+      'revenue', revenue
+    ),
+    'timeseries', coalesce(
+      (select jsonb_agg(jsonb_build_object(
+        'date', to_char(bucket, 'YYYY-MM-DD'),
+        'sessions', sessions,
+        'engagedSessions', engaged_sessions,
+        'revenue', revenue
+      )) from ts), '[]'::jsonb)
+  )
+  from agg;
 $$;
 
 create or replace function get_funnelkit_metrics(start_date date, end_date date)
 returns jsonb
 language sql
 stable
+security definer
+set search_path = public, exec_dashboard
 as $$
-  select '{}'::jsonb;
+  with steps as (
+    select *
+    from exec_dashboard.raw_funnelkit_steps
+    where collected_at between start_date and end_date
+  ),
+  ts as (
+    select
+      collected_at as bucket,
+      coalesce(sum(entries), 0)::numeric as entries,
+      coalesce(sum(completions), 0)::numeric as completions
+    from steps
+    group by collected_at
+    order by bucket
+  ),
+  agg as (
+    select
+      coalesce(sum(entries), 0)::numeric as entries,
+      coalesce(sum(completions), 0)::numeric as completions,
+      coalesce(sum(upsell_offers), 0)::numeric as offers,
+      coalesce(sum(upsell_accepts), 0)::numeric as accepts
+    from steps
+  )
+  select jsonb_build_object(
+    'summary', jsonb_build_object(
+      'entries', entries,
+      'completions', completions,
+      'conversionRate', case when entries > 0 then (completions / entries) * 100 else null end,
+      'upsellOffers', offers,
+      'upsellAccepts', accepts,
+      'upsellTakeRate', case when offers > 0 then (accepts / offers) * 100 else null end
+    ),
+    'timeseries', coalesce(
+      (select jsonb_agg(jsonb_build_object(
+        'date', to_char(bucket, 'YYYY-MM-DD'),
+        'entries', entries,
+        'completions', completions,
+        'conversionRate', case when entries > 0 then (completions / entries) * 100 else null end
+      )) from ts), '[]'::jsonb)
+  )
+  from agg;
 $$;
 
 -- =========================================================

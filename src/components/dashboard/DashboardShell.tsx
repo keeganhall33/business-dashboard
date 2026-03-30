@@ -6,6 +6,8 @@ import { BrandPowerPanel } from "./BrandPowerPanel";
 import { OpportunityRadarPanel } from "./OpportunityRadarPanel";
 import { TaskBoard } from "./TaskBoard";
 import { SystemHealthPanel } from "./SystemHealthPanel";
+import { DateRangeControls } from "./DateRangeControls";
+import { CommerceVisualsPanel } from "./CommerceVisualsPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -14,7 +16,14 @@ type Props = {
 export function DashboardShell({ data }: Props) {
   return (
     <div className="space-y-8">
+      <DateRangeControls
+        key={`${data.range.startDate}-${data.range.endDate}-${data.range.preset}`}
+        preset={data.range.preset}
+        startDate={data.range.startDate}
+        endDate={data.range.endDate}
+      />
       <HeaderStatusBar metrics={data.headerMetrics} refreshedAtIso={data.timestamp} />
+      <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1">
@@ -45,4 +54,3 @@ export function DashboardShell({ data }: Props) {
     </div>
   );
 }
-

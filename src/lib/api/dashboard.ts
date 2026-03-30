@@ -28,9 +28,29 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   return (await res.json()) as T;
 }
 
-export async function getDashboardOverview(): Promise<DashboardOverviewResponse> {
+type OverviewParams = {
+  preset?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+};
+
+export async function getDashboardOverview(params: OverviewParams = {}): Promise<DashboardOverviewResponse> {
   const base = getAppUrl();
-  const url = base ? `${base}/api/dashboard/overview` : "/api/dashboard/overview";
+  const search = new URLSearchParams();
+
+  if (params.preset) {
+    search.set("range", params.preset);
+  }
+  if (params.startDate) {
+    search.set("start", params.startDate);
+  }
+  if (params.endDate) {
+    search.set("end", params.endDate);
+  }
+
+  const query = search.toString();
+  const path = query ? `/api/dashboard/overview?${query}` : "/api/dashboard/overview";
+  const url = base ? `${base}${path}` : path;
   return fetchJson<DashboardOverviewResponse>(url, { method: "GET" });
 }
 
@@ -39,4 +59,3 @@ export async function getAgentDashboard(agentKey: string): Promise<unknown> {
   const url = base ? `${base}/api/dashboard/agent/${agentKey}` : `/api/dashboard/agent/${agentKey}`;
   return fetchJson(url, { method: "GET" });
 }
-
