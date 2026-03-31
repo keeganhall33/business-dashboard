@@ -55,9 +55,10 @@ export function DashboardShell({ data, agents }: Props) {
         <TaskBoard tasks={data.tasks} />
         <div className="space-y-6">
           <SystemHealthPanel data={data.systemHealth} />
-          <AgentConversationPanel agents={agents} />
         </div>
       </div>
+
+      <AgentConversationPanel agents={agents} />
     </div>
   );
 }

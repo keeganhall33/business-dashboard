@@ -28,7 +28,7 @@ export function TaskBoard({ tasks }: Props) {
               <span>{column}</span>
               <span className="text-xs text-zinc-500">{items.length}</span>
             </div>
-            <div className="mt-4 flex-1 space-y-4 overflow-y-auto pr-2" style={{ maxHeight: "28rem" }}>
+            <div className="mt-4 space-y-4">
               {items.length === 0 ? (
                 <div className="text-sm text-zinc-600">No items</div>
               ) : (
