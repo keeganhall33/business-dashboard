@@ -34,8 +34,8 @@ jobs:
           curl -sS --fail -X POST \
             -H "x-scheduler-secret: $SCHEDULER_SECRET" \
             "$BASE_URL/api/scheduler/daily-health-check"
-      - name: Weekly command cycle (Mon 07:00 PT)
-        if: steps.time.outputs.dow == '1' && steps.time.outputs.now == '07:00'
+      - name: Daily command cycle (07:00 PT)
+        if: steps.time.outputs.now == '07:00'
         run: |
           curl -sS --fail -X POST \
             -H "x-scheduler-secret: $SCHEDULER_SECRET" \
