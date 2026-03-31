@@ -3,7 +3,7 @@ import {
   getActiveOpportunities,
   getAgentHealth,
   getLatestAgentDirective,
-  getLatestScoreboardMetrics,
+  getScoreboardMetricsForRange,
   getOpenTasks,
   getCommerceTelemetry
 } from "@/lib/supabase/queries";
@@ -107,7 +107,7 @@ export async function GET(request: Request) {
     const range = resolveRange(rangeParam, startParam, endParam);
 
     const [metrics, tasks, opportunities, directive, agentHealth, commerceTelemetry] = await Promise.all([
-      getLatestScoreboardMetrics() as Promise<ScoreboardMetricRow[]>,
+      getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
       getActiveOpportunities(25) as Promise<OpportunityRow[]>,
       getLatestAgentDirective(),

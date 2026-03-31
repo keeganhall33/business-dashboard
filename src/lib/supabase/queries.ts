@@ -23,6 +23,66 @@ export async function getLatestScoreboardMetrics() {
   return data ?? [];
 }
 
+export async function getScoreboardMetricsForRange(range: { startDate: string; endDate: string }) {
+  const supabase = getSupabaseServerClient();
+  const startIso = new Date(`${range.startDate}T00:00:00Z`).toISOString();
+  const endIso = new Date(`${range.endDate}T23:59:59Z`).toISOString();
+
+  const [definitions, readings, latest] = await Promise.all([
+    supabase.from("scoreboard_metrics").select("*"),
+    supabase
+      .from("scoreboard_metric_readings")
+      .select("metric_key,current_value,measured_at")
+      .gte("measured_at", startIso)
+      .lte("measured_at", endIso)
+      .order("measured_at", { ascending: false }),
+    getLatestScoreboardMetrics()
+  ]);
+
+  if (definitions.error) throw definitions.error;
+  if (readings.error) throw readings.error;
+
+  const readingByKey = new Map<string, { current_value: number | string | null; measured_at: string }>();
+  for (const reading of readings.data ?? []) {
+    if (!readingByKey.has(reading.metric_key)) {
+      readingByKey.set(reading.metric_key, {
+        current_value: reading.current_value,
+        measured_at: reading.measured_at
+      });
+    }
+  }
+
+  const fallbackByKey = new Map(latest.map((metric) => [metric.metric_key, metric]));
+
+  return (definitions.data ?? []).map((definition) => {
+    const reading = readingByKey.get(definition.metric_key);
+    if (reading) {
+      return {
+        metric_key: definition.metric_key,
+        metric_name: definition.metric_name,
+        category: definition.category,
+        unit: definition.unit,
+        target_value: definition.target_value,
+        owner_agent: definition.owner_agent,
+        current_value: reading.current_value,
+        measured_at: reading.measured_at
+      };
+    }
+
+    const fallback = fallbackByKey.get(definition.metric_key);
+    return fallback ?? {
+      metric_key: definition.metric_key,
+      metric_name: definition.metric_name,
+      category: definition.category,
+      unit: definition.unit,
+      target_value: definition.target_value,
+      owner_agent: definition.owner_agent,
+      current_value: null,
+      measured_at: null
+    };
+  });
+}
+
 export async function getCommerceTelemetry(range: { startDate: string; endDate: string }) {
   const supabase = getSupabaseServerClient();
 
