@@ -307,6 +307,178 @@ export async function createAgentUpdate(input: {
   return data;
 }
 
+// -----------------------------
+// Agent conversations & plans
+// -----------------------------
+export type AgentThreadType = "default" | "war_room" | "plan";
+export type AgentMessageType = "plan" | "comment" | "directive" | "status" | "war_room";
+
+export async function getOrCreateAgentThread(input: {
+  agentKey: string;
+  threadType: AgentThreadType;
+  title?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const existing = await supabase
+    .from("agent_threads")
+    .select("*")
+    .eq("agent_key", input.agentKey)
+    .eq("thread_type", input.threadType)
+    .eq("status", "open")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return existing.data;
+
+  const fallbackTitle =
+    input.title ??
+    `${input.agentKey} ${input.threadType === "default" ? "Command" : input.threadType === "war_room" ? "War Room" : "Plan"} Thread`;
+
+  const inserted = await supabase
+    .from("agent_threads")
+    .insert({
+      agent_key: input.agentKey,
+      thread_type: input.threadType,
+      title: fallbackTitle,
+      status: "open"
+    })
+    .select("*")
+    .single();
+  if (inserted.error) throw inserted.error;
+  return inserted.data;
+}
+
+export async function closeAgentThreadsByType(agentKey: string, threadType: AgentThreadType) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_threads")
+    .update({ status: "closed", updated_at: nowIso() })
+    .eq("agent_key", agentKey)
+    .eq("thread_type", threadType)
+    .eq("status", "open")
+    .select("*");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createAgentMessage(input: {
+  threadId: string;
+  senderType: "agent" | "ceo" | "avery" | "system";
+  senderKey?: string;
+  messageType: AgentMessageType;
+  body: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_messages")
+    .insert({
+      thread_id: input.threadId,
+      sender_type: input.senderType,
+      sender_key: input.senderKey ?? null,
+      message_type: input.messageType,
+      body: input.body,
+      metadata: input.metadata ?? {}
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getAgentMessages(threadId: string, limit = 50) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_messages")
+    .select("*")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createAgentPlan(input: {
+  agentKey: string;
+  threadId?: string;
+  title: string;
+  summary?: string;
+  detailMd?: string;
+  payloadJson: Record<string, unknown>;
+  submittedBy?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_plans")
+    .insert({
+      agent_key: input.agentKey,
+      thread_id: input.threadId ?? null,
+      title: input.title,
+      summary: input.summary ?? null,
+      detail_md: input.detailMd ?? null,
+      payload_json: input.payloadJson,
+      status: "pending",
+      submitted_by: input.submittedBy ?? input.agentKey
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateAgentPlanStatus(input: {
+  id: string;
+  status: "approved" | "changes_requested";
+  approvedBy?: string;
+  rejectionReason?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const patch: Record<string, unknown> = {
+    status: input.status,
+    rejection_reason: input.rejectionReason ?? null
+  };
+  if (input.status === "approved") {
+    patch.approved_by = input.approvedBy ?? "system";
+    patch.approved_at = nowIso();
+  }
+
+  const { data, error } = await supabase
+    .from("agent_plans")
+    .update(patch)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getAgentPlans(agentKey: string, options?: { status?: string; limit?: number }) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("agent_plans")
+    .select("*")
+    .eq("agent_key", agentKey)
+    .order("created_at", { ascending: false })
+    .limit(options?.limit ?? 10);
+
+  if (options?.status) {
+    query = query.eq("status", options.status);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getAgentPlanById(id: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.from("agent_plans").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data;
+}
+
+
 export async function getAgentHealth() {
   const supabase = getSupabaseServerClient();
   const { data: profiles, error: profilesError } = await supabase.from("agent_profiles").select("*");

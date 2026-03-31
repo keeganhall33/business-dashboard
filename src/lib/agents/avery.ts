@@ -1,5 +1,5 @@
-import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shared";
-import { createAgentUpdate, getAgentUpdates } from "@/lib/supabase/queries";
+import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
+import { getAgentUpdates } from "@/lib/supabase/queries";
 
 export async function runAvery(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContext();
@@ -83,26 +83,35 @@ export async function runAvery(): Promise<AgentRunResult> {
     }
   ];
 
-  const output = await writeAgentOutputs({
+  const plan = await submitAgentPlanDraft({
     agentKey: "avery",
-    insights,
-    actions,
-    bigBet,
-    tasks
-  });
-
-  await createAgentUpdate({
-    agentKey: "avery",
-    updateType: "directive",
-    title: "Weekly Executive Directive",
+    planTitle: "Executive operating directive",
     summary: directiveSummary,
-    detailMd: "Top priorities: premium pricing, conversion clarity, and partnership pipeline expansion.",
-    priority: "critical",
-    relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate", "active_brand_conversations"]
+    detailMd: bigBet.detailMd,
+    payload: {
+      insights,
+      actions,
+      bigBet,
+      tasks,
+      postApprovalUpdates: [
+        {
+          updateType: "directive",
+          title: "Weekly Executive Directive",
+          summary: directiveSummary,
+          detailMd:
+            "Top priorities: premium pricing, conversion clarity, and partnership pipeline expansion.",
+          priority: "critical",
+          relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate", "active_brand_conversations"]
+        }
+      ]
+    }
   });
 
   return {
     summary: directiveSummary,
-    ...output
+    updatesCreated: 0,
+    tasksCreated: 0,
+    opportunitiesCreated: 0,
+    planId: plan.planId
   };
 }

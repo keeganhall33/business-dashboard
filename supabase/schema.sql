@@ -140,6 +140,68 @@ create table if not exists agent_updates (
 create index if not exists idx_agent_updates_agent_key_created_at
   on agent_updates(agent_key, created_at desc);
 
+-- 2.7 Agent conversation threads
+create table if not exists agent_threads (
+  id uuid primary key default gen_random_uuid(),
+  agent_key text not null references agent_profiles(agent_key) on delete cascade,
+  thread_type text not null check (thread_type in ('default','war_room','plan')),
+  title text not null,
+  status text not null default 'open' check (status in ('open','closed')),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_agent_threads_agent_key_created_at
+  on agent_threads(agent_key, created_at desc);
+
+drop trigger if exists trg_agent_threads_updated_at on agent_threads;
+create trigger trg_agent_threads_updated_at
+before update on agent_threads
+for each row execute function set_updated_at();
+
+-- 2.8 Agent conversation messages
+create table if not exists agent_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references agent_threads(id) on delete cascade,
+  sender_type text not null check (sender_type in ('agent','ceo','avery','system')),
+  sender_key text,
+  message_type text not null check (message_type in ('plan','comment','directive','status','war_room')),
+  body text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_agent_messages_thread_created_at
+  on agent_messages(thread_id, created_at asc);
+
+-- 2.9 Agent plans
+create table if not exists agent_plans (
+  id uuid primary key default gen_random_uuid(),
+  agent_key text not null references agent_profiles(agent_key) on delete cascade,
+  thread_id uuid references agent_threads(id) on delete set null,
+  title text not null,
+  summary text,
+  detail_md text,
+  payload_json jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending','approved','changes_requested')),
+  submitted_by text,
+  submitted_at timestamptz not null default now(),
+  approved_by text,
+  approved_at timestamptz,
+  rejection_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_agent_plans_agent_key_created_at
+  on agent_plans(agent_key, created_at desc);
+
+drop trigger if exists trg_agent_plans_updated_at on agent_plans;
+create trigger trg_agent_plans_updated_at
+before update on agent_plans
+for each row execute function set_updated_at();
+
 -- 2.7 Opportunity pipeline
 create table if not exists opportunity_pipeline (
   id uuid primary key default gen_random_uuid(),

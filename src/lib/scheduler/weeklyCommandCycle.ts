@@ -19,7 +19,13 @@ export async function runWeeklyCommandCycle() {
       await evaluateRules();
 
       const sequence = ["sloan", "lyra", "noah", "avery"] as const;
-      const outputs: Array<{ agentKey: string; updatesCreated: number; tasksCreated: number; opportunitiesCreated: number }> = [];
+      const outputs: Array<{
+        agentKey: string;
+        updatesCreated: number;
+        tasksCreated: number;
+        opportunitiesCreated: number;
+        planId?: string | null;
+      }> = [];
 
       for (const agentKey of sequence) {
         const run = await createSystemRun({ agentKey, runType: "weekly" });
@@ -42,7 +48,8 @@ export async function runWeeklyCommandCycle() {
             agentKey,
             updatesCreated: result.updatesCreated,
             tasksCreated: result.tasksCreated,
-            opportunitiesCreated: result.opportunitiesCreated
+            opportunitiesCreated: result.opportunitiesCreated,
+            planId: result.planId ?? null
           });
         } catch (error) {
           await finishSystemRun(run.id, {

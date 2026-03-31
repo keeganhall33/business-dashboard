@@ -1,4 +1,4 @@
-import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shared";
+import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
 
 export async function runNoah(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContext();
@@ -91,17 +91,19 @@ export async function runNoah(): Promise<AgentRunResult> {
     }
   ];
 
-  const output = await writeAgentOutputs({
+  const plan = await submitAgentPlanDraft({
     agentKey: "noah",
-    insights,
-    actions,
-    bigBet,
-    tasks,
-    opportunities
+    planTitle: "Partnership pipeline expansion plan",
+    summary: "Refill the prestige pipeline with targeted outreach and cultural timing.",
+    detailMd: bigBet.detailMd,
+    payload: { insights, actions, bigBet, tasks, opportunities }
   });
 
   return {
     summary: "Expanded the research pipeline and created the next opportunity sprint.",
-    ...output
+    updatesCreated: 0,
+    tasksCreated: 0,
+    opportunitiesCreated: 0,
+    planId: plan.planId
   };
 }

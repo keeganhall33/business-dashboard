@@ -2,7 +2,10 @@ import { notFound, ok, serverError } from "@/lib/api/responses";
 import {
   getAgentProfile,
   getAgentUpdates,
+  getAgentPlans,
+  getAgentMessages,
   getLatestScoreboardMetrics,
+  getOrCreateAgentThread,
   getTasks
 } from "@/lib/supabase/queries";
 
@@ -52,12 +55,16 @@ export async function GET(_req: Request, context: { params: Promise<{ agentKey: 
     const profile = await getAgentProfile(agentKey).catch(() => null);
     if (!profile) return notFound(`Unknown agent: ${agentKey}`);
 
-    const [metrics, updates, openTasks, completedTasks] = await Promise.all([
+    const [metrics, updates, openTasks, completedTasks, plans] = await Promise.all([
       getLatestScoreboardMetrics() as Promise<ScoreboardMetricRow[]>,
       getAgentUpdates(agentKey, 10) as Promise<AgentUpdateRow[]>,
       getTasks({ agentKey, status: "pending" }),
-      getTasks({ agentKey, status: "completed" })
+      getTasks({ agentKey, status: "completed" }),
+      getAgentPlans(agentKey, { limit: 5 })
     ]);
+
+    const thread = await getOrCreateAgentThread({ agentKey, threadType: "default" });
+    const messages = await getAgentMessages(thread.id, 100);
 
     const ownedMetrics = metrics
       .filter((m) => m.owner_agent === agentKey)
@@ -100,11 +107,43 @@ export async function GET(_req: Request, context: { params: Promise<{ agentKey: 
         requiresApproval: t.requires_approval
       })),
       completedTasks: completedTasks.items,
-      weeklyOutputRequirements: { weekly: ["3 revenue insights", "3 actions", "1 pricing recommendation"] }
+      weeklyOutputRequirements: { weekly: ["3 revenue insights", "3 actions", "1 pricing recommendation"] },
+      planQueue: {
+        pending: mapPlan(plans.find((p) => p.status === "pending") ?? null),
+        recent: plans
+          .filter((p) => p.status !== "pending")
+          .map((p) => mapPlan(p))
+      },
+      conversation: {
+        threadId: thread.id,
+        title: thread.title,
+        messages: messages.map((m) => ({
+          id: m.id,
+          senderType: m.sender_type,
+          senderKey: m.sender_key,
+          messageType: m.message_type,
+          body: m.body,
+          metadata: m.metadata,
+          createdAt: m.created_at
+        }))
+      }
     });
   } catch (error) {
     return serverError("Failed to load agent dashboard", {
       message: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+function mapPlan(plan: Record<string, unknown> | null | undefined) {
+  if (!plan) return null;
+  return {
+    id: plan.id as string,
+    title: plan.title as string,
+    status: plan.status as string,
+    summary: (plan.summary as string) ?? null,
+    submittedAt: plan.submitted_at as string,
+    approvedAt: (plan.approved_at as string | null) ?? null,
+    approvedBy: (plan.approved_by as string | null) ?? null
+  };
 }

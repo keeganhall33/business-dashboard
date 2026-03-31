@@ -12,16 +12,25 @@ export function TaskBoard({ tasks }: Props) {
   };
 
   return (
-    <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-      <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Task Queue</div>
+    <section className="rounded-3xl border border-zinc-800 bg-zinc-950/90 p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Task Queue</div>
+          <div className="text-lg font-semibold text-zinc-100">{tasks.length} active items</div>
+        </div>
+        <div className="text-xs text-zinc-500">Critical → Completed</div>
+      </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-4">
+      <div className="mt-6 grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
         {Object.entries(columns).map(([column, items]) => (
-          <div key={column} className="rounded-2xl bg-zinc-900/60 p-4">
-            <div className="text-sm font-medium capitalize text-zinc-100">{column}</div>
-            <div className="mt-4 space-y-3">
+          <div key={column} className="flex h-full flex-col rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+            <div className="flex items-center justify-between text-sm font-semibold capitalize text-zinc-100">
+              <span>{column}</span>
+              <span className="text-xs text-zinc-500">{items.length}</span>
+            </div>
+            <div className="mt-4 flex-1 space-y-4 overflow-y-auto pr-2" style={{ maxHeight: "28rem" }}>
               {items.length === 0 ? (
-                <div className="text-sm text-zinc-600">—</div>
+                <div className="text-sm text-zinc-600">No items</div>
               ) : (
                 items.map((task) => <TaskCard key={task.id} task={task} />)
               )}
@@ -32,4 +41,3 @@ export function TaskBoard({ tasks }: Props) {
     </section>
   );
 }
-

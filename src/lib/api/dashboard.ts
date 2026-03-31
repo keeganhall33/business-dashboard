@@ -1,4 +1,5 @@
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import type { AgentDashboardResponse } from "@/lib/types/agent";
 
 function getAppUrl() {
   // Client-side: use relative fetches.
@@ -54,8 +55,8 @@ export async function getDashboardOverview(params: OverviewParams = {}): Promise
   return fetchJson<DashboardOverviewResponse>(url, { method: "GET" });
 }
 
-export async function getAgentDashboard(agentKey: string): Promise<unknown> {
+export async function getAgentDashboard(agentKey: string): Promise<AgentDashboardResponse> {
   const base = getAppUrl();
   const url = base ? `${base}/api/dashboard/agent/${agentKey}` : `/api/dashboard/agent/${agentKey}`;
-  return fetchJson(url, { method: "GET" });
+  return fetchJson<AgentDashboardResponse>(url, { method: "GET" });
 }

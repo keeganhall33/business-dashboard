@@ -1,4 +1,4 @@
-import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shared";
+import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
 
 export async function runLyra(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContext();
@@ -75,16 +75,19 @@ export async function runLyra(): Promise<AgentRunResult> {
     }
   ];
 
-  const output = await writeAgentOutputs({
+  const plan = await submitAgentPlanDraft({
     agentKey: "lyra",
-    insights,
-    actions,
-    bigBet,
-    tasks
+    planTitle: "Brand narrative reinforcement plan",
+    summary: "Rebuild the Impossible in Pencil story to lift engagement and conversion.",
+    detailMd: bigBet.detailMd,
+    payload: { insights, actions, bigBet, tasks }
   });
 
   return {
     summary: "Sharpened brand narrative and conversion messaging priorities.",
-    ...output
+    updatesCreated: 0,
+    tasksCreated: 0,
+    opportunitiesCreated: 0,
+    planId: plan.planId
   };
 }

@@ -1,4 +1,5 @@
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { HeaderStatusBar } from "./HeaderStatusBar";
 import { ExecutiveCommandPanel } from "./ExecutiveCommandPanel";
 import { RevenueEnginePanel } from "./RevenueEnginePanel";
@@ -8,12 +9,14 @@ import { TaskBoard } from "./TaskBoard";
 import { SystemHealthPanel } from "./SystemHealthPanel";
 import { DateRangeControls } from "./DateRangeControls";
 import { CommerceVisualsPanel } from "./CommerceVisualsPanel";
+import { AgentConversationPanel } from "./AgentConversationPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
+  agents: AgentDashboardResponse[];
 };
 
-export function DashboardShell({ data }: Props) {
+export function DashboardShell({ data, agents }: Props) {
   return (
     <div className="space-y-8">
       <HeaderStatusBar
@@ -48,12 +51,11 @@ export function DashboardShell({ data }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <TaskBoard tasks={data.tasks} />
-        </div>
-        <div className="lg:col-span-1">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr]">
+        <TaskBoard tasks={data.tasks} />
+        <div className="space-y-6">
           <SystemHealthPanel data={data.systemHealth} />
+          <AgentConversationPanel agents={agents} />
         </div>
       </div>
     </div>

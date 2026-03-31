@@ -1,4 +1,4 @@
-import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shared";
+import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
 
 export async function runSloan(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContext();
@@ -85,16 +85,19 @@ export async function runSloan(): Promise<AgentRunResult> {
     }
   ];
 
-  const output = await writeAgentOutputs({
+  const plan = await submitAgentPlanDraft({
     agentKey: "sloan",
-    insights,
-    actions,
-    bigBet,
-    tasks
+    planTitle: "Ecommerce revenue uplift plan",
+    summary: "Raise AOV, unclog conversion, and recover abandoned revenue.",
+    detailMd: bigBet.detailMd,
+    payload: { insights, actions, bigBet, tasks }
   });
 
   return {
     summary: "Identified AOV, conversion, and abandonment as the top ecommerce blockers.",
-    ...output
+    updatesCreated: 0,
+    tasksCreated: 0,
+    opportunitiesCreated: 0,
+    planId: plan.planId
   };
 }

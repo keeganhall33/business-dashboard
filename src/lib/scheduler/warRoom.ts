@@ -1,10 +1,14 @@
 import {
+  createAgentMessage,
   getLatestScoreboardMetrics,
+  getOrCreateAgentThread,
   getSystemState,
-  upsertSystemState
+  upsertSystemState,
+  closeAgentThreadsByType
 } from "@/lib/supabase/queries";
 import type { ScoreboardMetric } from "@/lib/agents/shared";
 import { createOrUpdateAlert, makeAlertDedupeKey, resolveAlertByKey } from "./alerting";
+import { agentKeys } from "@/lib/types/requests";
 
 type OperatingMode = "normal" | "war_room";
 
@@ -90,8 +94,14 @@ export async function evaluateWarRoomMode() {
       summary: reason ?? "Performance triggers exceeded",
       dedupeKey
     });
+    if (changed) {
+      await Promise.all(agentKeys.map((agentKey) => announceWarRoom(agentKey, reason, triggers)));
+    }
   } else {
     await resolveAlertByKey(dedupeKey);
+    if (changed && currentMode === "war_room") {
+      await Promise.all(agentKeys.map((agentKey) => closeWarRoom(agentKey)));
+    }
   }
 
   return {
@@ -100,4 +110,32 @@ export async function evaluateWarRoomMode() {
     reason,
     triggers
   } as const;
+}
+
+async function announceWarRoom(agentKey: string, reason: string | null, triggers: string[]) {
+  const thread = await getOrCreateAgentThread({
+    agentKey,
+    threadType: "war_room",
+    title: "War Room Thread"
+  });
+
+  await createAgentMessage({
+    threadId: thread.id,
+    senderType: "system",
+    messageType: "war_room",
+    body: reason ?? "War room mode activated",
+    metadata: { triggers }
+  });
+}
+
+async function closeWarRoom(agentKey: string) {
+  await closeAgentThreadsByType(agentKey, "war_room");
+  const thread = await getOrCreateAgentThread({ agentKey, threadType: "default" });
+  await createAgentMessage({
+    threadId: thread.id,
+    senderType: "system",
+    messageType: "status",
+    body: "War room mode cleared. Resume normal cadence.",
+    metadata: {}
+  });
 }

@@ -1,10 +1,13 @@
 import {
+  createAgentPlan,
   createAgentUpdate,
   createOpportunity,
   createTask,
+  createAgentMessage,
   getActiveOpportunities,
   getLatestScoreboardMetrics,
-  getOpenTasks
+  getOpenTasks,
+  getOrCreateAgentThread
 } from "@/lib/supabase/queries";
 
 export type AgentRunResult = {
@@ -12,6 +15,7 @@ export type AgentRunResult = {
   updatesCreated: number;
   tasksCreated: number;
   opportunitiesCreated: number;
+  planId?: string;
 };
 
 export type ScoreboardMetric = {
@@ -34,77 +38,84 @@ export async function getSharedAgentContext() {
   return { metrics, tasks, opportunities };
 }
 
+export type AgentPlanPayload = {
+  insights?: AgentPlanInsight[];
+  actions?: AgentPlanInsight[];
+  bigBet?: AgentPlanInsight;
+  tasks?: AgentPlanTask[];
+  opportunities?: AgentPlanOpportunity[];
+  postApprovalUpdates?: AgentPlanApprovalUpdate[];
+};
+
+type AgentPlanInsight = {
+  title: string;
+  summary: string;
+  detailMd?: string;
+  priority?: "critical" | "high" | "medium" | "low";
+  relatedMetricKeys?: string[];
+};
+
+type AgentPlanTask = {
+  title: string;
+  description?: string;
+  priority: "critical" | "high" | "medium" | "low";
+  expectedImpact?: string;
+  impactScore?: number;
+  whyThisMatters?: string;
+  relatedMetricKeys?: string[];
+  requiresApproval?: boolean;
+  executionType:
+    | "analysis"
+    | "content"
+    | "outreach_prep"
+    | "pricing"
+    | "research"
+    | "design"
+    | "data"
+    | "strategy";
+};
+
+type AgentPlanOpportunity = {
+  name: string;
+  organization?: string;
+  opportunityType:
+    | "brand_partnership"
+    | "licensing"
+    | "press"
+    | "collector_intro"
+    | "athlete_collab"
+    | "institutional";
+  status:
+    | "identified"
+    | "researching"
+    | "ready_for_outreach"
+    | "outreach_drafted"
+    | "in_conversation"
+    | "negotiating"
+    | "won"
+    | "lost"
+    | "parked";
+  valueEstimate?: number;
+  prestigeScore?: number;
+  probabilityScore?: number;
+  nextStep?: string;
+  nextStepDueAt?: string;
+  notesMd?: string;
+  source?: string;
+};
+
+type AgentPlanApprovalUpdate = {
+  updateType: string;
+  title: string;
+  summary: string;
+  detailMd?: string;
+  priority?: "critical" | "high" | "medium" | "low";
+  relatedMetricKeys?: string[];
+};
+
 export async function writeAgentOutputs(input: {
   agentKey: string;
-  insights?: Array<{
-    title: string;
-    summary: string;
-    detailMd?: string;
-    priority?: "critical" | "high" | "medium" | "low";
-    relatedMetricKeys?: string[];
-  }>;
-  actions?: Array<{
-    title: string;
-    summary: string;
-    detailMd?: string;
-    priority?: "critical" | "high" | "medium" | "low";
-    relatedMetricKeys?: string[];
-  }>;
-  bigBet?: {
-    title: string;
-    summary: string;
-    detailMd?: string;
-    priority?: "critical" | "high" | "medium" | "low";
-    relatedMetricKeys?: string[];
-  };
-  tasks?: Array<{
-    title: string;
-    description?: string;
-    priority: "critical" | "high" | "medium" | "low";
-    expectedImpact?: string;
-    impactScore?: number;
-    whyThisMatters?: string;
-    relatedMetricKeys?: string[];
-    requiresApproval?: boolean;
-    executionType:
-      | "analysis"
-      | "content"
-      | "outreach_prep"
-      | "pricing"
-      | "research"
-      | "design"
-      | "data"
-      | "strategy";
-  }>;
-  opportunities?: Array<{
-    name: string;
-    organization?: string;
-    opportunityType:
-      | "brand_partnership"
-      | "licensing"
-      | "press"
-      | "collector_intro"
-      | "athlete_collab"
-      | "institutional";
-    status:
-      | "identified"
-      | "researching"
-      | "ready_for_outreach"
-      | "outreach_drafted"
-      | "in_conversation"
-      | "negotiating"
-      | "won"
-      | "lost"
-      | "parked";
-    valueEstimate?: number;
-    prestigeScore?: number;
-    probabilityScore?: number;
-    nextStep?: string;
-    nextStepDueAt?: string;
-    notesMd?: string;
-    source?: string;
-  }>;
-}) {
+} & AgentPlanPayload) {
   let updatesCreated = 0;
   let tasksCreated = 0;
   let opportunitiesCreated = 0;
@@ -184,4 +195,38 @@ export async function writeAgentOutputs(input: {
   }
 
   return { updatesCreated, tasksCreated, opportunitiesCreated };
+}
+
+export async function submitAgentPlanDraft(input: {
+  agentKey: string;
+  planTitle: string;
+  summary: string;
+  detailMd?: string;
+  payload: AgentPlanPayload;
+}) {
+  const thread = await getOrCreateAgentThread({ agentKey: input.agentKey, threadType: "default" });
+
+  await createAgentMessage({
+    threadId: thread.id,
+    senderType: "agent",
+    senderKey: input.agentKey,
+    messageType: "plan",
+    body: input.summary,
+    metadata: {
+      title: input.planTitle,
+      detailMd: input.detailMd ?? null
+    }
+  });
+
+  const plan = await createAgentPlan({
+    agentKey: input.agentKey,
+    threadId: thread.id,
+    title: input.planTitle,
+    summary: input.summary,
+    detailMd: input.detailMd,
+    payloadJson: input.payload,
+    submittedBy: input.agentKey
+  });
+
+  return { threadId: thread.id, planId: plan.id };
 }
