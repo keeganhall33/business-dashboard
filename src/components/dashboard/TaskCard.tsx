@@ -17,7 +17,7 @@ export function TaskCard({ task }: Props) {
     const res = await fetch(`/api/tasks/${task.id}/approve`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approvedBy: "user" })
+      body: JSON.stringify({ approvedByUser: true })
     });
     if (!res.ok) throw new Error(`Approve failed (${res.status})`);
   }
@@ -91,4 +91,3 @@ export function TaskCard({ task }: Props) {
     </div>
   );
 }
-
