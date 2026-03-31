@@ -7,7 +7,8 @@ import {
   getActiveOpportunities,
   getLatestScoreboardMetrics,
   getOpenTasks,
-  getOrCreateAgentThread
+  getOrCreateAgentThread,
+  findOpenTaskByTitle
 } from "@/lib/supabase/queries";
 
 export type AgentRunResult = {
@@ -160,6 +161,8 @@ export async function writeAgentOutputs(input: {
   }
 
   for (const task of input.tasks ?? []) {
+    const existing = await findOpenTaskByTitle(input.agentKey, task.title);
+    if (existing) continue;
     await createTask({
       title: task.title,
       description: task.description,
