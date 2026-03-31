@@ -1,5 +1,4 @@
 import { RevenueEngine } from "@/lib/types/dashboard";
-import { MetricCard } from "./MetricCard";
 
 type Props = {
   data: RevenueEngine;
@@ -9,12 +8,9 @@ export function RevenueEnginePanel({ data }: Props) {
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
       <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Revenue Engine</div>
-
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        {data.metrics.map((metric) => (
-          <MetricCard key={metric.metricKey} metric={metric} />
-        ))}
-      </div>
+      <p className="mt-3 text-sm text-zinc-400">
+        Core revenue KPIs live in the header. This module stays focused on diagnosing leaks and prescribing decisive moves.
+      </p>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="rounded-2xl border border-zinc-800 p-4">
@@ -41,4 +37,3 @@ export function RevenueEnginePanel({ data }: Props) {
     </section>
   );
 }
-

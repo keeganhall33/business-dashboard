@@ -101,7 +101,13 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
                   <Tooltip
                     contentStyle={{ backgroundColor: "#0a0a0a", borderColor: "#27272a" }}
                     labelFormatter={(value) => formatDateLabel(String(value))}
-                    formatter={(value, name) => [value, name === "revenue" ? "Revenue" : "Orders"]}
+                    formatter={(value, name) => {
+                      const numeric = Number(value ?? 0);
+                      if (name === "Revenue") {
+                        return [currencyFormatter.format(numeric), name];
+                      }
+                      return [numeric.toLocaleString(), name];
+                    }}
                   />
                   <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#38bdf8" strokeWidth={2} yAxisId="left" dot={false} />
                   <Line type="monotone" dataKey="orders" name="Orders" stroke="#f472b6" strokeWidth={2} yAxisId="right" dot={false} />
@@ -135,9 +141,10 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
                   <Tooltip
                     contentStyle={{ backgroundColor: "#0a0a0a", borderColor: "#27272a" }}
                     labelFormatter={(value) => formatDateLabel(String(value))}
+                    formatter={(value, name) => [Number(value ?? 0).toLocaleString(), name]}
                   />
-                  <Area type="monotone" dataKey="sessions" stroke="#22d3ee" fillOpacity={1} fill="url(#sessions)" />
-                  <Area type="monotone" dataKey="engagedSessions" stroke="#a855f7" fillOpacity={1} fill="url(#engaged)" />
+                  <Area type="monotone" dataKey="sessions" name="Traffic" stroke="#22d3ee" fillOpacity={1} fill="url(#sessions)" />
+                  <Area type="monotone" dataKey="engagedSessions" name="Engaged Sessions" stroke="#a855f7" fillOpacity={1} fill="url(#engaged)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -186,7 +193,7 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
                 <Tooltip
                   contentStyle={{ backgroundColor: "#0a0a0a", borderColor: "#27272a" }}
                   labelFormatter={(value) => formatDateLabel(String(value))}
-                  formatter={(value) => [`${value}%`, "Conversion"]}
+                  formatter={(value) => [`${Number(value ?? 0).toFixed(2)}%`, "Conversion"]}
                 />
                 <Line type="monotone" dataKey="conversionRate" stroke="#fbbf24" strokeWidth={2} dot={false} />
               </LineChart>

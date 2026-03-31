@@ -1,6 +1,8 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };

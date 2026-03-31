@@ -4,9 +4,10 @@ import { MetricCard } from "./MetricCard";
 type Props = {
   metrics: HeaderMetric[];
   refreshedAtIso?: string;
+  controls?: React.ReactNode;
 };
 
-export function HeaderStatusBar({ metrics, refreshedAtIso }: Props) {
+export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
   return (
     <section>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -19,6 +20,8 @@ export function HeaderStatusBar({ metrics, refreshedAtIso }: Props) {
         </div>
       </div>
 
+      {controls ? <div className="mt-6">{controls}</div> : null}
+
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <MetricCard key={metric.metricKey} metric={metric} />
@@ -27,4 +30,3 @@ export function HeaderStatusBar({ metrics, refreshedAtIso }: Props) {
     </section>
   );
 }
-
