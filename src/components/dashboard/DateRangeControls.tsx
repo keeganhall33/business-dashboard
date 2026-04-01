@@ -2,7 +2,7 @@
 
 import { RangePreset } from "@/lib/types/dashboard";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { DateRange, DayPicker } from "react-day-picker";
 
 const PRESETS: Array<{ label: string; value: RangePreset }> = [
@@ -38,6 +38,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(initialRange);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [activePreset, setActivePreset] = useState(preset);
+  const [, startTransition] = useTransition();
   const calendarRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -76,8 +77,9 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
       params.delete("start");
       params.delete("end");
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    router.refresh();
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   };
 
   const handlePresetClick = (value: RangePreset) => {
