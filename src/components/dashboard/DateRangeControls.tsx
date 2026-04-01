@@ -84,7 +84,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
       router.replace(nextUrl, { scroll: false });
     });
     if (typeof window !== "undefined") {
-      window.location.href = nextUrl;
+      window.location.assign(nextUrl);
     }
   };
 
