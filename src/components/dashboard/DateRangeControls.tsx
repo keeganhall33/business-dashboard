@@ -36,6 +36,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
     to: endDate ? new Date(endDate) : undefined
   }), [startDate, endDate]);
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(initialRange);
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(initialRange);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [activePreset, setActivePreset] = useState(preset);
   const [, startTransition] = useTransition();
@@ -44,6 +45,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
 
   useEffect(() => {
     setSelectedRange(initialRange);
+    setPendingRange(initialRange);
   }, [initialRange]);
 
   useEffect(() => {
@@ -77,9 +79,13 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
       params.delete("start");
       params.delete("end");
     }
+    const nextUrl = `${pathname}?${params.toString()}`;
     startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      router.replace(nextUrl, { scroll: false });
     });
+    if (typeof window !== "undefined") {
+      window.location.href = nextUrl;
+    }
   };
 
   const handlePresetClick = (value: RangePreset) => {
@@ -89,14 +95,27 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
   };
 
   const handleRangeSelect = (range?: DateRange) => {
-    setSelectedRange(range);
-    if (range?.from && range?.to) {
-      const start = formatInputDate(range.from);
-      const end = formatInputDate(range.to);
-      setActivePreset("custom");
-      updateQuery("custom", start, end);
-      setCalendarOpen(false);
-    }
+    setPendingRange(range);
+  };
+
+  const applyPendingRange = () => {
+    if (!pendingRange?.from || !pendingRange?.to) return;
+    setSelectedRange(pendingRange);
+    setActivePreset("custom");
+    const start = formatInputDate(pendingRange.from);
+    const end = formatInputDate(pendingRange.to);
+    updateQuery("custom", start, end);
+    setCalendarOpen(false);
+  };
+
+  const cancelPendingRange = () => {
+    setCalendarOpen(false);
+    setPendingRange(selectedRange);
+  };
+
+  const openCalendar = () => {
+    setPendingRange(selectedRange);
+    setCalendarOpen(true);
   };
 
   return (
@@ -126,33 +145,55 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
           <button
             ref={buttonRef}
             type="button"
-            onClick={() => setCalendarOpen((prev) => !prev)}
+            onClick={openCalendar}
             className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] transition ${
               activePreset === "custom"
                 ? "bg-sky-500 text-white shadow-[0_15px_35px_rgba(56,189,248,0.35)]"
                 : "bg-zinc-900/70 text-zinc-300 hover:bg-zinc-900 hover:text-white"
             }`}
           >
-            Custom range
+            {selectedRange?.from && selectedRange?.to
+              ? `${formatShortLabel(selectedRange.from)} → ${formatShortLabel(selectedRange.to)}`
+              : "Custom range"}
           </button>
         </div>
 
         {calendarOpen && (
-          <div
-            ref={calendarRef}
-            className="absolute right-0 top-full z-20 mt-3 rounded-2xl border border-zinc-800 bg-zinc-900/95 p-4 shadow-2xl"
-          >
-            <DayPicker
-              mode="range"
-              selected={selectedRange}
-              onSelect={handleRangeSelect}
-              weekStartsOn={1}
-              numberOfMonths={2}
-              className="text-sm text-zinc-100"
-              classNames={dayPickerClasses}
-              captionLayout="dropdown"
-            />
-          </div>
+          <>
+            <div className="fixed inset-0 z-10 bg-black/40" onClick={cancelPendingRange} />
+            <div
+              ref={calendarRef}
+              className="absolute right-0 top-full z-20 mt-3 rounded-2xl border border-zinc-800 bg-zinc-900/95 p-4 shadow-2xl"
+            >
+              <DayPicker
+                mode="range"
+                selected={pendingRange}
+                onSelect={handleRangeSelect}
+                weekStartsOn={1}
+                numberOfMonths={2}
+                className="text-sm text-zinc-100"
+                classNames={dayPickerClasses}
+                captionLayout="dropdown"
+              />
+              <div className="mt-4 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={cancelPendingRange}
+                  className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300 hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!pendingRange?.from || !pendingRange?.to}
+                  onClick={applyPendingRange}
+                  className="rounded-full bg-sky-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:bg-zinc-700"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </section>
@@ -179,4 +220,8 @@ const dayPickerClasses = {
 
 function formatInputDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function formatShortLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
 }
