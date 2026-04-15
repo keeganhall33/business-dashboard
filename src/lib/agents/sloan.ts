@@ -1,7 +1,13 @@
-import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
+import {
+  AgentRunResult,
+  getSharedAgentContextForAgent,
+  publishAgentStatusSnapshot,
+  submitAgentPlanDraft,
+  writeAgentOutputs
+} from "./shared";
 
 export async function runSloan(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
+  const { metrics } = await getSharedAgentContextForAgent("sloan");
 
   const aov = metrics.find((m) => m.metric_key === "aov");
   const conversion = metrics.find((m) => m.metric_key === "conversion_rate");
@@ -70,7 +76,8 @@ export async function runSloan(): Promise<AgentRunResult> {
       whyThisMatters: "AOV is suppressing total revenue.",
       relatedMetricKeys: ["aov", "monthly_revenue"],
       requiresApproval: true,
-      executionType: "pricing" as const
+      executionType: "pricing" as const,
+      expectedDurationDays: 5
     },
     {
       title: "Audit checkout and recovery flow",
@@ -81,9 +88,18 @@ export async function runSloan(): Promise<AgentRunResult> {
       whyThisMatters: "High abandonment is leaving recoverable revenue behind.",
       relatedMetricKeys: ["cart_abandonment_rate", "conversion_rate"],
       requiresApproval: true,
-      executionType: "analysis" as const
+      executionType: "analysis" as const,
+      expectedDurationDays: 3
     }
   ];
+
+  const outputResult = await writeAgentOutputs({
+    agentKey: "sloan",
+    insights,
+    actions,
+    bigBet,
+    tasks
+  });
 
   const plan = await submitAgentPlanDraft({
     agentKey: "sloan",
@@ -93,11 +109,13 @@ export async function runSloan(): Promise<AgentRunResult> {
     payload: { insights, actions, bigBet, tasks }
   });
 
+  const status = await publishAgentStatusSnapshot("sloan");
+
   return {
     summary: "Identified AOV, conversion, and abandonment as the top ecommerce blockers.",
-    updatesCreated: 0,
-    tasksCreated: 0,
-    opportunitiesCreated: 0,
+    updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
+    tasksCreated: outputResult.tasksCreated,
+    opportunitiesCreated: outputResult.opportunitiesCreated,
     planId: plan.planId
   };
 }

@@ -109,8 +109,11 @@ create table if not exists task_queue (
   rejection_reason text,
   execution_type text not null,
   created_by text,
-  result_summary text,
+  due_at timestamptz,
+  started_at timestamptz,
   completed_at timestamptz,
+  expected_duration_days numeric,
+  result_summary text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -277,6 +280,115 @@ create table if not exists metric_alert_rules (
 
 create index if not exists idx_metric_alert_rules_metric_key on metric_alert_rules(metric_key);
 create index if not exists idx_metric_alert_rules_is_active on metric_alert_rules(is_active);
+
+create table if not exists research_memory (
+  id uuid primary key default gen_random_uuid(),
+  agent_key text not null references agent_profiles(agent_key) on delete cascade,
+  focus_area text not null,
+  subject text not null,
+  subject_type text,
+  status text not null default 'open',
+  summary text not null,
+  detail_md text,
+  importance_score numeric not null default 0,
+  confidence numeric not null default 0,
+  payload jsonb not null default '{}'::jsonb,
+  related_task_id uuid references task_queue(id) on delete set null,
+  related_metric_keys text[] not null default array[]::text[],
+  source_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_research_memory_agent_key_created_at
+  on research_memory(agent_key, created_at desc);
+create index if not exists idx_research_memory_focus_area
+  on research_memory(focus_area);
+create index if not exists idx_research_memory_status
+  on research_memory(status);
+create index if not exists idx_research_memory_related_metric_keys_gin
+  on research_memory using gin (related_metric_keys);
+
+drop trigger if exists trg_research_memory_updated_at on research_memory;
+create trigger trg_research_memory_updated_at
+before update on research_memory
+for each row execute function set_updated_at();
+
+create table if not exists outcome_memory (
+  id uuid primary key default gen_random_uuid(),
+  agent_key text not null references agent_profiles(agent_key) on delete cascade,
+  outcome_type text not null check (outcome_type in ('task','decision','experiment','launch','partnership','content','note')),
+  title text not null,
+  summary text not null,
+  detail_md text,
+  impact_score numeric,
+  impact_window text,
+  related_task_id uuid references task_queue(id) on delete set null,
+  related_metric_keys text[] not null default array[]::text[],
+  happened_at timestamptz not null default now(),
+  expires_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_outcome_memory_agent_key_happened_at
+  on outcome_memory(agent_key, happened_at desc);
+create index if not exists idx_outcome_memory_outcome_type
+  on outcome_memory(outcome_type);
+create index if not exists idx_outcome_memory_related_metric_keys_gin
+  on outcome_memory using gin (related_metric_keys);
+
+drop trigger if exists trg_outcome_memory_updated_at on outcome_memory;
+create trigger trg_outcome_memory_updated_at
+before update on outcome_memory
+for each row execute function set_updated_at();
+
+-- 2.11 Finance snapshot
+create table if not exists finance_snapshot (
+  id uuid primary key default gen_random_uuid(),
+  label text not null default 'default',
+  cash_on_hand numeric,
+  monthly_burn numeric,
+  projected_30d_revenue numeric,
+  survival_floor numeric not null default 7000,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_finance_snapshot_label on finance_snapshot(label);
+
+drop trigger if exists trg_finance_snapshot_updated_at on finance_snapshot;
+create trigger trg_finance_snapshot_updated_at
+before update on finance_snapshot
+for each row execute function set_updated_at();
+
+-- 2.12 Collector relationships
+create table if not exists collector_relationships (
+  id uuid primary key default gen_random_uuid(),
+  collector_name text not null,
+  tier text not null check (tier in ('A','B')),
+  relationship_status text not null default 'quiet',
+  last_outreach_at timestamptz,
+  next_move text,
+  next_move_due_at timestamptz,
+  estimated_value numeric,
+  priority integer not null default 0,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_collector_relationships_tier_priority
+  on collector_relationships(tier, priority desc);
+create index if not exists idx_collector_relationships_next_move_due
+  on collector_relationships(next_move_due_at);
+
+drop trigger if exists trg_collector_relationships_updated_at on collector_relationships;
+create trigger trg_collector_relationships_updated_at
+before update on collector_relationships
+for each row execute function set_updated_at();
 
 -- =========================================================
 -- 3. SCHEDULER TABLES (from SCHEDULER_SPEC.md canonical block)
@@ -561,6 +673,7 @@ on conflict do nothing;
 insert into scheduled_jobs (
  job_key, job_name, cron_expression, timezone, route_path, is_active
 ) values
+ ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),

@@ -41,6 +41,17 @@ export function TaskCard({ task }: Props) {
 
       {task.expectedImpact && <div className="mt-3 text-sm text-zinc-300">{task.expectedImpact}</div>}
 
+      {typeof task.expectedDurationDays === "number" && (
+        <div className="mt-2 text-xs text-zinc-500">ETA: {task.expectedDurationDays} day{task.expectedDurationDays === 1 ? "" : "s"}</div>
+      )}
+
+      {task.deliverableSummary && (
+        <div className="mt-4 rounded-2xl border border-zinc-800/70 bg-zinc-900/40 p-3">
+          <div className="text-xs uppercase tracking-[0.14em] text-zinc-500">Deliverables</div>
+          <div className="mt-2 whitespace-pre-line text-sm text-zinc-100">{task.deliverableSummary}</div>
+        </div>
+      )}
+
       {error && <div className="mt-3 text-xs text-red-300">{error}</div>}
 
       {task.requiresApproval && task.status !== "approved" && task.status !== "completed" && (

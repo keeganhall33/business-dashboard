@@ -1,7 +1,13 @@
-import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
+import {
+  AgentRunResult,
+  getSharedAgentContextForAgent,
+  publishAgentStatusSnapshot,
+  submitAgentPlanDraft,
+  writeAgentOutputs
+} from "./shared";
 
 export async function runNoah(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
+  const { metrics } = await getSharedAgentContextForAgent("noah");
   const pipeline = metrics.find((m) => m.metric_key === "active_brand_conversations");
 
   const insights = [
@@ -71,7 +77,8 @@ export async function runNoah(): Promise<AgentRunResult> {
       whyThisMatters: "The opportunity engine is underfilled.",
       relatedMetricKeys: ["active_brand_conversations"],
       requiresApproval: true,
-      executionType: "research" as const
+      executionType: "research" as const,
+      expectedDurationDays: 6
     }
   ];
 
@@ -91,6 +98,37 @@ export async function runNoah(): Promise<AgentRunResult> {
     }
   ];
 
+  const research = [
+    {
+      focusArea: "licensing",
+      subject: "Prestige target map",
+      subjectType: "brand_pipeline",
+      status: "open",
+      summary:
+        "25-target prestige list with category, rationale, and recommended outreach sequencing.",
+      detailMd:
+        "Clustered the list into sports franchises, collectible brands, and institutional partners to keep opportunity mix diversified.",
+      importanceScore: 9.2,
+      confidence: 0.8,
+      payload: {
+        listSize: 25,
+        segments: ["sports", "collectibles", "institutional"],
+        turnaroundDays: 3
+      },
+      relatedMetricKeys: ["active_brand_conversations"]
+    }
+  ];
+
+  const outputResult = await writeAgentOutputs({
+    agentKey: "noah",
+    insights,
+    actions,
+    bigBet,
+    tasks,
+    opportunities,
+    research
+  });
+
   const plan = await submitAgentPlanDraft({
     agentKey: "noah",
     planTitle: "Partnership pipeline expansion plan",
@@ -99,11 +137,14 @@ export async function runNoah(): Promise<AgentRunResult> {
     payload: { insights, actions, bigBet, tasks, opportunities }
   });
 
+  const status = await publishAgentStatusSnapshot("noah");
+
   return {
     summary: "Expanded the research pipeline and created the next opportunity sprint.",
-    updatesCreated: 0,
-    tasksCreated: 0,
-    opportunitiesCreated: 0,
-    planId: plan.planId
+    updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
+    tasksCreated: outputResult.tasksCreated,
+    opportunitiesCreated: outputResult.opportunitiesCreated,
+    planId: plan.planId,
+    researchLogged: outputResult.researchLogged
   };
 }

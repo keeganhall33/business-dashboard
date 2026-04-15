@@ -1,8 +1,16 @@
-import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
+import {
+  AgentRunResult,
+  getSharedAgentContextForAgent,
+  logWarRoomNote,
+  publishAgentStatusSnapshot,
+  publishCeoDirective,
+  submitAgentPlanDraft,
+  writeAgentOutputs
+} from "./shared";
 import { getAgentUpdates } from "@/lib/supabase/queries";
 
 export async function runAvery(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
+  const { metrics } = await getSharedAgentContextForAgent("avery");
   const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
     getAgentUpdates("sloan", 5),
     getAgentUpdates("lyra", 5),
@@ -79,9 +87,34 @@ export async function runAvery(): Promise<AgentRunResult> {
       whyThisMatters: "Focus drift kills performance.",
       relatedMetricKeys: ["agent_task_completion_rate"],
       requiresApproval: false,
-      executionType: "strategy" as const
+      executionType: "strategy" as const,
+      expectedDurationDays: 2
     }
   ];
+
+  const outputResult = await writeAgentOutputs({
+    agentKey: "avery",
+    insights,
+    actions,
+    bigBet,
+    tasks,
+    outcomes: [
+      {
+        outcomeType: "decision",
+        title: "Directive: premium revenue sprint",
+        summary: directiveSummary,
+        detailMd: bigBet.detailMd,
+        impactScore: 9.1,
+        impactWindow: "7d",
+        relatedMetricKeys: ["aov", "conversion_rate", "active_brand_conversations"],
+        metadata: {
+          sloanUpdates: sloanUpdates.length,
+          lyraUpdates: lyraUpdates.length,
+          noahUpdates: noahUpdates.length
+        }
+      }
+    ]
+  });
 
   const plan = await submitAgentPlanDraft({
     agentKey: "avery",
@@ -107,11 +140,34 @@ export async function runAvery(): Promise<AgentRunResult> {
     }
   });
 
+  await publishCeoDirective({
+    directive: "Premium revenue sprint",
+    detailMd: directiveSummary,
+    targetAgents: ["sloan", "lyra", "noah"],
+    priority: "critical"
+  });
+
+  await logWarRoomNote({
+    title: "Weekly Executive Directive",
+    summary: directiveSummary,
+    detailMd: bigBet.detailMd,
+    metadata: {
+      metrics: {
+        aov: aov?.current_value ?? null,
+        conversion_rate: conversion?.current_value ?? null,
+        active_brand_conversations: pipeline?.current_value ?? null
+      }
+    }
+  });
+
+  const status = await publishAgentStatusSnapshot("avery");
+
   return {
     summary: directiveSummary,
-    updatesCreated: 0,
-    tasksCreated: 0,
-    opportunitiesCreated: 0,
-    planId: plan.planId
+    updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
+    tasksCreated: outputResult.tasksCreated,
+    opportunitiesCreated: outputResult.opportunitiesCreated,
+    planId: plan.planId,
+    outcomesLogged: outputResult.outcomesLogged
   };
 }

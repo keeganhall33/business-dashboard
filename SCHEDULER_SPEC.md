@@ -6,6 +6,7 @@ Automation is mandatory. These are the job definitions, cadences, and tables tha
 
 | Job | Cron | Purpose |
 | --- | --- | --- |
+| daily-agent-cycle | `5 6 * * *` | Run Sloan → Lyra → Noah → Avery every morning to log daily updates. |
 | daily-health-check | `15 6 * * *` | Refresh metrics, evaluate alert rules, run stale checks. |
 | weekly-command-cycle | `0 7 * * 1` | Full agent run (Sloan → Lyra → Noah → Avery), directive + summary. |
 | midweek-opportunity-pulse | `30 11 * * 3` | Re-run Noah, inspect pipeline, escalate stalled opps. |
@@ -16,6 +17,7 @@ If cron engine is UTC-only, convert carefully or pick a scheduler that supports 
 ## 2. Scheduler Routes
 
 ```
+POST /api/scheduler/daily-agent-cycle
 POST /api/scheduler/daily-health-check
 POST /api/scheduler/weekly-command-cycle
 POST /api/scheduler/midweek-opportunity-pulse
@@ -30,6 +32,7 @@ Each route:
 ## 3. Scheduler Library Structure (`src/lib/scheduler`)
 
 - `dailyHealthCheck.ts`
+- `dailyAgentCycle.ts`
 - `weeklyCommandCycle.ts`
 - `midweekOpportunityPulse.ts`
 - `eveningCloseout.ts`

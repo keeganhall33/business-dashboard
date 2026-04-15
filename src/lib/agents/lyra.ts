@@ -1,7 +1,13 @@
-import { AgentRunResult, getSharedAgentContext, submitAgentPlanDraft } from "./shared";
+import {
+  AgentRunResult,
+  getSharedAgentContextForAgent,
+  publishAgentStatusSnapshot,
+  submitAgentPlanDraft,
+  writeAgentOutputs
+} from "./shared";
 
 export async function runLyra(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
+  const { metrics } = await getSharedAgentContextForAgent("lyra");
   const engagement = metrics.find((m) => m.metric_key === "engagement_rate");
   const cultural = metrics.find((m) => m.metric_key === "cultural_relevance_score");
 
@@ -75,6 +81,14 @@ export async function runLyra(): Promise<AgentRunResult> {
     }
   ];
 
+  const outputResult = await writeAgentOutputs({
+    agentKey: "lyra",
+    insights,
+    actions,
+    bigBet,
+    tasks
+  });
+
   const plan = await submitAgentPlanDraft({
     agentKey: "lyra",
     planTitle: "Brand narrative reinforcement plan",
@@ -83,11 +97,13 @@ export async function runLyra(): Promise<AgentRunResult> {
     payload: { insights, actions, bigBet, tasks }
   });
 
+  const status = await publishAgentStatusSnapshot("lyra");
+
   return {
     summary: "Sharpened brand narrative and conversion messaging priorities.",
-    updatesCreated: 0,
-    tasksCreated: 0,
-    opportunitiesCreated: 0,
+    updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
+    tasksCreated: outputResult.tasksCreated,
+    opportunitiesCreated: outputResult.opportunitiesCreated,
     planId: plan.planId
   };
 }
