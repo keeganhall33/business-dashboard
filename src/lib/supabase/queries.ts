@@ -165,6 +165,7 @@ export async function createTask(input: {
   requiresApproval?: boolean;
   executionType: string;
   createdBy?: string;
+  expectedDurationDays?: number;
 }) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
@@ -182,7 +183,8 @@ export async function createTask(input: {
       requires_approval: input.requiresApproval ?? false,
       approved_by_user: false,
       execution_type: input.executionType,
-      created_by: input.createdBy ?? "system"
+      created_by: input.createdBy ?? "system",
+      expected_duration_days: input.expectedDurationDays ?? null
     })
     .select("*")
     .single();
@@ -312,6 +314,32 @@ export async function getTaskCountsByStatus() {
     counts[row.status] = (counts[row.status] ?? 0) + 1;
   }
   return counts;
+}
+
+export async function startApprovedTasks(agentKey: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("task_queue")
+    .update({ status: "in_progress", started_at: nowIso() })
+    .eq("agent_key", agentKey)
+    .eq("status", "approved")
+    .eq("approved_by_user", true)
+    .select("*");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getAgentTasksByStatus(agentKey: string, statuses: string[], limit = 25) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("task_queue")
+    .select("*")
+    .eq("agent_key", agentKey)
+    .in("status", statuses)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
 }
 
 // -----------------------------
@@ -531,6 +559,18 @@ export async function getAgentPlans(agentKey: string, options?: { status?: strin
   return data ?? [];
 }
 
+export async function getPendingAgentPlans(limit = 15) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_plans")
+    .select("*")
+    .eq("status", "pending")
+    .order("submitted_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getAgentPlanById(id: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase.from("agent_plans").select("*").eq("id", id).single();
@@ -681,6 +721,19 @@ export async function getRecentOpportunities(limit = 200) {
   return data ?? [];
 }
 
+export async function getCollectorRelationships(limit = 30) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("collector_relationships")
+    .select("*")
+    .order("tier", { ascending: true })
+    .order("priority", { ascending: false })
+    .order("collector_name", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getLatestOpportunitiesByStatus(status: string, limit = 50) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
@@ -716,6 +769,94 @@ export async function createDecision(input: {
       expected_outcome: input.expectedOutcome ?? null,
       outcome_review_date: input.outcomeReviewDate ?? null,
       decided_by: input.decidedBy ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getDecisionsRequiringReview(options?: { withinDays?: number; limit?: number }) {
+  const supabase = getSupabaseServerClient();
+  const days = options?.withinDays ?? 14;
+  const limit = options?.limit ?? 15;
+  const today = new Date();
+  const cutoff = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  cutoff.setUTCDate(cutoff.getUTCDate() + days);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("decision_log")
+    .select("*")
+    .not("outcome_review_date", "is", null)
+    .lte("outcome_review_date", cutoffIso)
+    .order("outcome_review_date", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// -----------------------------
+// Finance snapshot
+// -----------------------------
+export async function getLatestFinanceSnapshot() {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("finance_snapshot")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
+export async function upsertFinanceSnapshot(input: {
+  cashOnHand?: number | null;
+  monthlyBurn?: number | null;
+  projected30dRevenue?: number | null;
+  survivalFloor?: number | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("finance_snapshot")
+    .upsert(
+      {
+        label: "default",
+        cash_on_hand: input.cashOnHand ?? null,
+        monthly_burn: input.monthlyBurn ?? null,
+        projected_30d_revenue: input.projected30dRevenue ?? null,
+        survival_floor: input.survivalFloor ?? 7000
+      },
+      { onConflict: "label" }
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createCollectorRelationship(input: {
+  collectorName: string;
+  tier: string;
+  relationshipStatus?: string;
+  lastOutreachAt?: string | null;
+  nextMove?: string | null;
+  nextMoveDueAt?: string | null;
+  estimatedValue?: number | null;
+  priority?: number;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("collector_relationships")
+    .insert({
+      collector_name: input.collectorName,
+      tier: input.tier,
+      relationship_status: input.relationshipStatus ?? "quiet",
+      last_outreach_at: input.lastOutreachAt ?? null,
+      next_move: input.nextMove ?? null,
+      next_move_due_at: input.nextMoveDueAt ?? null,
+      estimated_value: input.estimatedValue ?? null,
+      priority: input.priority ?? 0
     })
     .select("*")
     .single();
@@ -839,6 +980,52 @@ export async function finishJobRunLog(
     .single();
   if (error) throw error;
   return data;
+}
+
+export async function getScheduledJobs(options?: { activeOnly?: boolean }) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase.from("scheduled_jobs").select("*").order("job_name", { ascending: true });
+  if (options?.activeOnly ?? true) {
+    query = query.eq("is_active", true);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getScheduledJobsWithLatestRuns(options?: { activeOnly?: boolean }) {
+  const jobs = await getScheduledJobs(options);
+  if (!jobs.length) return [];
+  const supabase = getSupabaseServerClient();
+  const jobKeys = jobs.map((job: { job_key: string }) => job.job_key);
+  const { data: runs, error } = await supabase
+    .from("job_run_log")
+    .select("*")
+    .in("job_key", jobKeys)
+    .order("started_at", { ascending: false })
+    .limit(jobKeys.length * 3);
+  if (error) throw error;
+
+  type JobRunRow = {
+    id: string;
+    job_key: string;
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+  };
+
+  const runRows = (runs ?? []) as JobRunRow[];
+  const latestRunByJob = new Map<string, JobRunRow>();
+  for (const run of runRows) {
+    if (!latestRunByJob.has(run.job_key)) {
+      latestRunByJob.set(run.job_key, run);
+    }
+  }
+
+  return jobs.map((job: Record<string, unknown>) => ({
+    ...job,
+    latestRun: latestRunByJob.get(job.job_key as string) ?? null
+  }));
 }
 
 export async function getOpenAlerts(limit = 100) {
@@ -970,6 +1157,134 @@ export async function getLatestAgentDirective() {
     .limit(1);
   if (error) throw error;
   return data?.[0] ?? null;
+}
+
+// -----------------------------
+// Research & outcome memory
+// -----------------------------
+
+export async function createResearchMemory(input: {
+  agentKey: AgentKey | string;
+  focusArea: string;
+  subject: string;
+  subjectType?: string;
+  status?: string;
+  summary: string;
+  detailMd?: string;
+  importanceScore?: number;
+  confidence?: number;
+  payload?: Record<string, unknown>;
+  relatedTaskId?: string | null;
+  relatedMetricKeys?: string[];
+  sourceUrl?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("research_memory")
+    .insert({
+      agent_key: input.agentKey,
+      focus_area: input.focusArea,
+      subject: input.subject,
+      subject_type: input.subjectType ?? null,
+      status: input.status ?? "open",
+      summary: input.summary,
+      detail_md: input.detailMd ?? null,
+      importance_score: input.importanceScore ?? 0,
+      confidence: input.confidence ?? 0,
+      payload: input.payload ?? {},
+      related_task_id: input.relatedTaskId ?? null,
+      related_metric_keys: input.relatedMetricKeys ?? [],
+      source_url: input.sourceUrl ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getRecentResearchMemory(options?: {
+  agentKey?: AgentKey | string;
+  focusArea?: string;
+  status?: string;
+  metricKey?: string;
+  limit?: number;
+}) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("research_memory")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(options?.limit ?? 25);
+
+  if (options?.agentKey) query = query.eq("agent_key", options.agentKey);
+  if (options?.focusArea) query = query.eq("focus_area", options.focusArea);
+  if (options?.status) query = query.eq("status", options.status);
+  if (options?.metricKey) query = query.contains("related_metric_keys", [options.metricKey]);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createOutcomeMemory(input: {
+  agentKey: AgentKey | string;
+  outcomeType: "task" | "decision" | "experiment" | "launch" | "partnership" | "content" | "note";
+  title: string;
+  summary: string;
+  detailMd?: string;
+  impactScore?: number;
+  impactWindow?: string;
+  relatedTaskId?: string;
+  relatedMetricKeys?: string[];
+  happenedAtIso?: string;
+  expiresAtIso?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("outcome_memory")
+    .insert({
+      agent_key: input.agentKey,
+      outcome_type: input.outcomeType,
+      title: input.title,
+      summary: input.summary,
+      detail_md: input.detailMd ?? null,
+      impact_score: input.impactScore ?? null,
+      impact_window: input.impactWindow ?? null,
+      related_task_id: input.relatedTaskId ?? null,
+      related_metric_keys: input.relatedMetricKeys ?? [],
+      happened_at: input.happenedAtIso ?? nowIso(),
+      expires_at: input.expiresAtIso ?? null,
+      metadata: input.metadata ?? {}
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getRecentOutcomeMemory(options?: {
+  agentKey?: AgentKey | string;
+  outcomeType?: string;
+  metricKey?: string;
+  includeExpired?: boolean;
+  limit?: number;
+}) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("outcome_memory")
+    .select("*")
+    .order("happened_at", { ascending: false })
+    .limit(options?.limit ?? 25);
+
+  if (options?.agentKey) query = query.eq("agent_key", options.agentKey);
+  if (options?.outcomeType) query = query.eq("outcome_type", options.outcomeType);
+  if (options?.metricKey) query = query.contains("related_metric_keys", [options.metricKey]);
+  if (!options?.includeExpired) query = query.or("expires_at.is.null,expires_at.gt." + nowIso());
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function getRecentOpportunitiesForPulse(limit = 200) {

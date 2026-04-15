@@ -5,9 +5,21 @@ import {
   getLatestAgentDirective,
   getScoreboardMetricsForRange,
   getOpenTasks,
-  getCommerceTelemetry
+  getCommerceTelemetry,
+  getAgentUpdates,
+  getOrCreateAgentThread,
+  getAgentMessages,
+  getSystemState,
+  getScheduledJobsWithLatestRuns,
+  getTasksAwaitingApproval,
+  getPendingAgentPlans,
+  getDecisionsRequiringReview,
+  getLatestFinanceSnapshot,
+  getCollectorRelationships,
+  getRecentTasks
 } from "@/lib/supabase/queries";
 import { RangePreset } from "@/lib/types/dashboard";
+import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 type ScoreboardMetricRow = {
   metric_key: string;
@@ -23,12 +35,19 @@ type ScoreboardMetricRow = {
 type TaskRow = {
   id: string;
   title: string;
+  description?: string | null;
   agent_key: string;
   priority: string;
   status: string;
   expected_impact: string | null;
   impact_score: number | null;
+  why_this_matters?: string | null;
+  related_metric_keys?: string[] | null;
   requires_approval: boolean;
+  expected_duration_days: number | null;
+  created_at: string;
+  execution_type?: string | null;
+  result_summary?: string | null;
 };
 
 type OpportunityRow = {
@@ -43,6 +62,57 @@ type OpportunityRow = {
   owner_agent: string;
   next_step: string | null;
   next_step_due_at: string | null;
+};
+
+type ScheduledJobRow = {
+  job_key: string;
+  job_name: string;
+  cron_expression: string;
+  route_path: string;
+  next_run_at: string | null;
+  latestRun?: {
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+  } | null;
+};
+
+type AgentPlanRow = {
+  id: string;
+  agent_key: string;
+  title: string;
+  summary: string | null;
+  detail_md: string | null;
+  submitted_by: string | null;
+  submitted_at: string;
+};
+
+type DecisionRow = {
+  id: string;
+  decision_type: string;
+  title: string;
+  summary: string;
+  outcome_review_date: string | null;
+  decided_by: string | null;
+  created_at: string;
+};
+
+type FinanceSnapshotRow = {
+  cash_on_hand: number | string | null;
+  monthly_burn: number | string | null;
+  projected_30d_revenue: number | string | null;
+  survival_floor: number | string | null;
+};
+
+type CollectorRow = {
+  id: string;
+  collector_name: string;
+  tier: string;
+  relationship_status: string | null;
+  last_outreach_at: string | null;
+  next_move: string | null;
+  next_move_due_at: string | null;
+  estimated_value: number | null;
 };
 
 function isScoreboardMetricRow(value: ScoreboardMetricRow | undefined | null): value is ScoreboardMetricRow {
@@ -64,6 +134,42 @@ function statusFromGap(current: number | null, target: number | null) {
   if (ratio < 0.6) return "critical" as const;
   if (ratio < 0.9) return "warning" as const;
   return "healthy" as const;
+}
+
+function mapTaskRowToSummary(task: TaskRow) {
+  return {
+    id: task.id,
+    title: task.title,
+    agentKey: task.agent_key,
+    priority: task.priority,
+    status: task.status,
+    expectedImpact: task.expected_impact,
+    impactScore: task.impact_score,
+    requiresApproval: task.requires_approval,
+    description: task.description ?? null,
+    deliverableSummary: task.result_summary ?? null,
+    whyThisMatters: task.why_this_matters ?? null,
+    relatedMetricKeys: task.related_metric_keys ?? null,
+    expectedDurationDays: task.expected_duration_days,
+    createdAt: task.created_at ?? null
+  };
+}
+
+function buildSurvivalStrip(snapshot: FinanceSnapshotRow | null) {
+  const floor = toNumber(snapshot?.survival_floor) ?? 7000;
+  const cash = toNumber(snapshot?.cash_on_hand);
+  const burn = toNumber(snapshot?.monthly_burn);
+  const projection = toNumber(snapshot?.projected_30d_revenue);
+  const runwayDays = cash != null && burn != null && burn > 0 ? Math.round((cash / burn) * 30) : null;
+  const configured = cash != null || burn != null || projection != null;
+  return {
+    configured,
+    cashOnHand: cash,
+    survivalFloor: floor,
+    monthlyBurn: burn,
+    projected30dRevenue: projection,
+    runwayDays
+  };
 }
 
 function formatIsoDate(date: Date) {
@@ -106,14 +212,43 @@ export async function GET(request: Request) {
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
 
-    const [metrics, tasks, opportunities, directive, agentHealth, commerceTelemetry] = await Promise.all([
+    const [
+      metrics,
+      tasks,
+      opportunities,
+      directive,
+      agentHealth,
+      commerceTelemetry,
+      operatingMode,
+      schedulerJobsRaw,
+      tasksAwaitingApproval,
+      pendingPlans,
+      decisionsDue,
+      financeSnapshot,
+      collectorRows,
+      recentTasks
+    ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
       getActiveOpportunities(25) as Promise<OpportunityRow[]>,
       getLatestAgentDirective(),
       getAgentHealth(),
-      getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate })
+      getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate }),
+      getSystemState("operating_mode"),
+      getScheduledJobsWithLatestRuns(),
+      getTasksAwaitingApproval(25),
+      getPendingAgentPlans(15),
+      getDecisionsRequiringReview({ withinDays: 21, limit: 20 }),
+      getLatestFinanceSnapshot(),
+      getCollectorRelationships(12),
+      getRecentTasks(40)
     ]);
+
+    const [warRoomThread, agentUpdateBuckets] = await Promise.all([
+      getOrCreateAgentThread({ agentKey: "avery", threadType: "war_room", title: "Executive War Room" }),
+      Promise.all(agentKeys.map((key) => getAgentUpdates(key, 5)))
+    ]);
+    const warRoomMessages = await getAgentMessages(warRoomThread.id, 5);
 
     const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
 
@@ -244,23 +379,43 @@ export async function GET(request: Request) {
     const activeCount = opportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
     const readyForOutreachCount = opportunities.filter((o) => o.status === "ready_for_outreach").length;
 
-    const topOpportunities = opportunities
-      .slice()
-      .sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0))
-      .slice(0, 5)
-      .map((o) => ({
-        id: o.id,
-        name: o.name,
-        organization: o.organization,
-        opportunityType: o.opportunity_type,
-        status: o.status,
-        valueEstimate: o.value_estimate,
-        prestigeScore: o.prestige_score,
-        probabilityScore: o.probability_score,
-        ownerAgent: o.owner_agent,
-        nextStep: o.next_step,
-        nextStepDueAt: o.next_step_due_at
-      }));
+    const sortedOpportunities = opportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const seenOpportunities = new Set<string>();
+    const topOpportunities: {
+      id: string;
+      name: string;
+      organization: string | null;
+      opportunityType: string;
+      status: string;
+      valueEstimate: number | null;
+      prestigeScore: number | null;
+      probabilityScore: number | null;
+      ownerAgent: string;
+      nextStep: string | null;
+      nextStepDueAt: string | null;
+    }[] = [];
+
+    for (const opportunity of sortedOpportunities) {
+      const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
+      if (seenOpportunities.has(dedupeKey)) continue;
+      seenOpportunities.add(dedupeKey);
+
+      topOpportunities.push({
+        id: opportunity.id,
+        name: opportunity.name,
+        organization: opportunity.organization,
+        opportunityType: opportunity.opportunity_type,
+        status: opportunity.status,
+        valueEstimate: opportunity.value_estimate,
+        prestigeScore: opportunity.prestige_score,
+        probabilityScore: opportunity.probability_score,
+        ownerAgent: opportunity.owner_agent,
+        nextStep: opportunity.next_step,
+        nextStepDueAt: opportunity.next_step_due_at
+      });
+
+      if (topOpportunities.length >= 5) break;
+    }
 
     const opportunityRadar = {
       activeCount,
@@ -279,6 +434,228 @@ export async function GET(request: Request) {
       dataFreshnessHours: 6,
       agentTaskCompletionRate: 62,
       agents: agentHealth
+    };
+
+    const warRoomStateJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
+    const dedupedEntries: Array<{
+      id: string;
+      title: string;
+      summary: string;
+      detailMd: string | null;
+      createdAt: string;
+    }> = [];
+    const seenWarRoom = new Set<string>();
+    for (const message of [...warRoomMessages].reverse()) {
+      const title = ((message.metadata as Record<string, unknown> | null)?.title as string | undefined) ?? "War room note";
+      const summary = message.body;
+      const dedupeKey = `${title}|${summary}`;
+      if (seenWarRoom.has(dedupeKey)) continue;
+      seenWarRoom.add(dedupeKey);
+      dedupedEntries.push({
+        id: message.id,
+        title,
+        summary,
+        detailMd: ((message.metadata as Record<string, unknown> | null)?.detailMd as string | undefined) ?? null,
+        createdAt: message.created_at
+      });
+    }
+    dedupedEntries.reverse();
+
+    const warRoom = {
+      mode: (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal",
+      reason: (warRoomStateJson.reason as string | null) ?? null,
+      lastUpdated: (warRoomStateJson.activatedAt as string | null) ?? null,
+      entries: dedupedEntries
+    };
+
+    const agentUpdateFeed = agentUpdateBuckets
+      .flat()
+      .map((row) => ({
+        id: row.id,
+        agentKey: row.agent_key,
+        agentName: agentDisplayNames[row.agent_key as keyof typeof agentDisplayNames] ?? row.agent_key,
+        updateType: row.update_type,
+        title: row.title,
+        summary: row.summary,
+        priority: row.priority,
+        createdAt: row.created_at
+      }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 12);
+
+    const schedulerJobs = (schedulerJobsRaw as ScheduledJobRow[]).map((job) => {
+      const lastRun = job.latestRun ?? null;
+      const durationSeconds = lastRun?.finished_at
+        ? Math.max(0, (new Date(lastRun.finished_at).getTime() - new Date(lastRun.started_at).getTime()) / 1000)
+        : null;
+      return {
+        jobKey: job.job_key,
+        jobName: job.job_name,
+        cronExpression: job.cron_expression,
+        routePath: job.route_path,
+        lastRunAt: lastRun?.started_at ?? null,
+        lastStatus: lastRun?.status ?? null,
+        lastDurationSeconds: durationSeconds,
+        nextRunAt: job.next_run_at ?? null
+      };
+    });
+
+    const openTaskRows = tasks as TaskRow[];
+    const recentTaskRows = recentTasks as TaskRow[];
+    const completedTaskRows = recentTaskRows
+      .filter((task) => task.status === "completed")
+      .slice(0, 12);
+
+    const taskRowMap = new Map<string, TaskRow>();
+    [...openTaskRows, ...completedTaskRows].forEach((task) => {
+      taskRowMap.set(task.id, task);
+    });
+    const allTaskRows = Array.from(taskRowMap.values());
+
+    const nowMs = Date.now();
+    const tasksByAgent = allTaskRows.reduce<Record<string, TaskRow[]>>((acc, task) => {
+      acc[task.agent_key] = acc[task.agent_key] ?? [];
+      acc[task.agent_key].push(task);
+      return acc;
+    }, {});
+
+    const agentSla = agentHealth
+      .map((agent) => {
+        const agentTasks = tasksByAgent[agent.agentKey] ?? [];
+        const openCount = agentTasks.filter((task) => task.status !== "completed").length;
+        const inProgressCount = agentTasks.filter((task) => task.status === "in_progress").length;
+        const minutesSinceRun = agent.lastRunAt ? Math.round((nowMs - new Date(agent.lastRunAt).getTime()) / 60000) : null;
+        const nextRunDueAt = agent.lastRunAt
+          ? new Date(new Date(agent.lastRunAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        return {
+          agentKey: agent.agentKey,
+          lastRunAt: agent.lastRunAt,
+          minutesSinceRun,
+          nextRunDueAt,
+          inProgressShare: openCount > 0 ? Math.round((inProgressCount / openCount) * 100) : null
+        };
+      })
+      .sort((a, b) => (b.minutesSinceRun ?? 0) - (a.minutesSinceRun ?? 0));
+
+    const approvalsSorted = [...(tasksAwaitingApproval as TaskRow[])].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    const oldestPendingHours = approvalsSorted.length
+      ? Number(((nowMs - new Date(approvalsSorted[0].created_at).getTime()) / 36e5).toFixed(1))
+      : null;
+    const approvalBottlenecks = {
+      pendingCount: approvalsSorted.length,
+      oldestPendingHours,
+      tasks: approvalsSorted.slice(0, 5).map(mapTaskRowToSummary)
+    };
+
+    const approvalQueueItems = approvalsSorted.slice(0, 5).map((task) => ({
+      id: task.id,
+      itemType: "task" as const,
+      title: task.title,
+      summary: task.expected_impact,
+      createdAt: task.created_at,
+      dueAt: null,
+      actor: task.agent_key,
+      priority: task.priority
+    }));
+
+    const planQueueItems = (pendingPlans as AgentPlanRow[]).slice(0, 5).map((plan) => ({
+      id: plan.id,
+      itemType: "plan" as const,
+      title: plan.title,
+      summary: plan.summary,
+      createdAt: plan.submitted_at,
+      dueAt: null,
+      actor: plan.submitted_by ?? plan.agent_key,
+      priority: null
+    }));
+
+    const decisionQueueItems = (decisionsDue as DecisionRow[]).slice(0, 5).map((decision) => ({
+      id: decision.id,
+      itemType: "decision" as const,
+      title: decision.title,
+      summary: decision.summary,
+      createdAt: decision.created_at,
+      dueAt: decision.outcome_review_date,
+      actor: decision.decided_by ?? decision.decision_type,
+      priority: null
+    }));
+
+    const invoiceQueueItems = allTaskRows
+      .filter((task) => {
+        const haystack = `${task.title} ${task.expected_impact ?? ""}`.toLowerCase();
+        return haystack.includes("invoice") || (task.execution_type ?? "").toLowerCase().includes("invoice");
+      })
+      .slice(0, 5)
+      .map((task) => ({
+        id: task.id,
+        itemType: "invoice" as const,
+        title: task.title,
+        summary: task.expected_impact,
+        createdAt: task.created_at,
+        dueAt: null,
+        actor: task.agent_key,
+        priority: task.priority
+      }));
+
+    const actionQueue = {
+      needsApprovalTasks: {
+        label: "Task approvals",
+        count: approvalQueueItems.length,
+        items: approvalQueueItems
+      },
+      pendingPlans: {
+        label: "Plans awaiting review",
+        count: planQueueItems.length,
+        items: planQueueItems
+      },
+      decisionsDue: {
+        label: "Decisions to revisit",
+        count: decisionQueueItems.length,
+        items: decisionQueueItems
+      },
+      invoicesToSend: {
+        label: "Invoices to send",
+        count: invoiceQueueItems.length,
+        items: invoiceQueueItems
+      }
+    };
+
+    const survivalStrip = buildSurvivalStrip((financeSnapshot ?? null) as FinanceSnapshotRow | null);
+
+    const collectorSummaries = (collectorRows as CollectorRow[]).map((collector) => ({
+      id: collector.id,
+      name: collector.collector_name,
+      tier: collector.tier,
+      status: collector.relationship_status,
+      lastOutreachAt: collector.last_outreach_at,
+      nextMove: collector.next_move,
+      nextMoveDueAt: collector.next_move_due_at,
+      estimatedValue: collector.estimated_value
+    }));
+
+    const pipelineDeals = opportunities
+      .filter((o) => !["won", "lost", "parked"].includes(o.status))
+      .slice(0, 6)
+      .map((o) => ({
+        id: o.id,
+        name: o.name,
+        organization: o.organization,
+        opportunityType: o.opportunity_type,
+        status: o.status,
+        valueEstimate: o.value_estimate,
+        prestigeScore: o.prestige_score,
+        probabilityScore: o.probability_score,
+        ownerAgent: o.owner_agent,
+        nextStep: o.next_step,
+        nextStepDueAt: o.next_step_due_at
+      }));
+
+    const pipelinePanel = {
+      collectors: collectorSummaries,
+      deals: pipelineDeals
     };
 
     const responseRange = {
@@ -304,20 +681,19 @@ export async function GET(request: Request) {
       range: responseRange,
       headerMetrics,
       executiveCommand,
+      warRoom,
       revenueEngine,
       brandPower,
       opportunityRadar,
-      tasks: tasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        agentKey: t.agent_key,
-        priority: t.priority,
-        status: t.status,
-        expectedImpact: t.expected_impact,
-        impactScore: t.impact_score,
-        requiresApproval: t.requires_approval
-      })),
+      pipelinePanel,
+      survivalStrip,
+      tasks: allTaskRows.map(mapTaskRowToSummary),
+      schedulerJobs,
+      agentSla,
+      approvalBottlenecks,
+      actionQueue,
       systemHealth,
+      agentUpdateFeed,
       commerceTelemetry: commercePayload
     });
   } catch (error) {

@@ -32,6 +32,7 @@ type TaskSummary = {
   expectedImpact: string | null;
   impactScore: number | null;
   requiresApproval: boolean;
+  deliverableSummary?: string | null;
 };
 
 type Opportunity = {

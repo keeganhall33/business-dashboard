@@ -5,6 +5,8 @@ type Props = {
 };
 
 export function OpportunityRadarPanel({ data }: Props) {
+  const topOpportunities = dedupeOpportunities(data.topOpportunities);
+
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
       <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Opportunity Radar</div>
@@ -24,13 +26,16 @@ export function OpportunityRadarPanel({ data }: Props) {
       <div className="mt-6">
         <div className="text-sm text-zinc-400">Top Opportunities</div>
         <div className="mt-3 space-y-3">
-          {data.topOpportunities.map((item) => (
+          {topOpportunities.map((item) => (
             <div key={item.id} className="rounded-2xl border border-zinc-800 p-4">
               <div className="text-sm font-medium text-zinc-50">{item.name}</div>
               <div className="mt-1 text-sm text-zinc-400">{item.organization ?? "Independent"}</div>
               <div className="mt-2 text-xs text-zinc-500">
                 {item.status} • Prestige {item.prestigeScore ?? "—"} • Value ${item.valueEstimate ?? 0}
               </div>
+              {item.nextStep && (
+                <div className="mt-2 text-xs text-zinc-400">Next: {item.nextStep}</div>
+              )}
             </div>
           ))}
         </div>
@@ -48,3 +53,15 @@ export function OpportunityRadarPanel({ data }: Props) {
   );
 }
 
+function dedupeOpportunities<T extends { name: string; organization: string | null }>(items: T[]) {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const item of items) {
+    const key = `${item.name}|${item.organization ?? ""}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+    if (unique.length >= 5) break;
+  }
+  return unique;
+}

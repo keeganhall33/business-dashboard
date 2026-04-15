@@ -63,6 +63,57 @@ export type OpportunityRadar = {
   nextFiveMoves: string[];
 };
 
+export type CollectorRelationship = {
+  id: string;
+  name: string;
+  tier: "A" | "B" | string;
+  status: string | null;
+  lastOutreachAt: string | null;
+  nextMove: string | null;
+  nextMoveDueAt: string | null;
+  estimatedValue: number | null;
+};
+
+export type SurvivalStrip = {
+  configured: boolean;
+  cashOnHand: number | null;
+  survivalFloor: number;
+  monthlyBurn: number | null;
+  projected30dRevenue: number | null;
+  runwayDays: number | null;
+};
+
+export type PipelinePanel = {
+  collectors: CollectorRelationship[];
+  deals: Opportunity[];
+};
+
+export type WarRoomEntry = {
+  id: string;
+  title: string;
+  summary: string;
+  detailMd?: string | null;
+  createdAt: string;
+};
+
+export type WarRoomState = {
+  mode: "normal" | "war_room";
+  reason: string | null;
+  lastUpdated: string | null;
+  entries: WarRoomEntry[];
+};
+
+export type AgentUpdateFeedItem = {
+  id: string;
+  agentKey: string;
+  agentName: string;
+  updateType: string;
+  title: string;
+  summary: string;
+  priority?: string | null;
+  createdAt: string;
+};
+
 export type TaskSummary = {
   id: string;
   title: string;
@@ -72,6 +123,61 @@ export type TaskSummary = {
   expectedImpact: string | null;
   impactScore: number | null;
   requiresApproval: boolean;
+  description?: string | null;
+  deliverableSummary?: string | null;
+  whyThisMatters?: string | null;
+  relatedMetricKeys?: string[] | null;
+  expectedDurationDays?: number | null;
+  createdAt?: string | null;
+};
+
+export type SchedulerJobHealth = {
+  jobKey: string;
+  jobName: string;
+  cronExpression: string;
+  routePath: string;
+  lastRunAt: string | null;
+  lastStatus: "running" | "completed" | "failed" | string | null;
+  lastDurationSeconds: number | null;
+  nextRunAt: string | null;
+};
+
+export type AgentSlaSnapshot = {
+  agentKey: string;
+  lastRunAt: string | null;
+  minutesSinceRun: number | null;
+  nextRunDueAt: string | null;
+  inProgressShare: number | null;
+};
+
+export type ApprovalBottleneck = {
+  pendingCount: number;
+  oldestPendingHours: number | null;
+  tasks: TaskSummary[];
+};
+
+export type ActionQueueItem = {
+  id: string;
+  itemType: "task" | "plan" | "decision" | "invoice";
+  title: string;
+  summary: string | null;
+  createdAt: string | null;
+  dueAt: string | null;
+  actor?: string | null;
+  priority?: string | null;
+};
+
+export type ActionQueueSection = {
+  label: string;
+  count: number;
+  items: ActionQueueItem[];
+};
+
+export type ActionQueue = {
+  needsApprovalTasks: ActionQueueSection;
+  pendingPlans: ActionQueueSection;
+  decisionsDue: ActionQueueSection;
+  invoicesToSend: ActionQueueSection;
 };
 
 export type AgentHealth = {
@@ -165,10 +271,18 @@ export type DashboardOverviewResponse = {
   };
   headerMetrics: HeaderMetric[];
   executiveCommand: ExecutiveCommand;
+  warRoom: WarRoomState;
   revenueEngine: RevenueEngine;
   brandPower: BrandPower;
   opportunityRadar: OpportunityRadar;
+  pipelinePanel: PipelinePanel;
+  survivalStrip: SurvivalStrip;
   tasks: TaskSummary[];
+  schedulerJobs: SchedulerJobHealth[];
+  agentSla: AgentSlaSnapshot[];
+  approvalBottlenecks: ApprovalBottleneck;
+  actionQueue: ActionQueue;
   systemHealth: SystemHealth;
+  agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
 };

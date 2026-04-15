@@ -31,12 +31,18 @@ type AgentUpdateRow = {
 type TaskRow = {
   id: string;
   title: string;
+  description?: string | null;
+  agent_key: string;
   priority: string;
   status: string;
   expected_impact: string | null;
+  impact_score: number | null;
   why_this_matters: string | null;
   related_metric_keys: string[];
   requires_approval: boolean;
+  expected_duration_days?: number | null;
+  created_at?: string | null;
+  result_summary?: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -96,17 +102,8 @@ export async function GET(_req: Request, context: { params: Promise<{ agentKey: 
         priority: u.priority,
         createdAt: u.created_at
       })),
-      openTasks: (openTasks.items as TaskRow[]).map((t) => ({
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        status: t.status,
-        expectedImpact: t.expected_impact,
-        whyThisMatters: t.why_this_matters,
-        relatedMetricKeys: t.related_metric_keys,
-        requiresApproval: t.requires_approval
-      })),
-      completedTasks: completedTasks.items,
+      openTasks: (openTasks.items as TaskRow[]).map(mapTask),
+      completedTasks: (completedTasks.items as TaskRow[]).map(mapTask),
       weeklyOutputRequirements: { weekly: ["3 revenue insights", "3 actions", "1 pricing recommendation"] },
       planQueue: {
         pending: mapPlan(plans.find((p) => p.status === "pending") ?? null),
@@ -133,6 +130,25 @@ export async function GET(_req: Request, context: { params: Promise<{ agentKey: 
       message: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+function mapTask(task: TaskRow) {
+  return {
+    id: task.id,
+    title: task.title,
+    agentKey: task.agent_key,
+    priority: task.priority,
+    status: task.status,
+    expectedImpact: task.expected_impact,
+    impactScore: task.impact_score ?? null,
+    requiresApproval: task.requires_approval,
+    description: task.description ?? null,
+    deliverableSummary: task.result_summary ?? null,
+    whyThisMatters: task.why_this_matters,
+    relatedMetricKeys: task.related_metric_keys ?? [],
+    expectedDurationDays: task.expected_duration_days ?? null,
+    createdAt: task.created_at ?? null
+  };
 }
 
 function mapPlan(plan: Record<string, unknown> | null | undefined) {

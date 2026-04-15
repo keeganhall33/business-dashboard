@@ -3,6 +3,8 @@ import { withJobRun } from "./jobLogger";
 import { runStaleChecks } from "./staleChecks";
 import { evaluateWarRoomMode } from "./warRoom";
 import { writeDashboardSnapshotMeta } from "./stateWriters";
+import { publishAgentStatusSnapshot } from "@/lib/agents/shared";
+import { agentKeys } from "@/lib/types/requests";
 
 export async function runDailyHealthCheck() {
   return withJobRun({
@@ -17,6 +19,8 @@ export async function runDailyHealthCheck() {
         mode: warRoom.mode,
         lastRefreshedAt: new Date().toISOString()
       });
+
+      await Promise.all(agentKeys.map((agentKey) => publishAgentStatusSnapshot(agentKey)));
 
       return {
         rulesEvaluated: rules.rulesEvaluated,

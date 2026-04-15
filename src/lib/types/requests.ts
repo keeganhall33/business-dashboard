@@ -1,6 +1,13 @@
 export const agentKeys = ["avery", "sloan", "lyra", "noah"] as const;
 export type AgentKey = (typeof agentKeys)[number];
 
+export const agentDisplayNames: Record<AgentKey, string> = {
+  avery: "Avery",
+  sloan: "Sloan",
+  lyra: "Lyra",
+  noah: "Noah"
+};
+
 export const taskPriorities = ["critical", "high", "medium", "low"] as const;
 export type TaskPriority = (typeof taskPriorities)[number];
 
