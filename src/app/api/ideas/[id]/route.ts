@@ -1,19 +1,20 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
-import { completeTask } from "@/lib/supabase/queries";
+import { updateIdeaStatus } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
-import { completeTaskSchema } from "@/lib/validation/tasks";
+import { updateIdeaStatusSchema } from "@/lib/validation/ideas";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const parsed = await parseJsonBody(request, completeTaskSchema);
+    const parsed = await parseJsonBody(request, updateIdeaStatusSchema);
     if (!parsed.success) return validationError(parsed.error.message, parsed.error.issues);
 
-    const task = await completeTask(id, parsed.data.resultSummary, parsed.data.attachments);
-    return ok({ ok: true, task });
+    const idea = await updateIdeaStatus({ id, status: parsed.data.status, approver: parsed.data.approver ?? null });
+    return ok({ ok: true, idea });
   } catch (error) {
-    return serverError("Failed to complete task", {
+    return serverError("Failed to update idea", {
       message: error instanceof Error ? error.message : String(error)
     });
   }
 }
+

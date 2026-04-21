@@ -1,19 +1,24 @@
 import {
   createAgentPlan,
   createAgentUpdate,
+  createAgentIdea,
+  createAgentKpiReading,
   createOpportunity,
   createTask,
   createAgentMessage,
   createOutcomeMemory,
   createResearchMemory,
+  getAgentDailyIdeaQuotaForDate,
+  getLatestAgentKpiReading,
   getActiveOpportunities,
   getAgentTasksByStatus,
-  getLatestScoreboardMetrics,
+  getScoreboardMetricsForRange,
   getOpenTasks,
   getRecentOutcomeMemory,
   getRecentResearchMemory,
   getOrCreateAgentThread,
-  findOpenTaskByTitle
+  findOpenTaskByTitle,
+  upsertAgentKpiDefinition
 } from "@/lib/supabase/queries";
 
 export type AgentRunResult = {
@@ -36,15 +41,167 @@ export type ScoreboardMetric = {
   owner_agent: string | null;
   current_value: number | string | null;
   measured_at: string | null;
+  history?: ScoreboardMetricHistoryEntry[];
+  stats?: ScoreboardMetricStats | null;
 };
+
+export type ScoreboardMetricHistoryEntry = {
+  measured_at: string;
+  value: number | null;
+};
+
+export type ScoreboardMetricStats = {
+  average: number | null;
+  min: number | null;
+  max: number | null;
+  changePercent: number | null;
+};
+
+function formatDateIso(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function coerceNumberValue(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[%,$]/g, "").trim();
+    if (!cleaned) return null;
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+export function metricSnapshot(metrics: ScoreboardMetric[], metricKey: string) {
+  const metric = metrics.find((m) => m.metric_key === metricKey);
+  if (!metric) return null;
+  return {
+    metric,
+    current: coerceNumberValue(metric.current_value),
+    target: coerceNumberValue(metric.target_value),
+    average: metric.stats?.average ?? null,
+    changePercent: metric.stats?.changePercent ?? null
+  };
+}
+
+export function formatUsd(value: number | null | undefined, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
+}
+
+export function formatPercent(value: number | null | undefined, digits = 1) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+  const formatted = value.toFixed(digits);
+  return `${value >= 0 ? "+" : ""}${formatted}%`;
+}
+
+export function formatNumberValue(value: number | null | undefined, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+  return value.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+
+function parseNumeric(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[%,$]/g, "").trim();
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+function startOfUtcDay(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function sameUtcDay(a: string, b: string) {
+  const da = startOfUtcDay(new Date(a));
+  const db = startOfUtcDay(new Date(b));
+  return da.getTime() === db.getTime();
+}
+
+/**
+ * Minimal autonomy hooks:
+ * - Ensure the agent logs at least 1 idea/day (agent_ideas)
+ * - Ensure the agent records KPI readings/day (agent_kpi_readings)
+ */
+export async function ensureDailyIdeaAndKpis(input: {
+  agentKey: string;
+  metrics: ScoreboardMetric[];
+  fallbackIdeaTitle: string;
+  fallbackIdeaSummary?: string;
+}) {
+  const today = new Date();
+
+  // ---- Idea quota (>= 1/day)
+  const quotaRows = await getAgentDailyIdeaQuotaForDate({ agentKey: input.agentKey, date: today });
+  const metQuota = quotaRows[0]?.met_quota ?? false;
+
+  if (!metQuota) {
+    await createAgentIdea({
+      agentKey: input.agentKey,
+      ideaType: "minor",
+      title: input.fallbackIdeaTitle,
+      summary: input.fallbackIdeaSummary ?? "Autologged idea to satisfy daily quota.",
+      expectedImpact: null,
+      status: "proposed",
+      requiresCeoApproval: false
+    });
+  }
+
+  // ---- KPI readings
+  // Prefer metrics explicitly owned by this agent; fall back to the most important business metrics.
+  const owned = input.metrics.filter((m) => (m.owner_agent ?? "").toLowerCase() === input.agentKey.toLowerCase());
+  const fallbackKeys = new Set(["aov", "conversion_rate", "monthly_revenue", "pipeline_count"]);
+  const fallback = input.metrics.filter((m) => fallbackKeys.has(m.metric_key));
+  const candidates = [...owned, ...fallback]
+    .filter((m, idx, arr) => arr.findIndex((x) => x.metric_key === m.metric_key) === idx)
+    .slice(0, 3);
+
+  for (const metric of candidates) {
+    const kpiKey = `${input.agentKey}:${metric.metric_key}`;
+    await upsertAgentKpiDefinition({
+      kpiKey,
+      agentKey: input.agentKey,
+      kpiName: metric.metric_name ?? metric.metric_key,
+      description: `Autotracked from scoreboard metric '${metric.metric_key}'.`,
+      targetValue: parseNumeric(metric.target_value),
+      unit: metric.unit,
+      frequency: "daily",
+      priority: "medium"
+    });
+
+    const latest = await getLatestAgentKpiReading(kpiKey);
+    const measuredAtIso = metric.measured_at ?? new Date().toISOString();
+
+    // Keep it to one reading/day per KPI to prevent spam.
+    if (latest?.measured_at && sameUtcDay(latest.measured_at as string, measuredAtIso)) {
+      continue;
+    }
+
+    await createAgentKpiReading({
+      kpiKey,
+      value: parseNumeric(metric.current_value),
+      measuredAtIso,
+      source: "scoreboard",
+      notes: null
+    });
+  }
+}
 
 export async function getSharedAgentContext() {
   return getSharedAgentContextForAgent();
 }
 
 export async function getSharedAgentContextForAgent(agentKey?: string) {
+  const endDate = new Date();
+  const startDate = new Date(endDate);
+  startDate.setUTCDate(startDate.getUTCDate() - 44);
+  const range = { startDate: formatDateIso(startDate), endDate: formatDateIso(endDate) };
   const [metrics, tasks, opportunities, researchMemory, outcomeMemory] = await Promise.all([
-    getLatestScoreboardMetrics() as Promise<ScoreboardMetric[]>,
+    getScoreboardMetricsForRange(range) as Promise<ScoreboardMetric[]>,
     getOpenTasks(50),
     getActiveOpportunities(25),
     getRecentResearchMemory({ agentKey, limit: 15 }),

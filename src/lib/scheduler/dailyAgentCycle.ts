@@ -5,6 +5,7 @@ import { runAvery } from "@/lib/agents/avery";
 import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 import type { AgentRunResult } from "@/lib/agents/shared";
 import { withJobRun } from "./jobLogger";
+import { runAveryQuestionEscalations } from "./ceoQuestions";
 
 const sequence = ["sloan", "lyra", "noah", "avery"] as const;
 
@@ -54,9 +55,12 @@ export async function runDailyAgentCycle() {
         }
       }
 
+      const ceoQuestions = await runAveryQuestionEscalations();
+
       return {
         sequence,
-        outputs
+        outputs,
+        ceoQuestions
       };
     },
     summarize: (result) => ({

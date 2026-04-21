@@ -1,4 +1,5 @@
 import { notFound, ok, serverError } from "@/lib/api/responses";
+import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
 import {
   getAgentProfile,
   getAgentUpdates,
@@ -43,6 +44,8 @@ type TaskRow = {
   expected_duration_days?: number | null;
   created_at?: string | null;
   result_summary?: string | null;
+  deliverable_links?: unknown;
+  completed_at?: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -144,10 +147,12 @@ function mapTask(task: TaskRow) {
     requiresApproval: task.requires_approval,
     description: task.description ?? null,
     deliverableSummary: task.result_summary ?? null,
+    deliverableLinks: normalizeDeliverableLinks(task.deliverable_links),
     whyThisMatters: task.why_this_matters,
     relatedMetricKeys: task.related_metric_keys ?? [],
     expectedDurationDays: task.expected_duration_days ?? null,
-    createdAt: task.created_at ?? null
+    createdAt: task.created_at ?? null,
+    completedAt: task.completed_at ?? null
   };
 }
 

@@ -1,6 +1,8 @@
 import { withJobRun } from "./jobLogger";
 import { getTasksAwaitingApproval, getRecentTasks } from "@/lib/supabase/queries";
 import { runStaleChecks } from "./staleChecks";
+import { enforceDailyIdeaQuotas } from "./ideaQuota";
+import { createOrUpdateAlert, makeAlertDedupeKey, resolveAlertByKey } from "./alerting";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -33,6 +35,34 @@ export async function runEveningCloseout() {
       );
 
       const stale = await runStaleChecks();
+      const ideaQuota = await enforceDailyIdeaQuotas({ source: "evening-closeout" });
+
+      // Enforcement alerts
+      const approvalsKey = makeAlertDedupeKey(["evening_closeout", "pending_approvals"]);
+      if (awaitingApproval.length > 0) {
+        await createOrUpdateAlert({
+          alertType: "evening_closeout",
+          severity: awaitingApproval.length > 10 ? "high" : "medium",
+          title: "Pending approvals at closeout",
+          summary: `${awaitingApproval.length} task(s) awaiting approval.`,
+          dedupeKey: approvalsKey
+        });
+      } else {
+        await resolveAlertByKey(approvalsKey);
+      }
+
+      const staleCriticalKey = makeAlertDedupeKey(["evening_closeout", "critical_stale_tasks"]);
+      if (criticalTasksStale.length > 0) {
+        await createOrUpdateAlert({
+          alertType: "evening_closeout",
+          severity: "high",
+          title: "Critical tasks stale",
+          summary: `${criticalTasksStale.length} critical task(s) stale > 24h.`,
+          dedupeKey: staleCriticalKey
+        });
+      } else {
+        await resolveAlertByKey(staleCriticalKey);
+      }
 
       const summary = `System closed with ${criticalTasksStale.length} critical stale task(s) and ${awaitingApproval.length} pending approvals.`;
 
@@ -40,6 +70,8 @@ export async function runEveningCloseout() {
         pendingApprovals: awaitingApproval.length,
         criticalTasksStale: criticalTasksStale.length,
         alertsCreated: stale.alertsCreatedOrUpdated,
+        ideaQuotaMissingAgents: ideaQuota.missingAgents,
+        ideaQuotaAlertsCreated: ideaQuota.alertsCreatedOrUpdated,
         summary
       };
     },

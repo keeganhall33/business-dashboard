@@ -1,4 +1,5 @@
 import type { AgentDashboardResponse } from "@/lib/types/agent";
+import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 
 type Props = {
   agents: AgentDashboardResponse[];
@@ -32,6 +33,7 @@ function AgentBriefCard({ agent }: CardProps) {
   const actions = agent.recentUpdates.filter((update) => update.updateType === "action").slice(0, 2);
   const latestDeliverable = agent.completedTasks.find((task) => task.deliverableSummary);
   const lastUpdatedAt = agent.recentUpdates[0]?.createdAt ?? null;
+  const loggedAt = latestDeliverable?.completedAt ?? latestDeliverable?.createdAt ?? null;
 
   return (
     <div className="rounded-2xl border border-zinc-900 bg-zinc-950/85 p-4">
@@ -49,6 +51,8 @@ function AgentBriefCard({ agent }: CardProps) {
             <div className="mt-2 rounded-xl border border-emerald-900/50 bg-emerald-900/10 p-3 text-sm text-emerald-100">
               <div className="font-semibold">{latestDeliverable.title}</div>
               <p className="mt-1 whitespace-pre-line text-emerald-50">{latestDeliverable.deliverableSummary}</p>
+              <DeliverableAttachmentList attachments={latestDeliverable.deliverableLinks} tone="emerald" />
+              <div className="mt-1 text-xs text-emerald-200">Logged {loggedAt ? formatDate(loggedAt) : "recently"}</div>
             </div>
           ) : (
             <p className="mt-1 text-xs text-zinc-500">No deliverable recorded yet.</p>

@@ -1,4 +1,5 @@
 import { ok, serverError } from "@/lib/api/responses";
+import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -16,7 +17,13 @@ import {
   getDecisionsRequiringReview,
   getLatestFinanceSnapshot,
   getCollectorRelationships,
-  getRecentTasks
+  getRecentTasks,
+  listAgentKpis,
+  listLatestAgentKpiReadingsByKpiKeys,
+  getIdeas,
+  getRecentIdeaComments,
+  getCeoQuestions,
+  getRecentCeoQuestionComments
 } from "@/lib/supabase/queries";
 import { RangePreset } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
@@ -30,6 +37,20 @@ type ScoreboardMetricRow = {
   unit: string | null;
   owner_agent: string | null;
   measured_at: string | null;
+  history?: ScoreboardMetricHistoryEntry[];
+  stats?: ScoreboardMetricStats | null;
+};
+
+type ScoreboardMetricHistoryEntry = {
+  measured_at: string;
+  value: number | null;
+};
+
+type ScoreboardMetricStats = {
+  average: number | null;
+  min: number | null;
+  max: number | null;
+  changePercent: number | null;
 };
 
 type TaskRow = {
@@ -48,6 +69,8 @@ type TaskRow = {
   created_at: string;
   execution_type?: string | null;
   result_summary?: string | null;
+  deliverable_links?: unknown;
+  completed_at?: string | null;
 };
 
 type OpportunityRow = {
@@ -115,6 +138,75 @@ type CollectorRow = {
   estimated_value: number | null;
 };
 
+type AgentKpiRow = {
+  kpi_key: string;
+  agent_key: string;
+  kpi_name: string;
+  description: string | null;
+  target_value: number | string | null;
+  unit: string | null;
+  frequency: string | null;
+  priority: string | null;
+};
+
+type AgentKpiReadingRow = {
+  id: string;
+  kpi_key: string;
+  value: number | string | null;
+  measured_at: string;
+  source: string | null;
+  notes: string | null;
+};
+
+type IdeaRow = {
+  id: string;
+  agent_key: string;
+  idea_type: string;
+  title: string;
+  summary: string | null;
+  expected_impact: number | null;
+  status: string;
+  requires_ceo_approval: boolean;
+  approver: string | null;
+  approved_at: string | null;
+  linked_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type IdeaCommentRow = {
+  id: string;
+  idea_id: string;
+  commenter: string;
+  comment: string;
+  created_at: string;
+};
+
+type CeoQuestionRow = {
+  id: string;
+  asked_by: string;
+  escalation_level: string;
+  question: string;
+  context: string | null;
+  status: string;
+  priority: string | null;
+  owner_agent: string | null;
+  due_at: string | null;
+  answered_by: string | null;
+  answered_at: string | null;
+  escalated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type CeoQuestionCommentRow = {
+  id: string;
+  question_id: string;
+  commenter: string;
+  body: string;
+  created_at: string;
+};
+
 function isScoreboardMetricRow(value: ScoreboardMetricRow | undefined | null): value is ScoreboardMetricRow {
   return Boolean(value);
 }
@@ -148,10 +240,12 @@ function mapTaskRowToSummary(task: TaskRow) {
     requiresApproval: task.requires_approval,
     description: task.description ?? null,
     deliverableSummary: task.result_summary ?? null,
+    deliverableLinks: normalizeDeliverableLinks(task.deliverable_links),
     whyThisMatters: task.why_this_matters ?? null,
     relatedMetricKeys: task.related_metric_keys ?? null,
     expectedDurationDays: task.expected_duration_days,
-    createdAt: task.created_at ?? null
+    createdAt: task.created_at ?? null,
+    completedAt: task.completed_at ?? null
   };
 }
 
@@ -226,7 +320,12 @@ export async function GET(request: Request) {
       decisionsDue,
       financeSnapshot,
       collectorRows,
-      recentTasks
+      recentTasks,
+      kpiDefinitions,
+      ideaResult,
+      recentIdeaComments,
+      ceoQuestionResult,
+      recentCeoComments
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -241,8 +340,121 @@ export async function GET(request: Request) {
       getDecisionsRequiringReview({ withinDays: 21, limit: 20 }),
       getLatestFinanceSnapshot(),
       getCollectorRelationships(12),
-      getRecentTasks(40)
+      getRecentTasks(40),
+      listAgentKpis({ limit: 250 }) as Promise<AgentKpiRow[]>,
+      getIdeas({ limit: 250 }) as Promise<{ items: IdeaRow[]; count: number }>,
+      getRecentIdeaComments(30) as Promise<IdeaCommentRow[]>,
+      getCeoQuestions({ limit: 250 }) as Promise<{ items: CeoQuestionRow[]; count: number }>,
+      getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>
     ]);
+
+    const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
+    const kpiReadings = (await listLatestAgentKpiReadingsByKpiKeys(kpiKeys)) as AgentKpiReadingRow[];
+    const latestReadingByKey = new Map(kpiReadings.map((r) => [r.kpi_key, r]));
+
+    const agentKpis = agentKeys.map((agentKey) => {
+      const defs = (kpiDefinitions as AgentKpiRow[]).filter((kpi) => kpi.agent_key === agentKey);
+      return {
+        agentKey,
+        agentName: agentDisplayNames[agentKey as keyof typeof agentDisplayNames] ?? agentKey,
+        kpis: defs.map((kpi) => {
+          const latest = latestReadingByKey.get(kpi.kpi_key);
+          return {
+            kpiKey: kpi.kpi_key,
+            kpiName: kpi.kpi_name,
+            description: kpi.description,
+            targetValue: toNumber(kpi.target_value),
+            unit: kpi.unit,
+            frequency: kpi.frequency,
+            priority: kpi.priority,
+            latestReading: latest
+              ? {
+                  id: latest.id,
+                  value: toNumber(latest.value),
+                  measuredAt: latest.measured_at,
+                  source: latest.source,
+                  notes: latest.notes
+                }
+              : null
+          };
+        })
+      };
+    });
+
+    const ideas = (ideaResult as { items: IdeaRow[] }).items;
+    const ideaBoardStatuses = [
+      "proposed",
+      "in_review",
+      "approved",
+      "rejected",
+      "in_progress",
+      "shipped",
+      "archived"
+    ];
+    const ideaBoard = ideaBoardStatuses.reduce<Record<string, unknown>>((acc, status) => {
+      acc[status] = ideas
+        .filter((idea) => idea.status === status)
+        .slice(0, 50)
+        .map((idea) => ({
+          id: idea.id,
+          agentKey: idea.agent_key,
+          agentName: agentDisplayNames[idea.agent_key as keyof typeof agentDisplayNames] ?? idea.agent_key,
+          ideaType: idea.idea_type,
+          title: idea.title,
+          summary: idea.summary,
+          expectedImpact: idea.expected_impact,
+          requiresCeoApproval: idea.requires_ceo_approval,
+          linkedTaskId: idea.linked_task_id,
+          approvedAt: idea.approved_at,
+          approver: idea.approver,
+          updatedAt: idea.updated_at,
+          createdAt: idea.created_at
+        }));
+      return acc;
+    }, {});
+
+    const ceoQuestions = (ceoQuestionResult as { items: CeoQuestionRow[] }).items;
+    const openQuestions = ceoQuestions
+      .filter((q) => ["open", "needs_followup"].includes(q.status))
+      .slice(0, 25)
+      .map((q) => ({
+        id: q.id,
+        askedBy: q.asked_by,
+        escalationLevel: q.escalation_level,
+        question: q.question,
+        context: q.context,
+        status: q.status,
+        priority: q.priority,
+        ownerAgent: q.owner_agent,
+        dueAt: q.due_at,
+        createdAt: q.created_at,
+        updatedAt: q.updated_at
+      }));
+    const escalations = ceoQuestions
+      .filter((q) => q.escalation_level === "keegan" && ["open", "needs_followup"].includes(q.status))
+      .slice(0, 25)
+      .map((q) => ({
+        id: q.id,
+        askedBy: q.asked_by,
+        question: q.question,
+        status: q.status,
+        priority: q.priority,
+        dueAt: q.due_at,
+        escalatedBy: q.escalated_by,
+        updatedAt: q.updated_at
+      }));
+
+    const ceoQuestionDesk = {
+      openQuestions,
+      escalations,
+      recentComments: (recentCeoComments as CeoQuestionCommentRow[]).map((c) => ({
+        id: c.id,
+        questionId: c.question_id,
+        commenter: c.commenter,
+        body: c.body,
+        createdAt: c.created_at
+      }))
+    };
 
     const [warRoomThread, agentUpdateBuckets] = await Promise.all([
       getOrCreateAgentThread({ agentKey: "avery", threadType: "war_room", title: "Executive War Room" }),
@@ -636,22 +848,40 @@ export async function GET(request: Request) {
       estimatedValue: collector.estimated_value
     }));
 
-    const pipelineDeals = opportunities
-      .filter((o) => !["won", "lost", "parked"].includes(o.status))
-      .slice(0, 6)
-      .map((o) => ({
-        id: o.id,
-        name: o.name,
-        organization: o.organization,
-        opportunityType: o.opportunity_type,
-        status: o.status,
-        valueEstimate: o.value_estimate,
-        prestigeScore: o.prestige_score,
-        probabilityScore: o.probability_score,
-        ownerAgent: o.owner_agent,
-        nextStep: o.next_step,
-        nextStepDueAt: o.next_step_due_at
-      }));
+    const pipelineDeals: {
+      id: string;
+      name: string;
+      organization: string | null;
+      opportunityType: string;
+      status: string;
+      valueEstimate: number | null;
+      prestigeScore: number | null;
+      probabilityScore: number | null;
+      ownerAgent: string;
+      nextStep: string | null;
+      nextStepDueAt: string | null;
+    }[] = [];
+    const seenPipelineDeals = new Set<string>();
+    for (const opportunity of opportunities) {
+      if (["won", "lost", "parked"].includes(opportunity.status)) continue;
+      const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
+      if (seenPipelineDeals.has(dedupeKey)) continue;
+      seenPipelineDeals.add(dedupeKey);
+      pipelineDeals.push({
+        id: opportunity.id,
+        name: opportunity.name,
+        organization: opportunity.organization,
+        opportunityType: opportunity.opportunity_type,
+        status: opportunity.status,
+        valueEstimate: opportunity.value_estimate,
+        prestigeScore: opportunity.prestige_score,
+        probabilityScore: opportunity.probability_score,
+        ownerAgent: opportunity.owner_agent,
+        nextStep: opportunity.next_step,
+        nextStepDueAt: opportunity.next_step_due_at
+      });
+      if (pipelineDeals.length >= 6) break;
+    }
 
     const pipelinePanel = {
       collectors: collectorSummaries,
@@ -694,7 +924,19 @@ export async function GET(request: Request) {
       actionQueue,
       systemHealth,
       agentUpdateFeed,
-      commerceTelemetry: commercePayload
+      commerceTelemetry: commercePayload,
+      agentKpis,
+      ideaBoard: {
+        columns: ideaBoard,
+        recentComments: (recentIdeaComments as IdeaCommentRow[]).map((c) => ({
+          id: c.id,
+          ideaId: c.idea_id,
+          commenter: c.commenter,
+          comment: c.comment,
+          createdAt: c.created_at
+        }))
+      },
+      ceoQuestionDesk
     });
   } catch (error) {
     return serverError("Failed to load overview", {

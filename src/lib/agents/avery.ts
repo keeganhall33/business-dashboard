@@ -1,7 +1,12 @@
 import {
   AgentRunResult,
+  ensureDailyIdeaAndKpis,
+  formatNumberValue,
+  formatPercent,
+  formatUsd,
   getSharedAgentContextForAgent,
   logWarRoomNote,
+  metricSnapshot,
   publishAgentStatusSnapshot,
   publishCeoDirective,
   submitAgentPlanDraft,
@@ -17,16 +22,24 @@ export async function runAvery(): Promise<AgentRunResult> {
     getAgentUpdates("noah", 5)
   ]);
 
-  const aov = metrics.find((m) => m.metric_key === "aov");
-  const conversion = metrics.find((m) => m.metric_key === "conversion_rate");
-  const pipeline = metrics.find((m) => m.metric_key === "active_brand_conversations");
+  const aov = metricSnapshot(metrics, "aov");
+  const conversion = metricSnapshot(metrics, "conversion_rate");
+  const pipeline = metricSnapshot(metrics, "active_brand_conversations");
   const directiveSummary =
-    "Shift the system toward pricing power, conversion clarity, and rapid partnership pipeline expansion.";
+    `Pricing, conversion, and pipeline are all below target: AOV 30d avg ${formatUsd(aov?.average)} (Δ ${formatPercent(
+      aov?.changePercent
+    )}), conversion ${formatPercent(conversion?.average)} (Δ ${formatPercent(conversion?.changePercent)}), active convos ${formatNumberValue(
+      pipeline?.average
+    )} (current ${formatNumberValue(pipeline?.current)}).`;
 
   const insights = [
     {
       title: "Revenue gap is still primarily structural",
-      summary: `AOV (${aov?.current_value}) and conversion (${conversion?.current_value}%) remain below target.`,
+      summary: `AOV 30d avg is ${formatUsd(aov?.average)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
+        aov?.current
+      )}, trend ${formatPercent(aov?.changePercent)}). Conversion 30d avg is ${formatPercent(
+        conversion?.average
+      )} vs target ${formatPercent(conversion?.target)}.`,
       detailMd:
         "The strongest path is not more noise. It is better offer structure and sharper brand presentation.",
       priority: "critical" as const,
@@ -34,14 +47,16 @@ export async function runAvery(): Promise<AgentRunResult> {
     },
     {
       title: "Pipeline expansion must accelerate",
-      summary: `Only ${pipeline?.current_value} active brand conversations are live.`,
+      summary: `Only ${formatNumberValue(pipeline?.current)} convos are live (30d avg ${formatNumberValue(
+        pipeline?.average
+      )}, Δ ${formatPercent(pipeline?.changePercent)}).`,
       detailMd: "The system needs more high-status opportunities entering the funnel.",
       priority: "critical" as const,
       relatedMetricKeys: ["active_brand_conversations"]
     },
     {
       title: "Cross-agent work must stay coordinated",
-      summary: "Brand, ecommerce, and research outputs need to converge on the same 2 to 3 priorities.",
+      summary: "Brand, ecommerce, and research outputs need to converge on the same 2 to 3 priorities backed by the 30d data trends above.",
       detailMd: `Recent output counts: Sloan ${sloanUpdates.length}, Lyra ${lyraUpdates.length}, Noah ${noahUpdates.length}.`,
       priority: "high" as const,
       relatedMetricKeys: []
@@ -153,14 +168,24 @@ export async function runAvery(): Promise<AgentRunResult> {
     detailMd: bigBet.detailMd,
     metadata: {
       metrics: {
-        aov: aov?.current_value ?? null,
-        conversion_rate: conversion?.current_value ?? null,
-        active_brand_conversations: pipeline?.current_value ?? null
+        aov_current: aov?.current ?? null,
+        aov_avg_30d: aov?.average ?? null,
+        conversion_rate_current: conversion?.current ?? null,
+        conversion_rate_avg_30d: conversion?.average ?? null,
+        active_brand_conversations_current: pipeline?.current ?? null,
+        active_brand_conversations_avg_30d: pipeline?.average ?? null
       }
     }
   });
 
   const status = await publishAgentStatusSnapshot("avery");
+
+  await ensureDailyIdeaAndKpis({
+    agentKey: "avery",
+    metrics,
+    fallbackIdeaTitle: "Kill low-leverage drift: enforce 3 weekly priorities",
+    fallbackIdeaSummary: directiveSummary
+  });
 
   return {
     summary: directiveSummary,

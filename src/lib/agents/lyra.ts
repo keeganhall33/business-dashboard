@@ -1,6 +1,10 @@
 import {
   AgentRunResult,
+  ensureDailyIdeaAndKpis,
+  formatNumberValue,
+  formatPercent,
   getSharedAgentContextForAgent,
+  metricSnapshot,
   publishAgentStatusSnapshot,
   submitAgentPlanDraft,
   writeAgentOutputs
@@ -8,13 +12,15 @@ import {
 
 export async function runLyra(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContextForAgent("lyra");
-  const engagement = metrics.find((m) => m.metric_key === "engagement_rate");
-  const cultural = metrics.find((m) => m.metric_key === "cultural_relevance_score");
+  const engagement = metricSnapshot(metrics, "engagement_rate");
+  const cultural = metricSnapshot(metrics, "cultural_relevance_score");
 
   const insights = [
     {
       title: "Brand engagement is too soft",
-      summary: `Engagement rate is ${engagement?.current_value}% versus target.`,
+      summary: `Engagement 30d avg is ${formatPercent(engagement?.average)} vs target ${formatPercent(
+        engagement?.target
+      )} (latest ${formatPercent(engagement?.current)}, Δ ${formatPercent(engagement?.changePercent)}).`,
       detailMd:
         "The brand likely needs sharper authority-based storytelling and stronger emotional positioning.",
       priority: "high" as const,
@@ -22,7 +28,9 @@ export async function runLyra(): Promise<AgentRunResult> {
     },
     {
       title: "Cultural relevance has room to rise",
-      summary: `Current internal relevance score is ${cultural?.current_value}.`,
+      summary: `Cultural relevance 30d avg is ${formatNumberValue(cultural?.average)} (latest ${formatNumberValue(
+        cultural?.current
+      )}, Δ ${formatPercent(cultural?.changePercent)}).`,
       detailMd: "The brand ceiling is high, but narrative pressure needs to increase.",
       priority: "high" as const,
       relatedMetricKeys: ["cultural_relevance_score"]
@@ -98,6 +106,13 @@ export async function runLyra(): Promise<AgentRunResult> {
   });
 
   const status = await publishAgentStatusSnapshot("lyra");
+
+  await ensureDailyIdeaAndKpis({
+    agentKey: "lyra",
+    metrics,
+    fallbackIdeaTitle: "Sharpen homepage narrative to increase authority + conversion",
+    fallbackIdeaSummary: "Tighten the Impossible in Pencil story hierarchy and prestige cues to lift conversion."
+  });
 
   return {
     summary: "Sharpened brand narrative and conversion messaging priorities.",

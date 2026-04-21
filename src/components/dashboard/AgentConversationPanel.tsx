@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { AgentDashboardResponse, AgentConversationMessage } from "@/lib/types/agent";
+import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 
 type Props = {
   agents: AgentDashboardResponse[];
@@ -174,8 +175,9 @@ function AgentConversationCard({ agent, expanded, onToggle }: CardProps) {
               <div className="mt-3 rounded-xl border border-emerald-900/40 bg-emerald-900/10 p-3">
                 <div className="text-sm font-semibold text-emerald-100">{latestDeliverable.title}</div>
                 <p className="mt-2 whitespace-pre-line text-sm text-emerald-50">{latestDeliverable.deliverableSummary}</p>
+                <DeliverableAttachmentList attachments={latestDeliverable.deliverableLinks} tone="emerald" />
                 <div className="mt-2 text-xs text-emerald-200">
-                  Logged {latestDeliverable.createdAt ? formatDate(latestDeliverable.createdAt) : "recently"}
+                  Logged {formatLoggedAt(latestDeliverable.completedAt ?? latestDeliverable.createdAt)}
                 </div>
               </div>
             ) : (
@@ -258,6 +260,11 @@ function formatDate(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatLoggedAt(value?: string | null) {
+  if (!value) return "recently";
+  return formatDate(value);
 }
 
 function summarizeMessage(body: string) {
