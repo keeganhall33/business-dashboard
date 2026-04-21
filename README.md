@@ -16,6 +16,26 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Scheduler jobs (Supabase Scheduled Functions / cron)
+
+The app exposes scheduler endpoints under `POST /api/scheduler/*`.
+
+All scheduler routes require the header:
+
+```
+x-scheduler-secret: <SCHEDULER_SECRET>
+```
+
+Jobs:
+
+- `POST /api/scheduler/daily-agent-cycle`
+- `POST /api/scheduler/daily-health-check`
+- `POST /api/scheduler/evening-closeout`
+- `POST /api/scheduler/weekly-command-cycle`
+- `POST /api/scheduler/midweek-opportunity-pulse`
+
+To run from Supabase Scheduled Functions (or any cron runner), schedule an HTTP request to the route and include `x-scheduler-secret`.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

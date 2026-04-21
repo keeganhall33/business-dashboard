@@ -9,8 +9,36 @@ import type {
   TaskStatus
 } from "@/lib/types/requests";
 
+type DeliverableLinkInput = {
+  label: string;
+  url: string;
+};
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function startOfUtcDayIso(date = new Date()) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  return d.toISOString();
+}
+
+function addDaysIso(iso: string, days: number) {
+  const d = new Date(iso);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString();
+}
+
+function coerceNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[%,$]/g, "").trim();
+    if (!cleaned) return null;
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
 }
 
 // -----------------------------
@@ -43,6 +71,7 @@ export async function getScoreboardMetricsForRange(range: { startDate: string; e
   if (readings.error) throw readings.error;
 
   const readingByKey = new Map<string, { current_value: number | string | null; measured_at: string }>();
+  const historyByKey = new Map<string, Array<{ measured_at: string; value: number | null }>>();
   for (const reading of readings.data ?? []) {
     if (!readingByKey.has(reading.metric_key)) {
       readingByKey.set(reading.metric_key, {
@@ -50,11 +79,38 @@ export async function getScoreboardMetricsForRange(range: { startDate: string; e
         measured_at: reading.measured_at
       });
     }
+    const entry = { measured_at: reading.measured_at, value: coerceNumber(reading.current_value) };
+    const existingHistory = historyByKey.get(reading.metric_key);
+    if (existingHistory) {
+      existingHistory.push(entry);
+    } else {
+      historyByKey.set(reading.metric_key, [entry]);
+    }
   }
 
   const fallbackByKey = new Map(latest.map((metric) => [metric.metric_key, metric]));
 
+  const computeStats = (entries: Array<{ value: number | null }>) => {
+    const numericValues = entries
+      .map((entry) => entry.value)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (!numericValues.length) return null;
+    const average = numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length;
+    const min = Math.min(...numericValues);
+    const max = Math.max(...numericValues);
+    const newest = entries[0]?.value ?? null;
+    const oldest = entries[entries.length - 1]?.value ?? null;
+    const changePercent =
+      oldest != null && newest != null && Math.abs(oldest) > 0.0001
+        ? ((newest - oldest) / Math.abs(oldest)) * 100
+        : null;
+    return { average, min, max, changePercent };
+  };
+
   return (definitions.data ?? []).map((definition) => {
+    const historyDesc = historyByKey.get(definition.metric_key) ?? [];
+    const stats = computeStats(historyDesc);
+    const history = historyDesc.slice().reverse();
     const reading = readingByKey.get(definition.metric_key);
     if (reading) {
       return {
@@ -65,21 +121,31 @@ export async function getScoreboardMetricsForRange(range: { startDate: string; e
         target_value: definition.target_value,
         owner_agent: definition.owner_agent,
         current_value: reading.current_value,
-        measured_at: reading.measured_at
+        measured_at: reading.measured_at,
+        history,
+        stats
       };
     }
 
     const fallback = fallbackByKey.get(definition.metric_key);
-    return fallback ?? {
-      metric_key: definition.metric_key,
-      metric_name: definition.metric_name,
-      category: definition.category,
-      unit: definition.unit,
-      target_value: definition.target_value,
-      owner_agent: definition.owner_agent,
-      current_value: null,
-      measured_at: null
-    };
+    return fallback
+      ? {
+          ...fallback,
+          history,
+          stats
+        }
+      : {
+          metric_key: definition.metric_key,
+          metric_name: definition.metric_name,
+          category: definition.category,
+          unit: definition.unit,
+          target_value: definition.target_value,
+          owner_agent: definition.owner_agent,
+          current_value: null,
+          measured_at: null,
+          history,
+          stats
+        };
   });
 }
 
@@ -259,7 +325,7 @@ export async function updateTaskStatus(id: string, nextStatus: TaskStatus) {
   return data;
 }
 
-export async function completeTask(id: string, resultSummary: string) {
+export async function completeTask(id: string, resultSummary: string, attachments?: DeliverableLinkInput[]) {
   const supabase = getSupabaseServerClient();
   // enforce transition through updateTaskStatus
   await updateTaskStatus(id, "completed");
@@ -268,6 +334,7 @@ export async function completeTask(id: string, resultSummary: string) {
     .from("task_queue")
     .update({
       result_summary: resultSummary,
+      deliverable_links: (attachments ?? []).map((link) => ({ label: link.label, url: link.url })),
       completed_at: nowIso()
     })
     .eq("id", id)
@@ -1160,6 +1227,169 @@ export async function getLatestAgentDirective() {
 }
 
 // -----------------------------
+// Agent ideas
+// -----------------------------
+
+export async function createAgentIdea(input: {
+  agentKey: AgentKey | string;
+  ideaType: "minor" | "major";
+  title: string;
+  summary?: string;
+  expectedImpact?: number | null;
+  status?:
+    | "proposed"
+    | "in_review"
+    | "approved"
+    | "rejected"
+    | "in_progress"
+    | "shipped"
+    | "archived";
+  requiresCeoApproval?: boolean;
+  linkedTaskId?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_ideas")
+    .insert({
+      agent_key: input.agentKey,
+      idea_type: input.ideaType,
+      title: input.title,
+      summary: input.summary ?? null,
+      expected_impact: input.expectedImpact ?? null,
+      status: input.status ?? "proposed",
+      requires_ceo_approval: input.requiresCeoApproval ?? false,
+      linked_task_id: input.linkedTaskId ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export type AgentDailyIdeaQuotaRow = {
+  agent_key: string;
+  idea_date: string;
+  ideas_logged: number;
+  required_ideas: number;
+  met_quota: boolean;
+};
+
+export async function getAgentDailyIdeaQuotaForDate(input?: { agentKey?: string; date?: Date }) {
+  const supabase = getSupabaseServerClient();
+  const dayStart = startOfUtcDayIso(input?.date);
+  const dayEnd = addDaysIso(dayStart, 1);
+
+  let query = supabase
+    .from("agent_daily_idea_quota")
+    .select("*")
+    .gte("idea_date", dayStart)
+    .lt("idea_date", dayEnd);
+
+  if (input?.agentKey) query = query.eq("agent_key", input.agentKey);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as AgentDailyIdeaQuotaRow[];
+}
+
+// -----------------------------
+// Agent KPIs
+// -----------------------------
+
+export async function upsertAgentKpiDefinition(input: {
+  kpiKey: string;
+  agentKey: AgentKey | string;
+  kpiName: string;
+  description?: string | null;
+  targetValue?: number | null;
+  unit?: string | null;
+  frequency?: string | null;
+  priority?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_kpis")
+    .upsert(
+      {
+        kpi_key: input.kpiKey,
+        agent_key: input.agentKey,
+        kpi_name: input.kpiName,
+        description: input.description ?? null,
+        target_value: input.targetValue ?? null,
+        unit: input.unit ?? null,
+        frequency: input.frequency ?? null,
+        priority: input.priority ?? null
+      },
+      { onConflict: "kpi_key" }
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createAgentKpiReading(input: {
+  kpiKey: string;
+  value: number | null;
+  measuredAtIso?: string;
+  source?: string | null;
+  notes?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_kpi_readings")
+    .insert({
+      kpi_key: input.kpiKey,
+      value: input.value,
+      measured_at: input.measuredAtIso ?? nowIso(),
+      source: input.source ?? null,
+      notes: input.notes ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getLatestAgentKpiReading(kpiKey: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_kpi_readings")
+    .select("*")
+    .eq("kpi_key", kpiKey)
+    .order("measured_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
+// -----------------------------
+// CEO questions
+// -----------------------------
+
+export type CeoQuestionStatus = "open" | "answered" | "needs_followup" | "closed";
+export type CeoQuestionEscalationLevel = "avery" | "keegan";
+
+export async function escalateCeoQuestion(input: {
+  id: string;
+  escalationLevel: CeoQuestionEscalationLevel;
+  escalatedBy: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("ceo_questions")
+    .update({
+      escalation_level: input.escalationLevel,
+      escalated_by: input.escalatedBy
+    })
+    .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// -----------------------------
 // Research & outcome memory
 // -----------------------------
 
@@ -1289,4 +1519,298 @@ export async function getRecentOutcomeMemory(options?: {
 
 export async function getRecentOpportunitiesForPulse(limit = 200) {
   return getRecentOpportunities(limit);
+}
+
+// -----------------------------
+// Agent KPI tracking
+// -----------------------------
+
+export async function listAgentKpis(options?: { agentKey?: string; limit?: number }) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("agent_kpis")
+    .select("*")
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(options?.limit ?? 250);
+
+  if (options?.agentKey) query = query.eq("agent_key", options.agentKey);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function listLatestAgentKpiReadingsByKpiKeys(kpiKeys: string[]) {
+  if (!kpiKeys.length) return [];
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_kpi_readings")
+    .select("id,kpi_key,value,measured_at,source,notes")
+    .in("kpi_key", kpiKeys)
+    .order("measured_at", { ascending: false })
+    .limit(Math.min(1000, kpiKeys.length * 10));
+  if (error) throw error;
+
+  // Deduplicate to latest per kpi_key
+  const seen = new Set<string>();
+  const latest: typeof data = [];
+  for (const row of data ?? []) {
+    if (seen.has(row.kpi_key)) continue;
+    seen.add(row.kpi_key);
+    latest.push(row);
+  }
+  return latest ?? [];
+}
+
+// -----------------------------
+// Agent idea engine
+// -----------------------------
+
+export async function getIdeas(options?: { agentKey?: string; status?: string; limit?: number }) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("agent_ideas")
+    .select("*", { count: "exact" })
+    .order("updated_at", { ascending: false })
+    .limit(options?.limit ?? 200);
+
+  if (options?.agentKey) query = query.eq("agent_key", options.agentKey);
+  if (options?.status) query = query.eq("status", options.status);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+  return { items: data ?? [], count: count ?? (data?.length ?? 0) };
+}
+
+export async function createIdea(input: {
+  agentKey: string;
+  ideaType: "minor" | "major" | string;
+  title: string;
+  summary?: string | null;
+  expectedImpact?: number | null;
+  requiresCeoApproval?: boolean;
+  linkedTaskId?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_ideas")
+    .insert({
+      agent_key: input.agentKey,
+      idea_type: input.ideaType,
+      title: input.title,
+      summary: input.summary ?? null,
+      expected_impact: input.expectedImpact ?? null,
+      status: "proposed",
+      requires_ceo_approval: input.requiresCeoApproval ?? false,
+      linked_task_id: input.linkedTaskId ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateIdeaStatus(input: {
+  id: string;
+  status:
+    | "proposed"
+    | "in_review"
+    | "approved"
+    | "rejected"
+    | "in_progress"
+    | "shipped"
+    | "archived"
+    | string;
+  approver?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const patch: Record<string, unknown> = { status: input.status };
+  if (input.status === "approved") {
+    patch.approver = input.approver ?? "system";
+    patch.approved_at = nowIso();
+  }
+  if (input.status === "rejected") {
+    patch.approver = input.approver ?? "system";
+  }
+
+  const { data, error } = await supabase
+    .from("agent_ideas")
+    .update(patch)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createIdeaComment(input: { ideaId: string; commenter: string; comment: string }) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_idea_comments")
+    .insert({
+      idea_id: input.ideaId,
+      commenter: input.commenter,
+      comment: input.comment
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getIdeaComments(ideaId: string, limit = 50) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_idea_comments")
+    .select("*")
+    .eq("idea_id", ideaId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getRecentIdeaComments(limit = 25) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_idea_comments")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// -----------------------------
+// CEO question desk
+// -----------------------------
+
+export async function getCeoQuestions(options?: {
+  status?: string;
+  escalationLevel?: string;
+  askedBy?: string;
+  ownerAgent?: string;
+  limit?: number;
+}) {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("ceo_questions")
+    .select("*", { count: "exact" })
+    .order("updated_at", { ascending: false })
+    .limit(options?.limit ?? 200);
+
+  if (options?.status) query = query.eq("status", options.status);
+  if (options?.escalationLevel) query = query.eq("escalation_level", options.escalationLevel);
+  if (options?.askedBy) query = query.eq("asked_by", options.askedBy);
+  if (options?.ownerAgent) query = query.eq("owner_agent", options.ownerAgent);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+  return { items: data ?? [], count: count ?? (data?.length ?? 0) };
+}
+
+export async function createCeoQuestion(input: {
+  askedBy: string;
+  escalationLevel?: "avery" | "keegan" | string;
+  question: string;
+  context?: string | null;
+  status?: "open" | "answered" | "needs_followup" | "closed" | string;
+  priority?: string | null;
+  ownerAgent?: string | null;
+  dueAt?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("ceo_questions")
+    .insert({
+      asked_by: input.askedBy,
+      escalation_level: input.escalationLevel ?? "avery",
+      question: input.question,
+      context: input.context ?? null,
+      status: input.status ?? "open",
+      priority: input.priority ?? null,
+      owner_agent: input.ownerAgent ?? null,
+      due_at: input.dueAt ?? null
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCeoQuestion(input: {
+  id: string;
+  status?: "open" | "answered" | "needs_followup" | "closed" | string;
+  escalationLevel?: "avery" | "keegan" | string;
+  priority?: string | null;
+  ownerAgent?: string | null;
+  dueAt?: string | null;
+  answeredBy?: string | null;
+  markAnswered?: boolean;
+  escalatedBy?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const patch: Record<string, unknown> = {};
+  if (input.status) patch.status = input.status;
+  if (input.escalationLevel) patch.escalation_level = input.escalationLevel;
+  if (input.priority !== undefined) patch.priority = input.priority;
+  if (input.ownerAgent !== undefined) patch.owner_agent = input.ownerAgent;
+  if (input.dueAt !== undefined) patch.due_at = input.dueAt;
+
+  if (input.markAnswered) {
+    patch.status = input.status ?? "answered";
+    patch.answered_by = input.answeredBy ?? "system";
+    patch.answered_at = nowIso();
+  }
+  if (input.escalationLevel === "keegan") {
+    patch.escalated_by = input.escalatedBy ?? "system";
+  }
+
+  const { data, error } = await supabase
+    .from("ceo_questions")
+    .update(patch)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createCeoQuestionComment(input: { questionId: string; commenter: string; body: string }) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("ceo_question_comments")
+    .insert({
+      question_id: input.questionId,
+      commenter: input.commenter,
+      body: input.body
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getCeoQuestionComments(questionId: string, limit = 50) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("ceo_question_comments")
+    .select("*")
+    .eq("question_id", questionId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getRecentCeoQuestionComments(limit = 25) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("ceo_question_comments")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
 }

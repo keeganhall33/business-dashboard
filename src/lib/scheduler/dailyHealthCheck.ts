@@ -5,6 +5,7 @@ import { evaluateWarRoomMode } from "./warRoom";
 import { writeDashboardSnapshotMeta } from "./stateWriters";
 import { publishAgentStatusSnapshot } from "@/lib/agents/shared";
 import { agentKeys } from "@/lib/types/requests";
+import { enforceDailyIdeaQuotas } from "./ideaQuota";
 
 export async function runDailyHealthCheck() {
   return withJobRun({
@@ -13,6 +14,7 @@ export async function runDailyHealthCheck() {
       const rules = await evaluateRules();
       const stale = await runStaleChecks();
       const warRoom = await evaluateWarRoomMode();
+      const ideaQuota = await enforceDailyIdeaQuotas({ source: "daily-health-check" });
 
       await writeDashboardSnapshotMeta({
         source: "daily-health-check",
@@ -26,13 +28,15 @@ export async function runDailyHealthCheck() {
         rulesEvaluated: rules.rulesEvaluated,
         triggersFired: rules.triggersFired.length,
         alertsCreated: stale.alertsCreatedOrUpdated,
+        ideaQuotaAlertsCreated: ideaQuota.alertsCreatedOrUpdated,
+        agentsMissingIdeaQuota: ideaQuota.missingAgents,
         staleAgents: stale.staleAgents,
         staleTasks: stale.staleTaskIds.length,
         operatingMode: warRoom.mode
       };
     },
     summarize: (result) => ({
-      summary: `Rules: ${result.rulesEvaluated}, fired: ${result.triggersFired}, alerts: ${result.alertsCreated}`,
+      summary: `Rules: ${result.rulesEvaluated}, fired: ${result.triggersFired}, alerts: ${result.alertsCreated} (+idea quota: ${result.agentsMissingIdeaQuota.length} missing)`,
       detailsJson: result
     })
   });

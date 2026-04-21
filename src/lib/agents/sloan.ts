@@ -1,6 +1,10 @@
 import {
   AgentRunResult,
+  ensureDailyIdeaAndKpis,
+  formatPercent,
+  formatUsd,
   getSharedAgentContextForAgent,
+  metricSnapshot,
   publishAgentStatusSnapshot,
   submitAgentPlanDraft,
   writeAgentOutputs
@@ -8,29 +12,34 @@ import {
 
 export async function runSloan(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContextForAgent("sloan");
-
-  const aov = metrics.find((m) => m.metric_key === "aov");
-  const conversion = metrics.find((m) => m.metric_key === "conversion_rate");
-  const abandonment = metrics.find((m) => m.metric_key === "cart_abandonment_rate");
+  const aov = metricSnapshot(metrics, "aov");
+  const conversion = metricSnapshot(metrics, "conversion_rate");
+  const abandonment = metricSnapshot(metrics, "cart_abandonment_rate");
 
   const insights = [
     {
       title: "Low AOV is the primary revenue bottleneck",
-      summary: `Current AOV is ${aov?.current_value}, well below target.`,
+      summary: `30d avg AOV is ${formatUsd(aov?.average)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
+        aov?.current
+      )}, Δ ${formatPercent(aov?.changePercent)}).`,
       detailMd: "Premium offer architecture is underdeveloped and suppressing revenue growth.",
       priority: "critical" as const,
       relatedMetricKeys: ["aov", "monthly_revenue"]
     },
     {
       title: "Conversion remains below acceptable range",
-      summary: `Current conversion rate is ${conversion?.current_value}%.`,
+      summary: `Conversion 30d avg is ${formatPercent(conversion?.average)} vs target ${formatPercent(
+        conversion?.target
+      )} (latest ${formatPercent(conversion?.current)}, Δ ${formatPercent(conversion?.changePercent)}).`,
       detailMd: "Homepage and product page clarity likely need tightening.",
       priority: "critical" as const,
       relatedMetricKeys: ["conversion_rate"]
     },
     {
       title: "Cart abandonment remains too high",
-      summary: `Cart abandonment is ${abandonment?.current_value}%.`,
+      summary: `Cart abandonment 30d avg is ${formatPercent(abandonment?.average)} (latest ${formatPercent(
+        abandonment?.current
+      )}, Δ ${formatPercent(abandonment?.changePercent)}).`,
       detailMd: "The recovery system and checkout flow likely leave money on the table.",
       priority: "high" as const,
       relatedMetricKeys: ["cart_abandonment_rate"]
@@ -110,6 +119,13 @@ export async function runSloan(): Promise<AgentRunResult> {
   });
 
   const status = await publishAgentStatusSnapshot("sloan");
+
+  await ensureDailyIdeaAndKpis({
+    agentKey: "sloan",
+    metrics,
+    fallbackIdeaTitle: "Tighten premium pricing ladder to lift AOV",
+    fallbackIdeaSummary: "Rebuild offer tiers around scarcity + signed editions to raise AOV without dilution."
+  });
 
   return {
     summary: "Identified AOV, conversion, and abandonment as the top ecommerce blockers.",

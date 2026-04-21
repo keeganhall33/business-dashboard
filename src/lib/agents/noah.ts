@@ -1,6 +1,10 @@
 import {
   AgentRunResult,
+  ensureDailyIdeaAndKpis,
+  formatNumberValue,
+  formatPercent,
   getSharedAgentContextForAgent,
+  metricSnapshot,
   publishAgentStatusSnapshot,
   submitAgentPlanDraft,
   writeAgentOutputs
@@ -8,12 +12,14 @@ import {
 
 export async function runNoah(): Promise<AgentRunResult> {
   const { metrics } = await getSharedAgentContextForAgent("noah");
-  const pipeline = metrics.find((m) => m.metric_key === "active_brand_conversations");
+  const pipeline = metricSnapshot(metrics, "active_brand_conversations");
 
   const insights = [
     {
       title: "Partnership pipeline is too thin",
-      summary: `Only ${pipeline?.current_value} active conversations are live.`,
+      summary: `Only ${formatNumberValue(pipeline?.current)} active conversations are live (30d avg ${formatNumberValue(
+        pipeline?.average
+      )}, Δ ${formatPercent(pipeline?.changePercent)}).`,
       detailMd: "The opportunity engine needs more top-of-funnel prestige targets.",
       priority: "critical" as const,
       relatedMetricKeys: ["active_brand_conversations"]
@@ -138,6 +144,13 @@ export async function runNoah(): Promise<AgentRunResult> {
   });
 
   const status = await publishAgentStatusSnapshot("noah");
+
+  await ensureDailyIdeaAndKpis({
+    agentKey: "noah",
+    metrics,
+    fallbackIdeaTitle: "Add 5 Tier-1 targets/week to keep pipeline full",
+    fallbackIdeaSummary: "Keep the prestige partnership funnel fed with a small, high-status target list."
+  });
 
   return {
     summary: "Expanded the research pipeline and created the next opportunity sprint.",

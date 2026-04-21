@@ -114,6 +114,108 @@ export type AgentUpdateFeedItem = {
   createdAt: string;
 };
 
+export type DeliverableLink = {
+  label: string;
+  url: string;
+};
+
+// -----------------------------
+// KPI / Ideas / CEO Questions (dashboard additions)
+// -----------------------------
+
+export type AgentKpiReading = {
+  id: string;
+  value: number | null;
+  measuredAt: string;
+  source: string | null;
+  notes: string | null;
+};
+
+export type AgentKpiDefinition = {
+  kpiKey: string;
+  kpiName: string;
+  description: string | null;
+  targetValue: number | null;
+  unit: string | null;
+  frequency: string | null;
+  priority: string | null;
+  latestReading: AgentKpiReading | null;
+};
+
+export type AgentKpiBucket = {
+  agentKey: string;
+  agentName: string;
+  kpis: AgentKpiDefinition[];
+};
+
+export type IdeaCard = {
+  id: string;
+  agentKey: string;
+  agentName: string;
+  ideaType: "minor" | "major" | string;
+  title: string;
+  summary: string | null;
+  expectedImpact: number | null;
+  requiresCeoApproval: boolean;
+  linkedTaskId: string | null;
+  approvedAt: string | null;
+  approver: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
+export type IdeaComment = {
+  id: string;
+  ideaId: string;
+  commenter: string;
+  comment: string;
+  createdAt: string;
+};
+
+export type IdeaBoard = {
+  columns: Record<string, IdeaCard[]> | Array<{ status?: string; key?: string; title?: string; ideas?: IdeaCard[] }>;
+  recentComments: IdeaComment[];
+};
+
+export type CeoQuestion = {
+  id: string;
+  askedBy: string;
+  escalationLevel: "avery" | "keegan" | string;
+  question: string;
+  context: string | null;
+  status: "open" | "answered" | "needs_followup" | "closed" | string;
+  priority: string | null;
+  ownerAgent: string | null;
+  dueAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CeoQuestionEscalation = {
+  id: string;
+  askedBy: string;
+  question: string;
+  status: string;
+  priority: string | null;
+  dueAt: string | null;
+  escalatedBy: string | null;
+  updatedAt: string;
+};
+
+export type CeoQuestionComment = {
+  id: string;
+  questionId: string;
+  commenter: string;
+  body: string;
+  createdAt: string;
+};
+
+export type CeoQuestionDesk = {
+  openQuestions: CeoQuestion[];
+  escalations: CeoQuestionEscalation[];
+  recentComments: CeoQuestionComment[];
+};
+
 export type TaskSummary = {
   id: string;
   title: string;
@@ -125,10 +227,12 @@ export type TaskSummary = {
   requiresApproval: boolean;
   description?: string | null;
   deliverableSummary?: string | null;
+  deliverableLinks?: DeliverableLink[] | null;
   whyThisMatters?: string | null;
   relatedMetricKeys?: string[] | null;
   expectedDurationDays?: number | null;
   createdAt?: string | null;
+  completedAt?: string | null;
 };
 
 export type SchedulerJobHealth = {
@@ -285,4 +389,9 @@ export type DashboardOverviewResponse = {
   systemHealth: SystemHealth;
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
+
+  // New dashboard visuals
+  agentKpis: AgentKpiBucket[];
+  ideaBoard: IdeaBoard;
+  ceoQuestionDesk: CeoQuestionDesk;
 };

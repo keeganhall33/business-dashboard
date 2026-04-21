@@ -41,6 +41,12 @@ export const updateTaskStatusSchema = z.object({
   status: taskStatusSchema
 });
 
+const deliverableAttachmentSchema = z.object({
+  label: nonEmptyTrimmedString,
+  url: z.string().url()
+});
+
 export const completeTaskSchema = z.object({
-  resultSummary: nonEmptyTrimmedString
+  resultSummary: nonEmptyTrimmedString,
+  attachments: z.array(deliverableAttachmentSchema).max(10).optional()
 });

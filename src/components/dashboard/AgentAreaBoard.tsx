@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentKey } from "@/lib/types/requests";
+import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 
 const agentAreaConfig: AgentAreaDefinition[] = [
   {
@@ -232,15 +233,19 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
             </Subsection>
             <Subsection title="Deliverables" empty="No deliverables recorded yet.">
               {deliverables.length > 0
-                ? deliverables.map((task) => (
-                    <div key={`deliverable-${task.id}`} className="rounded-xl border border-emerald-900/50 bg-emerald-900/10 p-3 text-sm text-emerald-50">
-                      <div className="font-semibold text-emerald-100">{task.title}</div>
-                      <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
-                      <div className="mt-1 text-xs text-emerald-200">
-                        Logged {task.createdAt ? formatDate(task.createdAt) : "recently"}
+                ? deliverables.map((task) => {
+                    const loggedAt = task.completedAt ?? task.createdAt;
+                    return (
+                      <div key={`deliverable-${task.id}`} className="rounded-xl border border-emerald-900/50 bg-emerald-900/10 p-3 text-sm text-emerald-50">
+                        <div className="font-semibold text-emerald-100">{task.title}</div>
+                        <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
+                        <DeliverableAttachmentList attachments={task.deliverableLinks} tone="emerald" />
+                        <div className="mt-1 text-xs text-emerald-200">
+                          Logged {loggedAt ? formatDate(loggedAt) : "recently"}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 : fallbackDeliverables.map((item) => (
                     <div key={`fallback-deliverable-${item.id}`} className="rounded-xl border border-amber-900/40 bg-amber-900/10 p-3 text-sm text-amber-50">
                       <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">
