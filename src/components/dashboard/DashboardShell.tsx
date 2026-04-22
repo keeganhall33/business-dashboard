@@ -10,7 +10,6 @@ import { SystemHealthPanel } from "./SystemHealthPanel";
 import { DateRangeControls } from "./DateRangeControls";
 import { CommerceVisualsPanel } from "./CommerceVisualsPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
-import { AgentUpdateFeed } from "./AgentUpdateFeed";
 import { ActionQueuePanel } from "./ActionQueuePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
 import { CollectorPipelinePanel } from "./CollectorPipelinePanel";
@@ -43,22 +42,33 @@ export function DashboardShell({ data, agents }: Props) {
       />
       <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
 
-      <AgentKpiStrip items={data.agentKpis} />
-      <AgentAreaBoard agents={agents} />
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="xl:col-span-8">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
+          <AgentKpiStrip items={data.agentKpis} />
+          <AgentAreaBoard agents={agents} />
+        </div>
+        <div className="space-y-6 xl:col-span-4">
           <IdeaBoardPanel board={data.ideaBoard} />
-        </div>
-        <div className="xl:col-span-4">
           <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
+          <ActionQueuePanel data={data.actionQueue} />
         </div>
-      </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">
           <ExecutiveCommandPanel data={data.executiveCommand} />
           <RevenueEnginePanel data={data.revenueEngine} />
+          <OpportunityRadarPanel data={data.opportunityRadar} />
+        </div>
+        <div className="space-y-6 xl:col-span-4">
+          <BrandPowerPanel data={data.brandPower} />
+          <CollectorPipelinePanel data={data.pipelinePanel} />
+          <SystemHealthPanel data={data.systemHealth} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
           <TaskBoard
             tasks={data.tasks}
             schedulerJobs={data.schedulerJobs}
@@ -69,16 +79,7 @@ export function DashboardShell({ data, agents }: Props) {
         <div className="space-y-6 xl:col-span-4">
           <AutomationPanel jobs={data.schedulerJobs} />
           <WarRoomPanel data={data.warRoom} />
-          <ActionQueuePanel data={data.actionQueue} />
-          <SystemHealthPanel data={data.systemHealth} />
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <OpportunityRadarPanel data={data.opportunityRadar} />
-        <BrandPowerPanel data={data.brandPower} />
-        <CollectorPipelinePanel data={data.pipelinePanel} />
-        <AgentUpdateFeed items={data.agentUpdateFeed} />
       </div>
     </div>
   );
