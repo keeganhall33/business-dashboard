@@ -1,5 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
-import { hasAgentRunner, runAgentByKey } from "@/lib/agents/runAgentByKey";
+import { activateAgentTasks } from "@/lib/agents/automation";
 import { getTaskById, updateTaskApproval } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { approveTaskSchema } from "@/lib/validation/tasks";
@@ -13,31 +13,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const existing = await getTaskById(id);
     const task = await updateTaskApproval(id, parsed.data.approvedByUser);
 
-    let runTriggered = false;
-    let runError: string | null = null;
+    let automation: { activatedCount: number; taskIds: string[] } | null = null;
+    let automationError: string | null = null;
 
-    const shouldTriggerRun =
+    const shouldActivateAutomation =
       parsed.data.approvedByUser &&
       existing.requires_approval &&
       !existing.approved_by_user &&
-      task.approved_by_user &&
-      hasAgentRunner(existing.agent_key);
+      task.approved_by_user;
 
-    if (shouldTriggerRun) {
+    if (shouldActivateAutomation) {
       try {
-        await runAgentByKey(existing.agent_key, "manual");
-        runTriggered = true;
+        automation = await activateAgentTasks(existing.agent_key);
       } catch (error) {
-        runError = error instanceof Error ? error.message : String(error);
-        console.error("Failed to trigger agent after approval", {
+        automationError = error instanceof Error ? error.message : String(error);
+        console.error("Failed to trigger automation after approval", {
           agentKey: task.agent_key,
           taskId: task.id,
-          error: runError
+          error: automationError
         });
       }
     }
 
-    return ok({ ok: true, task, runTriggered, runError });
+    return ok({ ok: true, task, automation, automationError });
   } catch (error) {
     return serverError("Failed to approve task", {
       message: error instanceof Error ? error.message : String(error)

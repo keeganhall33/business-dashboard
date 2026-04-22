@@ -225,6 +225,7 @@ export type TaskSummary = {
   expectedImpact: string | null;
   impactScore: number | null;
   requiresApproval: boolean;
+  approvedByUser?: boolean | null;
   description?: string | null;
   deliverableSummary?: string | null;
   deliverableLinks?: DeliverableLink[] | null;

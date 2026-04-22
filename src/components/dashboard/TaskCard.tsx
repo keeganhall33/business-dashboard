@@ -19,6 +19,7 @@ export function TaskCard({ task }: Props) {
 
   const pct = estimateProgress(task.status);
   const tone = statusToTone(task.status);
+  const alreadyApproved = Boolean(task.approvedByUser);
 
   async function approveTask() {
     setError(null);
@@ -129,7 +130,11 @@ export function TaskCard({ task }: Props) {
 
       {error && <div className="mt-3 text-xs text-red-300">{error}</div>}
 
-      {task.requiresApproval && task.status !== "approved" && task.status !== "completed" && (
+      {task.requiresApproval && alreadyApproved ? (
+        <p className="mt-4 text-xs text-emerald-300">Approved by you</p>
+      ) : null}
+
+      {task.requiresApproval && !alreadyApproved && task.status !== "approved" && task.status !== "completed" && (
         <div className="mt-4 space-y-2">
           <div className="flex gap-2">
             <button

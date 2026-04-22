@@ -12,10 +12,14 @@ import {
   submitAgentPlanDraft,
   writeAgentOutputs
 } from "./shared";
-import { getAgentUpdates } from "@/lib/supabase/queries";
+import { getAgentUpdates, getCommerceTelemetry } from "@/lib/supabase/queries";
+
+function formatDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
 
 export async function runAvery(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContextForAgent("avery");
+  const { metrics, opportunities } = await getSharedAgentContextForAgent("avery");
   const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
     getAgentUpdates("sloan", 5),
     getAgentUpdates("lyra", 5),
@@ -25,21 +29,50 @@ export async function runAvery(): Promise<AgentRunResult> {
   const aov = metricSnapshot(metrics, "aov");
   const conversion = metricSnapshot(metrics, "conversion_rate");
   const pipeline = metricSnapshot(metrics, "active_brand_conversations");
+  const aovAvgValue = aov?.average ?? aov?.current ?? null;
+  const aovCurrentValue = aov?.current ?? aov?.average ?? null;
+  const aovDeltaValue = aov?.changePercent ?? null;
+  const conversionAvgValue = conversion?.average ?? conversion?.current ?? null;
+  const conversionCurrentValue = conversion?.current ?? conversion?.average ?? null;
+  const conversionDeltaValue = conversion?.changePercent ?? null;
+  const pipelineAvgValue = pipeline?.average ?? pipeline?.current ?? null;
+  const pipelineCurrentValue = pipeline?.current ?? pipeline?.average ?? null;
+  const pipelineDeltaValue = pipeline?.changePercent ?? null;
+  const dateEnd = new Date();
+  const dateStart = new Date(dateEnd);
+  dateStart.setUTCDate(dateStart.getUTCDate() - 30);
+  const commerceTelemetry = await getCommerceTelemetry({
+    startDate: formatDateOnly(dateStart),
+    endDate: formatDateOnly(dateEnd)
+  });
+  const fallbackAovValue = commerceTelemetry?.woo?.summary?.avgOrderValue ?? null;
+  const orders = commerceTelemetry?.woo?.summary?.orders ?? null;
+  const sessions = commerceTelemetry?.ga4?.summary?.sessions ?? null;
+  const fallbackConversionValue = orders != null && sessions ? (orders / sessions) * 100 : null;
+  const fallbackPipelineValue = (opportunities ?? []).length;
+  const resolvedAovAvg = aovAvgValue ?? fallbackAovValue;
+  const resolvedAovCurrent = aovCurrentValue ?? fallbackAovValue;
+  const resolvedConversionAvg = conversionAvgValue ?? fallbackConversionValue;
+  const resolvedConversionCurrent = conversionCurrentValue ?? fallbackConversionValue;
+  const resolvedPipelineAvg = pipelineAvgValue ?? fallbackPipelineValue;
+  const resolvedPipelineCurrent = pipelineCurrentValue ?? fallbackPipelineValue;
   const directiveSummary =
-    `Pricing, conversion, and pipeline are all below target: AOV 30d avg ${formatUsd(aov?.average)} (Δ ${formatPercent(
-      aov?.changePercent
-    )}), conversion ${formatPercent(conversion?.average)} (Δ ${formatPercent(conversion?.changePercent)}), active convos ${formatNumberValue(
-      pipeline?.average
-    )} (current ${formatNumberValue(pipeline?.current)}).`;
+    `Pricing, conversion, and pipeline are all below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
+      aovDeltaValue
+    )}), conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(conversionDeltaValue)}), active convos ${formatNumberValue(
+      resolvedPipelineAvg
+    )} (current ${formatNumberValue(resolvedPipelineCurrent)}).`;
 
   const insights = [
     {
       title: "Revenue gap is still primarily structural",
-      summary: `AOV 30d avg is ${formatUsd(aov?.average)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
-        aov?.current
-      )}, trend ${formatPercent(aov?.changePercent)}). Conversion 30d avg is ${formatPercent(
-        conversion?.average
-      )} vs target ${formatPercent(conversion?.target)}.`,
+      summary: `AOV 30d avg is ${formatUsd(resolvedAovAvg)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
+        resolvedAovCurrent
+      )}, trend ${formatPercent(aovDeltaValue)}). Conversion 30d avg is ${formatPercent(
+        resolvedConversionAvg
+      )} vs target ${formatPercent(conversion?.target)} (latest ${formatPercent(
+        resolvedConversionCurrent
+      )}, Δ ${formatPercent(conversionDeltaValue)}).`,
       detailMd:
         "The strongest path is not more noise. It is better offer structure and sharper brand presentation.",
       priority: "critical" as const,
@@ -47,9 +80,9 @@ export async function runAvery(): Promise<AgentRunResult> {
     },
     {
       title: "Pipeline expansion must accelerate",
-      summary: `Only ${formatNumberValue(pipeline?.current)} convos are live (30d avg ${formatNumberValue(
-        pipeline?.average
-      )}, Δ ${formatPercent(pipeline?.changePercent)}).`,
+      summary: `Only ${formatNumberValue(resolvedPipelineCurrent)} convos are live (30d avg ${formatNumberValue(
+        resolvedPipelineAvg
+      )}, Δ ${formatPercent(pipelineDeltaValue)}).`,
       detailMd: "The system needs more high-status opportunities entering the funnel.",
       priority: "critical" as const,
       relatedMetricKeys: ["active_brand_conversations"]

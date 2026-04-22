@@ -1,3 +1,4 @@
+import { activateAgentTasks } from "@/lib/agents/automation";
 import { notFound, ok, serverError, validationError } from "@/lib/api/responses";
 import {
   createAgentMessage,
@@ -8,7 +9,6 @@ import {
 import { decidePlanSchema } from "@/lib/validation/plans";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { AgentPlanPayload, writeAgentOutputs } from "@/lib/agents/shared";
-import { runAgentByKey } from "@/lib/agents/runAgentByKey";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -74,6 +74,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
       }
 
+      const automation = await activateAgentTasks(plan.agent_key, { includeAutoRunnable: true });
+
       await updateAgentPlanStatus({ id: plan.id, status: "approved", approvedBy: approver });
 
       if (plan.thread_id) {
@@ -87,10 +89,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         });
       }
 
-      // Trigger the agent immediately so execution starts without waiting for the next cron.
-      const agentRun = await runAgentByKey(plan.agent_key, "manual");
-
-      return ok({ ok: true, planId: plan.id, status: "approved", outputs, agentRun });
+      return ok({ ok: true, planId: plan.id, status: "approved", outputs, automation });
     } catch (error) {
       return serverError("Failed to publish agent plan", {
         message: error instanceof Error ? error.message : String(error)
