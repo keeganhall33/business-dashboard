@@ -65,6 +65,7 @@ type TaskRow = {
   why_this_matters?: string | null;
   related_metric_keys?: string[] | null;
   requires_approval: boolean;
+  approved_by_user?: boolean | null;
   expected_duration_days: number | null;
   created_at: string;
   execution_type?: string | null;
@@ -238,6 +239,7 @@ function mapTaskRowToSummary(task: TaskRow) {
     expectedImpact: task.expected_impact,
     impactScore: task.impact_score,
     requiresApproval: task.requires_approval,
+    approvedByUser: Boolean(task.approved_by_user),
     description: task.description ?? null,
     deliverableSummary: task.result_summary ?? null,
     deliverableLinks: normalizeDeliverableLinks(task.deliverable_links),
