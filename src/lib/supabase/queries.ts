@@ -14,6 +14,13 @@ type DeliverableLinkInput = {
   url: string;
 };
 
+type PostgrestError = {
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+  message?: string | null;
+};
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -39,6 +46,14 @@ function coerceNumber(value: unknown): number | null {
     return Number.isFinite(num) ? num : null;
   }
   return null;
+}
+
+function isMissingTableError(error: unknown, table: string) {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as PostgrestError;
+  if (pgError.code !== "PGRST205") return false;
+  const haystack = `${pgError.message ?? ""} ${pgError.hint ?? ""} ${pgError.details ?? ""}`.toLowerCase();
+  return haystack.includes(`public.${table}`) || haystack.includes(`'${table}'`);
 }
 
 // -----------------------------
@@ -1537,7 +1552,10 @@ export async function listAgentKpis(options?: { agentKey?: string; limit?: numbe
   if (options?.agentKey) query = query.eq("agent_key", options.agentKey);
 
   const { data, error } = await query;
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "agent_kpis")) return [];
+    throw error;
+  }
   return data ?? [];
 }
 
@@ -1550,7 +1568,10 @@ export async function listLatestAgentKpiReadingsByKpiKeys(kpiKeys: string[]) {
     .in("kpi_key", kpiKeys)
     .order("measured_at", { ascending: false })
     .limit(Math.min(1000, kpiKeys.length * 10));
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "agent_kpi_readings")) return [];
+    throw error;
+  }
 
   // Deduplicate to latest per kpi_key
   const seen = new Set<string>();
@@ -1579,7 +1600,10 @@ export async function getIdeas(options?: { agentKey?: string; status?: string; l
   if (options?.status) query = query.eq("status", options.status);
 
   const { data, error, count } = await query;
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "agent_ideas")) return { items: [], count: 0 };
+    throw error;
+  }
   return { items: data ?? [], count: count ?? (data?.length ?? 0) };
 }
 
@@ -1667,7 +1691,10 @@ export async function getIdeaComments(ideaId: string, limit = 50) {
     .eq("idea_id", ideaId)
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "agent_idea_comments")) return [];
+    throw error;
+  }
   return data ?? [];
 }
 
@@ -1678,7 +1705,10 @@ export async function getRecentIdeaComments(limit = 25) {
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "agent_idea_comments")) return [];
+    throw error;
+  }
   return data ?? [];
 }
 
@@ -1706,7 +1736,10 @@ export async function getCeoQuestions(options?: {
   if (options?.ownerAgent) query = query.eq("owner_agent", options.ownerAgent);
 
   const { data, error, count } = await query;
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "ceo_questions")) return { items: [], count: 0 };
+    throw error;
+  }
   return { items: data ?? [], count: count ?? (data?.length ?? 0) };
 }
 
@@ -1800,7 +1833,10 @@ export async function getCeoQuestionComments(questionId: string, limit = 50) {
     .eq("question_id", questionId)
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "ceo_question_comments")) return [];
+    throw error;
+  }
   return data ?? [];
 }
 
@@ -1811,6 +1847,9 @@ export async function getRecentCeoQuestionComments(limit = 25) {
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, "ceo_question_comments")) return [];
+    throw error;
+  }
   return data ?? [];
 }
