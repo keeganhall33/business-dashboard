@@ -411,6 +411,19 @@ export async function startApprovedTasks(agentKey: string) {
   return data ?? [];
 }
 
+export async function startAutoRunnableTasks(agentKey: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("task_queue")
+    .update({ status: "in_progress", started_at: nowIso() })
+    .eq("agent_key", agentKey)
+    .eq("requires_approval", false)
+    .in("status", ["pending", "approved"])
+    .select("*");
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getAgentTasksByStatus(agentKey: string, statuses: string[], limit = 25) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase

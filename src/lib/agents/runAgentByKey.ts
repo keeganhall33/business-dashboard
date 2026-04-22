@@ -2,12 +2,8 @@ import { runAvery } from "./avery";
 import { runLyra } from "./lyra";
 import { runNoah } from "./noah";
 import { runSloan } from "./sloan";
-import {
-  createAgentUpdate,
-  createSystemRun,
-  finishSystemRun,
-  startApprovedTasks
-} from "@/lib/supabase/queries";
+import { activateAgentTasks } from "./automation";
+import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 import type { RunType } from "@/lib/types/requests";
 import type { AgentRunResult } from "./shared";
 
@@ -31,25 +27,8 @@ export async function runAgentByKey(agentKey: string, runType: RunType = "manual
 
   try {
     try {
-      const started = await startApprovedTasks(agentKey);
-      activatedTasks = started.length;
-
-      await Promise.all(
-        started.map((task) =>
-          createAgentUpdate({
-            agentKey,
-            updateType: "summary",
-            title: `Started: ${task.title}`,
-            summary: `Execution kicked off for "${task.title}".`,
-            detailMd:
-              typeof task.description === "string" && task.description.length > 0
-                ? (task.description as string)
-                : undefined,
-            priority: typeof task.priority === "string" ? task.priority : undefined,
-            relatedMetricKeys: (task.related_metric_keys as string[] | null) ?? []
-          })
-        )
-      );
+      const automation = await activateAgentTasks(agentKey, { includeAutoRunnable: true });
+      activatedTasks = automation.activatedCount;
     } catch (activationError) {
       console.error("Failed to activate approved tasks", {
         agentKey,
