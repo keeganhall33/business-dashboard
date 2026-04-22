@@ -55,7 +55,7 @@ export function AgentAreaBoard({ agents }: Props) {
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
       {agentAreaConfig.map((area) => {
         const areaAgents = area.agentKeys
           .map((key) => agentMap.get(key))
