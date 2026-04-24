@@ -19,14 +19,16 @@ function formatRelativeTime(iso: string | null) {
 
 export function ActionQueuePanel({ data }: Props) {
   const sections = [data.needsApprovalTasks, data.pendingPlans, data.decisionsDue, data.invoicesToSend];
+  const hasFreshUpdates = sections.some((section) => section.items.some((item) => isFresh(item.createdAt)));
 
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Needs Keegan</div>
           <div className="text-lg font-semibold text-zinc-100">Action Queue</div>
         </div>
+        {hasFreshUpdates && <FreshBadge />}
       </div>
 
       <div className="mt-5 space-y-4">
@@ -42,7 +44,10 @@ export function ActionQueuePanel({ data }: Props) {
               ) : (
                 section.items.map((item) => (
                   <div key={`${section.label}-${item.id}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                    <div className="text-sm font-medium text-zinc-50">{item.title}</div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-50">
+                      <span>{item.title}</span>
+                      {isFresh(item.createdAt) && <FreshChip />}
+                    </div>
                     {item.summary && <div className="mt-1 text-sm text-zinc-400">{item.summary}</div>}
                     <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
                       <span className="capitalize">{item.itemType}</span>
@@ -60,4 +65,23 @@ export function ActionQueuePanel({ data }: Props) {
       </div>
     </section>
   );
+}
+
+function isFresh(iso: string | null | undefined, hours = 12) {
+  if (!iso) return false;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts < hours * 36e5;
+}
+
+function FreshBadge() {
+  return (
+    <span className="rounded-full bg-sky-500/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-sky-100">
+      New updates
+    </span>
+  );
+}
+
+function FreshChip() {
+  return <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-sky-100">New</span>;
 }
