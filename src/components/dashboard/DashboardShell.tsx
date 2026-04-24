@@ -40,18 +40,26 @@ export function DashboardShell({ data, agents }: Props) {
           />
         }
       />
-      <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
-
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">
-          <AgentKpiStrip items={data.agentKpis} />
-          <AgentAreaBoard agents={agents} />
+          <ActionQueuePanel data={data.actionQueue} />
+          <TaskBoard
+            tasks={data.tasks}
+            schedulerJobs={data.schedulerJobs}
+            agentSla={data.agentSla}
+            approvalBottlenecks={data.approvalBottlenecks}
+          />
         </div>
         <div className="space-y-6 xl:col-span-4">
-          <IdeaBoardPanel board={data.ideaBoard} />
-          <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
-          <ActionQueuePanel data={data.actionQueue} />
+          <WarRoomPanel data={data.warRoom} />
+          <AutomationPanel jobs={data.schedulerJobs} />
+          <SystemHealthPanel data={data.systemHealth} />
         </div>
+      </div>
+
+      <section className="space-y-6">
+        <AgentKpiStrip items={data.agentKpis} />
+        <AgentAreaBoard agents={agents} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
@@ -63,24 +71,12 @@ export function DashboardShell({ data, agents }: Props) {
         <div className="space-y-6 xl:col-span-4">
           <BrandPowerPanel data={data.brandPower} />
           <CollectorPipelinePanel data={data.pipelinePanel} />
-          <SystemHealthPanel data={data.systemHealth} />
+          <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
+          <IdeaBoardPanel board={data.ideaBoard} />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="space-y-6 xl:col-span-8">
-          <TaskBoard
-            tasks={data.tasks}
-            schedulerJobs={data.schedulerJobs}
-            agentSla={data.agentSla}
-            approvalBottlenecks={data.approvalBottlenecks}
-          />
-        </div>
-        <div className="space-y-6 xl:col-span-4">
-          <AutomationPanel jobs={data.schedulerJobs} />
-          <WarRoomPanel data={data.warRoom} />
-        </div>
-      </div>
+      <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
     </div>
   );
 }

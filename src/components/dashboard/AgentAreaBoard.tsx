@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, useMemo, useState, useTransition } from "react";
+import { Children, useEffect, useMemo, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
@@ -103,19 +103,38 @@ type AgentCardProps = {
 function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [decisionStatus, setDecisionStatus] = useState<{ state: "idle" | "success" | "error"; message?: string }>({
+    state: "idle"
+  });
   const pendingPlan = agent.planQueue.pending;
   const lastPlan = agent.planQueue.recent[0] ?? null;
   const latestThreadUpdate = agent.conversation.messages.at(-1) ?? null;
   const conversationMessages = expanded ? agent.conversation.messages.slice(-10) : [];
-  const activeTasks = agent.openTasks.slice(0, 3);
+  const liveTaskList = agent.openTasks.filter((task) => task.status === "in_progress");
+  const blockedTaskList = agent.openTasks.filter((task) => task.status === "blocked");
+  const queuedTaskList = agent.openTasks.filter((task) => !["in_progress", "blocked"].includes(task.status));
+  const liveTasks = liveTaskList.slice(0, 3);
+  const blockedTasks = blockedTaskList.slice(0, 3);
+  const queuedTasks = queuedTaskList.slice(0, 3);
+  const liveOverflow = Math.max(0, liveTaskList.length - liveTasks.length);
+  const blockedOverflow = Math.max(0, blockedTaskList.length - blockedTasks.length);
+  const queuedOverflow = Math.max(0, queuedTaskList.length - queuedTasks.length);
   const deliverables = agent.completedTasks.filter((task) => task.deliverableSummary).slice(0, 3);
   const fallbackDeliverables = deliverables.length
     ? []
     : agent.recentUpdates
         .filter((update) => ["action", "big_bet", "directive"].includes(update.updateType))
         .slice(0, 3);
-  const insights = agent.recentUpdates.filter((update) => update.updateType === "insight").slice(0, 3);
-  const actions = agent.recentUpdates.filter((update) => update.updateType === "action").slice(0, 3);
+  const insights = agent.recentUpdates.filter((update) => update.updateType === "insight").slice(0, 5);
+  const actions = agent.recentUpdates.filter((update) => update.updateType === "action").slice(0, 5);
+  const prioritySignals = agent.recentUpdates.filter((update) => {
+    const priority = (update.priority ?? "").toLowerCase();
+    return priority === "critical" || priority === "high";
+  }).slice(0, 3);
+  const highPrioritySignalIds = new Set(prioritySignals.map((signal) => signal.id));
+  const filteredInsights = insights.filter((item) => !highPrioritySignalIds.has(item.id));
+  const filteredActions = actions.filter((item) => !highPrioritySignalIds.has(item.id));
+  const latestDirective = agent.recentUpdates.find((update) => update.updateType === "directive") ?? null;
   const autoPlan = !pendingPlan && !lastPlan ? buildAutoPlan(agent) : null;
 
   const planStatusLabel = pendingPlan
@@ -123,8 +142,12 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
     : lastPlan
     ? "Running approved plan"
     : autoPlan
-    ? "Auto-brief"
+    ? "Auto brief"
     : "No plan submitted";
+
+  useEffect(() => {
+    setDecisionStatus({ state: "idle" });
+  }, [pendingPlan?.id]);
 
   function handleDecision(decision: "approve" | "changes_requested") {
     if (!pendingPlan) return;
@@ -135,76 +158,79 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
     }
 
     startTransition(async () => {
-      await fetch(`/api/agents/plans/${pendingPlan.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, feedback, approvedBy: "keegan" })
-      });
-      router.refresh();
+      try {
+        const response = await fetch(`/api/agents/plans/${pendingPlan.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, feedback, approvedBy: "keegan" })
+        });
+        const responseText = await response.text();
+        if (!response.ok) {
+          let message = responseText || "Failed to submit decision";
+          try {
+            const parsed = responseText ? JSON.parse(responseText) : null;
+            if (parsed?.error) message = parsed.error;
+            else if (parsed?.message) message = parsed.message;
+          } catch (error) {
+            console.warn("Failed to parse decision response", error);
+          }
+          throw new Error(message);
+        }
+        setDecisionStatus({
+          state: "success",
+          message: decision === "approve" ? "Plan approved" : "Changes requested"
+        });
+        router.refresh();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to submit decision";
+        setDecisionStatus({ state: "error", message });
+      }
     });
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/90 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="rounded-3xl border border-zinc-900 bg-zinc-950/90 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.3em] text-zinc-500">{agent.agent.roleTitle}</div>
-          <div className="text-xl font-semibold text-zinc-50">{agent.agent.displayName}</div>
-          <p className="mt-1 max-w-xl text-sm text-zinc-400">{agent.agent.mandate}</p>
+          <div className="text-2xl font-semibold text-zinc-50">{agent.agent.displayName}</div>
+          <p className="mt-1 max-w-3xl text-sm text-zinc-400">{agent.agent.mandate}</p>
         </div>
-        <div className="text-right text-xs text-zinc-500">
-          <div>Plan status: {planStatusLabel}</div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <PlanStatusBadge label={planStatusLabel} />
           {latestThreadUpdate && (
-            <div className="mt-1 text-[11px] text-zinc-400">
+            <div className="text-[11px] text-zinc-500">
               Last thread update {formatDate(latestThreadUpdate.createdAt)} · {summarizeMessage(latestThreadUpdate.body)}
             </div>
           )}
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-4">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Plan & approvals</div>
-          <div className="mt-3 space-y-3 text-sm text-zinc-200">
+      <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2 text-sm text-zinc-200">
+            <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Current plan</div>
             {pendingPlan ? (
-              <div className="space-y-3">
-                <div>
-                  <div className="text-base font-semibold text-zinc-50">{pendingPlan.title}</div>
-                  <div className="text-xs text-zinc-500">Submitted {formatDate(pendingPlan.submittedAt)}</div>
-                  {pendingPlan.summary && <p className="mt-2 text-zinc-300">{pendingPlan.summary}</p>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className="rounded-lg bg-emerald-600/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-100 hover:bg-emerald-600/30"
-                    onClick={() => handleDecision("approve")}
-                    disabled={isPending}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="rounded-lg bg-amber-600/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-200 hover:bg-amber-600/30"
-                    onClick={() => handleDecision("changes_requested")}
-                    disabled={isPending}
-                  >
-                    Request changes
-                  </button>
-                </div>
+              <div>
+                <div className="text-lg font-semibold text-zinc-50">{pendingPlan.title}</div>
+                <div className="text-xs text-zinc-500">Submitted {formatDate(pendingPlan.submittedAt)}</div>
+                {pendingPlan.summary && <p className="mt-2 max-w-2xl text-zinc-300">{pendingPlan.summary}</p>}
               </div>
             ) : lastPlan ? (
               <div>
-                <div className="text-base font-semibold text-zinc-50">{lastPlan.title}</div>
+                <div className="text-lg font-semibold text-zinc-50">{lastPlan.title}</div>
                 <div className="text-xs text-zinc-500">
-                  Approved {lastPlan.approvedAt ? formatDate(lastPlan.approvedAt) : "previously"}
+                  Approved {lastPlan.approvedAt ? formatDate(lastPlan.approvedAt) : "previously"} · Status {lastPlan.status}
                 </div>
-                {lastPlan.summary && <p className="mt-2 text-zinc-300">{lastPlan.summary}</p>}
-                <div className="mt-2 text-[11px] uppercase tracking-[0.3em] text-zinc-500">Status: {lastPlan.status}</div>
+                {lastPlan.summary && <p className="mt-2 max-w-2xl text-zinc-300">{lastPlan.summary}</p>}
               </div>
             ) : autoPlan ? (
               <div>
-                <div className="text-base font-semibold text-zinc-50">Auto brief (no submitted plan)</div>
-                <ul className="mt-2 space-y-2 text-sm text-zinc-200">
+                <div className="text-lg font-semibold text-zinc-50">Auto brief</div>
+                <p className="mt-1 text-zinc-400">No submitted plan — auto-brief built from current work.</p>
+                <ul className="mt-2 space-y-2 text-zinc-200">
                   {autoPlan.map((line, index) => (
-                    <li key={`auto-plan-${agent.agent.agentKey}-${index}`} className="flex gap-2">
+                    <li key={`auto-plan-${agent.agent.agentKey}-${index}`} className="flex gap-2 text-sm">
                       <span className="text-zinc-600">•</span>
                       <span>{line}</span>
                     </li>
@@ -215,85 +241,140 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
               <p className="text-sm text-zinc-500">No plan currently on deck.</p>
             )}
           </div>
+          {pendingPlan && (
+            <div className="flex flex-col items-end gap-2">
+              <button
+                className="w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-100 hover:bg-emerald-500/20"
+                onClick={() => handleDecision("approve")}
+                disabled={isPending}
+              >
+                Approve plan
+              </button>
+              <button
+                className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-100 hover:bg-amber-500/20"
+                onClick={() => handleDecision("changes_requested")}
+                disabled={isPending}
+              >
+                Request changes
+              </button>
+              {isPending && <p className="text-[11px] text-zinc-500">Submitting decision…</p>}
+              {decisionStatus.state === "error" && (
+                <p className="text-[11px] text-rose-300">{decisionStatus.message}</p>
+              )}
+              {decisionStatus.state === "success" && (
+                <p className="text-[11px] text-emerald-300">{decisionStatus.message}</p>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-4">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Active work & deliverables</div>
-          <div className="mt-3 space-y-3">
-            <Subsection title="Active tasks" empty="No open tasks assigned.">
-              {activeTasks.map((task) => (
-                <div key={task.id} className="rounded-xl border border-zinc-900 bg-zinc-950/80 p-3 text-sm text-zinc-100">
-                  <div className="font-semibold">{task.title}</div>
-                  <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    {task.priority} • {task.status}
-                  </div>
-                  {task.expectedImpact && <p className="mt-2 text-zinc-300">{task.expectedImpact}</p>}
-                </div>
+        {latestDirective && (
+          <div className="mt-4 rounded-xl border border-zinc-900 bg-zinc-900/60 p-4 text-sm text-zinc-200">
+            <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Latest directive</div>
+            <div className="mt-1 font-semibold text-zinc-50">{latestDirective.title}</div>
+            <p className="mt-1 text-zinc-300">{latestDirective.summary}</p>
+          </div>
+        )}
+      </section>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <section className="rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Live initiatives</div>
+          <div className="mt-4 space-y-5">
+            <Subsection title="Live now" empty="No work is currently running.">
+              {liveTasks.map((task) => (
+                <TaskSummaryCard key={`live-${task.id}`} task={task} />
               ))}
             </Subsection>
-            <Subsection title="Deliverables" empty="No deliverables recorded yet.">
-              {deliverables.length > 0
-                ? deliverables.map((task) => {
-                    const loggedAt = task.completedAt ?? task.createdAt;
-                    return (
-                      <div key={`deliverable-${task.id}`} className="rounded-xl border border-emerald-900/50 bg-emerald-900/10 p-3 text-sm text-emerald-50">
-                        <div className="font-semibold text-emerald-100">{task.title}</div>
-                        <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
-                        <DeliverableAttachmentList attachments={task.deliverableLinks} tone="emerald" />
-                        <div className="mt-1 text-xs text-emerald-200">
-                          Logged {loggedAt ? formatDate(loggedAt) : "recently"}
-                        </div>
-                      </div>
-                    );
-                  })
-                : fallbackDeliverables.map((item) => (
-                    <div key={`fallback-deliverable-${item.id}`} className="rounded-xl border border-amber-900/40 bg-amber-900/10 p-3 text-sm text-amber-50">
-                      <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">
-                        {formatDate(item.createdAt)} • {item.updateType}
-                      </div>
-                      <div className="mt-1 font-semibold text-amber-100">{item.title}</div>
-                      <p className="mt-1 whitespace-pre-line text-amber-50">{item.summary}</p>
-                    </div>
-                  ))}
-            </Subsection>
-            {!deliverables.length && fallbackDeliverables.length > 0 && (
-              <p className="text-xs text-amber-300">
-                No deliverables have been logged yet. Showing the latest shipped actions instead.
-              </p>
-            )}
-          </div>
-        </div>
+            {liveOverflow > 0 && <OverflowNote text={`+${liveOverflow} more live task${liveOverflow > 1 ? "s" : ""}`} />}
 
-        <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-4">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Signals & insights</div>
-          <div className="mt-3 space-y-4">
+            <Subsection title="Ready next" empty="No queued tasks.">
+              {queuedTasks.map((task) => (
+                <TaskSummaryCard key={`queued-${task.id}`} task={task} variant="queued" />
+              ))}
+            </Subsection>
+            {queuedOverflow > 0 && <OverflowNote text={`+${queuedOverflow} more in queue`} />}
+
+            <Subsection title="Blocked" empty="No blockers flagged.">
+              {blockedTasks.map((task) => (
+                <TaskSummaryCard key={`blocked-${task.id}`} task={task} variant="blocked" />
+              ))}
+            </Subsection>
+            {blockedOverflow > 0 && <OverflowNote text={`+${blockedOverflow} additional blocker${blockedOverflow > 1 ? "s" : ""}`} />}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Signals & alerts</div>
+          <div className="mt-4 space-y-4">
+            <Subsection title="Escalations" empty="No escalations on record.">
+              {blockedTaskList.length > 0 && (
+                <div className="rounded-xl border border-rose-900/40 bg-rose-900/10 p-3 text-sm text-rose-100">
+                  <div className="font-semibold">{blockedTaskList.length} blocked task{blockedTaskList.length > 1 ? "s" : ""}</div>
+                  <p className="text-rose-200">See details in Live initiatives.</p>
+                </div>
+              )}
+              {prioritySignals.map((signal) => (
+                <SignalCard key={`signal-${signal.id}`} item={signal} tone="critical" />
+              ))}
+            </Subsection>
+
             <Subsection title="Insights" empty="No fresh insights logged.">
-              {insights.map((insight) => (
-                <div key={insight.id} className="rounded-lg bg-zinc-900/70 p-3 text-sm text-zinc-200">
-                  <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    {formatDate(insight.createdAt)} • {insight.priority}
-                  </div>
-                  <div className="mt-1 font-semibold text-zinc-50">{insight.title}</div>
-                  <p>{insight.summary}</p>
-                </div>
+              {filteredInsights.map((insight) => (
+                <SignalCard key={`insight-${insight.id}`} item={insight} />
               ))}
             </Subsection>
-            <Subsection title="Actions" empty="No actions logged yet.">
-              {actions.map((action) => (
-                <div key={action.id} className="rounded-lg bg-zinc-900/70 p-3 text-sm text-zinc-200">
-                  <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    {formatDate(action.createdAt)} • {action.priority}
-                  </div>
-                  <div className="mt-1 font-semibold text-zinc-50">{action.title}</div>
-                  <p>{action.summary}</p>
-                </div>
+
+            <Subsection title="Latest actions" empty="No actions logged yet.">
+              {filteredActions.map((action) => (
+                <SignalCard key={`action-${action.id}`} item={action} tone="action" />
               ))}
             </Subsection>
           </div>
-        </div>
+        </section>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+        <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Shipped outputs</div>
+        <div className="mt-4 space-y-3">
+          {deliverables.length > 0
+            ? deliverables.map((task) => {
+                const loggedAt = task.completedAt ?? task.createdAt;
+                return (
+                  <div
+                    key={`deliverable-${task.id}`}
+                    className="rounded-2xl border border-emerald-900/40 bg-emerald-900/10 p-4 text-sm text-emerald-50"
+                  >
+                    <div className="font-semibold text-emerald-100">{task.title}</div>
+                    <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
+                    <DeliverableAttachmentList attachments={task.deliverableLinks} tone="emerald" />
+                    <div className="mt-1 text-xs text-emerald-200">
+                      Logged {loggedAt ? formatDate(loggedAt) : "recently"}
+                    </div>
+                  </div>
+                );
+              })
+            : fallbackDeliverables.map((item) => (
+                <div
+                  key={`fallback-deliverable-${item.id}`}
+                  className="rounded-2xl border border-amber-900/40 bg-amber-900/10 p-4 text-sm text-amber-50"
+                >
+                  <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">
+                    {formatDate(item.createdAt)} • {item.updateType}
+                  </div>
+                  <div className="mt-1 font-semibold text-amber-100">{item.title}</div>
+                  <p className="mt-1 whitespace-pre-line text-amber-50">{item.summary}</p>
+                </div>
+              ))}
+        </div>
+        {!deliverables.length && fallbackDeliverables.length > 0 && (
+          <p className="mt-3 text-xs text-amber-200">
+            No deliverables logged yet — showing most recent shipped actions.
+          </p>
+        )}
+      </section>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-200 hover:border-zinc-500"
           onClick={onToggle}
@@ -312,6 +393,127 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
       )}
     </div>
   );
+}
+
+function PlanStatusBadge({ label }: { label: string }) {
+  return (
+    <span
+      className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] ${getPlanStatusClasses(label)}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+type TaskSummaryCardProps = {
+  task: AgentDashboardResponse["openTasks"][number];
+  variant?: "live" | "queued" | "blocked";
+};
+
+function TaskSummaryCard({ task, variant = "live" }: TaskSummaryCardProps) {
+  const classes = getTaskCardStyles(variant);
+  return (
+    <div className={`rounded-2xl border ${classes.border} ${classes.bg} p-4 text-sm text-zinc-100`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="font-semibold">{task.title}</div>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] ${classes.badge}`}>
+          {formatTaskStatusLabel(task.status)}
+        </span>
+      </div>
+      {task.expectedImpact && <p className="mt-2 text-zinc-300">{task.expectedImpact}</p>}
+      <div className="mt-2 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+        {task.priority} • {task.agentKey}
+      </div>
+    </div>
+  );
+}
+
+function OverflowNote({ text }: { text: string }) {
+  return <p className="text-xs text-zinc-500">{text}</p>;
+}
+
+type SignalCardProps = {
+  item: AgentDashboardResponse["recentUpdates"][number];
+  tone?: "default" | "critical" | "action";
+};
+
+function SignalCard({ item, tone = "default" }: SignalCardProps) {
+  const toneClasses = getSignalToneClasses(tone);
+  return (
+    <div className={`rounded-xl border ${toneClasses.border} ${toneClasses.bg} p-3 text-sm ${toneClasses.text}`}>
+      <div className={`text-[11px] uppercase tracking-[0.25em] ${toneClasses.eyebrow}`}>
+        {formatDate(item.createdAt)} • {item.priority}
+      </div>
+      <div className="mt-1 font-semibold">{item.title}</div>
+      <p className="text-sm">{item.summary}</p>
+    </div>
+  );
+}
+
+function getPlanStatusClasses(label: string) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("awaiting")) {
+    return "border-amber-500/40 bg-amber-500/10 text-amber-100";
+  }
+  if (normalized.includes("running")) {
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-100";
+  }
+  if (normalized.includes("auto")) {
+    return "border-sky-500/40 bg-sky-500/10 text-sky-100";
+  }
+  return "border-zinc-700 bg-zinc-900 text-zinc-200";
+}
+
+function getTaskCardStyles(variant: "live" | "queued" | "blocked") {
+  if (variant === "blocked") {
+    return {
+      border: "border-rose-900/50",
+      bg: "bg-rose-950/20",
+      badge: "border border-rose-500/40 bg-rose-500/10 text-rose-100"
+    };
+  }
+  if (variant === "queued") {
+    return {
+      border: "border-zinc-900",
+      bg: "bg-zinc-950/70",
+      badge: "border border-zinc-600/60 bg-zinc-900 text-zinc-300"
+    };
+  }
+  return {
+    border: "border-sky-900/40",
+    bg: "bg-sky-950/10",
+    badge: "border border-sky-500/40 bg-sky-500/10 text-sky-100"
+  };
+}
+
+function getSignalToneClasses(tone: "default" | "critical" | "action") {
+  if (tone === "critical") {
+    return {
+      border: "border-rose-900/40",
+      bg: "bg-rose-950/30",
+      text: "text-rose-100",
+      eyebrow: "text-rose-300"
+    };
+  }
+  if (tone === "action") {
+    return {
+      border: "border-sky-900/40",
+      bg: "bg-sky-950/20",
+      text: "text-sky-100",
+      eyebrow: "text-sky-300"
+    };
+  }
+  return {
+    border: "border-zinc-900",
+    bg: "bg-zinc-900/60",
+    text: "text-zinc-100",
+    eyebrow: "text-zinc-400"
+  };
+}
+
+function formatTaskStatusLabel(status?: string | null) {
+  if (!status) return "Unknown";
+  return status.replace(/_/g, " ").toUpperCase();
 }
 
 type AreaMetric = {
