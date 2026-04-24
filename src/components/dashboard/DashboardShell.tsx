@@ -42,6 +42,7 @@ export function DashboardShell({ data, agents }: Props) {
       />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">
+          <WarRoomPanel data={data.warRoom} />
           <ActionQueuePanel data={data.actionQueue} />
           <TaskBoard
             tasks={data.tasks}
@@ -51,9 +52,9 @@ export function DashboardShell({ data, agents }: Props) {
           />
         </div>
         <div className="space-y-6 xl:col-span-4">
-          <WarRoomPanel data={data.warRoom} />
-          <AutomationPanel jobs={data.schedulerJobs} />
+          <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
           <SystemHealthPanel data={data.systemHealth} />
+          <AutomationPanel jobs={data.schedulerJobs} />
         </div>
       </div>
 
@@ -75,8 +76,6 @@ export function DashboardShell({ data, agents }: Props) {
           <IdeaBoardPanel board={data.ideaBoard} />
         </div>
       </div>
-
-      <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
     </div>
   );
 }

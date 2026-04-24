@@ -6,6 +6,9 @@ type Props = {
 
 export function WarRoomPanel({ data }: Props) {
   const isActive = data.mode === "war_room";
+  const entries = data.entries ?? [];
+  const latestEntry = entries[0] ?? null;
+  const archiveEntries = entries.slice(1);
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
       <div className="flex items-center justify-between gap-3">
@@ -25,18 +28,32 @@ export function WarRoomPanel({ data }: Props) {
       )}
 
       <div className="mt-5 space-y-4">
-        {data.entries.length === 0 && (
+        {!latestEntry && (
           <div className="rounded-2xl border border-dashed border-zinc-800 p-4 text-sm text-zinc-500">
             No war-room notes yet.
           </div>
         )}
-        {data.entries.map((entry) => (
-          <article key={entry.id} className="rounded-2xl border border-zinc-900 bg-zinc-950/80 p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{formatDate(entry.createdAt)}</div>
-            <h3 className="mt-1 text-sm font-semibold text-zinc-100">{entry.title}</h3>
-            <p className="mt-2 text-sm text-zinc-200">{entry.summary}</p>
+
+        {latestEntry && (
+          <article className="rounded-2xl border border-emerald-800 bg-emerald-900/10 p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-emerald-300">Latest session · {formatDate(latestEntry.createdAt)}</div>
+            <h3 className="mt-1 text-base font-semibold text-emerald-50">{latestEntry.title}</h3>
+            <p className="mt-2 text-sm text-emerald-100">{latestEntry.summary}</p>
           </article>
-        ))}
+        )}
+
+        {archiveEntries.length > 0 && (
+          <div className="space-y-3">
+            <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-600">Previous sessions</div>
+            {archiveEntries.map((entry) => (
+              <article key={entry.id} className="rounded-2xl border border-zinc-900 bg-zinc-950/80 p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{formatDate(entry.createdAt)}</div>
+                <h3 className="mt-1 text-sm font-semibold text-zinc-100">{entry.title}</h3>
+                <p className="mt-2 text-sm text-zinc-200">{entry.summary}</p>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
