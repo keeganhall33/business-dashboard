@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Deploying
+
+`./scripts/deploy.sh` wraps our release flow so Fly and Vercel stay in sync:
+
+1. Create `.env.deploy` (ignored by git) with `VERCEL_DEPLOY_HOOK_URL=<hook>` – the production hook currently lives at `https://api.vercel.com/v1/integrations/deploy/prj_iGgUAjo6mRCpljpVtXoaY3FM8kgz/hYd64J3o6f`.
+2. Run `./scripts/deploy.sh` (pass any `fly deploy` flags you need). The script deploys to Fly and, if `VERCEL_DEPLOY_HOOK_URL` is set, immediately POSTs to that hook so Vercel publishes the same commit.
+
 ## Getting Started
 
 First, run the development server:

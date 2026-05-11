@@ -32,7 +32,7 @@ export function TaskBoard({ tasks, schedulerJobs, agentSla, approvalBottlenecks 
         approvalBottlenecks={approvalBottlenecks}
       />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Object.entries(columns).map(([column, items]) => (
           <div key={column} className="flex h-full flex-col rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
             <div className="flex items-center justify-between text-sm font-semibold capitalize text-zinc-100">
