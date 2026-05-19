@@ -206,8 +206,23 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
         </div>
       </div>
 
-      <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      {!expanded && (
+        <CollapsedSummary
+          pendingPlan={pendingPlan}
+          lastPlan={lastPlan}
+          autoPlan={autoPlan}
+          liveCount={liveTaskList.length}
+          queuedCount={queuedTaskList.length}
+          blockedCount={blockedTaskList.length}
+          priorityCount={prioritySignals.length}
+          latestDirective={latestDirective}
+        />
+      )}
+
+      {expanded && (
+        <>
+          <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2 text-sm text-zinc-200">
             <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Current plan</div>
             {pendingPlan ? (
@@ -334,52 +349,54 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
         </section>
       </div>
 
-      <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
-        <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Shipped outputs</div>
-        <div className="mt-4 space-y-3">
-          {deliverables.length > 0
-            ? deliverables.map((task) => {
-                const loggedAt = task.completedAt ?? task.createdAt;
-                return (
-                  <div
-                    key={`deliverable-${task.id}`}
-                    className="rounded-2xl border border-emerald-900/40 bg-emerald-900/10 p-4 text-sm text-emerald-50"
-                  >
-                    <div className="font-semibold text-emerald-100">{task.title}</div>
-                    <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
-                    <DeliverableAttachmentList attachments={task.deliverableLinks} tone="emerald" />
-                    <div className="mt-1 text-xs text-emerald-200">
-                      Logged {loggedAt ? formatDate(loggedAt) : "recently"}
+          <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+            <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Shipped outputs</div>
+            <div className="mt-4 space-y-3">
+              {deliverables.length > 0
+                ? deliverables.map((task) => {
+                    const loggedAt = task.completedAt ?? task.createdAt;
+                    return (
+                      <div
+                        key={`deliverable-${task.id}`}
+                        className="rounded-2xl border border-emerald-900/40 bg-emerald-900/10 p-4 text-sm text-emerald-50"
+                      >
+                        <div className="font-semibold text-emerald-100">{task.title}</div>
+                        <p className="mt-1 whitespace-pre-line text-emerald-50">{task.deliverableSummary}</p>
+                        <DeliverableAttachmentList attachments={task.deliverableLinks} tone="emerald" />
+                        <div className="mt-1 text-xs text-emerald-200">
+                          Logged {loggedAt ? formatDate(loggedAt) : "recently"}
+                        </div>
+                      </div>
+                    );
+                  })
+                : fallbackDeliverables.map((item) => (
+                    <div
+                      key={`fallback-deliverable-${item.id}`}
+                      className="rounded-2xl border border-amber-900/40 bg-amber-900/10 p-4 text-sm text-amber-50"
+                    >
+                      <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">
+                        {formatDate(item.createdAt)} • {item.updateType}
+                      </div>
+                      <div className="mt-1 font-semibold text-amber-100">{item.title}</div>
+                      <p className="mt-1 whitespace-pre-line text-amber-50">{item.summary}</p>
                     </div>
-                  </div>
-                );
-              })
-            : fallbackDeliverables.map((item) => (
-                <div
-                  key={`fallback-deliverable-${item.id}`}
-                  className="rounded-2xl border border-amber-900/40 bg-amber-900/10 p-4 text-sm text-amber-50"
-                >
-                  <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">
-                    {formatDate(item.createdAt)} • {item.updateType}
-                  </div>
-                  <div className="mt-1 font-semibold text-amber-100">{item.title}</div>
-                  <p className="mt-1 whitespace-pre-line text-amber-50">{item.summary}</p>
-                </div>
-              ))}
-        </div>
-        {!deliverables.length && fallbackDeliverables.length > 0 && (
-          <p className="mt-3 text-xs text-amber-200">
-            No deliverables logged yet — showing most recent shipped actions.
-          </p>
-        )}
-      </section>
+                  ))}
+            </div>
+            {!deliverables.length && fallbackDeliverables.length > 0 && (
+              <p className="mt-3 text-xs text-amber-200">
+                No deliverables logged yet — showing most recent shipped actions.
+              </p>
+            )}
+          </section>
+        </>
+      )}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-200 hover:border-zinc-500"
           onClick={onToggle}
         >
-          {expanded ? "Hide command thread" : "View command thread"}
+          {expanded ? "Collapse domain detail" : "Expand domain detail"}
         </button>
       </div>
 
@@ -391,6 +408,77 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+type CollapsedSummaryProps = {
+  pendingPlan: AgentDashboardResponse["planQueue"]["pending"] | null;
+  lastPlan: AgentDashboardResponse["planQueue"]["recent"][number] | null;
+  autoPlan: string[] | null;
+  liveCount: number;
+  queuedCount: number;
+  blockedCount: number;
+  priorityCount: number;
+  latestDirective: AgentDashboardResponse["recentUpdates"][number] | null;
+};
+
+function CollapsedSummary({ pendingPlan, lastPlan, autoPlan, liveCount, queuedCount, blockedCount, priorityCount, latestDirective }: CollapsedSummaryProps) {
+  const preview = buildPlanPreview(pendingPlan, lastPlan, autoPlan);
+  return (
+    <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950/70 p-5">
+      <div>
+        <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Plan snapshot</div>
+        <div className="mt-1 text-lg font-semibold text-zinc-50">{preview.title}</div>
+        {preview.detail ? <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{preview.detail}</p> : null}
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CollapsedStat label="Live tasks" value={liveCount} />
+        <CollapsedStat label="Queued" value={queuedCount} />
+        <CollapsedStat label="Blocked" value={blockedCount} tone={blockedCount ? "warning" : undefined} />
+        <CollapsedStat label="Priority alerts" value={priorityCount} tone={priorityCount ? "warning" : undefined} />
+      </div>
+      {latestDirective && (
+        <p className="mt-4 text-xs text-zinc-500">
+          Latest directive: <span className="text-zinc-300">{latestDirective.title}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function buildPlanPreview(
+  pendingPlan: AgentDashboardResponse["planQueue"]["pending"] | null,
+  lastPlan: AgentDashboardResponse["planQueue"]["recent"][number] | null,
+  autoPlan: string[] | null
+) {
+  if (pendingPlan) {
+    return {
+      title: pendingPlan.title,
+      detail: pendingPlan.summary ?? `Submitted ${formatDate(pendingPlan.submittedAt)}`
+    };
+  }
+  if (lastPlan) {
+    return {
+      title: lastPlan.title,
+      detail: lastPlan.summary ?? `Approved ${lastPlan.approvedAt ? formatDate(lastPlan.approvedAt) : "previously"}`
+    };
+  }
+  if (autoPlan && autoPlan.length) {
+    return {
+      title: "Auto brief",
+      detail: autoPlan.slice(0, 2).join(" • ")
+    };
+  }
+  return { title: "No plan submitted", detail: "Awaiting direction" };
+}
+
+function CollapsedStat({ label, value, tone }: { label: string; value: number; tone?: "warning" }) {
+  const toneClasses = tone === "warning" ? "border-amber-500/40 text-amber-100" : "border-zinc-800 text-zinc-200";
+  return (
+    <div className={`rounded-2xl border ${toneClasses} bg-zinc-950/60 p-4`}>
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
     </div>
   );
 }

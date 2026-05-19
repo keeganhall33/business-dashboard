@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TaskSummary } from "@/lib/types/dashboard";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
+import { ViewWorkModal } from "./ViewWorkModal";
 import { ProgressBar } from "./ui/ProgressBar";
 import { StatusChip } from "./ui/StatusChip";
 
@@ -16,6 +17,7 @@ export function TaskCard({ task }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [openDetails, setOpenDetails] = useState(false);
   const [openDeliverables, setOpenDeliverables] = useState(Boolean(task.deliverableSummary));
+  const [openWork, setOpenWork] = useState(false);
 
   const pct = estimateProgress(task.status);
   const tone = statusToTone(task.status);
@@ -106,14 +108,25 @@ export function TaskCard({ task }: Props) {
       )}
 
       <div className="mt-4 rounded-2xl border border-zinc-900 bg-zinc-950/70">
-        <button
-          type="button"
-          onClick={() => setOpenDeliverables((v) => !v)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        >
-          <div className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">Deliverables</div>
-          <div className="text-xs text-zinc-500">{openDeliverables ? "Hide" : "Show"}</div>
-        </button>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setOpenDeliverables((v) => !v)}
+            className="flex flex-1 items-center justify-between gap-3 text-left"
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">Deliverables</div>
+            <div className="text-xs text-zinc-500">{openDeliverables ? "Hide" : "Show"}</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpenWork(true)}
+            className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-200 hover:border-zinc-700"
+          >
+            View work
+          </button>
+        </div>
+
         {openDeliverables ? (
           <div className="border-t border-zinc-900 px-4 py-3">
             {task.deliverableSummary ? (
@@ -127,6 +140,19 @@ export function TaskCard({ task }: Props) {
           </div>
         ) : null}
       </div>
+
+      <ViewWorkModal
+        open={openWork}
+        onClose={() => setOpenWork(false)}
+        title={task.title}
+        subtitle={`${task.agentKey} • ${String(task.status).replace(/_/g, " ")}`}
+        body={task.deliverableSummary ?? task.description ?? null}
+        attachments={task.deliverableLinks ?? null}
+        metaChips={[
+          { label: `Priority ${task.priority}`, tone: task.priority === "critical" ? "rose" : task.priority === "high" ? "amber" : "zinc" },
+          { label: task.requiresApproval ? "Approval-gated" : "No approval", tone: task.requiresApproval ? "amber" : "zinc" }
+        ]}
+      />
 
       {error && <div className="mt-3 text-xs text-red-300">{error}</div>}
 

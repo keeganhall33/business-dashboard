@@ -1,19 +1,29 @@
 import { AgentSlaSnapshot, ApprovalBottleneck, SchedulerJobHealth, TaskSummary } from "@/lib/types/dashboard";
 import { TaskCard } from "./TaskCard";
 
+type AgentCommentary = {
+  title: string | null;
+  summary: string | null;
+  createdAt: string | null;
+};
+
+type AgentCommentaryMap = Record<string, AgentCommentary | null>;
+
 type Props = {
   tasks: TaskSummary[];
   schedulerJobs: SchedulerJobHealth[];
   agentSla: AgentSlaSnapshot[];
   approvalBottlenecks: ApprovalBottleneck;
+  agentCommentary?: AgentCommentaryMap;
 };
 
-export function TaskBoard({ tasks, schedulerJobs, agentSla, approvalBottlenecks }: Props) {
+export function TaskBoard({ tasks, schedulerJobs, agentSla, approvalBottlenecks, agentCommentary }: Props) {
+  const normalizedTasks = condenseFacebookTasks(tasks, agentCommentary);
   const columns = {
-    critical: tasks.filter((t) => t.priority === "critical" && t.status !== "completed"),
-    high: tasks.filter((t) => t.priority === "high" && t.status !== "completed"),
-    medium: tasks.filter((t) => t.priority === "medium" && t.status !== "completed"),
-    completed: tasks.filter((t) => t.status === "completed")
+    critical: normalizedTasks.filter((t) => t.priority === "critical" && t.status !== "completed"),
+    high: normalizedTasks.filter((t) => t.priority === "high" && t.status !== "completed"),
+    medium: normalizedTasks.filter((t) => t.priority === "medium" && t.status !== "completed"),
+    completed: normalizedTasks.filter((t) => t.status === "completed")
   };
 
   return (
@@ -21,7 +31,7 @@ export function TaskBoard({ tasks, schedulerJobs, agentSla, approvalBottlenecks 
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Task Queue</div>
-          <div className="text-lg font-semibold text-zinc-100">{tasks.length} active items</div>
+          <div className="text-lg font-semibold text-zinc-100">{normalizedTasks.length} active items</div>
         </div>
         <div className="text-xs text-zinc-500">Critical → Completed</div>
       </div>
@@ -130,4 +140,53 @@ function statusDot(status: string | null | undefined) {
   if (status === "failed") return "bg-red-500";
   if (status === "running") return "bg-amber-400";
   return "bg-emerald-500";
+}
+
+function condenseFacebookTasks(tasks: TaskSummary[], agentCommentary?: AgentCommentaryMap) {
+  const pattern = /facebook ads review/i;
+  const grouped = tasks.filter((task) => pattern.test(task.title));
+  if (grouped.length <= 1) return tasks;
+  const sorted = grouped.slice().sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  const latest = sorted[0];
+  const commentary = latest.agentKey ? agentCommentary?.[latest.agentKey] : null;
+  const descriptionParts = [
+    `${grouped.length} pending reviews. Latest logged ${formatShortDate(latest.createdAt)}.`
+  ];
+  if (commentary && (commentary.summary || commentary.title)) {
+    const note = commentary.summary ?? commentary.title;
+    const relative = formatRelativeCommentaryTime(commentary.createdAt);
+    descriptionParts.push(`Latest commentary${relative ? ` (${relative})` : ""}: ${note}`);
+  }
+  const aggregatedTitle = latest.title?.trim()?.length
+    ? `${latest.title} (Grouped)`
+    : "Facebook Ads Review (Grouped)";
+  const aggregated: TaskSummary = {
+    ...latest,
+    id: `${latest.id}-fb-aggregate`,
+    description: descriptionParts.join(" "),
+    title: aggregatedTitle
+  };
+  return [...tasks.filter((task) => !pattern.test(task.title)), aggregated];
+}
+
+function formatShortDate(iso?: string | null) {
+  if (!iso) return "recently";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "recently";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+function formatRelativeCommentaryTime(iso?: string | null) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffDays = Math.round((Date.now() - date.getTime()) / 86400000);
+  if (diffDays <= 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  if (diffDays < 10) return `${diffDays}d ago`;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
 }

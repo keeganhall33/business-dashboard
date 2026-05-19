@@ -28,6 +28,18 @@ export type RevenueMetric = {
   targetValue: number;
   status: MetricStatus;
   unit: string | null;
+  ownerAgent?: string | null;
+  tactics?: string[] | null;
+  evidence?: DeliverableLink[] | null;
+
+  // Optional history for premium visuals (sparkline, range context)
+  history?: Array<{ measuredAt: string; value: number | null }> | null;
+  stats?: {
+    average: number | null;
+    min: number | null;
+    max: number | null;
+    changePercent: number | null;
+  } | null;
 };
 
 export type RevenueEngine = {
@@ -54,6 +66,7 @@ export type Opportunity = {
   ownerAgent: string | null;
   nextStep: string | null;
   nextStepDueAt: string | null;
+  supportingDocs?: DeliverableLink[] | null;
 };
 
 export type OpportunityRadar = {
@@ -72,6 +85,7 @@ export type CollectorRelationship = {
   nextMove: string | null;
   nextMoveDueAt: string | null;
   estimatedValue: number | null;
+  supportingDocs?: DeliverableLink[] | null;
 };
 
 export type SurvivalStrip = {
@@ -140,6 +154,7 @@ export type AgentKpiDefinition = {
   frequency: string | null;
   priority: string | null;
   latestReading: AgentKpiReading | null;
+  priorReading?: AgentKpiReading | null;
 };
 
 export type AgentKpiBucket = {
@@ -164,6 +179,21 @@ export type IdeaCard = {
   createdAt: string;
 };
 
+export type IdeaLinkedTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  requiresApproval: boolean;
+  approvedByUser?: boolean | null;
+  dueAt?: string | null;
+  expectedDurationDays?: number | null;
+  description?: string | null;
+  deliverableLinks?: DeliverableLink[] | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+};
+
 export type IdeaComment = {
   id: string;
   ideaId: string;
@@ -175,6 +205,7 @@ export type IdeaComment = {
 export type IdeaBoard = {
   columns: Record<string, IdeaCard[]> | Array<{ status?: string; key?: string; title?: string; ideas?: IdeaCard[] }>;
   recentComments: IdeaComment[];
+  linkedTasks?: Record<string, IdeaLinkedTask>;
 };
 
 export type CeoQuestion = {

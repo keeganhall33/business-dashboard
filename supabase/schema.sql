@@ -132,7 +132,8 @@ for each row execute function set_updated_at();
 create table if not exists agent_updates (
   id uuid primary key default gen_random_uuid(),
   agent_key text not null references agent_profiles(agent_key) on delete cascade,
-  update_type text not null check (update_type in ('insight','action','big_bet','directive','health','note')),
+  -- NOTE: 'summary' is used by automation + status snapshots (see src/lib/agents/automation.ts).
+  update_type text not null check (update_type in ('insight','action','big_bet','directive','health','note','summary')),
   title text not null,
   summary text not null,
   detail_md text,
@@ -265,6 +266,33 @@ create table if not exists system_runs (
 
 create index if not exists idx_system_runs_agent_key_started_at on system_runs(agent_key, started_at desc);
 create index if not exists idx_system_runs_status on system_runs(status);
+
+-- 2.9.1 System run checkpoints (progress / handshake / resume metadata)
+create table if not exists system_run_checkpoints (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references system_runs(id) on delete cascade,
+  agent_key text not null references agent_profiles(agent_key) on delete cascade,
+  checkpoint_key text not null,
+  status text not null check (status in ('started','completed','failed')),
+  detail_md text,
+  metadata jsonb not null default '{}'::jsonb,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_system_run_checkpoints_run_id_created_at
+  on system_run_checkpoints(run_id, created_at asc);
+create index if not exists idx_system_run_checkpoints_agent_key_created_at
+  on system_run_checkpoints(agent_key, created_at desc);
+create unique index if not exists idx_system_run_checkpoints_unique
+  on system_run_checkpoints(run_id, checkpoint_key);
+
+drop trigger if exists trg_system_run_checkpoints_updated_at on system_run_checkpoints;
+create trigger trg_system_run_checkpoints_updated_at
+before update on system_run_checkpoints
+for each row execute function set_updated_at();
 
 -- 2.10 Metric alert rules
 create table if not exists metric_alert_rules (
@@ -786,9 +814,11 @@ insert into scheduled_jobs (
 ) values
  ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
+ ('ceo-digest','CEO Digest','30 6 * * *','America/Los_Angeles','/api/scheduler/ceo-digest',true),
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),
- ('evening-closeout','Evening Closeout','30 19 * * *','America/Los_Angeles','/api/scheduler/evening-closeout',true)
+ ('evening-closeout','Evening Closeout','30 19 * * *','America/Los_Angeles','/api/scheduler/evening-closeout',true),
+ ('proof-enforcement','Proof Enforcement','0 20 * * *','America/Los_Angeles','/api/scheduler/proof-enforcement',true)
 on conflict (job_key) do nothing;
 
 -- System state seeds (from SCHEDULER_SPEC.md)
@@ -797,5 +827,7 @@ values
  ('operating_mode', jsonb_build_object('mode','normal','reason',null,'activatedAt',null)),
  ('weekly_summary', jsonb_build_object()),
  ('latest_directive', jsonb_build_object()),
- ('dashboard_snapshot_meta', jsonb_build_object('lastRefreshedAt',null))
+ ('dashboard_snapshot_meta', jsonb_build_object('lastRefreshedAt',null)),
+ ('missing_proof', jsonb_build_object('missingProofCount',0,'missingProofTaskIds','[]'::jsonb,'updatedAt',null)),
+ ('ceo_digest_latest', jsonb_build_object('pendingApprovals',0,'unresolvedAlerts',0,'taskCountsByStatus',jsonb_build_object(),'digestMd',null,'updatedAt',null))
 on conflict (key) do nothing;

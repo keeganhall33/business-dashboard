@@ -1,5 +1,6 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
+import { loadDashboardOverviewFromSeed } from "@/lib/dashboard/seed";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -20,6 +21,7 @@ import {
   getRecentTasks,
   listAgentKpis,
   listLatestAgentKpiReadingsByKpiKeys,
+  listLatestAgentKpiReadingsByKpiKeysForRange,
   getIdeas,
   getRecentIdeaComments,
   getCeoQuestions,
@@ -27,6 +29,8 @@ import {
 } from "@/lib/supabase/queries";
 import { RangePreset } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
+
+export const runtime = "nodejs";
 
 type ScoreboardMetricRow = {
   metric_key: string;
@@ -86,7 +90,60 @@ type OpportunityRow = {
   owner_agent: string;
   next_step: string | null;
   next_step_due_at: string | null;
+  notes_md?: string | null;
+  source?: string | null;
+  deliverables?: unknown;
+  deliverable_links?: unknown;
 };
+
+function extractUrls(text: string) {
+  const urls: string[] = [];
+  const regex = /https?:\/\/[^\s)\]]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    urls.push(match[0]);
+  }
+  return urls;
+}
+
+function buildSupportingDocs(entity: {
+  source?: string | null;
+  notes_md?: string | null;
+  deliverables?: unknown;
+  deliverable_links?: unknown;
+}) {
+  const candidates: Array<{ label: string; url: string }> = [];
+
+  const deliverables = normalizeDeliverableLinks(entity.deliverables ?? entity.deliverable_links);
+  deliverables.slice(0, 6).forEach((link) => {
+    candidates.push({ label: link.label || "Deliverable", url: link.url });
+  });
+
+  if (entity.source) {
+    const sourceUrls = extractUrls(entity.source);
+    if (sourceUrls.length > 0) {
+      candidates.push({ label: "Source", url: sourceUrls[0] });
+    } else if (entity.source.startsWith("http")) {
+      candidates.push({ label: "Source", url: entity.source });
+    }
+  }
+
+  const noteUrls = entity.notes_md ? extractUrls(entity.notes_md) : [];
+  noteUrls.slice(0, 6).forEach((url, idx) => {
+    candidates.push({ label: `Doc ${idx + 1}`, url });
+  });
+
+  const seen = new Set<string>();
+  const unique = candidates.filter((c) => {
+    if (!c.url) return false;
+    const key = c.url.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return unique.length > 0 ? unique : null;
+}
 
 type ScheduledJobRow = {
   job_key: string;
@@ -137,6 +194,10 @@ type CollectorRow = {
   next_move: string | null;
   next_move_due_at: string | null;
   estimated_value: number | null;
+  notes_md?: string | null;
+  source?: string | null;
+  deliverables?: unknown;
+  deliverable_links?: unknown;
 };
 
 type AgentKpiRow = {
@@ -300,8 +361,163 @@ function resolveRange(rangeParam: string | null, startParam: string | null, endP
   return { preset: fallback.preset, startDate, endDate };
 }
 
+function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string }) {
+  // start/end are YYYY-MM-DD in UTC. Treat endDate as inclusive.
+  const start = new Date(`${range.startDate}T00:00:00.000Z`);
+  const endInclusive = new Date(`${range.endDate}T00:00:00.000Z`);
+  const endExclusive = new Date(endInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  return {
+    startIso: start.toISOString(),
+    endIsoExclusive: endExclusive.toISOString(),
+    durationMs: endExclusive.getTime() - start.getTime(),
+    start,
+    endExclusive
+  };
+}
+
 export async function GET(request: Request) {
   try {
+    // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
+    // This is intentionally temporary so the UI can render without env/network.
+    if ((process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed") {
+      const seeded = await loadDashboardOverviewFromSeed();
+      return ok(seeded);
+    }
+
+    // E2E test harness: allow Playwright/Cypress to run without Supabase env + network.
+    // NOTE: keep payload shape stable with the real endpoint.
+    if (process.env.E2E_TEST === "1") {
+      const now = new Date();
+      const responseRange = { preset: "30d" as const, startDate: "2026-05-01", endDate: "2026-05-30" };
+
+      return ok({
+        ok: true,
+        timestamp: now.toISOString(),
+        range: responseRange,
+        headerMetrics: [],
+        executiveCommand: {
+          weeklyDirective: "E2E fixture",
+          topPriorities: [],
+          biggestBottlenecks: [],
+          ceoRecommendation: "E2E fixture"
+        },
+        warRoom: {
+          mode: "war_room",
+          reason: "E2E: revenue alert",
+          lastUpdated: now.toISOString(),
+          entries: [
+            {
+              id: "wr-1",
+              title: "Conversion drop",
+              summary: "Session → checkout funnel broke on mobile.",
+              detailMd: null,
+              createdAt: now.toISOString()
+            }
+          ]
+        },
+        revenueEngine: { metrics: [], moneyLeaks: [], fastestPathToIncreaseRevenue: [] },
+        brandPower: { metrics: [], whatIsWorking: [], whatToDoNext: [] },
+        opportunityRadar: { activeCount: 0, readyForOutreachCount: 0, topOpportunities: [], nextFiveMoves: [] },
+        pipelinePanel: { collectors: [], deals: [] },
+        survivalStrip: {
+          configured: true,
+          cashOnHand: 12000,
+          survivalFloor: 7000,
+          monthlyBurn: 6000,
+          projected30dRevenue: 15000,
+          runwayDays: 60
+        },
+        tasks: [
+          {
+            id: "task-fixture-1",
+            title: "Approve campaign creative",
+            agentKey: "avery",
+            priority: "high",
+            status: "pending",
+            expectedImpact: "Unblocks conversion fixes this week.",
+            impactScore: null,
+            requiresApproval: true,
+            approvedByUser: false,
+            description: "Review the creative and approve/reject.",
+            deliverableSummary: "Draft creative is ready.",
+            deliverableLinks: [{ label: "Figma", url: "https://example.com/figma" }],
+            whyThisMatters: "Approval gate",
+            relatedMetricKeys: [],
+            expectedDurationDays: 2,
+            createdAt: now.toISOString(),
+            completedAt: null
+          }
+        ],
+        schedulerJobs: [],
+        agentSla: [],
+        approvalBottlenecks: { pendingCount: 1, oldestPendingHours: 2.5, tasks: [] },
+        actionQueue: {
+          needsApprovalTasks: {
+            label: "Task approvals",
+            count: 1,
+            items: [
+              {
+                id: "task-approval-1",
+                itemType: "task",
+                title: "Approve ad spend",
+                summary: "Increase budget by $500",
+                createdAt: now.toISOString(),
+                dueAt: null,
+                actor: "avery",
+                priority: "high"
+              }
+            ]
+          },
+          pendingPlans: { label: "Plans awaiting review", count: 0, items: [] },
+          decisionsDue: { label: "Decisions to revisit", count: 0, items: [] },
+          invoicesToSend: { label: "Invoices to send", count: 0, items: [] }
+        },
+        systemHealth: { dataFreshnessHours: 0, agentTaskCompletionRate: 100, agents: [] },
+        agentUpdateFeed: [],
+        commerceTelemetry: { range: responseRange },
+        agentKpis: [],
+        ideaBoard: {
+          columns: {
+            proposed: [
+              {
+                id: "idea-1",
+                agentKey: "avery",
+                agentName: "Avery",
+                ideaType: "major",
+                title: "Raise prices on premium prints",
+                summary: "Test tiered pricing: standard vs collector edition.",
+                expectedImpact: 8,
+                requiresCeoApproval: true,
+                linkedTaskId: null,
+                approvedAt: null,
+                approver: null,
+                updatedAt: now.toISOString(),
+                createdAt: now.toISOString()
+              }
+            ],
+            in_review: [],
+            approved: [],
+            rejected: [],
+            in_progress: [],
+            shipped: [],
+            archived: []
+          },
+          linkedTasks: {},
+          recentComments: [
+            {
+              id: "idea-comment-1",
+              ideaId: "idea-1",
+              commenter: "noah",
+              comment: "This unlocks AOV immediately.",
+              createdAt: now.toISOString()
+            }
+          ]
+        },
+        ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] }
+      });
+    }
+
     const url = new URL(request.url);
     const rangeParam = url.searchParams.get("range");
     const startParam = url.searchParams.get("start");
@@ -351,8 +567,27 @@ export async function GET(request: Request) {
     ]);
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
-    const kpiReadings = (await listLatestAgentKpiReadingsByKpiKeys(kpiKeys)) as AgentKpiReadingRow[];
-    const latestReadingByKey = new Map(kpiReadings.map((r) => [r.kpi_key, r]));
+
+    const { startIso, endIsoExclusive, durationMs } = isoRangeBoundsFromDateRange(range);
+    const prevEndExclusive = new Date(startIso);
+    const prevStart = new Date(prevEndExclusive.getTime() - durationMs);
+
+    const [kpiReadings, priorKpiReadings] = await Promise.all([
+      listLatestAgentKpiReadingsByKpiKeysForRange(kpiKeys, { startIso, endIsoExclusive }) as Promise<AgentKpiReadingRow[]>,
+      listLatestAgentKpiReadingsByKpiKeysForRange(kpiKeys, {
+        startIso: prevStart.toISOString(),
+        endIsoExclusive: prevEndExclusive.toISOString()
+      }) as Promise<AgentKpiReadingRow[]>
+    ]);
+
+    // Fallback: if there are zero readings in the selected range (fresh tables), use global latest.
+    // This keeps the strip from looking empty while still preferring true range-based deltas.
+    const effectiveCurrentReadings = kpiReadings.length
+      ? kpiReadings
+      : ((await listLatestAgentKpiReadingsByKpiKeys(kpiKeys)) as AgentKpiReadingRow[]);
+
+    const latestReadingByKey = new Map(effectiveCurrentReadings.map((r) => [r.kpi_key, r]));
+    const priorReadingByKey = new Map(priorKpiReadings.map((r) => [r.kpi_key, r]));
 
     const agentKpis = agentKeys.map((agentKey) => {
       const defs = (kpiDefinitions as AgentKpiRow[]).filter((kpi) => kpi.agent_key === agentKey);
@@ -361,6 +596,7 @@ export async function GET(request: Request) {
         agentName: agentDisplayNames[agentKey as keyof typeof agentDisplayNames] ?? agentKey,
         kpis: defs.map((kpi) => {
           const latest = latestReadingByKey.get(kpi.kpi_key);
+          const prior = priorReadingByKey.get(kpi.kpi_key);
           return {
             kpiKey: kpi.kpi_key,
             kpiName: kpi.kpi_name,
@@ -377,6 +613,15 @@ export async function GET(request: Request) {
                   source: latest.source,
                   notes: latest.notes
                 }
+              : null,
+            priorReading: prior
+              ? {
+                  id: prior.id,
+                  value: toNumber(prior.value),
+                  measuredAt: prior.measured_at,
+                  source: prior.source,
+                  notes: prior.notes
+                }
               : null
           };
         })
@@ -384,6 +629,7 @@ export async function GET(request: Request) {
     });
 
     const ideas = (ideaResult as { items: IdeaRow[] }).items;
+
     const ideaBoardStatuses = [
       "proposed",
       "in_review",
@@ -553,7 +799,18 @@ export async function GET(request: Request) {
         currentValue: toNumber(m.current_value) ?? 0,
         targetValue: toNumber(m.target_value) ?? 0,
         status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-        unit: m.unit ?? null
+        unit: m.unit ?? null,
+        history: (m.history ?? null)
+          ? (m.history ?? []).map((h) => ({ measuredAt: h.measured_at, value: h.value }))
+          : null,
+        stats: (m.stats ?? null)
+          ? {
+              average: m.stats?.average ?? null,
+              min: m.stats?.min ?? null,
+              max: m.stats?.max ?? null,
+              changePercent: m.stats?.changePercent ?? null
+            }
+          : null
       }));
 
     const revenueEngine = {
@@ -607,6 +864,7 @@ export async function GET(request: Request) {
       ownerAgent: string;
       nextStep: string | null;
       nextStepDueAt: string | null;
+      supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
 
     for (const opportunity of sortedOpportunities) {
@@ -625,7 +883,8 @@ export async function GET(request: Request) {
         probabilityScore: opportunity.probability_score,
         ownerAgent: opportunity.owner_agent,
         nextStep: opportunity.next_step,
-        nextStepDueAt: opportunity.next_step_due_at
+        nextStepDueAt: opportunity.next_step_due_at,
+        supportingDocs: buildSupportingDocs(opportunity)
       });
 
       if (topOpportunities.length >= 5) break;
@@ -725,6 +984,40 @@ export async function GET(request: Request) {
       taskRowMap.set(task.id, task);
     });
     const allTaskRows = Array.from(taskRowMap.values());
+
+    const ideaBoardLinkedTasks = allTaskRows.reduce<
+      Record<
+        string,
+        {
+          id: string;
+          title: string;
+          status: string;
+          priority: string;
+          requiresApproval: boolean;
+          approvedByUser?: boolean | null;
+          dueAt?: string | null;
+          expectedDurationDays?: number | null;
+          description?: string | null;
+          deliverableLinks?: Array<{ label: string; url: string }> | null;
+          updatedAt?: string | null;
+        }
+      >
+    >((acc, task) => {
+      acc[task.id] = {
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        requiresApproval: task.requires_approval,
+        approvedByUser: task.approved_by_user ?? null,
+        dueAt: null,
+        expectedDurationDays: task.expected_duration_days,
+        description: task.description ?? null,
+        deliverableLinks: normalizeDeliverableLinks(task.deliverable_links),
+        updatedAt: task.created_at ?? null
+      };
+      return acc;
+    }, {});
 
     const nowMs = Date.now();
     const tasksByAgent = allTaskRows.reduce<Record<string, TaskRow[]>>((acc, task) => {
@@ -847,7 +1140,8 @@ export async function GET(request: Request) {
       lastOutreachAt: collector.last_outreach_at,
       nextMove: collector.next_move,
       nextMoveDueAt: collector.next_move_due_at,
-      estimatedValue: collector.estimated_value
+      estimatedValue: collector.estimated_value,
+      supportingDocs: buildSupportingDocs(collector)
     }));
 
     const pipelineDeals: {
@@ -862,6 +1156,7 @@ export async function GET(request: Request) {
       ownerAgent: string;
       nextStep: string | null;
       nextStepDueAt: string | null;
+      supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
     const seenPipelineDeals = new Set<string>();
     for (const opportunity of opportunities) {
@@ -880,7 +1175,8 @@ export async function GET(request: Request) {
         probabilityScore: opportunity.probability_score,
         ownerAgent: opportunity.owner_agent,
         nextStep: opportunity.next_step,
-        nextStepDueAt: opportunity.next_step_due_at
+        nextStepDueAt: opportunity.next_step_due_at,
+        supportingDocs: buildSupportingDocs(opportunity)
       });
       if (pipelineDeals.length >= 6) break;
     }
@@ -888,6 +1184,43 @@ export async function GET(request: Request) {
     const pipelinePanel = {
       collectors: collectorSummaries,
       deals: pipelineDeals
+    };
+
+    const taskSummaries = allTaskRows.map(mapTaskRowToSummary);
+    const metricTaskMap = new Map<
+      string,
+      {
+        tactics: string[];
+        evidence: Array<{ label: string; url: string }>;
+      }
+    >();
+
+    for (const task of taskSummaries) {
+      const keys = task.relatedMetricKeys ?? [];
+      if (!Array.isArray(keys) || keys.length === 0) continue;
+      for (const key of keys) {
+        if (!key) continue;
+        const existing = metricTaskMap.get(key) ?? { tactics: [], evidence: [] };
+        if (task.title && !existing.tactics.includes(task.title)) existing.tactics.push(task.title);
+        (task.deliverableLinks ?? []).forEach((link) => {
+          if (!existing.evidence.some((e) => e.url === link.url)) existing.evidence.push(link);
+        });
+        metricTaskMap.set(key, existing);
+      }
+    }
+
+    const revenueEngineEnriched = {
+      ...revenueEngine,
+      metrics: revenueEngine.metrics.map((metric) => {
+        const base = metricByKey.get(metric.metricKey);
+        const mapping = metricTaskMap.get(metric.metricKey);
+        return {
+          ...metric,
+          ownerAgent: base?.owner_agent ?? null,
+          tactics: mapping?.tactics?.slice(0, 3) ?? null,
+          evidence: mapping?.evidence?.slice(0, 4) ?? null
+        };
+      })
     };
 
     const responseRange = {
@@ -914,12 +1247,12 @@ export async function GET(request: Request) {
       headerMetrics,
       executiveCommand,
       warRoom,
-      revenueEngine,
+      revenueEngine: revenueEngineEnriched,
       brandPower,
       opportunityRadar,
       pipelinePanel,
       survivalStrip,
-      tasks: allTaskRows.map(mapTaskRowToSummary),
+      tasks: taskSummaries,
       schedulerJobs,
       agentSla,
       approvalBottlenecks,
@@ -930,6 +1263,7 @@ export async function GET(request: Request) {
       agentKpis,
       ideaBoard: {
         columns: ideaBoard,
+        linkedTasks: ideaBoardLinkedTasks,
         recentComments: (recentIdeaComments as IdeaCommentRow[]).map((c) => ({
           id: c.id,
           ideaId: c.idea_id,
@@ -941,6 +1275,8 @@ export async function GET(request: Request) {
       ceoQuestionDesk
     });
   } catch (error) {
+    console.error("overview error raw", error);
+    console.error("overview error json", JSON.stringify(error, null, 2));
     return serverError("Failed to load overview", {
       message: error instanceof Error ? error.message : String(error)
     });

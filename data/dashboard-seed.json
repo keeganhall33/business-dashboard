@@ -1,0 +1,101 @@
+{
+  "timestamp": "2026-05-18T00:00:00.000Z",
+  "range": {
+    "preset": "30d",
+    "startDate": "2026-04-19",
+    "endDate": "2026-05-18"
+  },
+  "headerMetrics": [
+    {
+      "metricKey": "monthly_revenue",
+      "metricName": "Monthly revenue",
+      "category": "revenue",
+      "currentValue": 18250,
+      "targetValue": 25000,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "usd",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    },
+    {
+      "metricKey": "aov",
+      "metricName": "Average order value",
+      "category": "revenue",
+      "currentValue": 412,
+      "targetValue": 650,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "usd",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    },
+    {
+      "metricKey": "conversion_rate",
+      "metricName": "Conversion rate",
+      "category": "revenue",
+      "currentValue": 1.8,
+      "targetValue": 2.6,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "percent",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    },
+    {
+      "metricKey": "active_brand_conversations",
+      "metricName": "Active brand conversations",
+      "category": "brand",
+      "currentValue": 7,
+      "targetValue": 12,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": null,
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    }
+  ],
+  "pipelinePanel": {
+    "collectors": [
+      {
+        "id": "seed-collector-1",
+        "name": "Collector A",
+        "tier": "A",
+        "status": "active",
+        "lastOutreachAt": "2026-05-10T18:22:00.000Z",
+        "nextMove": "Send updated collector edition deck",
+        "nextMoveDueAt": "2026-05-20T19:00:00.000Z",
+        "estimatedValue": 15000,
+        "supportingDocs": [
+          {
+            "label": "Notes",
+            "url": "https://example.com/collector-a"
+          }
+        ]
+      },
+      {
+        "id": "seed-collector-2",
+        "name": "Collector B",
+        "tier": "A",
+        "status": "warming",
+        "lastOutreachAt": "2026-05-04T17:10:00.000Z",
+        "nextMove": "Offer studio visit + private viewing",
+        "nextMoveDueAt": "2026-05-24T19:00:00.000Z",
+        "estimatedValue": 22000,
+        "supportingDocs": null
+      },
+      {
+        "id": "seed-collector-3",
+        "name": "Collector C",
+        "tier": "B",
+        "status": "stalled",
+        "lastOutreachAt": "2026-04-22T16:04:00.000Z",
+        "nextMove": "Follow up with new work-in-progress preview",
+        "nextMoveDueAt": "2026-05-22T19:00:00.000Z",
+        "estimatedValue": 8000,
+        "supportingDocs": null
+      }
+    ]
+  }
+}
+

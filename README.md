@@ -9,6 +9,41 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Environment variables
+
+Create a local `.env` (or copy `.env.example`) with the Supabase project settings:
+
+```
+NEXT_PUBLIC_APP_URL=http://localhost:3000          # optional, server-side fetch base
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Optional: use JSON seeds when you do not have Supabase access
+DASHBOARD_DATA_SOURCE=seed
+```
+
+`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are required for live data. When `DASHBOARD_DATA_SOURCE=seed`,
+the API falls back to `data/dashboard-seed.json` so the UI can render offline.
+
+### Dashboard data source (Supabase vs seed JSON)
+
+By default, the dashboard overview endpoint (`GET /api/dashboard/overview`) reads from Supabase.
+
+If you want to run the UI without Supabase env/network (or you have a Prefect JSON export), you can switch the overview endpoint into **seed mode**:
+
+```bash
+# from business-dashboard/
+export DASHBOARD_DATA_SOURCE=seed
+# optional: point at a different JSON export (Prefect, etc.)
+export DASHBOARD_SEED_PATH=./data/dashboard-seed.json
+```
+
+Seed mode populates:
+- the **Overview KPI strip** (header metrics)
+- the **Collector pipeline cards**
+
+Everything else stays as a lightweight stub so the dashboard renders.
+
 First, run the development server:
 
 ```bash
@@ -37,9 +72,53 @@ Jobs:
 
 - `POST /api/scheduler/daily-agent-cycle`
 - `POST /api/scheduler/daily-health-check`
+- `POST /api/scheduler/proof-enforcement`
+- `POST /api/scheduler/deliverable-harvest`
+- `POST /api/scheduler/ceo-digest`
 - `POST /api/scheduler/evening-closeout`
 - `POST /api/scheduler/weekly-command-cycle`
+- `POST /api/scheduler/weekly-summary`
 - `POST /api/scheduler/midweek-opportunity-pulse`
+
+## Manual data entry (metric readings)
+
+When upstream telemetry isn't wired yet, you can post manual readings into `scoreboard_metric_readings`:
+
+`POST /api/metrics/readings`
+
+Body:
+
+```json
+{
+  "metricKey": "monthly_revenue",
+  "currentValue": 28500,
+  "measuredAt": "2026-05-16T03:10:00.000Z",
+  "source": "manual"
+}
+```
+
+## Agent run handshake (checkpoints) + nudges
+
+To surface progress in the dashboard (and enable resume/hand-off workflows), runs can write checkpoints:
+
+- `GET /api/agents/runs/:runId/checkpoints`
+- `POST /api/agents/runs/:runId/checkpoints`
+
+Body:
+
+```json
+{
+  "agentKey": "noah",
+  "checkpointKey": "pipeline_scan",
+  "status": "started",
+  "detailMd": "Scanning recent opportunities for staleness",
+  "metadata": { "limit": 200 }
+}
+```
+
+You can also "nudge" an agent to activate approved/auto-runnable tasks and publish a status snapshot:
+
+- `POST /api/agents/nudge/:agentKey`
 
 To run from Supabase Scheduled Functions (or any cron runner), schedule an HTTP request to the route and include `x-scheduler-secret`.
 

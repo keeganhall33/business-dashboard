@@ -66,6 +66,27 @@ export async function getLatestScoreboardMetrics() {
   return data ?? [];
 }
 
+export async function createScoreboardMetricReading(input: {
+  metricKey: string;
+  currentValue: number;
+  measuredAtIso?: string;
+  source?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("scoreboard_metric_readings")
+    .insert({
+      metric_key: input.metricKey,
+      current_value: input.currentValue,
+      measured_at: input.measuredAtIso ?? nowIso(),
+      source: input.source ?? "manual"
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function getScoreboardMetricsForRange(range: { startDate: string; endDate: string }) {
   const supabase = getSupabaseServerClient();
   const startIso = new Date(`${range.startDate}T00:00:00Z`).toISOString();
@@ -818,15 +839,56 @@ export async function getRecentOpportunities(limit = 200) {
 
 export async function getCollectorRelationships(limit = 30) {
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
+  type CollectorDashboardViewRow = {
+    collector_id: string | null;
+    name: string | null;
+    tier: string | null;
+    last_touch_at: string | null;
+    next_touch_due_at: string | null;
+    revenue_lifetime: number | null;
+    state_chip: string | null;
+    drift_status: string | null;
+    drift_reason: string | null;
+  };
+
+  const viewQuery = await supabase
+    .from("vw_collectors_dashboard")
+    .select(
+      "collector_id,name,tier,last_touch_at,next_touch_due_at,revenue_lifetime,state_chip,drift_status,drift_reason"
+    )
+    .order("revenue_lifetime", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (!viewQuery.error && Array.isArray(viewQuery.data)) {
+    return (viewQuery.data as CollectorDashboardViewRow[]).map((row, idx) => ({
+      id: row.collector_id ?? row.name ?? `collector-${idx}`,
+      collector_name: row.name ?? "Collector",
+      tier: row.tier ?? "B",
+      relationship_status: row.state_chip ?? row.drift_status ?? "quiet",
+      last_outreach_at: row.last_touch_at ?? null,
+      next_move: row.drift_reason ?? null,
+      next_move_due_at: row.next_touch_due_at ?? null,
+      estimated_value: row.revenue_lifetime ?? null,
+      notes_md: null,
+      source: null,
+      deliverables: null,
+      deliverable_links: null
+    }));
+  }
+
+  if (viewQuery.error && !isMissingTableError(viewQuery.error, "vw_collectors_dashboard")) {
+    throw viewQuery.error;
+  }
+
+  const legacy = await supabase
     .from("collector_relationships")
     .select("*")
     .order("tier", { ascending: true })
     .order("priority", { ascending: false })
     .order("collector_name", { ascending: true })
     .limit(limit);
-  if (error) throw error;
-  return data ?? [];
+  if (legacy.error) throw legacy.error;
+  return legacy.data ?? [];
 }
 
 export async function getLatestOpportunitiesByStatus(status: string, limit = 50) {
@@ -1011,6 +1073,53 @@ export async function getRecentSystemRunsByAgent(agentKey: string, limit = 10) {
     .eq("agent_key", agentKey)
     .order("started_at", { ascending: false })
     .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function upsertSystemRunCheckpoint(input: {
+  runId: string;
+  agentKey: string;
+  checkpointKey: string;
+  status: "started" | "completed" | "failed";
+  detailMd?: string | null;
+  metadata?: Record<string, unknown>;
+  startedAtIso?: string | null;
+  finishedAtIso?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  const startedAt = input.startedAtIso ?? (input.status === "started" ? nowIso() : null);
+  const finishedAt =
+    input.finishedAtIso ?? (input.status !== "started" ? nowIso() : null);
+
+  const { data, error } = await supabase
+    .from("system_run_checkpoints")
+    .upsert(
+      {
+        run_id: input.runId,
+        agent_key: input.agentKey,
+        checkpoint_key: input.checkpointKey,
+        status: input.status,
+        detail_md: input.detailMd ?? null,
+        metadata: input.metadata ?? {},
+        started_at: startedAt,
+        finished_at: finishedAt
+      },
+      { onConflict: "run_id,checkpoint_key" }
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function listSystemRunCheckpoints(runId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("system_run_checkpoints")
+    .select("*")
+    .eq("run_id", runId)
+    .order("created_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
@@ -1597,6 +1706,37 @@ export async function listLatestAgentKpiReadingsByKpiKeys(kpiKeys: string[]) {
   return latest ?? [];
 }
 
+export async function listLatestAgentKpiReadingsByKpiKeysForRange(
+  kpiKeys: string[],
+  range: { startIso: string; endIsoExclusive: string }
+) {
+  if (!kpiKeys.length) return [];
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_kpi_readings")
+    .select("id,kpi_key,value,measured_at,source,notes")
+    .in("kpi_key", kpiKeys)
+    .gte("measured_at", range.startIso)
+    .lt("measured_at", range.endIsoExclusive)
+    .order("measured_at", { ascending: false })
+    .limit(Math.min(2000, kpiKeys.length * 25));
+  if (error) {
+    if (isMissingTableError(error, "agent_kpi_readings")) return [];
+    throw error;
+  }
+
+  // Deduplicate to latest per kpi_key within the provided range
+  const seen = new Set<string>();
+  const latest: typeof data = [];
+  for (const row of data ?? []) {
+    if (seen.has(row.kpi_key)) continue;
+    seen.add(row.kpi_key);
+    latest.push(row);
+  }
+
+  return latest ?? [];
+}
+
 // -----------------------------
 // Agent idea engine
 // -----------------------------
@@ -1675,6 +1815,18 @@ export async function updateIdeaStatus(input: {
     .from("agent_ideas")
     .update(patch)
     .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function linkIdeaToTask(input: { ideaId: string; taskId: string | null }) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("agent_ideas")
+    .update({ linked_task_id: input.taskId })
+    .eq("id", input.ideaId)
     .select("*")
     .single();
   if (error) throw error;

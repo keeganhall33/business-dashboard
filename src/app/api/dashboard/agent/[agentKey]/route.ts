@@ -61,6 +61,46 @@ export async function GET(_req: Request, context: { params: Promise<{ agentKey: 
   try {
     const { agentKey } = await context.params;
 
+    if (process.env.E2E_TEST === "1") {
+      return ok({
+        ok: true,
+        agent: {
+          agentKey,
+          displayName: agentKey === "avery" ? "Avery" : agentKey,
+          roleTitle: "E2E fixture",
+          mandate: "E2E fixture",
+          decisionScope: "E2E fixture"
+        },
+        ownedMetrics: [],
+        recentUpdates: [],
+        openTasks: [
+          {
+            id: `task-${agentKey}-1`,
+            title: "Approve creative direction",
+            agentKey,
+            priority: "high",
+            status: "pending",
+            expectedImpact: "Unblocks homepage conversion fixes.",
+            impactScore: null,
+            requiresApproval: true,
+            approvedByUser: false,
+            description: "Review the proposed creative direction and approve/reject.",
+            deliverableSummary: "Mockups ready in Figma.",
+            deliverableLinks: [{ label: "Figma", url: "https://example.com/figma" }],
+            whyThisMatters: "Approval gate",
+            relatedMetricKeys: [],
+            expectedDurationDays: 2,
+            createdAt: new Date().toISOString(),
+            completedAt: null
+          }
+        ],
+        completedTasks: [],
+        weeklyOutputRequirements: { weekly: [] },
+        planQueue: { pending: null, recent: [] },
+        conversation: { threadId: `thread-${agentKey}`, title: "E2E", messages: [] }
+      });
+    }
+
     const profile = await getAgentProfile(agentKey).catch(() => null);
     if (!profile) return notFound(`Unknown agent: ${agentKey}`);
 

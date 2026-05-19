@@ -1,6 +1,8 @@
 "use client";
 
 import { SchedulerJobHealth } from "@/lib/types/dashboard";
+import { ProgressBar } from "./ui/ProgressBar";
+import { StatusChip } from "./ui/StatusChip";
 
 type Props = {
   jobs: SchedulerJobHealth[];
@@ -61,12 +63,29 @@ export function AutomationPanel({ jobs }: Props) {
   }));
   const remaining = jobs.filter((job) => !EXPECTED_AUTOMATION.find((meta) => meta.jobKey === job.jobKey));
 
+  const unhealthyCount = prioritized.filter(({ job }) => !job || job.lastStatus === "failed").length;
+  const healthPct = Math.max(0, Math.min(100, ((prioritized.length - unhealthyCount) / Math.max(1, prioritized.length)) * 100));
+
   return (
-    <section className="rounded-3xl border border-zinc-800 bg-zinc-950/90 p-6">
+    <section className="ui-glass ui-glass-hover rounded-3xl p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Automation cadence</div>
-          <div className="text-lg font-semibold text-zinc-100">Deliverables + enforcement</div>
+          <div className="flex items-center gap-3">
+            <span
+              className={`ui-status-dot ${unhealthyCount > 0 ? "ui-pulse" : ""}`}
+              data-tone={unhealthyCount > 0 ? "amber" : "emerald"}
+            />
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Automation cadence</div>
+              <div className="mt-1 text-lg font-semibold text-zinc-100">Deliverables + enforcement</div>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <StatusChip label={unhealthyCount > 0 ? `${unhealthyCount} needs attention` : "HEALTHY"} tone={unhealthyCount > 0 ? "amber" : "emerald"} />
+          <div className="w-36">
+            <ProgressBar value={healthPct} tone={unhealthyCount > 0 ? "amber" : "emerald"} className="bg-black/25" />
+          </div>
         </div>
       </div>
 
@@ -74,16 +93,23 @@ export function AutomationPanel({ jobs }: Props) {
         {prioritized.map(({ job, label, cadence, summary, jobKey }) => {
           const statusLabel = job ? (job.lastStatus === "failed" ? "Failed" : "Healthy") : "Missing";
           const statusClass = job ? statusTone(job.lastStatus) : "text-amber-400";
+          const dotTone = !job ? "amber" : job.lastStatus === "failed" ? "rose" : "emerald";
           return (
-            <div key={jobKey} className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+            <div key={jobKey} className="ui-glass-hover rounded-2xl border border-white/10 bg-white/[0.02] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-zinc-100">{label}</div>
-                  <div className="text-xs text-zinc-500">Target cadence: {cadence}</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`ui-status-dot ${statusLabel !== "Healthy" ? "ui-pulse" : ""}`} data-tone={dotTone} />
+                    <div className="text-sm font-semibold text-zinc-100">{label}</div>
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-500">Target cadence: {cadence}</div>
                 </div>
                 <div className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</div>
               </div>
               <p className="mt-2 text-sm text-zinc-400">{summary}</p>
+              <div className="mt-3">
+                <div className="ui-sweep h-1.5 w-full rounded-full opacity-60" />
+              </div>
               <div className="mt-3 grid gap-3 text-xs text-zinc-500 lg:grid-cols-3">
                 <div>
                   <div className="font-semibold text-zinc-300">Last run</div>
@@ -108,7 +134,10 @@ export function AutomationPanel({ jobs }: Props) {
           <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Other automation</div>
           <div className="mt-3 space-y-2">
             {remaining.map((job) => (
-              <div key={job.jobKey} className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/50 p-3 text-sm text-zinc-300 md:flex-row md:items-center md:justify-between">
+              <div
+                key={job.jobKey}
+                className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-3 text-sm text-zinc-300 md:flex-row md:items-center md:justify-between"
+              >
                 <div>
                   <div className="font-semibold text-zinc-100">{job.jobName}</div>
                   <div className="text-xs text-zinc-500">{job.cronExpression}</div>
@@ -125,4 +154,3 @@ export function AutomationPanel({ jobs }: Props) {
     </section>
   );
 }
-

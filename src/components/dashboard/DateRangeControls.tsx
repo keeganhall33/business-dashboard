@@ -119,7 +119,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
   };
 
   return (
-    <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+    <section className="ui-glass rounded-3xl p-4 sm:p-6">
       <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Timeframe</div>

@@ -98,8 +98,13 @@ create table if not exists system_state (
 insert into scheduled_jobs (
  job_key, job_name, cron_expression, timezone, route_path, is_active
 ) values
+ ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
+ ('proof-enforcement','Proof Enforcement','0 17 * * *','America/Los_Angeles','/api/scheduler/proof-enforcement',true),
+ ('deliverable-harvest','Deliverable Harvest','15 17 * * *','America/Los_Angeles','/api/scheduler/deliverable-harvest',true),
+ ('ceo-digest','CEO Digest','45 17 * * *','America/Los_Angeles','/api/scheduler/ceo-digest',true),
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
+ ('weekly-summary','Weekly Summary','0 8 * * 1','America/Los_Angeles','/api/scheduler/weekly-summary',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),
  ('evening-closeout','Evening Closeout','30 19 * * *','America/Los_Angeles','/api/scheduler/evening-closeout',true)
 on conflict (job_key) do nothing;
