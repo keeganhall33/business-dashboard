@@ -7,6 +7,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 1. Create `.env.deploy` (ignored by git) with `VERCEL_DEPLOY_HOOK_URL=<hook>` – the production hook currently lives at `https://api.vercel.com/v1/integrations/deploy/prj_iGgUAjo6mRCpljpVtXoaY3FM8kgz/hYd64J3o6f`.
 2. Run `./scripts/deploy.sh` (pass any `fly deploy` flags you need). The script deploys to Fly and, if `VERCEL_DEPLOY_HOOK_URL` is set, immediately POSTs to that hook so Vercel publishes the same commit.
 
+> Note: `.npmrc` pins `legacy-peer-deps=true` so `npm install` behaves consistently between Fly (Docker) and Vercel. Keep the file committed so CI/CD matches local installs.
+
 Post-deploy: run `./scripts/smoke-check.sh` and follow the full runbook in `docs/deploy-runbook.md`.
 
 ## Getting Started
