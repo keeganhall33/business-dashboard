@@ -7,6 +7,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 1. Create `.env.deploy` (ignored by git) with `VERCEL_DEPLOY_HOOK_URL=<hook>` – the production hook currently lives at `https://api.vercel.com/v1/integrations/deploy/prj_iGgUAjo6mRCpljpVtXoaY3FM8kgz/hYd64J3o6f`.
 2. Run `./scripts/deploy.sh` (pass any `fly deploy` flags you need). The script deploys to Fly and, if `VERCEL_DEPLOY_HOOK_URL` is set, immediately POSTs to that hook so Vercel publishes the same commit.
 
+Post-deploy: run `./scripts/smoke-check.sh` and follow the full runbook in `docs/deploy-runbook.md`.
+
 ## Getting Started
 
 ### Environment variables
@@ -20,6 +22,18 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Optional: use JSON seeds when you do not have Supabase access
 DASHBOARD_DATA_SOURCE=seed
+
+# Optional: shared-secret scheduler auth (for local cron)
+SCHEDULER_SECRET=dev-secret
+
+# Optional: allow GitHub Actions autopilot to authenticate via $GITHUB_TOKEN
+SCHEDULER_GITHUB_REPO=keeganhall33/business-dashboard
+
+# Optional: override the seed JSON path (repo-relative or absolute)
+# DASHBOARD_SEED_PATH=./data/dashboard-seed.json
+
+# Optional: E2E harness fixture mode (returns a fully static payload for Playwright/Cypress)
+# E2E_TEST=1
 ```
 
 `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are required for live data. When `DASHBOARD_DATA_SOURCE=seed`,
@@ -38,11 +52,9 @@ export DASHBOARD_DATA_SOURCE=seed
 export DASHBOARD_SEED_PATH=./data/dashboard-seed.json
 ```
 
-Seed mode populates:
-- the **Overview KPI strip** (header metrics)
-- the **Collector pipeline cards**
-
-Everything else stays as a lightweight stub so the dashboard renders.
+Seed mode can load either:
+- a full `DashboardOverviewResponse` payload (exact match for `GET /api/dashboard/overview`), or
+- a smaller “snapshot” export (currently: `headerMetrics` + `pipelinePanel.collectors`).
 
 First, run the development server:
 
@@ -62,11 +74,12 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The app exposes scheduler endpoints under `POST /api/scheduler/*`.
 
-All scheduler routes require the header:
+All scheduler routes require one of the following:
 
-```
-x-scheduler-secret: <SCHEDULER_SECRET>
-```
+- Shared secret header: `x-scheduler-secret: <SCHEDULER_SECRET>`
+- **or** a GitHub Actions token when `SCHEDULER_GITHUB_REPO` is set on the server. Send `Authorization: Bearer $GITHUB_TOKEN` from the workflow and the API will verify it against the repo allowlist.
+
+`SCHEDULER_SECRET` is still recommended for local cron / launchd jobs. GitHub Actions uses the token path by default, so you no longer need to store the secret in repo settings to keep the workflow green.
 
 Jobs:
 
@@ -79,6 +92,14 @@ Jobs:
 - `POST /api/scheduler/weekly-command-cycle`
 - `POST /api/scheduler/weekly-summary`
 - `POST /api/scheduler/midweek-opportunity-pulse`
+
+### Single-entry cron (recommended)
+
+Instead of scheduling 9 separate cron entries, schedule **one** job that hits:
+
+- `POST /api/scheduler/tick`
+
+every minute. The tick endpoint reads `scheduled_jobs`, runs any due jobs, and updates `next_run_at`.
 
 ## Manual data entry (metric readings)
 

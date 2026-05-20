@@ -12,15 +12,9 @@ jobs:
   run-scheduler:
     runs-on: ubuntu-latest
     env:
-      BASE_URL: ${{ secrets.SCHEDULER_BASE_URL }}
+      BASE_URL: ${{ vars.SCHEDULER_BASE_URL || 'https://keegan-dashboard.fly.dev' }}
       SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
     steps:
-      - name: Validate secrets
-        run: |
-          if [ -z "$BASE_URL" ] || [ -z "$SCHEDULER_SECRET" ]; then
-            echo "BASE_URL and SCHEDULER_SECRET must be set as repository secrets." >&2
-            exit 1
-          fi
       - name: Compute Pacific time markers
         id: time
         run: |
@@ -28,27 +22,59 @@ jobs:
           DOW_PST=$(TZ=America/Los_Angeles date +'%u')
           echo "now=$NOW_PST" >> "$GITHUB_OUTPUT"
           echo "dow=$DOW_PST" >> "$GITHUB_OUTPUT"
+      - name: Log target endpoint
+        run: |
+          echo "Scheduler target: $BASE_URL"
+          if [ -z "$SCHEDULER_SECRET" ]; then
+            echo "Using GitHub token auth"
+          else
+            echo "Using shared secret auth"
+          fi
       - name: Daily health check (06:15 PT)
         if: steps.time.outputs.now == '06:15'
         run: |
+          if [ -n "$SCHEDULER_SECRET" ]; then
+            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
+          else
+            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
+          fi
+
           curl -sS --fail -X POST \
-            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -H "$AUTH_HEADER" \
             "$BASE_URL/api/scheduler/daily-health-check"
       - name: Daily command cycle (07:00 PT)
         if: steps.time.outputs.now == '07:00'
         run: |
+          if [ -n "$SCHEDULER_SECRET" ]; then
+            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
+          else
+            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
+          fi
+
           curl -sS --fail -X POST \
-            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -H "$AUTH_HEADER" \
             "$BASE_URL/api/scheduler/weekly-command-cycle"
       - name: Midweek opportunity pulse (Wed 11:30 PT)
         if: steps.time.outputs.dow == '3' && steps.time.outputs.now == '11:30'
         run: |
+          if [ -n "$SCHEDULER_SECRET" ]; then
+            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
+          else
+            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
+          fi
+
           curl -sS --fail -X POST \
-            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -H "$AUTH_HEADER" \
             "$BASE_URL/api/scheduler/midweek-opportunity-pulse"
       - name: Evening closeout (19:30 PT)
         if: steps.time.outputs.now == '19:30'
         run: |
+          if [ -n "$SCHEDULER_SECRET" ]; then
+            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
+          else
+            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
+          fi
+
           curl -sS --fail -X POST \
-            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -H "$AUTH_HEADER" \
             "$BASE_URL/api/scheduler/evening-closeout"

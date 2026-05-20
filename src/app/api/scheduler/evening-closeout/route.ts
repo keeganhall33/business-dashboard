@@ -4,7 +4,7 @@ import { runEveningCloseout } from "@/lib/scheduler/eveningCloseout";
 
 export async function POST(request: Request) {
   try {
-    assertSchedulerAuth(request);
+    await assertSchedulerAuth(request);
   } catch (error) {
     return unauthorized(error instanceof Error ? error.message : "Unauthorized");
   }
