@@ -12,6 +12,8 @@ type Props = {
   defaultOpen?: boolean;
   storageKey?: string;
   tone?: "default" | "warning" | "success";
+  context?: ReactNode;
+  density?: "comfortable" | "compact";
 };
 
 export function DashboardSection({
@@ -21,9 +23,12 @@ export function DashboardSection({
   children,
   defaultOpen = true,
   storageKey,
-  tone = "default"
+  tone = "default",
+  context,
+  density = "comfortable"
 }: Props) {
   const [open, setOpen] = useState(() => readStoredState(storageKey, defaultOpen));
+  const sectionId = storageKey ? storageKey.replace(/[^a-zA-Z0-9_-]/g, "-") : undefined;
 
   useEffect(() => {
     if (!storageKey || typeof window === "undefined") return;
@@ -33,7 +38,10 @@ export function DashboardSection({
   const headerTone = toneClass(tone);
 
   return (
-    <section className="ui-glass ui-glass-hover rounded-3xl">
+    <section
+      id={sectionId}
+      className={cn("ui-glass ui-glass-hover rounded-3xl", density === "compact" && "density-compact")}
+    >
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -66,7 +74,18 @@ export function DashboardSection({
         </div>
         {meta ? <div className="text-sm text-zinc-400 md:hidden">{meta}</div> : null}
       </button>
-      {open ? <div className="px-5 py-7 sm:px-6 lg:px-8">{children}</div> : null}
+      {open ? (
+        <div className="px-5 py-7 sm:px-6 lg:px-8">
+          {context ? (
+            <div className="layout-with-rail">
+              <div className="flex-1 space-y-6">{children}</div>
+              <aside className="context-rail">{context}</aside>
+            </div>
+          ) : (
+            children
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

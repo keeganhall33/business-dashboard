@@ -1,6 +1,5 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
-import { loadDashboardOverviewFromSeed } from "@/lib/dashboard/seed";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -381,6 +380,9 @@ export async function GET(request: Request) {
     // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This is intentionally temporary so the UI can render without env/network.
     if ((process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed") {
+      // NOTE: dynamic import to prevent Next/Turbopack from tracing node:fs into the
+      // default (Supabase) runtime path.
+      const { loadDashboardOverviewFromSeed } = await import("@/lib/dashboard/seed");
       const seeded = await loadDashboardOverviewFromSeed();
       return ok(seeded);
     }
@@ -391,11 +393,66 @@ export async function GET(request: Request) {
       const now = new Date();
       const responseRange = { preset: "30d" as const, startDate: "2026-05-01", endDate: "2026-05-30" };
 
+      const iso = (daysFromNow: number) => {
+        const d = new Date(now);
+        d.setUTCDate(d.getUTCDate() + daysFromNow);
+        return d.toISOString();
+      };
+
       return ok({
         ok: true,
         timestamp: now.toISOString(),
         range: responseRange,
-        headerMetrics: [],
+        headerMetrics: [
+          {
+            metricKey: "kpi_mrr",
+            metricName: "MRR",
+            category: "Revenue",
+            currentValue: 42000,
+            targetValue: 50000,
+            deltaPercent: 6.2,
+            status: "on_track",
+            unit: "USD",
+            ownerAgent: "avery",
+            measuredAt: now.toISOString()
+          },
+          {
+            metricKey: "kpi_cash",
+            metricName: "Cash on hand",
+            category: "Survival",
+            currentValue: 12000,
+            targetValue: 7000,
+            deltaPercent: null,
+            status: "healthy",
+            unit: "USD",
+            ownerAgent: "ops",
+            measuredAt: now.toISOString()
+          },
+          {
+            metricKey: "kpi_pipeline",
+            metricName: "Pipeline",
+            category: "Partnerships",
+            currentValue: 125000,
+            targetValue: 150000,
+            deltaPercent: -3.1,
+            status: "warning",
+            unit: "USD",
+            ownerAgent: "avery",
+            measuredAt: now.toISOString()
+          },
+          {
+            metricKey: "kpi_velocity",
+            metricName: "Weekly ship velocity",
+            category: "Execution",
+            currentValue: 8,
+            targetValue: 10,
+            deltaPercent: null,
+            status: "warning",
+            unit: "items",
+            ownerAgent: "jeeves",
+            measuredAt: now.toISOString()
+          }
+        ],
         executiveCommand: {
           weeklyDirective: "E2E fixture",
           topPriorities: [],
@@ -419,7 +476,51 @@ export async function GET(request: Request) {
         revenueEngine: { metrics: [], moneyLeaks: [], fastestPathToIncreaseRevenue: [] },
         brandPower: { metrics: [], whatIsWorking: [], whatToDoNext: [] },
         opportunityRadar: { activeCount: 0, readyForOutreachCount: 0, topOpportunities: [], nextFiveMoves: [] },
-        pipelinePanel: { collectors: [], deals: [] },
+        pipelinePanel: {
+          collectors: [
+            {
+              id: "collector-e2e-1",
+              name: "Tier A — Modern Art Museum",
+              tier: "A",
+              status: "warm",
+              lastOutreachAt: iso(-3),
+              nextMove: "Send licensing deck + propose intro call",
+              nextMoveDueAt: iso(2),
+              estimatedValue: 60000,
+              supportingDocs: [
+                { label: "Email thread", url: "https://example.com/email" },
+                { label: "Deck", url: "https://example.com/deck" }
+              ]
+            },
+            {
+              id: "collector-e2e-2",
+              name: "Tier B — Private Collector",
+              tier: "B",
+              status: "drift risk",
+              lastOutreachAt: iso(-10),
+              nextMove: "Follow up on referral",
+              nextMoveDueAt: iso(1),
+              estimatedValue: 25000,
+              supportingDocs: [{ label: "Notes", url: "https://example.com/notes" }]
+            }
+          ],
+          deals: [
+            {
+              id: "deal-e2e-1",
+              name: "Licensing — Capsule drop",
+              organization: "Studio X",
+              opportunityType: "licensing",
+              status: "negotiation",
+              valueEstimate: 40000,
+              prestigeScore: 9,
+              probabilityScore: 0.55,
+              ownerAgent: "avery",
+              nextStep: "Send term sheet",
+              nextStepDueAt: iso(3),
+              supportingDocs: [{ label: "Contract draft", url: "https://example.com/contract" }]
+            }
+          ]
+        },
         survivalStrip: {
           configured: true,
           cashOnHand: 12000,

@@ -31,26 +31,20 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const initialRange = useMemo(() => ({
-    from: startDate ? new Date(startDate) : undefined,
-    to: endDate ? new Date(endDate) : undefined
-  }), [startDate, endDate]);
-  const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(initialRange);
-  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(initialRange);
+  const selectedRange = useMemo<DateRange | undefined>(
+    () => ({
+      from: startDate ? new Date(startDate) : undefined,
+      to: endDate ? new Date(endDate) : undefined
+    }),
+    [startDate, endDate]
+  );
+
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(selectedRange);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [activePreset, setActivePreset] = useState(preset);
+  const activePreset = preset;
   const [, startTransition] = useTransition();
   const calendarRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    setSelectedRange(initialRange);
-    setPendingRange(initialRange);
-  }, [initialRange]);
-
-  useEffect(() => {
-    setActivePreset(preset);
-  }, [preset]);
 
   useEffect(() => {
     if (!calendarOpen) return;
@@ -89,7 +83,6 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
   };
 
   const handlePresetClick = (value: RangePreset) => {
-    setActivePreset(value);
     setCalendarOpen(false);
     updateQuery(value);
   };
@@ -100,8 +93,6 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
 
   const applyPendingRange = () => {
     if (!pendingRange?.from || !pendingRange?.to) return;
-    setSelectedRange(pendingRange);
-    setActivePreset("custom");
     const start = formatInputDate(pendingRange.from);
     const end = formatInputDate(pendingRange.to);
     updateQuery("custom", start, end);

@@ -631,6 +631,60 @@ export async function createAgentPlan(input: {
   return data;
 }
 
+export async function createOrUpdatePendingAgentPlan(input: {
+  agentKey: string;
+  threadId?: string;
+  title: string;
+  summary?: string;
+  detailMd?: string;
+  payloadJson: Record<string, unknown>;
+  submittedBy?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+
+  const { data: existing } = await supabase
+    .from("agent_plans")
+    .select("id")
+    .eq("agent_key", input.agentKey)
+    .eq("status", "pending")
+    .order("submitted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const payload = {
+    thread_id: input.threadId ?? null,
+    title: input.title,
+    summary: input.summary ?? null,
+    detail_md: input.detailMd ?? null,
+    payload_json: input.payloadJson,
+    submitted_by: input.submittedBy ?? input.agentKey,
+    submitted_at: nowIso()
+  };
+
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from("agent_plans")
+      .update(payload)
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from("agent_plans")
+    .insert({
+      agent_key: input.agentKey,
+      status: "pending",
+      ...payload
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function updateAgentPlanStatus(input: {
   id: string;
   status: "approved" | "changes_requested";
@@ -682,9 +736,19 @@ export async function getPendingAgentPlans(limit = 15) {
     .select("*")
     .eq("status", "pending")
     .order("submitted_at", { ascending: false })
-    .limit(limit);
+    .limit(limit * 2);
   if (error) throw error;
-  return data ?? [];
+  if (!data) return [];
+  const seen = new Set<string>();
+  const deduped: typeof data = [];
+  for (const plan of data) {
+    const key = plan.agent_key as string;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(plan);
+    if (deduped.length >= limit) break;
+  }
+  return deduped;
 }
 
 export async function getAgentPlanById(id: string) {
@@ -1160,6 +1224,16 @@ export async function touchScheduledJobLastRun(jobKey: string, startedAtIso?: st
   const { error } = await supabase
     .from("scheduled_jobs")
     .update({ last_run_at: startedAtIso ?? nowIso() })
+    .eq("job_key", jobKey);
+  if (error) throw error;
+  return { ok: true } as const;
+}
+
+export async function updateScheduledJobNextRun(jobKey: string, nextRunAtIso: string | null) {
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase
+    .from("scheduled_jobs")
+    .update({ next_run_at: nextRunAtIso })
     .eq("job_key", jobKey);
   if (error) throw error;
   return { ok: true } as const;

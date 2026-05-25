@@ -2,6 +2,11 @@ type Props = {
   values: Array<number | null | undefined>;
   width?: number;
   height?: number;
+  /**
+   * Semantic tone used when custom stroke/fill classes are not provided.
+   * Uses CSS variables in globals.css (e.g. --ui-success).
+   */
+  tone?: "accent" | "success" | "warning" | "danger" | "muted";
   strokeClassName?: string;
   fillClassName?: string;
 };
@@ -14,8 +19,9 @@ export function Sparkline({
   values,
   width = 160,
   height = 44,
-  strokeClassName = "stroke-[var(--ui-accent)]",
-  fillClassName = "fill-[rgba(56,189,248,0.16)]"
+  tone = "accent",
+  strokeClassName,
+  fillClassName
 }: Props) {
   const numeric = values
     .map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))
@@ -61,6 +67,9 @@ export function Sparkline({
 
   const area = `${d} L${points[points.length - 1].x.toFixed(2)},${(height - 1).toFixed(2)} L${points[0].x.toFixed(2)},${(height - 1).toFixed(2)} Z`;
 
+  const toneStroke = toneToCssVar(tone);
+  const useSemanticTone = !strokeClassName && !fillClassName;
+
   return (
     <svg
       role="img"
@@ -69,8 +78,38 @@ export function Sparkline({
       className="h-[44px] w-full"
       preserveAspectRatio="none"
     >
-      <path d={area} className={fillClassName} />
-      <path d={d} className={`${strokeClassName} fill-none`} strokeWidth={2} strokeLinejoin="round" />
+      {useSemanticTone ? (
+        <path d={area} fill={toneStroke} fillOpacity={0.16} />
+      ) : (
+        <path d={area} className={fillClassName} />
+      )}
+      {useSemanticTone ? (
+        <path
+          d={d}
+          fill="none"
+          stroke={toneStroke}
+          strokeWidth={2}
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path d={d} className={`${strokeClassName} fill-none`} strokeWidth={2} strokeLinejoin="round" />
+      )}
     </svg>
   );
+}
+
+function toneToCssVar(tone: NonNullable<Props["tone"]>) {
+  switch (tone) {
+    case "success":
+      return "var(--ui-success)";
+    case "warning":
+      return "var(--ui-warning)";
+    case "danger":
+      return "var(--ui-danger)";
+    case "muted":
+      return "rgba(247, 251, 255, 0.38)";
+    case "accent":
+    default:
+      return "var(--ui-accent)";
+  }
 }

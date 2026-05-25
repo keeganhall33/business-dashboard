@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
 
 export function CollectorInlineForm() {
   const router = useRouter();
@@ -58,6 +59,7 @@ export function CollectorInlineForm() {
                 setForm({ collectorName: "", tier: form.tier, relationshipStatus: form.relationshipStatus, nextMove: "", nextMoveDueAt: "", estimatedValue: "" });
                 setOpen(false);
                 router.refresh();
+                requestDashboardRefresh({ reason: "collector-inline" });
               } catch (err) {
                 setError(err instanceof Error ? err.message : String(err));
               }
@@ -68,6 +70,7 @@ export function CollectorInlineForm() {
             <span className="text-xs text-zinc-500">Name</span>
             <input
               required
+              aria-label="Name"
               className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
               value={form.collectorName}
               onChange={(e) => handleChange("collectorName", e.target.value)}
@@ -77,6 +80,7 @@ export function CollectorInlineForm() {
             <label className="flex flex-col gap-1 text-xs text-zinc-500">
               Tier
               <select
+                aria-label="Tier"
                 className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
                 value={form.tier}
                 onChange={(e) => handleChange("tier", e.target.value)}
@@ -88,6 +92,7 @@ export function CollectorInlineForm() {
             <label className="flex flex-col gap-1 text-xs text-zinc-500">
               Status
               <input
+                aria-label="Status"
                 className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
                 value={form.relationshipStatus}
                 onChange={(e) => handleChange("relationshipStatus", e.target.value)}
@@ -97,6 +102,7 @@ export function CollectorInlineForm() {
           <label className="flex flex-col gap-1 text-xs text-zinc-500">
             Next move
             <input
+              aria-label="Next move"
               className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
               value={form.nextMove}
               onChange={(e) => handleChange("nextMove", e.target.value)}
@@ -106,6 +112,7 @@ export function CollectorInlineForm() {
             Next move due (YYYY-MM-DD)
             <input
               type="date"
+              aria-label="Next move due"
               className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
               value={form.nextMoveDueAt}
               onChange={(e) => handleChange("nextMoveDueAt", e.target.value)}
@@ -116,6 +123,7 @@ export function CollectorInlineForm() {
             <input
               type="number"
               step="1000"
+              aria-label="Estimated value"
               className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
               value={form.estimatedValue}
               onChange={(e) => handleChange("estimatedValue", e.target.value)}

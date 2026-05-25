@@ -8,6 +8,7 @@ Automation is mandatory. These are the job definitions, cadences, and tables tha
 | --- | --- | --- |
 | daily-agent-cycle | `5 6 * * *` | Run Sloan → Lyra → Noah → Avery every morning to log daily updates. |
 | daily-health-check | `15 6 * * *` | Refresh metrics, evaluate alert rules, run stale checks. |
+| agent-idea-pulse | `0 9 * * *` | Force every agent to log daily ideas/KPIs + push summaries into war room threads. |
 | weekly-command-cycle | `0 7 * * 1` | Full agent run (Sloan → Lyra → Noah → Avery), directive + summary. |
 | midweek-opportunity-pulse | `30 11 * * 3` | Re-run Noah, inspect pipeline, escalate stalled opps. |
 | evening-closeout | `30 19 * * *` | Inspect approvals/stale tasks, publish end-of-day health. |
@@ -19,6 +20,7 @@ If cron engine is UTC-only, convert carefully or pick a scheduler that supports 
 ```
 POST /api/scheduler/daily-agent-cycle
 POST /api/scheduler/daily-health-check
+POST /api/scheduler/agent-idea-pulse
 POST /api/scheduler/weekly-command-cycle
 POST /api/scheduler/midweek-opportunity-pulse
 POST /api/scheduler/evening-closeout
@@ -33,6 +35,7 @@ Each route:
 
 - `dailyHealthCheck.ts`
 - `dailyAgentCycle.ts`
+- `agentIdeaPulse.ts`
 - `weeklyCommandCycle.ts`
 - `midweekOpportunityPulse.ts`
 - `eveningCloseout.ts`

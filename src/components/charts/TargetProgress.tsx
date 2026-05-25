@@ -5,6 +5,7 @@ type Props = {
   target: number;
   unit: string | null;
   label?: string;
+  tone?: "accent" | "success" | "warning" | "danger";
 };
 
 function safeRatio(current: number, target: number) {
@@ -13,11 +14,13 @@ function safeRatio(current: number, target: number) {
   return Math.max(0, current / target);
 }
 
-export function TargetProgress({ current, target, unit, label = "Progress" }: Props) {
+export function TargetProgress({ current, target, unit, label = "Progress", tone = "accent" }: Props) {
   const ratio = safeRatio(current, target);
   const pct = Math.min(150, Math.round(ratio * 100));
   const fillPct = Math.min(100, Math.round(ratio * 100));
   const over = ratio > 1;
+
+  const toneColor = toneToCssVar(tone);
 
   return (
     <div className="rounded-xl border border-[var(--ui-border)] bg-[rgba(255,255,255,0.03)] p-3">
@@ -31,9 +34,16 @@ export function TargetProgress({ current, target, unit, label = "Progress" }: Pr
           className={
             over
               ? "h-2 rounded-full bg-emerald-400"
-              : "h-2 rounded-full bg-gradient-to-r from-[var(--ui-accent)] to-[var(--ui-accent-2)]"
+              : "h-2 rounded-full"
           }
-          style={{ width: `${fillPct}%` }}
+          style={
+            over
+              ? { width: `${fillPct}%` }
+              : {
+                  width: `${fillPct}%`,
+                  background: `linear-gradient(90deg, ${toneColor}, var(--ui-accent-2))`
+                }
+          }
         />
       </div>
 
@@ -43,4 +53,18 @@ export function TargetProgress({ current, target, unit, label = "Progress" }: Pr
       </div>
     </div>
   );
+}
+
+function toneToCssVar(tone: NonNullable<Props["tone"]>) {
+  switch (tone) {
+    case "success":
+      return "var(--ui-success)";
+    case "warning":
+      return "var(--ui-warning)";
+    case "danger":
+      return "var(--ui-danger)";
+    case "accent":
+    default:
+      return "var(--ui-accent)";
+  }
 }

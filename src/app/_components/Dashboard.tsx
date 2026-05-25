@@ -219,6 +219,16 @@ export default function Dashboard() {
   });
 
   const activeTasks = useMemo(() => data?.tasks ?? [], [data]);
+  const refreshedAtLabel = useMemo(() => {
+    if (!data?.timestamp) return null;
+    const parsed = new Date(data.timestamp);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleTimeString();
+  }, [data?.timestamp]);
+  const refreshStatus = useMemo(() => {
+    if (loading) return "Loading live metrics...";
+    if (error) return "Failed to load live data";
+    return refreshedAtLabel ? `Data refreshed ${refreshedAtLabel}` : "Data refresh time unavailable";
+  }, [loading, error, refreshedAtLabel]);
 
   return (
     <div className="space-y-8">
@@ -227,13 +237,7 @@ export default function Dashboard() {
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Operator Command</p>
             <h1 className="text-3xl font-semibold text-white mt-2">Executive Dashboard</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              {loading
-                ? "Loading live metrics..."
-                : error
-                  ? "Failed to load live data"
-                  : `Data refreshed ${new Date(data?.timestamp ?? Date.now()).toLocaleTimeString()}`}
-            </p>
+            <p className="text-slate-400 text-sm mt-1">{refreshStatus}</p>
           </div>
           <button
             className="px-4 py-2 rounded-xl border border-slate-700 text-sm text-slate-200 hover:border-white/50"

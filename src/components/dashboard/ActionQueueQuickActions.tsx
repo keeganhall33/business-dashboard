@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { QuickActionItem } from "@/lib/action-queue";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
+import { ensureOk, extractResponseError } from "@/lib/dashboard/http";
 import { formatRelativeTimeFromNow } from "@/lib/date";
 
 type Props = {
@@ -44,6 +47,7 @@ function QuickActionRow({ item }: RowProps) {
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"approve" | "reject" | "changes" | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [success, setSuccess] = useState<string | null>(null);
   const disabled = isPending;
 
   const relativeTime = formatRelativeTimeFromNow(item.createdAt);
@@ -56,6 +60,7 @@ function QuickActionRow({ item }: RowProps) {
     }
 
     setError(null);
+    setSuccess(null);
     setPendingAction(decision);
 
     startTransition(async () => {
@@ -70,9 +75,20 @@ function QuickActionRow({ item }: RowProps) {
           await decidePlan(item.id, decision === "approve" ? "approve" : "changes_requested", feedback.trim());
         }
         router.refresh();
+        requestDashboardRefresh({ reason: "action-queue" });
+        const message = isTask
+          ? decision === "approve"
+            ? "Task approved"
+            : "Task updated"
+          : decision === "approve"
+            ? "Plan approved"
+            : "Plan feedback sent";
+        setSuccess(message);
+        publishDashboardToast({ tone: "success", title: message });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to process action.";
         setError(message);
+        publishDashboardToast({ tone: "error", title: "Action failed", description: message });
       } finally {
         setPendingAction(null);
       }
@@ -122,6 +138,7 @@ function QuickActionRow({ item }: RowProps) {
         />
         {!feedback.trim() && <p className="text-xs text-zinc-500">Required for rejections/changes. Optional when approving.</p>}
         {error ? <p className="text-xs text-rose-300">{error}</p> : null}
+        {success ? <p className="text-xs text-emerald-300">{success}</p> : null}
       </div>
     </div>
   );
@@ -133,10 +150,7 @@ async function approveTask(id: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ approvedByUser: true })
   });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Failed to approve task.");
-  }
+  await ensureOk(response);
 }
 
 async function rejectTask(id: string, reason: string) {
@@ -146,8 +160,7 @@ async function rejectTask(id: string, reason: string) {
     body: JSON.stringify({ rejectedBy: "user", reason })
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Failed to reject task.");
+    throw new Error(await extractResponseError(response));
   }
 }
 
@@ -158,7 +171,6 @@ async function decidePlan(id: string, decision: "approve" | "changes_requested",
     body: JSON.stringify({ decision, feedback: feedback || undefined, approvedBy: "keegan" })
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Failed to decide plan.");
+    throw new Error(await extractResponseError(response));
   }
 }

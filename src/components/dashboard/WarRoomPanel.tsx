@@ -1,6 +1,7 @@
 import { WarRoomState } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { ProgressBar } from "./ui/ProgressBar";
+import { InsightCard, type InsightObject } from "./ui/InsightCard";
 
 type Props = {
   data: WarRoomState;
@@ -9,6 +10,24 @@ type Props = {
 export function WarRoomPanel({ data }: Props) {
   const isActive = data.mode === "war_room";
   const intensity = Math.max(0, Math.min(100, (isActive ? 55 : 18) + data.entries.length * 8));
+
+  const insights: InsightObject[] = data.entries.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    claim: entry.summary,
+    state: isActive ? "action_needed" : "supported",
+    confidenceLabel: "operator log",
+    updatedAtLabel: `Logged ${formatDate(entry.createdAt)}`,
+    definition: "War Room notes capture the why + what-next when the system enters (or exits) elevated risk mode.",
+    evidence: [
+      { label: "Mode", value: data.mode.replace(/_/g, " ") },
+      { label: "Reason", value: data.reason ?? "—" },
+      { label: "Updated", value: data.lastUpdated ? formatDate(data.lastUpdated) : "—" }
+    ],
+    actions: entry.detailMd
+      ? [{ label: "Read full detail", detail: "Open the Explain drawer to see evidence + full text." }]
+      : [{ label: "Add full detail", detail: "Write a longer note (detailMd) for operator drill-down." }]
+  }));
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
@@ -39,12 +58,8 @@ export function WarRoomPanel({ data }: Props) {
             No war-room notes yet.
           </div>
         )}
-        {data.entries.map((entry) => (
-          <article key={entry.id} className="ui-glass-hover rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{formatDate(entry.createdAt)}</div>
-            <h3 className="mt-1 text-sm font-semibold text-zinc-100">{entry.title}</h3>
-            <p className="mt-2 text-sm text-zinc-200">{entry.summary}</p>
-          </article>
+        {insights.map((insight) => (
+          <InsightCard key={insight.id} insight={insight} />
         ))}
       </div>
     </section>

@@ -4,6 +4,14 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { OpportunityStatus } from "@/lib/types/requests";
 import type { Opportunity } from "@/lib/types/dashboard";
+import {
+  explainOpportunityTransition,
+  getOpportunityPipelineStage
+} from "@/lib/opportunity-approval-pipeline";
+import { trackDashboardEvent } from "@/lib/dashboard-telemetry";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
+import { extractResponseError } from "@/lib/dashboard/http";
 
 type Props = {
   opportunity: Pick<Opportunity, "id" | "name" | "organization" | "ownerAgent" | "status" | "nextStep" | "supportingDocs">;
@@ -17,10 +25,17 @@ const IMPLEMENT_STATUS: OpportunityStatus = "outreach_drafted";
 export function OpportunityInlineActions({ opportunity, variant = "full" }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"review" | "approve" | "implement" | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const disabled = isPending;
+  const currentStatus = opportunity.status as OpportunityStatus;
+  const stage = getOpportunityPipelineStage(currentStatus);
+
+  const canReview = currentStatus === "identified";
+  const canApprove = currentStatus === "researching";
+  const canImplement = currentStatus === "ready_for_outreach";
 
   const taskDescription = useMemo(() => {
     const lines: string[] = [];
@@ -38,13 +53,32 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
 
   function handleReview() {
     setError(null);
+    setSuccess(null);
+    if (!canReview) {
+      const reason = explainOpportunityTransition(currentStatus, REVIEW_STATUS);
+      setError(reason);
+      void trackDashboardEvent({
+        name: "opportunity.transition_blocked",
+        properties: { opportunityId: opportunity.id, from: currentStatus, to: REVIEW_STATUS, reason }
+      });
+      return;
+    }
     setPendingAction("review");
     startTransition(async () => {
       try {
+        void trackDashboardEvent({
+          name: "opportunity.review",
+          properties: { opportunityId: opportunity.id, from: currentStatus, to: REVIEW_STATUS }
+        });
         await updateStatus(opportunity.id, REVIEW_STATUS);
         router.refresh();
+        requestDashboardRefresh({ reason: "opportunity-inline" });
+        const message = "Opportunity reviewed";
+        setSuccess(message);
+        publishDashboardToast({ tone: "success", title: message, description: opportunity.name });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to review opportunity.");
+        publishDashboardToast({ tone: "error", title: "Review failed", description: err instanceof Error ? err.message : String(err) });
       } finally {
         setPendingAction(null);
       }
@@ -53,13 +87,32 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
 
   function handleApprove() {
     setError(null);
+    setSuccess(null);
+    if (!canApprove) {
+      const reason = explainOpportunityTransition(currentStatus, APPROVE_STATUS);
+      setError(reason);
+      void trackDashboardEvent({
+        name: "opportunity.transition_blocked",
+        properties: { opportunityId: opportunity.id, from: currentStatus, to: APPROVE_STATUS, reason }
+      });
+      return;
+    }
     setPendingAction("approve");
     startTransition(async () => {
       try {
+        void trackDashboardEvent({
+          name: "opportunity.approve",
+          properties: { opportunityId: opportunity.id, from: currentStatus, to: APPROVE_STATUS }
+        });
         await updateStatus(opportunity.id, APPROVE_STATUS);
         router.refresh();
+        requestDashboardRefresh({ reason: "opportunity-inline" });
+        const message = "Opportunity approved";
+        setSuccess(message);
+        publishDashboardToast({ tone: "success", title: message, description: opportunity.name });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to approve opportunity.");
+        publishDashboardToast({ tone: "error", title: "Approval failed", description: err instanceof Error ? err.message : String(err) });
       } finally {
         setPendingAction(null);
       }
@@ -68,9 +121,23 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
 
   function handleImplement() {
     setError(null);
+    setSuccess(null);
+    if (!canImplement) {
+      const reason = explainOpportunityTransition(currentStatus, IMPLEMENT_STATUS);
+      setError(reason);
+      void trackDashboardEvent({
+        name: "opportunity.transition_blocked",
+        properties: { opportunityId: opportunity.id, from: currentStatus, to: IMPLEMENT_STATUS, reason }
+      });
+      return;
+    }
     setPendingAction("implement");
     startTransition(async () => {
       try {
+        void trackDashboardEvent({
+          name: "opportunity.implement",
+          properties: { opportunityId: opportunity.id, from: currentStatus, to: IMPLEMENT_STATUS }
+        });
         await updateStatus(opportunity.id, IMPLEMENT_STATUS);
         await createTask({
           title: `Draft outreach: ${opportunity.name}`,
@@ -81,8 +148,13 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
           requiresApproval: false
         });
         router.refresh();
+        requestDashboardRefresh({ reason: "opportunity-inline" });
+        const message = "Implementation queued";
+        setSuccess(message);
+        publishDashboardToast({ tone: "success", title: message, description: opportunity.name });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to implement opportunity.");
+        publishDashboardToast({ tone: "error", title: "Implementation failed", description: err instanceof Error ? err.message : String(err) });
       } finally {
         setPendingAction(null);
       }
@@ -94,35 +166,40 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
       ? "rounded-lg px-2.5 py-1.5 text-xs font-semibold"
       : "rounded-xl px-3 py-2 text-sm font-semibold";
 
+  const reviewLabel = stage === "review" || stage === "approved" || stage === "implemented" || stage === "closed" ? "Reviewed" : "Review";
+  const approveLabel = stage === "approved" || stage === "implemented" || stage === "closed" ? "Approved" : "Approve";
+  const implementLabel = stage === "implemented" || stage === "closed" ? "Implemented" : "Implement";
+
   return (
-    <div className="mt-4">
+    <div className="mt-4" data-opportunity-stage={stage}>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || !canReview}
           onClick={handleReview}
-          className={`${buttonBase} border border-zinc-700 bg-zinc-950/50 text-zinc-200 hover:bg-zinc-900/30 disabled:opacity-50`}
+          className={`${buttonBase} border border-[var(--ui-border)] bg-white/[0.02] text-zinc-200 hover:bg-white/[0.04] disabled:opacity-40`}
         >
-          {pendingAction === "review" ? "Reviewing…" : "Review"}
+          {pendingAction === "review" ? "Reviewing…" : reviewLabel}
         </button>
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || !canApprove}
           onClick={handleApprove}
-          className={`${buttonBase} border border-emerald-700 bg-emerald-900/15 text-emerald-200 hover:bg-emerald-900/25 disabled:opacity-50`}
+          className={`${buttonBase} border border-[var(--ui-accent)]/40 bg-[color-mix(in_oklab,var(--ui-accent)_18%,transparent)] text-zinc-50 hover:bg-[color-mix(in_oklab,var(--ui-accent)_24%,transparent)] disabled:opacity-40`}
         >
-          {pendingAction === "approve" ? "Approving…" : "Approve"}
+          {pendingAction === "approve" ? "Approving…" : approveLabel}
         </button>
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || !canImplement}
           onClick={handleImplement}
-          className={`${buttonBase} border border-amber-700 bg-amber-900/15 text-amber-200 hover:bg-amber-900/25 disabled:opacity-50`}
+          className={`${buttonBase} border border-[var(--ui-accent-2)]/40 bg-[color-mix(in_oklab,var(--ui-accent-2)_18%,transparent)] text-zinc-50 hover:bg-[color-mix(in_oklab,var(--ui-accent-2)_24%,transparent)] disabled:opacity-40`}
         >
-          {pendingAction === "implement" ? "Queuing…" : "Implement"}
+          {pendingAction === "implement" ? "Queuing…" : implementLabel}
         </button>
       </div>
       {error ? <div className="mt-2 text-xs text-rose-300">{error}</div> : null}
+      {success ? <div className="mt-2 text-xs text-emerald-300">{success}</div> : null}
       <div className="mt-2 text-[11px] uppercase tracking-[0.22em] text-zinc-600">
         Status now: <span className="text-zinc-300">{opportunity.status}</span>
       </div>
@@ -137,8 +214,7 @@ async function updateStatus(id: string, status: OpportunityStatus) {
     body: JSON.stringify({ status })
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Failed to update status (${response.status}).`);
+    throw new Error(await extractResponseError(response));
   }
 }
 
@@ -156,8 +232,6 @@ async function createTask(payload: {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Failed to create task (${response.status}).`);
+    throw new Error(await extractResponseError(response));
   }
 }
-

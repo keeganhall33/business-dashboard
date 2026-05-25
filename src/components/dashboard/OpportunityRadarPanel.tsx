@@ -16,7 +16,7 @@ export function OpportunityRadarPanel({ data }: Props) {
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Opportunity Radar</div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
           <div className="text-sm text-zinc-400">Active</div>
           <div className="mt-2 text-3xl font-semibold text-zinc-50">{data.activeCount}</div>
@@ -36,7 +36,7 @@ export function OpportunityRadarPanel({ data }: Props) {
               key={item.id}
               className="ui-snap-item ui-glass-hover w-[86vw] min-w-[300px] max-w-[520px] shrink-0 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:w-auto md:min-w-0 md:max-w-none"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-zinc-50">{item.name}</div>
                   <div className="mt-1 text-sm text-zinc-400">{item.organization ?? "Independent"}</div>

@@ -19,6 +19,25 @@ export async function POST(request: Request) {
     const parsed = await parseJsonBody(request, collectorSchema);
     if (!parsed.success) return validationError(parsed.error.message, parsed.error.issues);
 
+    // E2E test harness: allow Playwright to create collectors without Supabase.
+    if (process.env.E2E_TEST === "1") {
+      const now = new Date().toISOString();
+      return ok({
+        ok: true,
+        collector: {
+          id: `collector-e2e-${Date.now()}`,
+          name: parsed.data.collectorName,
+          tier: parsed.data.tier,
+          status: parsed.data.relationshipStatus ?? null,
+          lastOutreachAt: parsed.data.lastOutreachAt ?? now,
+          nextMove: parsed.data.nextMove ?? null,
+          nextMoveDueAt: parsed.data.nextMoveDueAt ?? null,
+          estimatedValue: parsed.data.estimatedValue ?? null,
+          supportingDocs: []
+        }
+      });
+    }
+
     const collector = await createCollectorRelationship(parsed.data);
     return ok({ ok: true, collector });
   } catch (error) {

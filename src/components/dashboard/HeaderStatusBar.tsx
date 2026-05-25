@@ -35,7 +35,7 @@ export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
       </div>
 
       {controls ? (
-        <div className="mt-6 sm:static sticky top-3 z-40">
+        <div className="mt-6 sm:static sticky top-[calc(0.75rem+env(safe-area-inset-top))] z-40">
           <div className="rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl sm:border-0 sm:bg-transparent sm:backdrop-blur-none">
             <div className="sm:p-0 p-2">{controls}</div>
           </div>
@@ -47,14 +47,14 @@ export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
         <div className="flex gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden snap-x snap-mandatory">
           {metrics.map((metric) => (
             <div key={metric.metricKey} className="min-w-[82%] snap-start">
-              <MetricCard metric={metric} compact />
+              <MetricCard metric={metric} density="compact" dashboardUpdatedAtIso={refreshedAtIso} />
             </div>
           ))}
         </div>
 
         <div className="hidden md:grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
-            <MetricCard key={metric.metricKey} metric={metric} />
+            <MetricCard key={metric.metricKey} metric={metric} density="comfortable" dashboardUpdatedAtIso={refreshedAtIso} />
           ))}
         </div>
       </div>

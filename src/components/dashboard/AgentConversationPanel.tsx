@@ -4,6 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { AgentDashboardResponse, AgentConversationMessage } from "@/lib/types/agent";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
+import { extractResponseError } from "@/lib/dashboard/http";
 
 type Props = {
   agents: AgentDashboardResponse[];
@@ -47,6 +50,8 @@ type CardProps = {
 function AgentConversationCard({ agent, expanded, onToggle }: CardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const pendingPlan = agent.planQueue.pending;
   const lastPlan = agent.planQueue.recent[0] ?? null;
   const latestThreadUpdate = agent.conversation.messages.at(-1) ?? null;
@@ -73,13 +78,32 @@ function AgentConversationCard({ agent, expanded, onToggle }: CardProps) {
       if (!feedback) return;
     }
 
+    setError(null);
+    setSuccess(null);
     startTransition(async () => {
-      await fetch(`/api/agents/plans/${pendingPlan.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, feedback, approvedBy: "keegan" })
-      });
-      router.refresh();
+      try {
+        const response = await fetch(`/api/agents/plans/${pendingPlan.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, feedback, approvedBy: "keegan" })
+        });
+        if (!response.ok) {
+          throw new Error(await extractResponseError(response));
+        }
+        router.refresh();
+        requestDashboardRefresh({ reason: "agent-conversation" });
+        const message = decision === "approve" ? "Plan approved" : "Changes requested";
+        setSuccess(message);
+        publishDashboardToast({
+          tone: decision === "approve" ? "success" : "warning",
+          title: message,
+          description: pendingPlan.title
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Action failed";
+        setError(message);
+        publishDashboardToast({ tone: "error", title: "Plan decision failed", description: message });
+      }
     });
   }
 
@@ -126,6 +150,8 @@ function AgentConversationCard({ agent, expanded, onToggle }: CardProps) {
                   Request changes
                 </button>
               </div>
+              {error ? <p className="text-xs text-rose-300">{error}</p> : null}
+              {success ? <p className="text-xs text-emerald-300">{success}</p> : null}
             </div>
           ) : lastPlan ? (
             <div className="mt-3">

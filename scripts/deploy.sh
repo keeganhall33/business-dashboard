@@ -12,11 +12,3 @@ if [ -f .env.deploy ]; then
 fi
 
 fly deploy --remote-only "$@"
-
-if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
-  echo "VERCEL_DEPLOY_HOOK_URL not set; skipping Vercel redeploy trigger"
-else
-  echo "Triggering Vercel deploy hook…"
-  curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL" >/dev/null
-  echo "Vercel deploy hook triggered"
-fi

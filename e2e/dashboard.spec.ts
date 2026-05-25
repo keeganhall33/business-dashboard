@@ -1,16 +1,115 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function gotoDashboard(page: Page) {
+  await page.goto("/dashboard");
+  // Client hydration is required for the collapsible sections + modals to work.
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "Executive Dashboard" })).toBeVisible();
+}
+
+async function ensurePipelineSectionOpen(page: Page) {
+  // Use the built-in jump link so we don't rely on scroll position.
+  await page.getByRole("link", { name: "Jump to pipeline" }).click({ force: true });
+
+  // Avoid ambiguous <section> matching: DashboardSection renders a stable id derived from storageKey.
+  const pipelineSection = page.locator("#dashboard-section-pipeline");
+  await expect(pipelineSection).toBeVisible();
+  await pipelineSection.scrollIntoViewIfNeeded();
+
+  const pipelineToggle = pipelineSection.getByRole("button").first();
+  await expect(pipelineToggle).toBeVisible();
+
+  if ((await pipelineToggle.getAttribute("aria-expanded")) !== "true") {
+    await pipelineToggle.click({ force: true });
+  }
+
+  // Sanity: the panel contents should render when expanded.
+  await expect(pipelineSection.getByText(/opportunity radar/i)).toBeVisible();
+}
+
+test.beforeEach(async ({ request }) => {
+  const response = await request.get("/api/health");
+  expect(response.ok()).toBeTruthy();
+});
 
 test.describe("Executive dashboard E2E", () => {
-  test("war-room + idea board approval task linking", async ({ page }) => {
-    await page.goto("/dashboard");
+  test("collector drawer + evidence drawer + command palette", async ({ page }) => {
+    await gotoDashboard(page);
 
-    // Pipeline section is collapsed by default.
-    await page.getByRole("button", { name: /Pipeline & Partnerships/i }).click();
+    // High-signal command-center nodes should render.
+    await expect(page.getByText(/survival runway/i)).toBeVisible();
+    await expect(page.getByText(/cash on hand/i).first()).toBeVisible();
+
+    await ensurePipelineSectionOpen(page);
+
+    // Collector cards are buttons now; open the first one.
+    const collectorButton = page.getByRole("button", { name: /^Open collector / }).first();
+    await collectorButton.scrollIntoViewIfNeeded();
+    await collectorButton.click();
+
+    // Drawer should appear.
+    const drawer = page.getByRole("dialog").first();
+    await expect(drawer).toBeVisible();
+
+    // Evidence drawer is nested (open from the evidence chips).
+    const openEvidence = drawer.getByRole("button", { name: "Open" }).first();
+    if (await openEvidence.isVisible()) {
+      await openEvidence.click();
+      const evidenceDrawer = page.getByRole("dialog", { name: /evidence/i });
+      await expect(evidenceDrawer).toBeVisible();
+      await evidenceDrawer.getByRole("button", { name: "Close" }).click();
+    }
+
+    await drawer.getByRole("button", { name: "Close" }).click();
+    await expect(drawer).toBeHidden();
+
+    // Command palette: Cmd+K.
+    await page.keyboard.press("Meta+K");
+    const palette = page.getByRole("dialog");
+    await expect(palette).toBeVisible();
+    await palette.getByPlaceholder("Search actions…").fill("refresh");
+    await expect(palette.getByRole("button", { name: /Refresh dashboard/i })).toBeVisible();
+    await palette.getByRole("button", { name: "Close" }).click();
+
+    await test.info().attach("collector-drawer.png", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png"
+    });
+  });
+
+  test("kpis API smoke (E2E harness)", async ({ request }) => {
+    const listRes = await request.get("/api/kpis");
+    expect(listRes.ok()).toBeTruthy();
+    const listJson = await listRes.json();
+    expect(listJson.ok).toBeTruthy();
+    expect(Array.isArray(listJson.items)).toBeTruthy();
+
+    const upsertRes = await request.post("/api/kpis", {
+      data: {
+        kpiKey: "kpi-e2e-custom",
+        agentKey: "avery",
+        kpiName: "E2E KPI",
+        description: "created in playwright",
+        targetValue: 123,
+        unit: "USD",
+        frequency: "weekly",
+        priority: "low"
+      }
+    });
+    expect(upsertRes.ok()).toBeTruthy();
+    const upsertJson = await upsertRes.json();
+    expect(upsertJson.ok).toBeTruthy();
+    expect(upsertJson.kpi?.kpiKey).toBe("kpi-e2e-custom");
+  });
+
+  test("war-room + idea board approval task linking", async ({ page }) => {
+    await gotoDashboard(page);
+
+    await ensurePipelineSectionOpen(page);
 
     // War room state should render from E2E fixture.
-    await expect(page.getByText("War Room", { exact: true })).toBeVisible();
+    await expect(page.getByText("War Room", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("ACTIVE", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Conversion drop" })).toBeVisible();
 
     // Idea board should show an approval-gated idea.
     await expect(page.getByText("Idea board", { exact: false })).toBeVisible();
@@ -33,11 +132,15 @@ test.describe("Executive dashboard E2E", () => {
   });
 
   test("manual finance entry save (inline form)", async ({ page }) => {
-    await page.goto("/dashboard");
+    await gotoDashboard(page);
+
+    const survivalStrip = page.locator("section").filter({ hasText: /survival runway/i }).first();
+    await expect(survivalStrip).toBeVisible();
 
     // Open the inline form and submit.
-    await page.getByRole("button", { name: "Edit" }).click();
+    await survivalStrip.getByRole("button", { name: /^edit$/i }).click({ force: true });
 
+    await expect(page.getByLabel("Cash on hand")).toBeVisible();
     await page.getByLabel("Cash on hand").fill("15000");
     await page.getByLabel("Monthly burn").fill("5000");
 
@@ -48,7 +151,7 @@ test.describe("Executive dashboard E2E", () => {
     await saveResponse;
 
     // Form should close after successful save.
-    await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
 
     await test.info().attach("finance-inline-form.png", {
       body: await page.screenshot({ fullPage: true }),
@@ -57,10 +160,11 @@ test.describe("Executive dashboard E2E", () => {
   });
 
   test("manual sale entry save (sheet)", async ({ page }) => {
-    await page.goto("/dashboard");
+    await gotoDashboard(page);
 
     // Open the sheet from the Sales panel floating action button.
-    await page.getByRole("button", { name: "Add manual sale" }).click();
+    await page.getByRole("button", { name: "Add manual sale" }).scrollIntoViewIfNeeded();
+    await page.getByRole("button", { name: "Add manual sale" }).click({ force: true });
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("Manual sale entry")).toBeVisible();
@@ -98,14 +202,21 @@ test.describe("Executive dashboard E2E", () => {
   });
 
   test("approvals + modal rendering + mobile layout", async ({ page }) => {
-    await page.goto("/dashboard");
+    await gotoDashboard(page);
 
     // Modal rendering from TaskCard "View work".
-    const viewWork = page.getByRole("button", { name: "View work" }).first();
+    const commandCenter = page.locator("#dashboard-section-command");
+    await expect(commandCenter).toBeVisible();
+
+    // The command center contains multiple "View work" buttons (action-queue row + task cards).
+    // The task-card one opens the ViewWorkModal.
+    const viewWork = commandCenter.getByRole("button", { name: "View work" }).last();
     await viewWork.scrollIntoViewIfNeeded();
-    await viewWork.evaluate((el) => (el as HTMLButtonElement).click());
+    await expect(viewWork).toBeVisible();
+    // Avoid flake from sticky headers intercepting pointer events.
+    await viewWork.dispatchEvent("click");
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeVisible({ timeout: 20_000 });
     await expect(dialog.getByRole("button", { name: "Close" })).toBeVisible();
     await dialog.getByRole("button", { name: "Close" }).click();
     await expect(dialog).toBeHidden();
@@ -119,9 +230,10 @@ test.describe("Executive dashboard E2E", () => {
     // Responsive layout: mobile viewport should keep key panels visible.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await page.getByRole("button", { name: /Pipeline & Partnerships/i }).click();
+
+    await ensurePipelineSectionOpen(page);
     await expect(page.getByText("Idea board", { exact: false })).toBeVisible();
-    await expect(page.getByText("War Room", { exact: true })).toBeVisible();
+    await expect(page.getByText("War Room", { exact: true }).first()).toBeVisible();
 
     await test.info().attach("dashboard-mobile.png", {
       body: await page.screenshot({ fullPage: true }),

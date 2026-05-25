@@ -1,12 +1,12 @@
 "use client";
 
-/* eslint-disable react-hooks/set-state-in-effect */
-
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { DashboardShell } from "./DashboardShell";
+import { DASHBOARD_REFRESH_EVENT } from "@/lib/dashboard/events";
+import { DashboardToastHost } from "./ui/DashboardToastHost";
 
 function normalizeRange(data: DashboardOverviewResponse) {
   if (data.range.preset === "custom") {
@@ -32,6 +32,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   const [overview, setOverview] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshSignal, setRefreshSignal] = useState(0);
 
   const paramsKey = useMemo(() => searchParams.toString(), [searchParams]);
   const targetConfig = useMemo(() => {
@@ -39,43 +40,49 @@ export function DashboardPageClient({ initialData, agents }: Props) {
     const preset = (params.get("range") ?? "30d").toLowerCase();
     const start = params.get("start");
     const end = params.get("end");
+    const search = new URLSearchParams();
+    search.set("range", preset);
+    if (preset === "custom" && start && end) {
+      search.set("start", start);
+      search.set("end", end);
+    }
     return {
       preset,
       start,
       end,
       key: buildTargetKey(preset, start, end),
-      query: (() => {
-        const search = new URLSearchParams();
-        search.set("range", preset);
-        if (preset === "custom" && start && end) {
-          search.set("start", start);
-          search.set("end", end);
-        }
-        return search;
-      })()
+      queryString: search.toString()
     };
   }, [paramsKey]);
 
   const currentKey = normalizeRange(overview);
-  const needsRefresh = targetConfig.key !== currentKey;
+  const [, startRefreshTransition] = useTransition();
+  const lastAppliedRef = useRef({ key: currentKey, signal: 0 });
 
   useEffect(() => {
-    if (!needsRefresh) {
-      setIsRefreshing(false);
-      setError(null);
+    function handleManualRefresh() {
+      setRefreshSignal(Date.now());
     }
-  }, [needsRefresh]);
+
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, handleManualRefresh);
+    return () => window.removeEventListener(DASHBOARD_REFRESH_EVENT, handleManualRefresh);
+  }, []);
 
   useEffect(() => {
-    if (!needsRefresh) {
+    const shouldRefresh =
+      targetConfig.key !== lastAppliedRef.current.key || refreshSignal !== lastAppliedRef.current.signal;
+
+    if (!shouldRefresh) {
       return undefined;
     }
 
     const controller = new AbortController();
-    setIsRefreshing(true);
-    setError(null);
+    startRefreshTransition(() => {
+      setIsRefreshing(true);
+      setError(null);
+    });
 
-    fetch(`/api/dashboard/overview?${targetConfig.query.toString()}`, {
+    fetch(`/api/dashboard/overview?${targetConfig.queryString}`, {
       cache: "no-store",
       signal: controller.signal
     })
@@ -97,22 +104,28 @@ export function DashboardPageClient({ initialData, agents }: Props) {
       })
       .finally(() => {
         if (!controller.signal.aborted) {
-          setIsRefreshing(false);
+          lastAppliedRef.current = { key: targetConfig.key, signal: refreshSignal };
+          startRefreshTransition(() => {
+            setIsRefreshing(false);
+          });
         }
       });
 
     return () => controller.abort();
-  }, [needsRefresh, targetConfig]);
+  }, [refreshSignal, startRefreshTransition, targetConfig.key, targetConfig.queryString]);
 
   return (
-    <div className="space-y-4">
-      {(isRefreshing || error) && (
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-300">
-          {isRefreshing && !error ? "Refreshing data…" : null}
-          {error ? error : null}
-        </div>
-      )}
-      <DashboardShell data={overview} agents={agents} />
-    </div>
+    <>
+      <DashboardToastHost />
+      <div className="space-y-4">
+        {(isRefreshing || error) && (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-300">
+            {isRefreshing && !error ? "Refreshing data…" : null}
+            {error ? error : null}
+          </div>
+        )}
+        <DashboardShell data={overview} agents={agents} />
+      </div>
+    </>
   );
 }

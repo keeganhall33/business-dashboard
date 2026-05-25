@@ -12,7 +12,7 @@ export function RevenueEnginePanel({ data }: Props) {
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         {data.metrics.map((metric) => (
-          <MetricCard key={metric.metricKey} metric={metric} />
+          <MetricCard key={metric.metricKey} metric={metric} density="comfortable" />
         ))}
       </div>
 

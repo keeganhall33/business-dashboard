@@ -1,13 +1,25 @@
+"use client";
+
 import { PipelinePanel } from "@/lib/types/dashboard";
+import { useMemo, useState } from "react";
 import { CollectorInlineForm } from "./CollectorInlineForm";
 import { OpportunityInlineActions } from "./OpportunityInlineActions";
 import { EvidenceLinks } from "./EvidenceLinks";
+import { PipelineHealthWidget } from "./PipelineHealthWidget";
+import { CollectorDetailDrawer } from "./CollectorDetailDrawer";
 
 type Props = { data: PipelinePanel };
 
 export function CollectorPipelinePanel({ data }: Props) {
-  const collectors = data.collectors ?? [];
-  const deals = data.deals ?? [];
+  const collectors = useMemo(() => data.collectors ?? [], [data.collectors]);
+  const deals = useMemo(() => data.deals ?? [], [data.deals]);
+  const [selectedCollectorId, setSelectedCollectorId] = useState<string | null>(null);
+
+  const selectedCollector = useMemo(() => {
+    if (!selectedCollectorId) return null;
+    return collectors.find((collector) => collector.id === selectedCollectorId) ?? null;
+  }, [collectors, selectedCollectorId]);
+
   const topCollectorValue = collectors.reduce((max, collector) => {
     const value = collector.estimatedValue ?? 0;
     return value > max ? value : max;
@@ -16,8 +28,14 @@ export function CollectorPipelinePanel({ data }: Props) {
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="flex-1">
+      <CollectorDetailDrawer
+        open={Boolean(selectedCollector)}
+        collector={selectedCollector}
+        onClose={() => setSelectedCollectorId(null)}
+      />
+
+      <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap xl:flex-nowrap">
+        <div className="flex-1 min-w-[320px]">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-3">
@@ -33,7 +51,10 @@ export function CollectorPipelinePanel({ data }: Props) {
             </div>
             <span className="text-xs text-zinc-500">{collectors.length} tracked</span>
           </div>
-          <CollectorInlineForm />
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <CollectorInlineForm />
+            <PipelineHealthWidget data={data} />
+          </div>
           <div className="ui-scroll-snap-x mt-4 flex gap-3 overflow-x-auto pb-2 md:block md:space-y-3 md:overflow-visible">
             {collectors.length === 0 && (
               <div className="ui-snap-item w-[86vw] min-w-[280px] rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-zinc-500 md:w-auto md:min-w-0">
@@ -47,7 +68,17 @@ export function CollectorPipelinePanel({ data }: Props) {
               return (
                 <div
                   key={collector.id}
-                  className="ui-snap-item ui-glass-hover w-[86vw] min-w-[300px] max-w-[520px] shrink-0 rounded-2xl border border-white/10 bg-white/[0.02] p-4 ring-1 ring-inset ring-white/5 md:w-auto md:min-w-0 md:max-w-none"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedCollectorId(collector.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedCollectorId(collector.id);
+                    }
+                  }}
+                  className="ui-snap-item ui-glass-hover w-[86vw] min-w-[300px] max-w-[520px] shrink-0 cursor-pointer rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-left ring-1 ring-inset ring-white/5 transition hover:border-white/15 focus:outline-none focus:ring-2 focus:ring-white/15 md:w-auto md:min-w-0 md:max-w-none"
+                  aria-label={`Open collector ${collector.name}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-zinc-50">
@@ -94,7 +125,7 @@ export function CollectorPipelinePanel({ data }: Props) {
             })}
           </div>
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-[320px]">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-3">

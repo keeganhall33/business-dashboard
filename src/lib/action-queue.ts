@@ -41,11 +41,23 @@ export function buildQuickActions(actionQueue: ActionQueue, limit = 4): QuickAct
       }))
   );
 
-  return actionableItems
+  return dedupeQuickActions(actionableItems)
     .sort((a, b) => {
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : Number.POSITIVE_INFINITY;
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : Number.POSITIVE_INFINITY;
       return aTime - bTime;
     })
     .slice(0, limit);
+}
+
+export function dedupeQuickActions(items: QuickActionItem[]): QuickActionItem[] {
+  const seen = new Set<string>();
+  const deduped: QuickActionItem[] = [];
+  for (const item of items) {
+    const key = `${item.actionType}:${item.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
 }

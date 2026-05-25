@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentKey } from "@/lib/types/requests";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
+import { InsightCard, type InsightObject } from "./ui/InsightCard";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
+import { extractResponseError } from "@/lib/dashboard/http";
 
 const agentAreaConfig: AgentAreaDefinition[] = [
   {
@@ -164,26 +168,24 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision, feedback, approvedBy: "keegan" })
         });
-        const responseText = await response.text();
         if (!response.ok) {
-          let message = responseText || "Failed to submit decision";
-          try {
-            const parsed = responseText ? JSON.parse(responseText) : null;
-            if (parsed?.error) message = parsed.error;
-            else if (parsed?.message) message = parsed.message;
-          } catch (error) {
-            console.warn("Failed to parse decision response", error);
-          }
-          throw new Error(message);
+          throw new Error(await extractResponseError(response));
         }
         setDecisionStatus({
           state: "success",
           message: decision === "approve" ? "Plan approved" : "Changes requested"
         });
         router.refresh();
+        requestDashboardRefresh({ reason: "agent-area" });
+        publishDashboardToast({
+          tone: decision === "approve" ? "success" : "warning",
+          title: decision === "approve" ? "Plan approved" : "Changes requested",
+          description: pendingPlan.title
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to submit decision";
         setDecisionStatus({ state: "error", message });
+        publishDashboardToast({ tone: "error", title: "Plan decision failed", description: message });
       }
     });
   }
@@ -336,13 +338,19 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
 
             <Subsection title="Insights" empty="No fresh insights logged.">
               {filteredInsights.map((insight) => (
-                <SignalCard key={`insight-${insight.id}`} item={insight} />
+                <InsightCard
+                  key={`insight-${insight.id}`}
+                  insight={agentUpdateToInsight(insight, agent.agent.displayName)}
+                />
               ))}
             </Subsection>
 
             <Subsection title="Latest actions" empty="No actions logged yet.">
               {filteredActions.map((action) => (
-                <SignalCard key={`action-${action.id}`} item={action} tone="action" />
+                <InsightCard
+                  key={`action-${action.id}`}
+                  insight={agentUpdateToInsight(action, agent.agent.displayName)}
+                />
               ))}
             </Subsection>
           </div>
@@ -755,6 +763,38 @@ function resolveStatusColors(status?: string | null) {
     return { textClass: "text-rose-200", barClass: "bg-rose-500" };
   }
   return { textClass: "text-sky-100", barClass: "bg-sky-500" };
+}
+
+function agentUpdateToInsight(
+  item: AgentDashboardResponse["recentUpdates"][number],
+  agentName: string
+): InsightObject {
+  const priority = (item.priority ?? "").toLowerCase();
+  const isHighPriority = priority === "critical" || priority === "high";
+
+  const state: InsightObject["state"] =
+    item.updateType === "action" ? "resolved" : isHighPriority ? "action_needed" : "supported";
+
+  return {
+    id: item.id,
+    title: item.title,
+    claim: item.summary,
+    state,
+    ownerLabel: agentName,
+    confidenceLabel: item.updateType,
+    updatedAtLabel: item.createdAt ? `Logged ${formatDate(item.createdAt)}` : null,
+    definition:
+      "Agent updates are standardized insight objects: a claim (what changed), evidence (timestamps + detail), and an action state (supported vs. needs operator attention).",
+    evidence: [
+      { label: "Type", value: item.updateType },
+      { label: "Priority", value: item.priority ?? "—" },
+      { label: "Logged", value: item.createdAt ? formatDate(item.createdAt) : "—" },
+      { label: "Has detail", value: item.detailMd ? "yes" : "no" }
+    ],
+    actions: item.detailMd
+      ? [{ label: "Read detail", detail: "Open Explain to view evidence + full context." }]
+      : [{ label: "Add evidence", detail: "Include detailMd + links so operators can audit the claim." }]
+  };
 }
 
 function formatMetricValue(value: number, unit?: string | null, metricKey?: string) {

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
 
 type Props = {
   cashOnHand: number | null;
@@ -54,6 +55,7 @@ export function FinanceInlineForm({ cashOnHand, monthlyBurn, projected30dRevenue
                 }
                 setOpen(false);
                 router.refresh();
+                requestDashboardRefresh({ reason: "finance-inline" });
               } catch (err) {
                 setError(err instanceof Error ? err.message : String(err));
               }

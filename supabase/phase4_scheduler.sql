@@ -100,6 +100,7 @@ insert into scheduled_jobs (
 ) values
  ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
+ ('agent-idea-pulse','Agent Idea Pulse','0 9 * * *','America/Los_Angeles','/api/scheduler/agent-idea-pulse',true),
  ('proof-enforcement','Proof Enforcement','0 17 * * *','America/Los_Angeles','/api/scheduler/proof-enforcement',true),
  ('deliverable-harvest','Deliverable Harvest','15 17 * * *','America/Los_Angeles','/api/scheduler/deliverable-harvest',true),
  ('ceo-digest','CEO Digest','45 17 * * *','America/Los_Angeles','/api/scheduler/ceo-digest',true),

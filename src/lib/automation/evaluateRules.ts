@@ -1,4 +1,4 @@
-import { createTask, getLatestScoreboardMetrics, getMetricAlertRules } from "@/lib/supabase/queries";
+import { createTask, findOpenTaskByTitle, getLatestScoreboardMetrics, getMetricAlertRules } from "@/lib/supabase/queries";
 import type { ScoreboardMetric } from "@/lib/agents/shared";
 
 function compare(operator: string, left: number, right: number) {
@@ -46,8 +46,21 @@ export async function evaluateRules() {
 
     if (!fired) continue;
 
+    const title = `Respond to ${metric.metric_name} threshold breach`;
+    const existing = await findOpenTaskByTitle(rule.assigned_agent, title);
+    if (existing) {
+      triggersFired.push({
+        metricKey: rule.metric_key,
+        condition: `${rule.condition_operator} ${rule.threshold_value}`,
+        assignedAgent: rule.assigned_agent,
+        taskCreated: false,
+        taskId: existing.id
+      });
+      continue;
+    }
+
     const task = await createTask({
-      title: `Respond to ${metric.metric_name} threshold breach`,
+      title,
       description: `${rule.trigger_action}. Current value ${metric.current_value}, threshold ${rule.threshold_value}.`,
       agentKey: rule.assigned_agent,
       priority: rule.severity,

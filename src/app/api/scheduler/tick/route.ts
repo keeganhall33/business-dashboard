@@ -3,6 +3,7 @@ import { assertSchedulerAuth } from "@/lib/scheduler/auth";
 import { computeNextRunAt } from "@/lib/scheduler/cron";
 import {
   getScheduledJobs,
+  touchScheduledJobLastRun,
   updateScheduledJobNextRun
 } from "@/lib/supabase/queries";
 import { runDailyAgentCycle } from "@/lib/scheduler/dailyAgentCycle";
@@ -14,6 +15,9 @@ import { runEveningCloseout } from "@/lib/scheduler/eveningCloseout";
 import { runWeeklyCommandCycle } from "@/lib/scheduler/weeklyCommandCycle";
 import { runWeeklySummary } from "@/lib/scheduler/weeklySummary";
 import { runMidweekOpportunityPulse } from "@/lib/scheduler/midweekOpportunityPulse";
+import { runAgentIdeaPulse } from "@/lib/scheduler/agentIdeaPulse";
+
+export const runtime = "nodejs";
 
 type JobRunner = () => Promise<unknown>;
 
@@ -33,7 +37,8 @@ const runners: Record<string, JobRunner> = {
   "evening-closeout": runEveningCloseout,
   "weekly-command-cycle": runWeeklyCommandCycle,
   "weekly-summary": runWeeklySummary,
-  "midweek-opportunity-pulse": runMidweekOpportunityPulse
+  "midweek-opportunity-pulse": runMidweekOpportunityPulse,
+  "agent-idea-pulse": runAgentIdeaPulse
 };
 
 /**
@@ -80,6 +85,9 @@ export async function POST(request: Request) {
       }
 
       try {
+        // Record the run start immediately so the dashboard reflects activity even
+        // if the job runner errors before it can write its own run log.
+        await touchScheduledJobLastRun(jobKey, now.toISOString());
         await runner();
         ranCount += 1;
       } catch (error) {

@@ -72,7 +72,12 @@ export async function loadDashboardOverviewFromSeed(options?: {
     // NOTE: this file lives under business-dashboard/data/
     path.join(process.cwd(), "data", "dashboard-seed.json");
 
-  const resolved = path.isAbsolute(rawSeedPath) ? rawSeedPath : path.join(process.cwd(), rawSeedPath);
+  // Turbopack / Next.js output file tracing: keep the seed loader from accidentally
+  // pulling the entire repo into the server bundle when DASHBOARD_SEED_PATH is dynamic.
+  // (This module is only executed when DASHBOARD_DATA_SOURCE=seed.)
+  const resolved = path.isAbsolute(rawSeedPath)
+    ? rawSeedPath
+    : path.join(/*turbopackIgnore: true*/ process.cwd(), rawSeedPath);
   const file = await readFile(resolved, "utf8");
 
   const json = JSON.parse(file) as unknown;
@@ -94,4 +99,3 @@ export async function loadDashboardOverviewFromSeed(options?: {
     }
   };
 }
-

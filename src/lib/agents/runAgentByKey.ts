@@ -7,6 +7,10 @@ import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 import type { RunType } from "@/lib/types/requests";
 import type { AgentRunResult } from "./shared";
 
+type RunAgentOptions = {
+  skipActivation?: boolean;
+};
+
 const runners: Record<string, () => Promise<AgentRunResult>> = {
   sloan: runSloan,
   lyra: runLyra,
@@ -18,7 +22,7 @@ export function hasAgentRunner(agentKey: string) {
   return Boolean(runners[agentKey]);
 }
 
-export async function runAgentByKey(agentKey: string, runType: RunType = "manual") {
+export async function runAgentByKey(agentKey: string, runType: RunType = "manual", options: RunAgentOptions = {}) {
   const runner = runners[agentKey];
   if (!runner) throw new Error(`Unknown agent: ${agentKey}`);
 
@@ -26,14 +30,16 @@ export async function runAgentByKey(agentKey: string, runType: RunType = "manual
   let activatedTasks = 0;
 
   try {
-    try {
-      const automation = await activateAgentTasks(agentKey, { includeAutoRunnable: true });
-      activatedTasks = automation.activatedCount;
-    } catch (activationError) {
-      console.error("Failed to activate approved tasks", {
-        agentKey,
-        error: activationError instanceof Error ? activationError.message : activationError
-      });
+    if (!options.skipActivation) {
+      try {
+        const automation = await activateAgentTasks(agentKey, { includeAutoRunnable: true });
+        activatedTasks = automation.activatedCount;
+      } catch (activationError) {
+        console.error("Failed to activate approved tasks", {
+          agentKey,
+          error: activationError instanceof Error ? activationError.message : activationError
+        });
+      }
     }
 
     const result = await runner();

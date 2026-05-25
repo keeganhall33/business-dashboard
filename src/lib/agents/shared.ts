@@ -1,5 +1,5 @@
 import {
-  createAgentPlan,
+  createOrUpdatePendingAgentPlan,
   createAgentUpdate,
   createAgentIdea,
   createAgentKpiReading,
@@ -134,6 +134,8 @@ export async function ensureDailyIdeaAndKpis(input: {
   fallbackIdeaSummary?: string;
 }) {
   const today = new Date();
+  let ideaCreated = false;
+  let kpisLogged = 0;
 
   // ---- Idea quota (>= 1/day)
   const quotaRows = await getAgentDailyIdeaQuotaForDate({ agentKey: input.agentKey, date: today });
@@ -149,6 +151,7 @@ export async function ensureDailyIdeaAndKpis(input: {
       status: "proposed",
       requiresCeoApproval: false
     });
+    ideaCreated = true;
   }
 
   // ---- KPI readings
@@ -188,7 +191,10 @@ export async function ensureDailyIdeaAndKpis(input: {
       source: "scoreboard",
       notes: null
     });
+    kpisLogged++;
   }
+
+  return { ideaCreated, kpisLogged };
 }
 
 export async function getSharedAgentContext() {
@@ -464,7 +470,7 @@ export async function submitAgentPlanDraft(input: {
     }
   });
 
-  const plan = await createAgentPlan({
+  const plan = await createOrUpdatePendingAgentPlan({
     agentKey: input.agentKey,
     threadId: thread.id,
     title: input.planTitle,

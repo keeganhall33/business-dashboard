@@ -1,5 +1,6 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
 import { activateAgentTasks } from "@/lib/agents/automation";
+import { runAgentByKey } from "@/lib/agents/runAgentByKey";
 import { getTaskById, updateTaskApproval } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { approveTaskSchema } from "@/lib/validation/tasks";
@@ -19,6 +20,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const task = await updateTaskApproval(id, parsed.data.approvedByUser);
 
     let automation: { activatedCount: number; taskIds: string[] } | null = null;
+    let runResult: { runId: string; tasksActivated: number } | null = null;
     let automationError: string | null = null;
 
     const shouldActivateAutomation =
@@ -38,9 +40,20 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
           error: automationError
         });
       }
+
+      try {
+        const run = await runAgentByKey(existing.agent_key, "manual", { skipActivation: true });
+        runResult = { runId: run.runId, tasksActivated: run.result.tasksActivated ?? 0 };
+      } catch (runError) {
+        console.error("Failed to launch agent run after approval", {
+          agentKey: task.agent_key,
+          taskId: task.id,
+          error: runError instanceof Error ? runError.message : runError
+        });
+      }
     }
 
-    return ok({ ok: true, task, automation, automationError });
+    return ok({ ok: true, task, automation, automationError, run: runResult });
   } catch (error) {
     return serverError("Failed to approve task", {
       message: error instanceof Error ? error.message : String(error)

@@ -814,6 +814,7 @@ insert into scheduled_jobs (
 ) values
  ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
+ ('agent-idea-pulse','Agent Idea Pulse','0 9 * * *','America/Los_Angeles','/api/scheduler/agent-idea-pulse',true),
  ('ceo-digest','CEO Digest','30 6 * * *','America/Los_Angeles','/api/scheduler/ceo-digest',true),
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),

@@ -5,6 +5,7 @@ import type { IdeaBoard, IdeaCard } from "@/lib/types/dashboard";
 import { EmptyState } from "./ui/EmptyState";
 import { StatusChip } from "./ui/StatusChip";
 import { ViewWorkModal } from "./ViewWorkModal";
+import { InsightCard, type InsightObject } from "./ui/InsightCard";
 
 type Props = {
   board?: IdeaBoard;
@@ -321,6 +322,34 @@ function IdeaCardView({
   const hasWork = Boolean(idea.summary || linkedTask?.description || (linkedTask?.deliverableLinks ?? []).length);
   const [openWork, setOpenWork] = useState(false);
 
+  const insight: InsightObject = {
+    id: `idea:${idea.id}`,
+    title: "Idea insight",
+    claim: needsReviewTask
+      ? "This idea requires CEO approval, but no review task is linked yet."
+      : showImplementation
+      ? "Idea approved — implementation should be tracked in the linked task and shipped with proof."
+      : "Idea logged — awaiting next state transition.",
+    state: needsReviewTask ? "action_needed" : showImplementation ? "supported" : "pending",
+    ownerLabel: idea.agentName,
+    confidenceLabel: "supabase record",
+    updatedAtLabel: idea.updatedAt ? `Touched ${formatRelativeDate(idea.updatedAt)}` : null,
+    definition:
+      "Ideas move through statuses with an explicit claim (the proposed move), evidence (links + work), and an action (approve, implement, ship).",
+    evidence: [
+      { label: "Status", value: statusKey.replace(/_/g, " ") },
+      { label: "Approval", value: approvalLabel },
+      { label: "Linked task", value: linkedTaskId ?? "—" },
+      { label: "Work attached", value: hasWork ? "yes" : "no" },
+      { label: "Deliverables", value: String((linkedTask?.deliverableLinks ?? []).length) }
+    ],
+    actions: needsReviewTask
+      ? [{ label: "Queue CEO review task", detail: "So approvals show up in Action Queue.", onClick: () => void onEnsureReviewTask(idea.id) }]
+      : showImplementation
+      ? [{ label: "Open View work", detail: "Review implementation plan + deliverables.", onClick: () => setOpenWork(true) }]
+      : [{ label: "Add evidence links", detail: "Attach up to 3 deliverable links to the linked task." }]
+  };
+
   return (
     <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -389,6 +418,10 @@ function IdeaCardView({
           </button>
         </div>
       ) : null}
+
+      <div className="mt-3">
+        <InsightCard insight={insight} />
+      </div>
 
       <ViewWorkModal
         open={openWork}

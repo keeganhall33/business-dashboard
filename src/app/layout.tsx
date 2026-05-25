@@ -1,20 +1,15 @@
-import type { Metadata } from "next";
-import { Inter, Space_Grotesk } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Operator Command",
   description: "Executive dashboard view",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -23,10 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${spaceGrotesk.variable} ${inter.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
   );

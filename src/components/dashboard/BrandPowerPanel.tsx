@@ -12,7 +12,7 @@ export function BrandPowerPanel({ data }: Props) {
 
       <div className="mt-4 grid grid-cols-1 gap-4">
         {data.metrics.map((metric) => (
-          <MetricCard key={metric.metricKey} metric={metric} compact />
+          <MetricCard key={metric.metricKey} metric={metric} density="compact" />
         ))}
       </div>
 
@@ -38,4 +38,3 @@ export function BrandPowerPanel({ data }: Props) {
     </section>
   );
 }
-

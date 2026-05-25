@@ -1,5 +1,6 @@
 import type { CommerceTelemetry } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
+import { TrendCard } from "./ui/TrendCard";
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -14,27 +15,33 @@ type Props = {
 export function MarketingPerformancePanel({ telemetry }: Props) {
   const ga4 = telemetry?.ga4;
   const summary = ga4?.summary;
+  const series = ga4?.timeseries ?? [];
+
+  const sessionsSeries = series.map((point) => Number(point.sessions ?? 0));
+  const engagedSeries = series.map((point) => Number(point.engagedSessions ?? 0));
+  const revenueSeries = series.map((point) => Number(point.revenue ?? 0));
 
   return (
-    <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+    <section className="ui-glass ui-glass-hover rounded-3xl p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Marketing performance</div>
-          <div className="mt-1 text-sm text-zinc-400">GA4 signal now. Facebook ads telemetry hooks next.</div>
+          <div className="mt-1 text-sm text-zinc-400">GA4 sessions, engagement, and revenue trend for the selected range.</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusChip label="GA4" tone="sky" />
-          <StatusChip label="FB" tone="zinc" />
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Kpi label="Revenue" value={currency.format(Number(summary?.revenue ?? 0))} />
-        <Kpi label="Sessions" value={formatInt(summary?.sessions)} />
-        <Kpi label="Engaged" value={formatInt(summary?.engagedSessions)} />
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <TrendCard label="Sessions" value={formatInt(summary?.sessions)} series={sessionsSeries} tone="sky" />
+        <TrendCard label="Engaged sessions" value={formatInt(summary?.engagedSessions)} series={engagedSeries} tone="emerald" />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Kpi label="Revenue" value={currency.format(Number(summary?.revenue ?? 0))} series={revenueSeries} tone="sky" />
         <Kpi label="Events" value={formatInt(summary?.eventCount)} />
         <Kpi label="Avg engagement" value={formatSeconds(summary?.avgEngagementSeconds)} />
-        <Kpi label="Attribution" value="pending" tone="amber" />
       </div>
 
       {!summary ? (
@@ -47,14 +54,23 @@ export function MarketingPerformancePanel({ telemetry }: Props) {
         <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Evidence</div>
         <div className="mt-2 flex flex-wrap gap-2">
           <StatusChip label="GA4 API" tone="zinc" />
-          <StatusChip label="FB spend: missing" tone="amber" />
         </div>
       </div>
     </section>
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: "zinc" | "emerald" | "amber" | "sky" | "rose" }) {
+function Kpi({
+  label,
+  value,
+  tone,
+  series
+}: {
+  label: string;
+  value: string;
+  tone?: "zinc" | "emerald" | "amber" | "sky" | "rose";
+  series?: number[];
+}) {
   return (
     <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{label}</div>
@@ -62,6 +78,13 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: "zin
       {tone ? (
         <div className="mt-2">
           <StatusChip label={tone === "amber" ? "needs hook" : "signal"} tone={tone} />
+        </div>
+      ) : null}
+      {series && series.length >= 2 ? (
+        <div className="mt-3 opacity-80">
+          <div className="h-1 w-full rounded-full bg-black/30 ring-1 ring-white/5">
+            <div className="h-1 w-[55%] rounded-full bg-gradient-to-r from-[var(--ui-accent)] to-[var(--ui-accent-2)] opacity-70" />
+          </div>
         </div>
       ) : null}
     </div>

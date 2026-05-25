@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import type { DeliverableLink } from "@/lib/types/dashboard";
+import { Drawer } from "./ui/Drawer";
 
 type Props = {
   docs?: DeliverableLink[] | null;
@@ -11,12 +12,6 @@ type Props = {
   ownerAgent?: string | null;
   max?: number;
 };
-
-const DEFAULT_PLACEHOLDERS: DeliverableLink[] = [
-  { label: "Brief", url: "" },
-  { label: "Email", url: "" },
-  { label: "Research", url: "" }
-];
 
 export function EvidenceLinks({
   docs,
@@ -29,6 +24,7 @@ export function EvidenceLinks({
   const [requested, setRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const normalizedDocs = useMemo(() => {
     const list = Array.isArray(docs) ? docs : [];
@@ -90,28 +86,68 @@ export function EvidenceLinks({
 
   return (
     <div>
+      <Drawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title={`${entityLabel} evidence`}
+        description={entityName}
+        widthClassName="sm:max-w-2xl"
+      >
+        {hasDocs ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Links</div>
+              <div className="mt-3 grid gap-2">
+                {normalizedDocs.map((doc) => (
+                  <a
+                    key={`${doc.label}|${doc.url}`}
+                    href={doc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 transition hover:border-white/20"
+                  >
+                    <span className="font-semibold">{doc.label}</span>
+                    <span className="truncate text-xs text-zinc-400">{doc.url}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-zinc-400">
+            No evidence links yet.
+          </div>
+        )}
+      </Drawer>
+
       <div className="mt-2 flex flex-wrap gap-2">
-        {hasDocs
-          ? visibleDocs.map((doc) => (
-              <a
-                key={`${doc.label}|${doc.url}`}
-                href={doc.url}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 hover:border-zinc-700"
-              >
-                {doc.label}
-              </a>
-            ))
-          : DEFAULT_PLACEHOLDERS.slice(0, max).map((placeholder) => (
-              <span
-                key={placeholder.label}
-                className="rounded-full border border-zinc-900 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-600"
-                title="No evidence linked yet"
-              >
-                {placeholder.label}
-              </span>
-            ))}
+        {hasDocs ? (
+          visibleDocs.map((doc) => (
+            <a
+              key={`${doc.label}|${doc.url}`}
+              href={doc.url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 hover:border-zinc-700"
+            >
+              {doc.label}
+            </a>
+          ))
+        ) : (
+          <span className="rounded-full border border-zinc-900 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-600" title="No evidence linked yet">
+            No evidence
+          </span>
+        )}
+
+        {hasDocs && normalizedDocs.length > max ? (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 hover:border-white/15"
+          >
+            View all ({normalizedDocs.length})
+          </button>
+        ) : null}
 
         {!hasDocs ? (
           <button
@@ -122,6 +158,17 @@ export function EvidenceLinks({
             title="Create a task to request proof / evidence links"
           >
             {requested ? "Proof requested" : isPending ? "Requesting…" : "Request proof"}
+          </button>
+        ) : null}
+
+        {hasDocs ? (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 hover:border-white/15"
+            title="Open evidence drawer"
+          >
+            Open
           </button>
         ) : null}
       </div>

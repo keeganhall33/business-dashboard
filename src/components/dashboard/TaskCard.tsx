@@ -7,6 +7,9 @@ import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 import { ViewWorkModal } from "./ViewWorkModal";
 import { ProgressBar } from "./ui/ProgressBar";
 import { StatusChip } from "./ui/StatusChip";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
+import { ensureOk, extractResponseError } from "@/lib/dashboard/http";
 
 type Props = { task: TaskSummary };
 
@@ -15,6 +18,7 @@ export function TaskCard({ task }: Props) {
   const [reason, setReason] = useState("Rejected from dashboard");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [openDetails, setOpenDetails] = useState(false);
   const [openDeliverables, setOpenDeliverables] = useState(Boolean(task.deliverableSummary));
   const [openWork, setOpenWork] = useState(false);
@@ -25,12 +29,13 @@ export function TaskCard({ task }: Props) {
 
   async function approveTask() {
     setError(null);
+    setSuccess(null);
     const res = await fetch(`/api/tasks/${task.id}/approve`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approvedByUser: true })
     });
-    if (!res.ok) throw new Error(`Approve failed (${res.status})`);
+    await ensureOk(res);
   }
 
   async function rejectTask() {
@@ -40,7 +45,7 @@ export function TaskCard({ task }: Props) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rejectedBy: "user", reason })
     });
-    if (!res.ok) throw new Error(`Reject failed (${res.status})`);
+    if (!res.ok) throw new Error(await extractResponseError(res));
   }
 
   return (
@@ -155,6 +160,7 @@ export function TaskCard({ task }: Props) {
       />
 
       {error && <div className="mt-3 text-xs text-red-300">{error}</div>}
+      {success && <div className="mt-3 text-xs text-emerald-300">{success}</div>}
 
       {task.requiresApproval && alreadyApproved ? (
         <p className="mt-4 text-xs text-emerald-300">Approved by you</p>
@@ -170,8 +176,13 @@ export function TaskCard({ task }: Props) {
                   try {
                     await approveTask();
                     router.refresh();
+                    requestDashboardRefresh({ reason: "task-board" });
+                    const message = "Task approved";
+                    setSuccess(message);
+                    publishDashboardToast({ tone: "success", title: message, description: task.title });
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
+                    publishDashboardToast({ tone: "error", title: "Approval failed", description: e instanceof Error ? e.message : String(e) });
                   }
                 })
               }
@@ -186,8 +197,12 @@ export function TaskCard({ task }: Props) {
                   try {
                     await rejectTask();
                     router.refresh();
+                    requestDashboardRefresh({ reason: "task-board" });
+                    setSuccess("Task rejected");
+                    publishDashboardToast({ tone: "warning", title: "Task rejected", description: task.title });
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
+                    publishDashboardToast({ tone: "error", title: "Rejection failed", description: e instanceof Error ? e.message : String(e) });
                   }
                 })
               }
