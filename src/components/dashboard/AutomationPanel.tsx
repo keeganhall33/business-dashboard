@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SchedulerJobHealth } from "@/lib/types/dashboard";
+import { requestDashboardRefresh } from "@/lib/dashboard/events";
+import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { ProgressBar } from "./ui/ProgressBar";
 import { StatusChip } from "./ui/StatusChip";
 import { InsightCard, type InsightObject } from "./ui/InsightCard";
@@ -79,10 +81,20 @@ export function AutomationPanel({ jobs }: Props) {
           const message = await response.text();
           throw new Error(message || "Failed to run automation job.");
         }
-        window.location.reload();
+
+        publishDashboardToast({
+          tone: "success",
+          title: "Automation job triggered",
+          description: `${jobKey} queued from dashboard.`
+        });
+        requestDashboardRefresh({ reason: `automation:${jobKey}` });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to run automation job.";
-        window.alert(message);
+        publishDashboardToast({
+          tone: "error",
+          title: "Automation run failed",
+          description: message
+        });
       } finally {
         setRunningJobKey(null);
       }
