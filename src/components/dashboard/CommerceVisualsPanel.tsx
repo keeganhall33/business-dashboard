@@ -15,7 +15,9 @@ import {
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
-  day: "numeric"
+  day: "numeric",
+  // Ensure deterministic SSR/CSR output. We feed dates as `YYYY-MM-DDT00:00:00Z`.
+  timeZone: "UTC"
 });
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {

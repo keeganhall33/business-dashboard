@@ -149,11 +149,21 @@ export function CommandBar({ actionQueue, schedulerJobs, refreshedAtIso }: Props
           >
             Cmd+K
           </button>
-          {refreshedAtIso ? (
-            <div className="text-xs text-zinc-500">Updated {new Date(refreshedAtIso).toLocaleTimeString()}</div>
-          ) : null}
+          {refreshedAtIso ? <RefreshedAt refreshedAtIso={refreshedAtIso} /> : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function RefreshedAt({ refreshedAtIso }: { refreshedAtIso: string }) {
+  const label = useMemo(() => {
+    return new Date(refreshedAtIso).toLocaleTimeString();
+  }, [refreshedAtIso]);
+
+  return (
+    <div className="text-xs text-zinc-500" suppressHydrationWarning>
+      Updated {label}
     </div>
   );
 }

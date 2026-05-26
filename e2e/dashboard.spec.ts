@@ -33,6 +33,42 @@ test.beforeEach(async ({ request }) => {
 });
 
 test.describe("Executive dashboard E2E", () => {
+  test("automation panel run button (proof-enforcement) works without hydration errors", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+    await gotoDashboard(page);
+
+    // Open the automation insight drawer.
+    const cardTitle = page.getByText("Proof enforcement reminders", { exact: true }).first();
+    await expect(cardTitle).toBeVisible();
+    await cardTitle.scrollIntoViewIfNeeded();
+
+    const automationCard = cardTitle.locator(
+      "xpath=ancestor-or-self::div[contains(concat(' ', normalize-space(@class), ' '), ' rounded-2xl ')][1]"
+    );
+
+    // Insight cards have an "Explain" button which opens the drawer.
+    await automationCard.getByRole("button", { name: "Explain" }).click({ force: true });
+
+    const dialog = page.getByRole("dialog").first();
+    await expect(dialog).toBeVisible();
+
+    const runResponse = page.waitForResponse((res) =>
+      res.url().includes("/api/automation/run-job") && res.request().method() === "POST"
+    );
+    await dialog.getByRole("button", { name: /Restart automation job/i }).click({ force: true });
+    const response = await runResponse;
+    expect(response.ok()).toBeTruthy();
+
+    // Hydration mismatches often surface as console errors; fail fast if we see them.
+    const hydrationErrors = consoleErrors.filter((line) => /hydration|did not match|hydrating/i.test(line));
+    expect(hydrationErrors).toEqual([]);
+  });
+
   test("collector drawer + evidence drawer + command palette", async ({ page }) => {
     await gotoDashboard(page);
 

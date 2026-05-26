@@ -20,7 +20,12 @@ type Props = {
 function formatRangeLabel(start: string, end: string) {
   if (!start || !end) return "Select a range";
   try {
-    const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      // `YYYY-MM-DD` parses as UTC; lock display to UTC to avoid SSR/CSR drift.
+      timeZone: "UTC"
+    });
     return `${formatter.format(new Date(start))} → ${formatter.format(new Date(end))}`;
   } catch {
     return `${start} → ${end}`;
@@ -214,5 +219,5 @@ function formatInputDate(date: Date) {
 }
 
 function formatShortLabel(date: Date) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
