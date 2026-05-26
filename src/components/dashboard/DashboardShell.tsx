@@ -17,6 +17,7 @@ import { SurvivalStrip } from "./SurvivalStrip";
 import { CollectorPipelinePanel } from "./CollectorPipelinePanel";
 import { AgentAreaBoard } from "./AgentAreaBoard";
 import { AutomationPanel } from "./AutomationPanel";
+import { AgentAutomationPanel } from "./AgentAutomationPanel";
 import { AgentKpiStrip } from "./AgentKpiStrip";
 import { IdeaBoardPanel } from "./IdeaBoardPanel";
 import { CeoQuestionDeskPanel } from "./CeoQuestionDeskPanel";
@@ -78,6 +79,7 @@ export function DashboardShell({ data, agents }: Props) {
           </div>
           <div className="space-y-8 lg:col-span-5 xl:col-span-4">
             <AutomationPanel jobs={data.schedulerJobs} />
+            <AgentAutomationPanel agentSla={data.agentSla} />
             <SystemHealthPanel data={data.systemHealth} />
           </div>
         </div>
