@@ -3,6 +3,7 @@ export type DashboardTelemetryEvent = {
     | "opportunity.review"
     | "opportunity.approve"
     | "opportunity.implement"
+    | "opportunity.dismiss"
     | "opportunity.transition_blocked"
     | "action_queue.dedupe";
   ts: string;
@@ -26,4 +27,3 @@ export async function trackDashboardEvent(event: Omit<DashboardTelemetryEvent, "
     // Ignore.
   }
 }
-

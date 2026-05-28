@@ -1,4 +1,5 @@
 import type { DeliverableLink } from "@/lib/types/dashboard";
+import { resolveDeliverableUrl } from "@/lib/domain/deliverables";
 
 type Props = {
   attachments?: DeliverableLink[] | null;
@@ -25,7 +26,7 @@ export function DeliverableAttachmentList({ attachments, tone = "zinc", variant 
           return (
             <a
               key={`${attachment.url}-${attachment.label}-${index}`}
-              href={attachment.url}
+              href={resolveDeliverableUrl(attachment.url)}
               target="_blank"
               rel="noreferrer noopener"
               className={`group flex items-center gap-3 rounded-2xl border px-3 py-2 transition ${baseStyles}`}
@@ -63,7 +64,7 @@ export function DeliverableAttachmentList({ attachments, tone = "zinc", variant 
       {attachments.map((attachment, index) => (
         <a
           key={`${attachment.url}-${attachment.label}-${index}`}
-          href={attachment.url}
+          href={resolveDeliverableUrl(attachment.url)}
           target="_blank"
           rel="noreferrer noopener"
           className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition ${baseStyles}`}

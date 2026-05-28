@@ -53,9 +53,9 @@ export function DashboardSection({
         aria-expanded={open}
       >
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{title}</div>
-            {subtitle ? <p className="mt-1 text-sm text-zinc-400">{subtitle}</p> : null}
+          <div className="min-w-0">
+            <div className="truncate text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{title}</div>
+            {subtitle ? <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{subtitle}</p> : null}
           </div>
           <div className="flex items-center gap-4">
             {meta ? <div className="hidden text-sm text-zinc-200 md:block">{meta}</div> : null}

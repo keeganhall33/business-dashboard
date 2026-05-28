@@ -21,12 +21,13 @@ type Props = {
 const REVIEW_STATUS: OpportunityStatus = "researching";
 const APPROVE_STATUS: OpportunityStatus = "ready_for_outreach";
 const IMPLEMENT_STATUS: OpportunityStatus = "outreach_drafted";
+const DISMISS_STATUS: OpportunityStatus = "lost";
 
 export function OpportunityInlineActions({ opportunity, variant = "full" }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<"review" | "approve" | "implement" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"review" | "approve" | "implement" | "dismiss" | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const disabled = isPending;
@@ -36,6 +37,7 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
   const canReview = currentStatus === "identified";
   const canApprove = currentStatus === "researching";
   const canImplement = currentStatus === "ready_for_outreach";
+  const canDismiss = !["won", "lost", "parked"].includes(currentStatus);
 
   const taskDescription = useMemo(() => {
     const lines: string[] = [];
@@ -161,6 +163,36 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
     });
   }
 
+  function handleDismiss() {
+    if (!canDismiss) return;
+    setError(null);
+    setSuccess(null);
+    setPendingAction("dismiss");
+    startTransition(async () => {
+      try {
+        void trackDashboardEvent({
+          name: "opportunity.dismiss",
+          properties: { opportunityId: opportunity.id, from: currentStatus, to: DISMISS_STATUS }
+        });
+        await updateStatus(opportunity.id, DISMISS_STATUS);
+        router.refresh();
+        requestDashboardRefresh({ reason: "opportunity-inline" });
+        const message = "Opportunity dismissed";
+        setSuccess(message);
+        publishDashboardToast({ tone: "warning", title: message, description: opportunity.name });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to dismiss opportunity.");
+        publishDashboardToast({
+          tone: "error",
+          title: "Dismiss failed",
+          description: err instanceof Error ? err.message : String(err)
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
   const buttonBase =
     variant === "compact"
       ? "rounded-lg px-2.5 py-1.5 text-xs font-semibold"
@@ -196,6 +228,14 @@ export function OpportunityInlineActions({ opportunity, variant = "full" }: Prop
           className={`${buttonBase} border border-[var(--ui-accent-2)]/40 bg-[color-mix(in_oklab,var(--ui-accent-2)_18%,transparent)] text-zinc-50 hover:bg-[color-mix(in_oklab,var(--ui-accent-2)_24%,transparent)] disabled:opacity-40`}
         >
           {pendingAction === "implement" ? "Queuing…" : implementLabel}
+        </button>
+        <button
+          type="button"
+          disabled={disabled || !canDismiss}
+          onClick={handleDismiss}
+          className={`${buttonBase} border border-rose-400/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 disabled:opacity-40`}
+        >
+          {pendingAction === "dismiss" ? "Dismissing…" : "Dismiss"}
         </button>
       </div>
       {error ? <div className="mt-2 text-xs text-rose-300">{error}</div> : null}

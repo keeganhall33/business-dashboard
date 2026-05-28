@@ -57,6 +57,110 @@ function isMissingTableError(error: unknown, table: string) {
 }
 
 // -----------------------------
+// Industry news (RSS ingestion)
+// -----------------------------
+
+export type IndustryNewsArticleUpsert = {
+  sourceKey: string;
+  sourceName: string;
+  title: string;
+  url: string;
+  guid?: string | null;
+  publishedAt?: string | null;
+  fetchedAt?: string | null;
+  score: number;
+  scoreSignals?: string[];
+  summary?: string | null;
+  rawJson?: unknown;
+};
+
+export async function upsertIndustryNewsArticles(rows: IndustryNewsArticleUpsert[]) {
+  if (!rows.length) return { insertedOrUpdated: 0 };
+  const supabase = getSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .from("industry_news_articles")
+    .upsert(
+      rows.map((r) => ({
+        source_key: r.sourceKey,
+        source_name: r.sourceName,
+        title: r.title,
+        url: r.url,
+        guid: r.guid ?? null,
+        published_at: r.publishedAt ?? null,
+        fetched_at: r.fetchedAt ?? nowIso(),
+        summary: r.summary ?? null,
+        score: r.score,
+        score_signals: r.scoreSignals ?? [],
+        raw_json: r.rawJson ?? null
+      })),
+      { onConflict: "url" }
+    )
+    .select("id");
+
+  if (error) {
+    if (isMissingTableError(error, "industry_news_articles")) {
+      return { insertedOrUpdated: 0 };
+    }
+    throw error;
+  }
+
+  return { insertedOrUpdated: data?.length ?? 0 };
+}
+
+export async function setIndustryNewsFeatured(input: {
+  url: string;
+  featuredDate: string; // YYYY-MM-DD
+  featuredRank: number;
+  whyNow: string;
+  collabConcept: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactEmailSource: "extracted" | "inferred" | "inferred_person";
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("industry_news_articles")
+    .update({
+      featured_date: input.featuredDate,
+      featured_rank: input.featuredRank,
+      why_now: input.whyNow,
+      collab_concept: input.collabConcept,
+      contact_name: input.contactName,
+      contact_email: input.contactEmail,
+      contact_email_source: input.contactEmailSource,
+      enriched_at: nowIso()
+    })
+    .eq("url", input.url)
+    .select("id,url")
+    .single();
+
+  if (error) {
+    if (isMissingTableError(error, "industry_news_articles")) return null;
+    throw error;
+  }
+  return data;
+}
+
+export async function getIndustryNewsCandidates(input: {
+  publishedAfterIso: string;
+  limit: number;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("industry_news_articles")
+    .select("source_key,source_name,title,url,guid,published_at,summary,score,score_signals")
+    .gte("published_at", input.publishedAfterIso)
+    .order("score", { ascending: false })
+    .limit(input.limit);
+  if (error) {
+    if (isMissingTableError(error, "industry_news_articles")) return [];
+    throw error;
+  }
+  return data ?? [];
+}
+
+// -----------------------------
 // Scoreboard metrics
 // -----------------------------
 export async function getLatestScoreboardMetrics() {

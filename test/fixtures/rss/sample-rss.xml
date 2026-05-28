@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Feed</title>
+    <item>
+      <title>Brand signs major partnership with athlete for new drop</title>
+      <link>https://example.com/story-1</link>
+      <guid>story-1</guid>
+      <pubDate>Tue, 26 May 2026 10:00:00 GMT</pubDate>
+      <description><![CDATA[Contact: partnerships@example.com]]></description>
+    </item>
+    <item>
+      <title>Quarterly earnings report</title>
+      <link>https://example.com/story-2</link>
+      <guid>story-2</guid>
+      <pubDate>Tue, 26 May 2026 08:00:00 GMT</pubDate>
+      <description><![CDATA[A business update.]]></description>
+    </item>
+  </channel>
+</rss>

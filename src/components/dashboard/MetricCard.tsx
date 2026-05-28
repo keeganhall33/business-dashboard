@@ -41,12 +41,14 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso }: 
     <div
       className={cn(
         "ui-glass ui-glass-hover ui-accent-ring rounded-2xl",
-        resolvedDensity === "compact" ? "p-3" : "p-4",
+        resolvedDensity === "compact" ? "p-4" : "p-5",
         statusClasses(metric.status)
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">{title}</div>
+        <div className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          {title}
+        </div>
         {changeLabel && (
           <div className="rounded-full border border-white/10 bg-white/[0.02] px-2 py-1 text-[11px] text-zinc-200">
             {changeLabel}
@@ -120,7 +122,8 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso }: 
                         href={link.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.05]"
+                        title={link.label}
+                        className="max-w-full min-w-0 truncate rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.05]"
                       >
                         {link.label}
                       </a>
@@ -169,14 +172,17 @@ function MetricProvenance({
   return (
     <details className={cn("mt-3 rounded-xl border border-white/5 bg-black/20", density === "compact" && "mt-2")}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">
-        <span className="uppercase tracking-[0.18em]">Provenance</span>
-        <span className="text-[11px] text-zinc-500">{title}</span>
+        <div className="flex flex-col">
+          <span className="uppercase tracking-[0.18em] text-zinc-300">{title}</span>
+          <span className="text-[11px] text-zinc-500">Definition &amp; freshness</span>
+        </div>
+        <span className="rounded-full border border-white/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.18em] text-zinc-400">Provenance</span>
       </summary>
       <div className="space-y-2 px-3 pb-3 text-xs">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-4">
             <div className="shrink-0 uppercase tracking-[0.18em] text-zinc-500">{row.label}</div>
-            <div className="text-right text-zinc-200">{row.value}</div>
+            <div className="min-w-0 text-right text-zinc-200 break-words">{row.value}</div>
           </div>
         ))}
       </div>

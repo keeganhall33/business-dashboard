@@ -20,7 +20,8 @@ export function TaskCard({ task }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [openDetails, setOpenDetails] = useState(false);
-  const [openDeliverables, setOpenDeliverables] = useState(Boolean(task.deliverableSummary));
+  const hasDeliverables = Boolean(task.deliverableLinks && task.deliverableLinks.length > 0);
+  const [openDeliverables, setOpenDeliverables] = useState(Boolean(task.deliverableSummary || hasDeliverables));
   const [openWork, setOpenWork] = useState(false);
 
   const pct = estimateProgress(task.status);
@@ -60,6 +61,7 @@ export function TaskCard({ task }: Props) {
             {typeof task.expectedDurationDays === "number" ? (
               <StatusChip label={`ETA ${task.expectedDurationDays}d`} />
             ) : null}
+            {hasDeliverables ? <StatusChip label="Proof" tone="emerald" /> : null}
           </div>
         </div>
         <div className="text-right">

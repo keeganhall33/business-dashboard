@@ -21,6 +21,9 @@ import { AgentAutomationPanel } from "./AgentAutomationPanel";
 import { AgentKpiStrip } from "./AgentKpiStrip";
 import { IdeaBoardPanel } from "./IdeaBoardPanel";
 import { CeoQuestionDeskPanel } from "./CeoQuestionDeskPanel";
+import { IndustryPulsePanel } from "./IndustryPulsePanel";
+import { ProofOfWorkPanel } from "./ProofOfWorkPanel";
+import { LuxuryCollectiblesKpiPanel } from "./LuxuryCollectiblesKpiPanel";
 import { DashboardSection } from "./ui/DashboardSection";
 import { ContextPanel, type ContextItem } from "./ui/ContextPanel";
 import { CommandBar } from "./CommandBar";
@@ -41,9 +44,9 @@ export function DashboardShell({ data, agents }: Props) {
   const pipelineContext = buildPipelineContext(data);
 
   return (
-    <div className="layout-shell space-y-8">
+    <div className="layout-shell section-grid">
       <CommandBar actionQueue={data.actionQueue} schedulerJobs={data.schedulerJobs} refreshedAtIso={data.timestamp} />
-      <div className="space-y-6">
+      <div className="section-grid">
         <SurvivalStrip data={data.survivalStrip} />
         <HeaderStatusBar
           metrics={data.headerMetrics}
@@ -57,6 +60,8 @@ export function DashboardShell({ data, agents }: Props) {
             />
           }
         />
+
+        <IndustryPulsePanel initialSnapshot={data.industryPulse} />
       </div>
 
       <DashboardSection
@@ -66,8 +71,8 @@ export function DashboardShell({ data, agents }: Props) {
         defaultOpen
         context={commandContext}
       >
-        <div id="command-center" className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="space-y-8 lg:col-span-7 xl:col-span-8">
+        <div id="command-center" className="responsive-columns" data-align="wide">
+          <div className="column column-wide space-y-8">
             <ActionQueuePanel data={data.actionQueue} />
             <TaskBoard
               tasks={data.tasks}
@@ -77,10 +82,12 @@ export function DashboardShell({ data, agents }: Props) {
               agentCommentary={agentCommentary}
             />
           </div>
-          <div className="space-y-8 lg:col-span-5 xl:col-span-4">
+          <div className="column column-medium space-y-8">
+            <LuxuryCollectiblesKpiPanel data={data.luxuryCollectibles} />
             <AutomationPanel jobs={data.schedulerJobs} />
             <AgentAutomationPanel agentSla={data.agentSla} />
             <SystemHealthPanel data={data.systemHealth} />
+            <ProofOfWorkPanel items={data.proofOfWork ?? []} />
           </div>
         </div>
       </DashboardSection>
@@ -105,13 +112,13 @@ export function DashboardShell({ data, agents }: Props) {
         defaultOpen
         context={revenueContext}
       >
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="space-y-8 lg:col-span-7 xl:col-span-8">
+        <div className="responsive-columns" data-align="wide">
+          <div className="column column-wide space-y-8">
             <ExecutiveCommandPanel data={data.executiveCommand} />
             <RevenueEnginePanel data={data.revenueEngine} />
             <BrandPowerPanel data={data.brandPower} />
           </div>
-          <div className="space-y-8 lg:col-span-5 xl:col-span-4">
+          <div className="column column-medium space-y-8">
             <SalesPanel telemetry={data.commerceTelemetry} />
             <MarketingPerformancePanel telemetry={data.commerceTelemetry} />
             <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
@@ -127,14 +134,14 @@ export function DashboardShell({ data, agents }: Props) {
         context={pipelineContext}
       >
         <div id="pipeline" className="space-y-6">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-            <div className="space-y-8 lg:col-span-6 xl:col-span-4">
+          <div className="responsive-columns" data-align="equal">
+            <div className="column space-y-8">
               <OpportunityRadarPanel data={data.opportunityRadar} />
             </div>
-            <div className="space-y-8 lg:col-span-6 xl:col-span-4">
+            <div className="column space-y-8">
               <CollectorPipelinePanel data={data.pipelinePanel} />
             </div>
-            <div className="space-y-8 lg:col-span-12 xl:col-span-4">
+            <div className="column space-y-8">
               <WarRoomPanel data={data.warRoom} />
               <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
             </div>
@@ -191,6 +198,27 @@ function buildCommandContext(data: DashboardOverviewResponse) {
       : undefined
   ].filter(Boolean) as ContextItem[];
 
+  const luxury = data.luxuryCollectibles;
+  const luxuryItems: ContextItem[] = luxury
+    ? [
+        {
+          label: "Premium sell-through",
+          value: `${luxury.premiumEdition.actualSellThroughPercent.toFixed(0)}%`,
+          supportingText: `Target ${luxury.premiumEdition.targetSellThroughPercent.toFixed(0)}%`
+        },
+        {
+          label: "VIP collectors",
+          value: `${luxury.vipCollectors.total}`,
+          supportingText: `+${luxury.vipCollectors.growth30d} / 30d • ${luxury.vipCollectors.retentionPercent != null ? `${luxury.vipCollectors.retentionPercent.toFixed(0)}% retained` : "retention —"}`
+        },
+        {
+          label: "Proof cadence",
+          value: `${luxury.proofOfWork.deliverablesCompletedPerWeek}/wk`,
+          supportingText: `Evidence ${luxury.proofOfWork.evidenceHealthPercent != null ? `${luxury.proofOfWork.evidenceHealthPercent.toFixed(0)}%` : "—"}`
+        }
+      ]
+    : [];
+
   return (
     <>
       <ContextPanel
@@ -206,6 +234,7 @@ function buildCommandContext(data: DashboardOverviewResponse) {
         ]}
       />
       <ContextPanel title="Automation Health" items={automationItems} />
+      {luxuryItems.length ? <ContextPanel title="Collectible KPIs" items={luxuryItems} /> : null}
     </>
   );
 }
@@ -251,6 +280,12 @@ function buildRevenueContext(data: DashboardOverviewResponse) {
   const leakCount = data.revenueEngine.moneyLeaks.length;
   const topPriority = data.executiveCommand.topPriorities[0];
 
+  const luxury = data.luxuryCollectibles;
+  const pricingRealization =
+    luxury && luxury.pricingLadder.floorPriceUsd > 0
+      ? (luxury.pricingLadder.avgSellingPriceUsd / luxury.pricingLadder.floorPriceUsd) * 100
+      : null;
+
   return (
     <>
       <ContextPanel
@@ -267,6 +302,51 @@ function buildRevenueContext(data: DashboardOverviewResponse) {
           items={[{ label: "Focus", value: topPriority, supportingText: "Weekly directive" }]}
         />
       ) : null}
+
+      {luxury ? (
+        <ContextPanel
+          title="Pricing Architecture"
+          items={[
+            {
+              label: "Collector tiers",
+              value: `${luxury.pricingArchitecture.tiers.length}`,
+              supportingText: luxury.pricingArchitecture.tiers
+                .slice(0, 3)
+                .map((tier) => `${tier.tier}: $${tier.rangeUsd.min.toLocaleString()}–${tier.rangeUsd.max == null ? "∞" : `$${tier.rangeUsd.max.toLocaleString()}`}`)
+                .join(" • ")
+            },
+            {
+              label: "Price realization",
+              value:
+                pricingRealization != null && Number.isFinite(pricingRealization)
+                  ? `${pricingRealization.toFixed(0)}%`
+                  : "—",
+              supportingText: `Avg $${luxury.pricingLadder.avgSellingPriceUsd.toLocaleString()} vs floor $${luxury.pricingLadder.floorPriceUsd.toLocaleString()}`
+            }
+          ]}
+        />
+      ) : null}
+
+      {luxury ? (
+        <ContextPanel
+          title="Narrative Signal"
+          items={[
+            {
+              label: "Story engagement",
+              value:
+                luxury.narrativeStats.storyContentEngagementPercent != null
+                  ? `${luxury.narrativeStats.storyContentEngagementPercent.toFixed(1)}%`
+                  : "—",
+              supportingText: "Story content engagement rate"
+            },
+            {
+              label: "Anti-AI storytelling",
+              value: `${luxury.narrativeStats.antiAiStorytellingOutputsPerWeek}/wk`,
+              supportingText: "Human-authored narrative outputs"
+            }
+          ]}
+        />
+      ) : null}
     </>
   );
 }
@@ -277,6 +357,7 @@ function buildPipelineContext(data: DashboardOverviewResponse) {
   const collectors = data.pipelinePanel.collectors.length;
   const warMode = data.warRoom.mode === "war_room";
   const ideaCounts = countIdeas(data.ideaBoard);
+  const luxury = data.luxuryCollectibles;
 
   return (
     <>
@@ -288,6 +369,18 @@ function buildPipelineContext(data: DashboardOverviewResponse) {
           { label: "Collectors", value: numberFormatter.format(collectors) }
         ]}
       />
+      {luxury ? (
+        <ContextPanel
+          title="Institutional Pipeline"
+          items={[
+            { label: "Active", value: numberFormatter.format(luxury.institutionalPipeline.activeOpportunities) },
+            {
+              label: "Total value",
+              value: `$${numberFormatter.format(luxury.institutionalPipeline.totalValueUsd)}`
+            }
+          ]}
+        />
+      ) : null}
       <ContextPanel
         title="Ideas & War Room"
         items={[

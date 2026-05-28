@@ -16,6 +16,7 @@ import { runWeeklyCommandCycle } from "@/lib/scheduler/weeklyCommandCycle";
 import { runWeeklySummary } from "@/lib/scheduler/weeklySummary";
 import { runMidweekOpportunityPulse } from "@/lib/scheduler/midweekOpportunityPulse";
 import { runAgentIdeaPulse } from "@/lib/scheduler/agentIdeaPulse";
+import { runIndustryNewsPulse } from "@/lib/scheduler/industryNewsPulse";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,8 @@ const runners: Record<string, JobRunner> = {
   "weekly-command-cycle": runWeeklyCommandCycle,
   "weekly-summary": runWeeklySummary,
   "midweek-opportunity-pulse": runMidweekOpportunityPulse,
-  "agent-idea-pulse": runAgentIdeaPulse
+  "agent-idea-pulse": runAgentIdeaPulse,
+  "industry-news-pulse": runIndustryNewsPulse
 };
 
 /**

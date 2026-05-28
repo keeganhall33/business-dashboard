@@ -133,6 +133,15 @@ export type DeliverableLink = {
   url: string;
 };
 
+export type ProofOfWorkEntry = {
+  taskId: string;
+  taskTitle: string;
+  agentKey: string | null;
+  completedAt: string | null;
+  summary: string | null;
+  deliverableLinks: DeliverableLink[];
+};
+
 // -----------------------------
 // KPI / Ideas / CEO Questions (dashboard additions)
 // -----------------------------
@@ -397,6 +406,47 @@ export type CommerceTelemetry = {
   };
 };
 
+export type LuxuryCollectibleKpis = {
+  premiumEdition: {
+    targetSellThroughPercent: number; // 0..100
+    actualSellThroughPercent: number; // 0..100
+    timeToSell: {
+      avgDaysCurrent: number | null;
+      avgDaysPrior: number | null;
+    };
+  };
+  vipCollectors: {
+    total: number;
+    growth30d: number;
+    retentionPercent: number | null; // 0..100
+  };
+  proofOfWork: {
+    deliverablesCompletedPerWeek: number;
+    evidenceHealthPercent: number | null; // 0..100
+  };
+  institutionalPipeline: {
+    activeOpportunities: number;
+    totalValueUsd: number;
+  };
+  pricingLadder: {
+    floorPriceUsd: number;
+    avgSellingPriceUsd: number;
+  };
+  pricingArchitecture: {
+    tiers: Array<{
+      tier: string;
+      rangeUsd: {
+        min: number;
+        max: number | null;
+      };
+    }>;
+  };
+  narrativeStats: {
+    storyContentEngagementPercent: number | null; // 0..100
+    antiAiStorytellingOutputsPerWeek: number;
+  };
+};
+
 export type DashboardOverviewResponse = {
   ok: boolean;
   timestamp: string;
@@ -414,6 +464,7 @@ export type DashboardOverviewResponse = {
   pipelinePanel: PipelinePanel;
   survivalStrip: SurvivalStrip;
   tasks: TaskSummary[];
+  proofOfWork: ProofOfWorkEntry[];
   schedulerJobs: SchedulerJobHealth[];
   agentSla: AgentSlaSnapshot[];
   approvalBottlenecks: ApprovalBottleneck;
@@ -422,8 +473,30 @@ export type DashboardOverviewResponse = {
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
 
+  /** Luxury Cultural Collectible KPI bundle (optional for backwards compatibility). */
+  luxuryCollectibles?: LuxuryCollectibleKpis;
+
   // New dashboard visuals
   agentKpis: AgentKpiBucket[];
   ideaBoard: IdeaBoard;
   ceoQuestionDesk: CeoQuestionDesk;
+
+  // Optional: enriched, curated opportunity digest (twice-daily ingestion)
+  industryPulse?: {
+    day: string; // YYYY-MM-DD (UTC)
+    refreshedAtIso: string;
+    items: Array<{
+      id: string;
+      day: string; // YYYY-MM-DD (UTC)
+      source: string;
+      headline: string;
+      summary: string;
+      collabIdea: string;
+      whyNow: string;
+      contactEmail: string | null;
+      contactConfidence: number | null; // 0..1
+      contactStatus: "verified" | "suspected" | "unknown";
+      sourceUrl: string | null;
+    }>;
+  };
 };

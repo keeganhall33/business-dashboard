@@ -94,6 +94,7 @@ Jobs:
 - `POST /api/scheduler/weekly-command-cycle`
 - `POST /api/scheduler/weekly-summary`
 - `POST /api/scheduler/midweek-opportunity-pulse`
+- `POST /api/scheduler/industry-news-pulse`
 
 ### Single-entry cron (recommended)
 

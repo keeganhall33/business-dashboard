@@ -90,16 +90,16 @@ export async function runNoah(): Promise<AgentRunResult> {
 
   const opportunities = [
     {
-      name: "Topps sports collectible collaboration",
-      organization: "Topps",
+      name: "Upper Deck Hall of Fame capsule",
+      organization: "Upper Deck",
       opportunityType: "licensing" as const,
       status: "researching" as const,
-      valueEstimate: 50000,
-      prestigeScore: 9.2,
-      probabilityScore: 0.35,
-      nextStep: "Find the right category or licensing contact and tailor the angle",
+      valueEstimate: 55000,
+      prestigeScore: 9.1,
+      probabilityScore: 0.32,
+      nextStep: "Map the right creative director + licensing contact and prep a prestige pitch",
       nextStepDueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      notesMd: "Strong fit with sports-adjacent prestige and collectible behavior.",
+      notesMd: "Collectible pedigree pairs well with Impossible in Pencil’s athlete canon. Need to emphasize scarcity + prestige.",
       source: "research"
     }
   ];

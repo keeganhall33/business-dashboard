@@ -38,6 +38,7 @@ function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
       runwayDays: null
     },
     tasks: [],
+    proofOfWork: [],
     schedulerJobs: [],
     agentSla: [],
     approvalBottlenecks: { pendingCount: 0, oldestPendingHours: null, tasks: [] },
@@ -51,7 +52,43 @@ function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
     agentUpdateFeed: [],
     agentKpis: [],
     ideaBoard: { columns: {}, recentComments: [], linkedTasks: {} },
-    ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] }
+    ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] },
+
+    luxuryCollectibles: {
+      premiumEdition: {
+        targetSellThroughPercent: 85,
+        actualSellThroughPercent: 62,
+        timeToSell: { avgDaysCurrent: 18, avgDaysPrior: 24 }
+      },
+      vipCollectors: {
+        total: 14,
+        growth30d: 3,
+        retentionPercent: 92
+      },
+      proofOfWork: {
+        deliverablesCompletedPerWeek: 9,
+        evidenceHealthPercent: 78
+      },
+      institutionalPipeline: {
+        activeOpportunities: 6,
+        totalValueUsd: 125000
+      },
+      pricingLadder: {
+        floorPriceUsd: 450,
+        avgSellingPriceUsd: 980
+      },
+      pricingArchitecture: {
+        tiers: [
+          { tier: "Collector", rangeUsd: { min: 450, max: 1200 } },
+          { tier: "Patron", rangeUsd: { min: 1500, max: 5000 } },
+          { tier: "Institutional", rangeUsd: { min: 8000, max: null } }
+        ]
+      },
+      narrativeStats: {
+        storyContentEngagementPercent: 6.4,
+        antiAiStorytellingOutputsPerWeek: 4
+      }
+    }
   };
 }
 
@@ -82,7 +119,10 @@ export async function loadDashboardOverviewFromSeed(options?: {
 
   const json = JSON.parse(file) as unknown;
   if (isFullDashboardResponse(json)) {
-    return json;
+    return {
+      ...json,
+      proofOfWork: Array.isArray(json.proofOfWork) ? json.proofOfWork : []
+    } as DashboardOverviewResponse;
   }
 
   // Allow a smaller “snapshot” file coming from Prefect export (headerMetrics + collectors only).

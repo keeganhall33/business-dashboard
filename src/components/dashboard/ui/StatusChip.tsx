@@ -18,7 +18,8 @@ export function StatusChip({ label, tone = "zinc", className = "" }: Props) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] backdrop-blur ${styles} ${className}`}
+      title={label}
+      className={`inline-flex max-w-full min-w-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] backdrop-blur ${styles} ${className}`}
     >
       {label}
     </span>

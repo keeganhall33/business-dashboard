@@ -89,7 +89,7 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
         )}
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-6 chart-grid">
         <div className="rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900/70 to-zinc-900 p-4">
           <div className="text-sm text-zinc-400">Revenue & Orders</div>
           <div className="mt-3 h-56">

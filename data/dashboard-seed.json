@@ -11,7 +11,7 @@
       "metricName": "Monthly revenue",
       "category": "revenue",
       "currentValue": 18250,
-      "targetValue": 25000,
+      "targetValue": 10000,
       "deltaPercent": null,
       "status": "warning",
       "unit": "usd",
@@ -55,6 +55,44 @@
       "measuredAt": "2026-05-18T00:00:00.000Z"
     }
   ],
+  "luxuryCollectibles": {
+    "premiumEdition": {
+      "targetSellThroughPercent": 85,
+      "actualSellThroughPercent": 62,
+      "timeToSell": {
+        "avgDaysCurrent": 18,
+        "avgDaysPrior": 24
+      }
+    },
+    "vipCollectors": {
+      "total": 14,
+      "growth30d": 3,
+      "retentionPercent": 92
+    },
+    "proofOfWork": {
+      "deliverablesCompletedPerWeek": 9,
+      "evidenceHealthPercent": 78
+    },
+    "institutionalPipeline": {
+      "activeOpportunities": 6,
+      "totalValueUsd": 125000
+    },
+    "pricingLadder": {
+      "floorPriceUsd": 450,
+      "avgSellingPriceUsd": 980
+    },
+    "pricingArchitecture": {
+      "tiers": [
+        { "tier": "Collector", "rangeUsd": { "min": 450, "max": 1200 } },
+        { "tier": "Patron", "rangeUsd": { "min": 1500, "max": 5000 } },
+        { "tier": "Institutional", "rangeUsd": { "min": 8000, "max": null } }
+      ]
+    },
+    "narrativeStats": {
+      "storyContentEngagementPercent": 6.4,
+      "antiAiStorytellingOutputsPerWeek": 4
+    }
+  },
   "pipelinePanel": {
     "collectors": [
       {
@@ -98,4 +136,3 @@
     ]
   }
 }
-

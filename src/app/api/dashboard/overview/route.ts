@@ -26,10 +26,27 @@ import {
   getCeoQuestions,
   getRecentCeoQuestionComments
 } from "@/lib/supabase/queries";
-import { RangePreset } from "@/lib/types/dashboard";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
+import { RangePreset, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 export const runtime = "nodejs";
+
+type PostgrestError = {
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+  message?: string | null;
+};
+
+function isMissingTableError(error: unknown, table: string) {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as PostgrestError;
+  if (pgError.code !== "PGRST205") return false;
+  const haystack = `${pgError.message ?? ""} ${pgError.hint ?? ""} ${pgError.details ?? ""}`.toLowerCase();
+  return haystack.includes(`public.${table}`) || haystack.includes(`'${table}'`);
+}
 
 type ScoreboardMetricRow = {
   metric_key: string;
@@ -95,6 +112,33 @@ type OpportunityRow = {
   deliverable_links?: unknown;
 };
 
+const opportunityIdRegex = /opportunity id:\s*([a-z0-9_-]+)/gi;
+
+function extractOpportunityIdsFromText(...texts: Array<string | null | undefined>) {
+  const joined = texts
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join("\n");
+  if (!joined) return [];
+  const matches = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = opportunityIdRegex.exec(joined)) !== null) {
+    matches.add(match[1]);
+  }
+  return Array.from(matches);
+}
+
+function mergeDeliverableLinks(existing: DeliverableLink[], incoming: DeliverableLink[], limit = 4) {
+  const combined = [...existing];
+  const seen = new Set(existing.map((link) => link.url));
+  for (const link of incoming) {
+    if (!link.url || seen.has(link.url)) continue;
+    seen.add(link.url);
+    combined.push(link);
+    if (combined.length >= limit) break;
+  }
+  return combined.slice(0, limit);
+}
+
 function extractUrls(text: string) {
   const urls: string[] = [];
   const regex = /https?:\/\/[^\s)\]]+/g;
@@ -142,6 +186,27 @@ function buildSupportingDocs(entity: {
   });
 
   return unique.length > 0 ? unique : null;
+}
+
+async function fetchTasksLinkedToMetrics(metricKeys: string[], limitPerKey = 8) {
+  const supabase = getSupabaseServerClient();
+  const result = new Map<string, TaskRow[]>();
+  if (!metricKeys.length) return result;
+
+  await Promise.all(
+    metricKeys.map(async (key) => {
+      const { data, error } = await supabase
+        .from("task_queue")
+        .select("*")
+        .contains("related_metric_keys", [key])
+        .order("created_at", { ascending: false })
+        .limit(limitPerKey);
+      if (error && !isMissingTableError(error, "task_queue")) throw error;
+      result.set(key, (data ?? []) as TaskRow[]);
+    })
+  );
+
+  return result;
 }
 
 type ScheduledJobRow = {
@@ -550,6 +615,16 @@ export async function GET(request: Request) {
             completedAt: null
           }
         ],
+        proofOfWork: [
+          {
+            taskId: "task-fixture-1",
+            taskTitle: "Approve campaign creative",
+            agentKey: "avery",
+            completedAt: now.toISOString(),
+            summary: "Draft creative is ready.",
+            deliverableLinks: [{ label: "Figma", url: "https://example.com/figma" }]
+          }
+        ],
         schedulerJobs: [],
         agentSla: [],
         approvalBottlenecks: { pendingCount: 1, oldestPendingHours: 2.5, tasks: [] },
@@ -644,7 +719,8 @@ export async function GET(request: Request) {
       ideaResult,
       recentIdeaComments,
       ceoQuestionResult,
-      recentCeoComments
+      recentCeoComments,
+      industryPulseResult
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -659,12 +735,13 @@ export async function GET(request: Request) {
       getDecisionsRequiringReview({ withinDays: 21, limit: 20 }),
       getLatestFinanceSnapshot(),
       getCollectorRelationships(12),
-      getRecentTasks(40),
+      getRecentTasks(500),
       listAgentKpis({ limit: 250 }) as Promise<AgentKpiRow[]>,
       getIdeas({ limit: 250 }) as Promise<{ items: IdeaRow[]; count: number }>,
       getRecentIdeaComments(30) as Promise<IdeaCommentRow[]>,
       getCeoQuestions({ limit: 250 }) as Promise<{ items: CeoQuestionRow[]; count: number }>,
-      getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>
+      getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
+      getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 })
     ]);
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
@@ -948,62 +1025,6 @@ export async function GET(request: Request) {
       ]
     };
 
-    const activeCount = opportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
-    const readyForOutreachCount = opportunities.filter((o) => o.status === "ready_for_outreach").length;
-
-    const sortedOpportunities = opportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
-    const seenOpportunities = new Set<string>();
-    const topOpportunities: {
-      id: string;
-      name: string;
-      organization: string | null;
-      opportunityType: string;
-      status: string;
-      valueEstimate: number | null;
-      prestigeScore: number | null;
-      probabilityScore: number | null;
-      ownerAgent: string;
-      nextStep: string | null;
-      nextStepDueAt: string | null;
-      supportingDocs: Array<{ label: string; url: string }> | null;
-    }[] = [];
-
-    for (const opportunity of sortedOpportunities) {
-      const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
-      if (seenOpportunities.has(dedupeKey)) continue;
-      seenOpportunities.add(dedupeKey);
-
-      topOpportunities.push({
-        id: opportunity.id,
-        name: opportunity.name,
-        organization: opportunity.organization,
-        opportunityType: opportunity.opportunity_type,
-        status: opportunity.status,
-        valueEstimate: opportunity.value_estimate,
-        prestigeScore: opportunity.prestige_score,
-        probabilityScore: opportunity.probability_score,
-        ownerAgent: opportunity.owner_agent,
-        nextStep: opportunity.next_step,
-        nextStepDueAt: opportunity.next_step_due_at,
-        supportingDocs: buildSupportingDocs(opportunity)
-      });
-
-      if (topOpportunities.length >= 5) break;
-    }
-
-    const opportunityRadar = {
-      activeCount,
-      readyForOutreachCount,
-      topOpportunities,
-      nextFiveMoves: [
-        "Build 25-brand target list",
-        "Prioritize 10 high-prestige targets",
-        "Prepare pitch angles by category",
-        "Draft outreach assets for approval",
-        "Track response readiness by opportunity"
-      ]
-    };
-
     const systemHealth = {
       dataFreshnessHours: 6,
       agentTaskCompletionRate: 62,
@@ -1076,15 +1097,27 @@ export async function GET(request: Request) {
 
     const openTaskRows = tasks as TaskRow[];
     const recentTaskRows = recentTasks as TaskRow[];
-    const completedTaskRows = recentTaskRows
-      .filter((task) => task.status === "completed")
-      .slice(0, 12);
+    const completedTaskRows = recentTaskRows.filter((task) => task.status === "completed");
 
     const taskRowMap = new Map<string, TaskRow>();
     [...openTaskRows, ...completedTaskRows].forEach((task) => {
       taskRowMap.set(task.id, task);
     });
     const allTaskRows = Array.from(taskRowMap.values());
+
+    const opportunityEvidenceById = new Map<string, DeliverableLink[]>();
+
+    for (const task of allTaskRows) {
+      if (task.status !== "completed") continue;
+      const links = normalizeDeliverableLinks(task.deliverable_links);
+      if (!links.length) continue;
+      const linkedIds = extractOpportunityIdsFromText(task.description, task.result_summary);
+      if (!linkedIds.length) continue;
+      linkedIds.forEach((id) => {
+        const existing = opportunityEvidenceById.get(id) ?? [];
+        opportunityEvidenceById.set(id, mergeDeliverableLinks(existing, links));
+      });
+    }
 
     const ideaBoardLinkedTasks = allTaskRows.reduce<
       Record<
@@ -1265,6 +1298,8 @@ export async function GET(request: Request) {
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
       seenPipelineDeals.add(dedupeKey);
+      const pipelineDocs = buildSupportingDocs(opportunity) ?? opportunityEvidenceById.get(opportunity.id) ?? null;
+
       pipelineDeals.push({
         id: opportunity.id,
         name: opportunity.name,
@@ -1277,10 +1312,69 @@ export async function GET(request: Request) {
         ownerAgent: opportunity.owner_agent,
         nextStep: opportunity.next_step,
         nextStepDueAt: opportunity.next_step_due_at,
-        supportingDocs: buildSupportingDocs(opportunity)
+        supportingDocs: pipelineDocs ? pipelineDocs.slice(0, 4) : null
       });
       if (pipelineDeals.length >= 6) break;
     }
+
+    const activeCount = opportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
+    const readyForOutreachCount = opportunities.filter((o) => o.status === "ready_for_outreach").length;
+
+    const sortedOpportunities = opportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const seenTopOpportunities = new Set<string>();
+    const topOpportunities: {
+      id: string;
+      name: string;
+      organization: string | null;
+      opportunityType: string;
+      status: string;
+      valueEstimate: number | null;
+      prestigeScore: number | null;
+      probabilityScore: number | null;
+      ownerAgent: string;
+      nextStep: string | null;
+      nextStepDueAt: string | null;
+      supportingDocs: Array<{ label: string; url: string }> | null;
+    }[] = [];
+
+    for (const opportunity of sortedOpportunities) {
+      const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
+      if (seenTopOpportunities.has(dedupeKey)) continue;
+      seenTopOpportunities.add(dedupeKey);
+
+      const docsFromOpportunity = buildSupportingDocs(opportunity);
+      const fallbackDocs = opportunityEvidenceById.get(opportunity.id);
+
+      topOpportunities.push({
+        id: opportunity.id,
+        name: opportunity.name,
+        organization: opportunity.organization,
+        opportunityType: opportunity.opportunity_type,
+        status: opportunity.status,
+        valueEstimate: opportunity.value_estimate,
+        prestigeScore: opportunity.prestige_score,
+        probabilityScore: opportunity.probability_score,
+        ownerAgent: opportunity.owner_agent,
+        nextStep: opportunity.next_step,
+        nextStepDueAt: opportunity.next_step_due_at,
+        supportingDocs: docsFromOpportunity ?? (fallbackDocs ? fallbackDocs.slice(0, 4) : null)
+      });
+
+      if (topOpportunities.length >= 5) break;
+    }
+
+    const opportunityRadar = {
+      activeCount,
+      readyForOutreachCount,
+      topOpportunities,
+      nextFiveMoves: [
+        "Build 25-brand target list",
+        "Prioritize 10 high-prestige targets",
+        "Prepare pitch angles by category",
+        "Draft outreach assets for approval",
+        "Track response readiness by opportunity"
+      ]
+    };
 
     const pipelinePanel = {
       collectors: collectorSummaries,
@@ -1288,6 +1382,27 @@ export async function GET(request: Request) {
     };
 
     const taskSummaries = allTaskRows.map(mapTaskRowToSummary);
+    const proofOfWorkEntries: ProofOfWorkEntry[] = taskSummaries
+      .filter((task) => {
+        if (task.status !== "completed") return false;
+        const hasSummary = typeof task.deliverableSummary === "string" && task.deliverableSummary.trim().length > 0;
+        const hasLinks = Boolean(task.deliverableLinks && task.deliverableLinks.length > 0);
+        return hasSummary || hasLinks;
+      })
+      .sort((a, b) => {
+        const aTime = a.completedAt ?? a.createdAt ?? "";
+        const bTime = b.completedAt ?? b.createdAt ?? "";
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+      })
+      .slice(0, 8)
+      .map((task) => ({
+        taskId: task.id,
+        taskTitle: task.title,
+        agentKey: task.agentKey ?? null,
+        completedAt: task.completedAt ?? task.createdAt ?? null,
+        summary: task.deliverableSummary ?? task.expectedImpact ?? null,
+        deliverableLinks: task.deliverableLinks ?? []
+      }));
     const metricTaskMap = new Map<
       string,
       {
@@ -1296,18 +1411,31 @@ export async function GET(request: Request) {
       }
     >();
 
-    for (const task of taskSummaries) {
-      const keys = task.relatedMetricKeys ?? [];
-      if (!Array.isArray(keys) || keys.length === 0) continue;
+    const appendTaskToMetricMap = (summary: ReturnType<typeof mapTaskRowToSummary>) => {
+      const keys = summary.relatedMetricKeys ?? [];
+      if (!Array.isArray(keys) || keys.length === 0) return;
       for (const key of keys) {
         if (!key) continue;
         const existing = metricTaskMap.get(key) ?? { tactics: [], evidence: [] };
-        if (task.title && !existing.tactics.includes(task.title)) existing.tactics.push(task.title);
-        (task.deliverableLinks ?? []).forEach((link) => {
+        if (summary.title && !existing.tactics.includes(summary.title)) existing.tactics.push(summary.title);
+        (summary.deliverableLinks ?? []).forEach((link) => {
           if (!existing.evidence.some((e) => e.url === link.url)) existing.evidence.push(link);
         });
         metricTaskMap.set(key, existing);
       }
+    };
+
+    taskSummaries.forEach(appendTaskToMetricMap);
+
+    const missingMetricKeys = revenueEngine.metrics
+      .map((metric) => metric.metricKey)
+      .filter((key) => !metricTaskMap.has(key));
+
+    if (missingMetricKeys.length) {
+      const supplemental = await fetchTasksLinkedToMetrics(missingMetricKeys, 8);
+      supplemental.forEach((rows) => {
+        rows.forEach((row) => appendTaskToMetricMap(mapTaskRowToSummary(row)));
+      });
     }
 
     const revenueEngineEnriched = {
@@ -1354,6 +1482,7 @@ export async function GET(request: Request) {
       pipelinePanel,
       survivalStrip,
       tasks: taskSummaries,
+      proofOfWork: proofOfWorkEntries,
       schedulerJobs,
       agentSla,
       approvalBottlenecks,
@@ -1373,7 +1502,28 @@ export async function GET(request: Request) {
           createdAt: c.created_at
         }))
       },
-      ceoQuestionDesk
+      ceoQuestionDesk,
+      industryPulse: industryPulseResult?.snapshot
+        ? {
+            day: industryPulseResult.snapshot.day,
+            refreshedAtIso: industryPulseResult.snapshot.refreshedAtIso,
+            items: industryPulseResult.snapshot.items.map((item) => ({
+              id: item.id,
+              day: industryPulseResult.snapshot.day,
+              source: item.source,
+              headline: item.headline,
+              summary: item.summary,
+              collabIdea: item.collabIdea,
+              whyNow: item.whyNow,
+              contactName: item.contactName,
+              contactEmail: item.contactEmail,
+               contactEmailSource: item.contactEmailSource,
+              contactConfidence: item.contactConfidence,
+              contactStatus: item.contactStatus,
+              sourceUrl: item.sourceUrl
+            }))
+          }
+        : undefined
     });
   } catch (error) {
     console.error("overview error raw", error);

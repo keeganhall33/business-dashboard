@@ -4,6 +4,7 @@ import {
   getUnresolvedAlerts,
   upsertSystemState
 } from "@/lib/supabase/queries";
+import { withJobRun } from "./jobLogger";
 
 function nowIso() {
   return new Date().toISOString();
@@ -27,51 +28,60 @@ type AlertSummary = {
  * Stores to `system_state.ceo_digest_latest` for UI consumption.
  */
 export async function runCeoDigest(): Promise<CeoDigestResult> {
-  const [awaitingApproval, alerts, counts] = await Promise.all([
-    getTasksAwaitingApproval(50),
-    getUnresolvedAlerts(25),
-    getTaskCountsByStatus()
-  ]);
+  return withJobRun({
+    jobKey: "ceo-digest",
+    fn: async () => {
+      const [awaitingApproval, alerts, counts] = await Promise.all([
+        getTasksAwaitingApproval(50),
+        getUnresolvedAlerts(25),
+        getTaskCountsByStatus()
+      ]);
 
-  const pendingApprovals = awaitingApproval.length;
-  const unresolvedAlerts = alerts.length;
+      const pendingApprovals = awaitingApproval.length;
+      const unresolvedAlerts = alerts.length;
 
-  const topAlerts = alerts
-    .slice(0, 10)
-    .map((a) => {
-      const alert = a as AlertSummary;
-      return `- [${alert.severity}] ${alert.title} — ${alert.summary ?? ""}`;
+      const topAlerts = alerts
+        .slice(0, 10)
+        .map((a) => {
+          const alert = a as AlertSummary;
+          return `- [${alert.severity}] ${alert.title} — ${alert.summary ?? ""}`;
+        })
+        .join("\n");
+
+      const digestMd = [
+        `# CEO Digest`,
+        `Generated: ${nowIso()}`,
+        "",
+        `## Snapshot`,
+        `- Pending approvals: **${pendingApprovals}**`,
+        `- Unresolved alerts: **${unresolvedAlerts}**`,
+        "",
+        `## Task Status Counts`,
+        "```json\n" + JSON.stringify(counts, null, 2) + "\n```",
+        "",
+        `## Top Alerts`,
+        topAlerts.length ? topAlerts : "- (none)",
+        ""
+      ].join("\n");
+
+      await upsertSystemState("ceo_digest_latest", {
+        pendingApprovals,
+        unresolvedAlerts,
+        taskCountsByStatus: counts,
+        digestMd,
+        updatedAt: nowIso()
+      });
+
+      return {
+        pendingApprovals,
+        unresolvedAlerts,
+        taskCountsByStatus: counts,
+        digestMd
+      };
+    },
+    summarize: (result) => ({
+      summary: `${result.pendingApprovals} approvals · ${result.unresolvedAlerts} alerts`,
+      detailsJson: result
     })
-    .join("\n");
-
-  const digestMd = [
-    `# CEO Digest`,
-    `Generated: ${nowIso()}`,
-    "",
-    `## Snapshot`,
-    `- Pending approvals: **${pendingApprovals}**`,
-    `- Unresolved alerts: **${unresolvedAlerts}**`,
-    "",
-    `## Task Status Counts`,
-    "```json\n" + JSON.stringify(counts, null, 2) + "\n```",
-    "",
-    `## Top Alerts`,
-    topAlerts.length ? topAlerts : "- (none)",
-    ""
-  ].join("\n");
-
-  await upsertSystemState("ceo_digest_latest", {
-    pendingApprovals,
-    unresolvedAlerts,
-    taskCountsByStatus: counts,
-    digestMd,
-    updatedAt: nowIso()
   });
-
-  return {
-    pendingApprovals,
-    unresolvedAlerts,
-    taskCountsByStatus: counts,
-    digestMd
-  };
 }
