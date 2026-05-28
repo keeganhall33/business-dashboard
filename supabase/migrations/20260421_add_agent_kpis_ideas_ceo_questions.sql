@@ -11,12 +11,10 @@ create table if not exists agent_kpis (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 drop trigger if exists trg_agent_kpis_updated_at on agent_kpis;
 create trigger trg_agent_kpis_updated_at
 before update on agent_kpis
 for each row execute function set_updated_at();
-
 create table if not exists agent_kpi_readings (
   id uuid primary key default gen_random_uuid(),
   kpi_key text not null references agent_kpis(kpi_key) on delete cascade,
@@ -26,10 +24,8 @@ create table if not exists agent_kpi_readings (
   notes text,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_agent_kpi_readings_kpi_key_measured_at
   on agent_kpi_readings(kpi_key, measured_at desc);
-
 -- Idea engine tables
 create table if not exists agent_ideas (
   id uuid primary key default gen_random_uuid(),
@@ -46,12 +42,10 @@ create table if not exists agent_ideas (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 drop trigger if exists trg_agent_ideas_updated_at on agent_ideas;
 create trigger trg_agent_ideas_updated_at
 before update on agent_ideas
 for each row execute function set_updated_at();
-
 create table if not exists agent_idea_comments (
   id uuid primary key default gen_random_uuid(),
   idea_id uuid not null references agent_ideas(id) on delete cascade,
@@ -59,10 +53,8 @@ create table if not exists agent_idea_comments (
   comment text not null,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_agent_idea_comments_idea_id_created_at
   on agent_idea_comments(idea_id, created_at);
-
 -- CEO question desk tables
 create table if not exists ceo_questions (
   id uuid primary key default gen_random_uuid(),
@@ -80,12 +72,10 @@ create table if not exists ceo_questions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 drop trigger if exists trg_ceo_questions_updated_at on ceo_questions;
 create trigger trg_ceo_questions_updated_at
 before update on ceo_questions
 for each row execute function set_updated_at();
-
 create table if not exists ceo_question_comments (
   id uuid primary key default gen_random_uuid(),
   question_id uuid not null references ceo_questions(id) on delete cascade,
@@ -93,10 +83,8 @@ create table if not exists ceo_question_comments (
   body text not null,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_ceo_question_comments_question_id_created_at
   on ceo_question_comments(question_id, created_at);
-
 -- Daily idea quota view
 create or replace view agent_daily_idea_quota as
 select
