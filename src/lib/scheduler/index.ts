@@ -15,5 +15,6 @@ export * from "./proofEnforcement";
 export * from "./staleChecks";
 export * from "./stateWriters";
 export * from "./warRoom";
+export * from "./warRoomDigest";
 export * from "./weeklyCommandCycle";
 export * from "./weeklySummary";
