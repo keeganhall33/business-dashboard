@@ -1,5 +1,6 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -441,6 +442,9 @@ function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string
 }
 
 export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This is intentionally temporary so the UI can render without env/network.
