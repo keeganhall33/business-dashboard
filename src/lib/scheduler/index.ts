@@ -12,6 +12,7 @@ export * from "./ideaQuota";
 export * from "./jobLogger";
 export * from "./midweekOpportunityPulse";
 export * from "./proofEnforcement";
+export * from "./scoreboardRefresh";
 export * from "./staleChecks";
 export * from "./stateWriters";
 export * from "./warRoom";
