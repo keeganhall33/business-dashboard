@@ -23,7 +23,6 @@ import { IdeaBoardPanel } from "./IdeaBoardPanel";
 import { CeoQuestionDeskPanel } from "./CeoQuestionDeskPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { ProofOfWorkPanel } from "./ProofOfWorkPanel";
-import { LuxuryCollectiblesKpiPanel } from "./LuxuryCollectiblesKpiPanel";
 import { DashboardSection } from "./ui/DashboardSection";
 import { ContextPanel, type ContextItem } from "./ui/ContextPanel";
 import { CommandBar } from "./CommandBar";
@@ -83,7 +82,6 @@ export function DashboardShell({ data, agents }: Props) {
             />
           </div>
           <div className="column column-medium space-y-8">
-            <LuxuryCollectiblesKpiPanel data={data.luxuryCollectibles} />
             <AutomationPanel jobs={data.schedulerJobs} />
             <AgentAutomationPanel agentSla={data.agentSla} />
             <SystemHealthPanel data={data.systemHealth} />
@@ -198,27 +196,6 @@ function buildCommandContext(data: DashboardOverviewResponse) {
       : undefined
   ].filter(Boolean) as ContextItem[];
 
-  const luxury = data.luxuryCollectibles;
-  const luxuryItems: ContextItem[] = luxury
-    ? [
-        {
-          label: "Premium sell-through",
-          value: `${luxury.premiumEdition.actualSellThroughPercent.toFixed(0)}%`,
-          supportingText: `Target ${luxury.premiumEdition.targetSellThroughPercent.toFixed(0)}%`
-        },
-        {
-          label: "VIP collectors",
-          value: `${luxury.vipCollectors.total}`,
-          supportingText: `+${luxury.vipCollectors.growth30d} / 30d • ${luxury.vipCollectors.retentionPercent != null ? `${luxury.vipCollectors.retentionPercent.toFixed(0)}% retained` : "retention —"}`
-        },
-        {
-          label: "Proof cadence",
-          value: `${luxury.proofOfWork.deliverablesCompletedPerWeek}/wk`,
-          supportingText: `Evidence ${luxury.proofOfWork.evidenceHealthPercent != null ? `${luxury.proofOfWork.evidenceHealthPercent.toFixed(0)}%` : "—"}`
-        }
-      ]
-    : [];
-
   return (
     <>
       <ContextPanel
@@ -234,7 +211,6 @@ function buildCommandContext(data: DashboardOverviewResponse) {
         ]}
       />
       <ContextPanel title="Automation Health" items={automationItems} />
-      {luxuryItems.length ? <ContextPanel title="Collectible KPIs" items={luxuryItems} /> : null}
     </>
   );
 }
@@ -280,12 +256,6 @@ function buildRevenueContext(data: DashboardOverviewResponse) {
   const leakCount = data.revenueEngine.moneyLeaks.length;
   const topPriority = data.executiveCommand.topPriorities[0];
 
-  const luxury = data.luxuryCollectibles;
-  const pricingRealization =
-    luxury && luxury.pricingLadder.floorPriceUsd > 0
-      ? (luxury.pricingLadder.avgSellingPriceUsd / luxury.pricingLadder.floorPriceUsd) * 100
-      : null;
-
   return (
     <>
       <ContextPanel
@@ -303,50 +273,6 @@ function buildRevenueContext(data: DashboardOverviewResponse) {
         />
       ) : null}
 
-      {luxury ? (
-        <ContextPanel
-          title="Pricing Architecture"
-          items={[
-            {
-              label: "Collector tiers",
-              value: `${luxury.pricingArchitecture.tiers.length}`,
-              supportingText: luxury.pricingArchitecture.tiers
-                .slice(0, 3)
-                .map((tier) => `${tier.tier}: $${tier.rangeUsd.min.toLocaleString()}–${tier.rangeUsd.max == null ? "∞" : `$${tier.rangeUsd.max.toLocaleString()}`}`)
-                .join(" • ")
-            },
-            {
-              label: "Price realization",
-              value:
-                pricingRealization != null && Number.isFinite(pricingRealization)
-                  ? `${pricingRealization.toFixed(0)}%`
-                  : "—",
-              supportingText: `Avg $${luxury.pricingLadder.avgSellingPriceUsd.toLocaleString()} vs floor $${luxury.pricingLadder.floorPriceUsd.toLocaleString()}`
-            }
-          ]}
-        />
-      ) : null}
-
-      {luxury ? (
-        <ContextPanel
-          title="Narrative Signal"
-          items={[
-            {
-              label: "Story engagement",
-              value:
-                luxury.narrativeStats.storyContentEngagementPercent != null
-                  ? `${luxury.narrativeStats.storyContentEngagementPercent.toFixed(1)}%`
-                  : "—",
-              supportingText: "Story content engagement rate"
-            },
-            {
-              label: "Anti-AI storytelling",
-              value: `${luxury.narrativeStats.antiAiStorytellingOutputsPerWeek}/wk`,
-              supportingText: "Human-authored narrative outputs"
-            }
-          ]}
-        />
-      ) : null}
     </>
   );
 }
@@ -357,7 +283,6 @@ function buildPipelineContext(data: DashboardOverviewResponse) {
   const collectors = data.pipelinePanel.collectors.length;
   const warMode = data.warRoom.mode === "war_room";
   const ideaCounts = countIdeas(data.ideaBoard);
-  const luxury = data.luxuryCollectibles;
 
   return (
     <>
@@ -369,18 +294,6 @@ function buildPipelineContext(data: DashboardOverviewResponse) {
           { label: "Collectors", value: numberFormatter.format(collectors) }
         ]}
       />
-      {luxury ? (
-        <ContextPanel
-          title="Institutional Pipeline"
-          items={[
-            { label: "Active", value: numberFormatter.format(luxury.institutionalPipeline.activeOpportunities) },
-            {
-              label: "Total value",
-              value: `$${numberFormatter.format(luxury.institutionalPipeline.totalValueUsd)}`
-            }
-          ]}
-        />
-      ) : null}
       <ContextPanel
         title="Ideas & War Room"
         items={[
