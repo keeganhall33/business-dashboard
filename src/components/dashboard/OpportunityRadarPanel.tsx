@@ -11,6 +11,27 @@ export function OpportunityRadarPanel({ data }: Props) {
   const topOpportunities = dedupeOpportunities(data.topOpportunities);
   const hasOpportunities = topOpportunities.length > 0;
   const hasMoves = data.nextFiveMoves.length > 0;
+  const hasCollectors = data.activeCount > 0 || data.readyForOutreachCount > 0;
+
+  if (!hasOpportunities && !hasMoves && !hasCollectors) {
+    return (
+      <section className="ui-glass ui-glass-hover rounded-3xl p-6">
+        <div className="flex items-center gap-3">
+          <span className="ui-status-dot" data-tone="zinc" />
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Opportunity Radar</div>
+            <p className="mt-1 text-sm text-zinc-400">Live licensing + collector pipeline</p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <EmptyState
+            title="No pipeline data"
+            detail="No active collectors, deals, or next moves are available. Confirm Supabase opportunity ingestion is running or log the next opportunity to populate this view."
+          />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
