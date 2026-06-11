@@ -15,6 +15,18 @@ type Props = {
 export function ProofOfWorkPanel({ items }: Props) {
   const topEntries = items.slice(0, 4);
   const hasEntries = topEntries.length > 0;
+  const latestCompletedAt = topEntries.reduce<Date | null>((latest, entry) => {
+    if (!entry.completedAt) return latest;
+    const date = new Date(entry.completedAt);
+    if (Number.isNaN(date.getTime())) return latest;
+    if (!latest || date.getTime() > latest.getTime()) return date;
+    return latest;
+  }, null);
+  const isStale = (() => {
+    if (!latestCompletedAt) return true;
+    const diffDays = Math.round((Date.now() - latestCompletedAt.getTime()) / 86400000);
+    return diffDays > 14;
+  })();
 
   return (
     <section className="rounded-2xl border border-[var(--ui-border)] bg-white/[0.03] p-4">
@@ -27,6 +39,12 @@ export function ProofOfWorkPanel({ items }: Props) {
           <div className="text-xs text-zinc-500">{items.length} logged</div>
         ) : null}
       </div>
+
+      {hasEntries && isStale ? (
+        <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+          Last proof was logged {formatRelative(latestCompletedAt?.toISOString() ?? null)}. New deliverables have not been captured in over two weeks.
+        </div>
+      ) : null}
 
       {hasEntries ? (
         <div className="mt-4 space-y-4">
