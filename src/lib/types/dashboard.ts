@@ -46,6 +46,7 @@ export type RevenueEngine = {
   metrics: RevenueMetric[];
   moneyLeaks: string[];
   fastestPathToIncreaseRevenue: Array<{ move: string; estimatedImpact: string }>;
+  isDiagnosticEmpty?: boolean;
 };
 
 export type BrandPower = {

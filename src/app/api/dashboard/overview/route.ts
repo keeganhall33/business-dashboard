@@ -399,6 +399,7 @@ const DEFAULT_BRAND_POWER_ACTIONS = [
   "Reposition homepage and campaign copy around Impossible in Pencil.",
   "Create a collector-status narrative series."
 ];
+const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "conversion_rate", "revenue_per_visitor"];
 
 function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
   if (value == null || Number.isNaN(value)) return null;
@@ -466,6 +467,30 @@ function describeBrandWin(metric: ScoreboardMetricRow) {
   const target =
     formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
   return `${name} is on track (${current} vs ${target}). Keep amplifying this narrative.`;
+}
+
+function describeRevenueLeak(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  if (status === "healthy") return null;
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  const descriptor = status === "critical" ? "far below" : "below";
+  return `${name} is ${descriptor} target (${current} vs ${target}).`;
+}
+
+function describeRevenueFastPath(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return {
+    move: `Increase ${name}`,
+    estimatedImpact: `Move from ${current} toward ${target}`
+  };
 }
 
 function getPriorityMetrics(
@@ -1199,17 +1224,22 @@ export async function GET(request: Request) {
           : null
       }));
 
+    const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
+    const revenueLeaks = dedupeStrings(
+      revenueDiagRows
+        .map((metric) => describeRevenueLeak(metric))
+        .filter((value): value is string => Boolean(value))
+    ).slice(0, 3);
+    const fastestPaths = revenueDiagRows
+      .filter((metric) => isMetricOffTrack(metric))
+      .slice(0, 3)
+      .map((metric) => describeRevenueFastPath(metric));
+
     const revenueEngine = {
       metrics: revenueEngineMetrics,
-      moneyLeaks: [
-        "Low AOV is the single largest revenue constraint.",
-        "High cart abandonment is reducing recovered sales.",
-        "Weak conversion rate is suppressing total revenue."
-      ],
-      fastestPathToIncreaseRevenue: [
-        { move: "Raise AOV via premium offer architecture", estimatedImpact: "+$15K to +$20K / month" },
-        { move: "Recover 10% of abandoned carts", estimatedImpact: "+$4K to +$7K / month" }
-      ]
+      moneyLeaks: revenueLeaks,
+      fastestPathToIncreaseRevenue: fastestPaths,
+      isDiagnosticEmpty: revenueLeaks.length === 0 && fastestPaths.length === 0
     };
 
     const brandPowerMetricRows = ["social_growth_monthly", "engagement_rate", "cultural_relevance_score"]
