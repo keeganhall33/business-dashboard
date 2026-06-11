@@ -100,7 +100,10 @@ export function IdeaBoardPanel({ board }: Props) {
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Idea board</div>
         <p className="mt-2 text-sm text-zinc-400">No ideas in the current range.</p>
         <div className="mt-4">
-          <EmptyState title="No cards" detail="When agents propose product/brand moves, they’ll appear here by status." />
+          <EmptyState
+            title="Idea board unavailable"
+            detail={board ? "Agents haven’t logged ideas for this range yet." : "Idea feed hasn’t loaded yet. Confirm Supabase connectivity."}
+          />
         </div>
       </section>
     );
