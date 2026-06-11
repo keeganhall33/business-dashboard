@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { HeaderMetric } from "@/lib/types/dashboard";
 import { MetricCard } from "./MetricCard";
+import { EmptyState } from "./ui/EmptyState";
 
 type Props = {
   metrics: HeaderMetric[];
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
+  const hasMetrics = metrics.length > 0;
   return (
     <section>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -45,20 +47,28 @@ export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
       ) : null}
 
       <div className="mt-6">
-        {/* Mobile: swipeable KPI carousel. Desktop: grid. */}
-        <div className="flex gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden snap-x snap-mandatory">
-          {metrics.map((metric) => (
-            <div key={metric.metricKey} className="min-w-[86%] snap-start sm:min-w-[70%]">
-              <MetricCard metric={metric} density="compact" dashboardUpdatedAtIso={refreshedAtIso} />
+        {hasMetrics ? (
+          <>
+            <div className="flex gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden snap-x snap-mandatory">
+              {metrics.map((metric) => (
+                <div key={metric.metricKey} className="min-w-[86%] snap-start sm:min-w-[70%]">
+                  <MetricCard metric={metric} density="compact" dashboardUpdatedAtIso={refreshedAtIso} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="hidden md:grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((metric) => (
-            <MetricCard key={metric.metricKey} metric={metric} density="comfortable" dashboardUpdatedAtIso={refreshedAtIso} />
-          ))}
-        </div>
+            <div className="hidden md:grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {metrics.map((metric) => (
+                <MetricCard key={metric.metricKey} metric={metric} density="comfortable" dashboardUpdatedAtIso={refreshedAtIso} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            title="No headline KPIs"
+            detail="Supabase did not return any scoreboard metrics for this range. Confirm the scoreboard feed is healthy or adjust filters."
+          />
+        )}
       </div>
     </section>
   );
