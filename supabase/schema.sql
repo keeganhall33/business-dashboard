@@ -819,7 +819,8 @@ insert into scheduled_jobs (
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),
  ('evening-closeout','Evening Closeout','30 19 * * *','America/Los_Angeles','/api/scheduler/evening-closeout',true),
- ('proof-enforcement','Proof Enforcement','0 20 * * *','America/Los_Angeles','/api/scheduler/proof-enforcement',true)
+ ('proof-enforcement','Proof Enforcement','0 20 * * *','America/Los_Angeles','/api/scheduler/proof-enforcement',true),
+ ('scoreboard-refresh','Scoreboard Refresh','5 7 * * *','America/Los_Angeles','/api/scheduler/scoreboard-refresh',true)
 on conflict (job_key) do nothing;
 
 -- System state seeds (from SCHEDULER_SPEC.md)
