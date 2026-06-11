@@ -10,19 +10,28 @@ export function PipelineHealthWidget({ data }: Props) {
   const deals = data.deals ?? [];
 
   const collectorValue = collectors.reduce((sum, c) => sum + (c.estimatedValue ?? 0), 0);
+  const dealValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
   const atRiskCollectors = collectors.filter((c) => (c.status ?? "").toLowerCase().includes("risk") || (c.status ?? "").toLowerCase().includes("drift"));
-
   const today = new Date();
+  const staleCollectors = collectors.filter((collector) => isStale(collector.lastOutreachAt, today, 60));
+
   const dueSoonDeals = deals.filter((deal) => isWithinDays(deal.nextStepDueAt, today, 7));
   const overdueDeals = deals.filter((deal) => isOverdue(deal.nextStepDueAt, today));
+  const pipelineEmpty = collectors.length === 0 && deals.length === 0;
 
-  const tone = overdueDeals.length > 0 ? "rose" : dueSoonDeals.length > 0 || atRiskCollectors.length > 0 ? "amber" : "emerald";
-  const headline =
-    tone === "rose"
-      ? `${overdueDeals.length} overdue`
-      : tone === "amber"
-        ? `${dueSoonDeals.length} due soon`
-        : "green";
+  const tone = overdueDeals.length > 0
+    ? "rose"
+    : dueSoonDeals.length > 0 || atRiskCollectors.length > 0 || staleCollectors.length > 0 || pipelineEmpty
+      ? "amber"
+      : "emerald";
+
+  const headline = (() => {
+    if (overdueDeals.length > 0) return `${overdueDeals.length} overdue`;
+    if (dueSoonDeals.length > 0) return `${dueSoonDeals.length} due ≤7d`;
+    if (staleCollectors.length > 0) return `${staleCollectors.length} stale`;
+    if (pipelineEmpty) return "pipeline empty";
+    return "green";
+  })();
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
@@ -37,14 +46,16 @@ export function PipelineHealthWidget({ data }: Props) {
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Stat label="Collectors" value={collectors.length} />
         <Stat label="Deals" value={deals.length} />
-        <Stat label="Value" value={formatCurrency(collectorValue)} align="right" />
+        <Stat label="Value" value={formatCurrency(collectorValue + dealValue)} align="right" />
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {overdueDeals.length ? <StatusChip label={`${overdueDeals.length} overdue`} tone="rose" /> : null}
         {dueSoonDeals.length ? <StatusChip label={`${dueSoonDeals.length} due ≤ 7d`} tone="amber" /> : null}
         {atRiskCollectors.length ? <StatusChip label={`${atRiskCollectors.length} drifting`} tone="amber" /> : null}
-        {!overdueDeals.length && !dueSoonDeals.length && !atRiskCollectors.length ? (
+        {staleCollectors.length ? <StatusChip label={`${staleCollectors.length} stale`} tone="amber" /> : null}
+        {pipelineEmpty ? <StatusChip label="pipeline empty" tone="rose" /> : null}
+        {!overdueDeals.length && !dueSoonDeals.length && !atRiskCollectors.length && !staleCollectors.length && !pipelineEmpty ? (
           <StatusChip label="no fires" tone="emerald" />
         ) : null}
       </div>
@@ -76,6 +87,14 @@ function isOverdue(iso: string | null | undefined, today: Date) {
   return date.getTime() < today.getTime() - 86400000 * 0.5;
 }
 
+function isStale(iso: string | null | undefined, today: Date, days: number) {
+  if (!iso) return true;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return true;
+  const diffDays = Math.round((today.getTime() - date.getTime()) / 86400000);
+  return diffDays > days;
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -83,4 +102,3 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 0
   }).format(value);
 }
-

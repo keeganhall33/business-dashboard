@@ -24,7 +24,9 @@ export function CollectorPipelinePanel({ data }: Props) {
     const value = collector.estimatedValue ?? 0;
     return value > max ? value : max;
   }, 0);
-  const totalCollectorValue = collectors.reduce((sum, collector) => sum + (collector.estimatedValue ?? 0), 0);
+  const collectorPipelineValue = collectors.reduce((sum, collector) => sum + (collector.estimatedValue ?? 0), 0);
+  const dealPipelineValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
+  const totalPipelineValue = collectorPipelineValue + dealPipelineValue;
 
   const hasCollectors = collectors.length > 0;
   const hasDeals = deals.length > 0;
@@ -67,7 +69,7 @@ export function CollectorPipelinePanel({ data }: Props) {
                   <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Collectors</div>
                   <div className="mt-1 text-lg font-semibold text-zinc-100">Tier A / B</div>
                   <div className="text-xs uppercase tracking-[0.35em] text-zinc-500">
-                    Pipeline {totalCollectorValue != null ? formatCurrency(totalCollectorValue) : "—"}
+                    Pipeline {formatCurrency(totalPipelineValue)}
                   </div>
                 </div>
               </div>
