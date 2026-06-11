@@ -40,6 +40,7 @@ export function CeoQuestionDeskPanel({ desk }: Props) {
   }, [desk]);
 
   const active = tabs[tab];
+  const hasAnyItems = tabs.needsKeegan.count + tabs.waitingOnAvery.count + tabs.resolved.count > 0;
 
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-6">
@@ -76,7 +77,10 @@ export function CeoQuestionDeskPanel({ desk }: Props) {
 
       <div className="mt-5 space-y-3">
         {active.items.length === 0 ? (
-          <EmptyState title="Nothing here" detail="No questions in this lane." />
+          <EmptyState
+            title="Nothing here"
+            detail={hasAnyItems ? "No questions in this lane." : "No CEO desk activity yet."}
+          />
         ) : (
           active.items.map((entry) => <QuestionEntry key={entry.id} entry={entry} />)
         )}
