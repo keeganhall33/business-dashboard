@@ -1330,6 +1330,22 @@ export async function GET(request: Request) {
     }
     dedupedEntries.reverse();
 
+    const triggerReason = typeof warRoomStateJson.reason === "string" ? warRoomStateJson.reason : null;
+    const triggerTimestamp =
+      typeof warRoomStateJson.activatedAt === "string" ? warRoomStateJson.activatedAt : warRoomMessages[0]?.created_at ?? null;
+    const reasonAlreadyLogged = triggerReason
+      ? dedupedEntries.some((entry) => entry.summary.trim() === triggerReason.trim())
+      : true;
+    if (triggerReason && !reasonAlreadyLogged) {
+      dedupedEntries.unshift({
+        id: `war-room-reason-${triggerTimestamp ?? Date.now().toString()}`,
+        title: "War room trigger",
+        summary: triggerReason,
+        detailMd: null,
+        createdAt: triggerTimestamp ?? new Date().toISOString()
+      });
+    }
+
     const warRoom = {
       mode: (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal",
       reason: (warRoomStateJson.reason as string | null) ?? null,
