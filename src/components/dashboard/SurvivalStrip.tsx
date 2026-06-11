@@ -7,6 +7,10 @@ export function SurvivalStrip({ data }: Props) {
   if (!data) return null;
 
   const coverage = data.cashOnHand != null && data.survivalFloor > 0 ? Math.min(100, Math.round((data.cashOnHand / data.survivalFloor) * 100)) : null;
+  const lastUpdated = data.lastUpdatedAt ? formatRelativeDate(data.lastUpdatedAt) : null;
+  const isStale = data.isStale ?? true;
+  const coverageTone = isStale ? "text-amber-300" : "text-zinc-500";
+  const coverageBarTone = isStale ? "bg-amber-500" : "bg-emerald-500";
 
   return (
     <section className="rounded-3xl border border-zinc-800 bg-zinc-950/95 p-4 md:p-6">
@@ -20,12 +24,16 @@ export function SurvivalStrip({ data }: Props) {
               </div>
               <div className="mt-2 h-2 w-full rounded-full bg-zinc-900">
                 <div
-                  className="h-2 rounded-full bg-emerald-500"
+                  className={`h-2 rounded-full ${coverageBarTone}`}
                   style={{ width: `${coverage ?? 0}%` }}
                 />
               </div>
-              <div className="mt-1 text-xs text-zinc-500">
+              <div className={`mt-1 text-xs ${coverageTone}`}>
                 Floor {formatCurrency(data.survivalFloor)} • Coverage {coverage != null ? `${coverage}%` : "—"}
+              </div>
+              <div className="mt-1 text-xs text-zinc-500">
+                Last update {lastUpdated ?? "—"}
+                {isStale ? <span className="ml-2 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">needs update</span> : null}
               </div>
             </div>
           ) : (
@@ -63,4 +71,16 @@ export function SurvivalStrip({ data }: Props) {
 function formatCurrency(value: number | null) {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatRelativeDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const diffMs = Date.now() - date.getTime();
+  const diffDays = Math.round(diffMs / 86400000);
+  if (Math.abs(diffDays) < 7) {
+    const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    return formatter.format(-diffDays, "day");
+  }
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

@@ -95,6 +95,8 @@ export type SurvivalStrip = {
   monthlyBurn: number | null;
   projected30dRevenue: number | null;
   runwayDays: number | null;
+  lastUpdatedAt?: string | null;
+  isStale?: boolean;
 };
 
 export type PipelinePanel = {

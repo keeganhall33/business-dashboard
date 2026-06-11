@@ -390,6 +390,7 @@ const DEFAULT_EXECUTIVE_BOTTLENECKS = [
 ];
 const DEFAULT_EXECUTIVE_RECOMMENDATION =
   "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine.";
+const SURVIVAL_STALE_DAYS = 7;
 const DEFAULT_BRAND_POWER_WINS = [
   "Authority-based storytelling performs better than generic art promotion.",
   "Collaboration-driven content has stronger prestige impact."
@@ -549,13 +550,18 @@ function buildSurvivalStrip(snapshot: FinanceSnapshotRow | null) {
   const projection = toNumber(snapshot?.projected_30d_revenue);
   const runwayDays = cash != null && burn != null && burn > 0 ? Math.round((cash / burn) * 30) : null;
   const configured = cash != null || burn != null || projection != null;
+  const updatedAt = typeof snapshot?.updated_at === "string" ? snapshot?.updated_at : null;
+  const updatedHours = updatedAt ? hoursSince(updatedAt) : null;
+  const isStale = updatedHours == null ? true : updatedHours / 24 > SURVIVAL_STALE_DAYS;
   return {
     configured,
     cashOnHand: cash,
     survivalFloor: floor,
     monthlyBurn: burn,
     projected30dRevenue: projection,
-    runwayDays
+    runwayDays,
+    lastUpdatedAt: updatedAt,
+    isStale
   };
 }
 
