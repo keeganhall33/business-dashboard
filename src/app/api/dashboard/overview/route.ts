@@ -29,7 +29,7 @@ import {
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
-import { RangePreset, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
+import { RangePreset, type AgentHealth, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 export const runtime = "nodejs";
@@ -360,6 +360,31 @@ function statusFromGap(current: number | null, target: number | null) {
   if (ratio < 0.6) return "critical" as const;
   if (ratio < 0.9) return "warning" as const;
   return "healthy" as const;
+}
+
+function hoursSince(iso: string | null | undefined) {
+  if (!iso) return null;
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  const diffMs = Date.now() - timestamp;
+  if (!Number.isFinite(diffMs) || diffMs < 0) return 0;
+  return diffMs / 36e5;
+}
+
+function normalizeAgentHealth(agent: AgentHealth): AgentHealth {
+  const hoursSinceRun = hoursSince(agent.lastRunAt);
+  let health: AgentHealth["health"] = "healthy";
+
+  if (hoursSinceRun == null || hoursSinceRun > 24) {
+    health = "unhealthy";
+  } else if (agent.openTaskCount >= 25) {
+    health = "warning";
+  }
+
+  return {
+    ...agent,
+    health
+  };
 }
 
 function mapTaskRowToSummary(task: TaskRow) {
@@ -1041,12 +1066,6 @@ export async function GET(request: Request) {
       ]
     };
 
-    const systemHealth = {
-      dataFreshnessHours: 6,
-      agentTaskCompletionRate: 62,
-      agents: agentHealth
-    };
-
     const warRoomStateJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
     const dedupedEntries: Array<{
       id: string;
@@ -1398,6 +1417,20 @@ export async function GET(request: Request) {
     };
 
     const taskSummaries = allTaskRows.map(mapTaskRowToSummary);
+    const scoreboardRefreshJob = schedulerJobs.find((job) => job.jobKey === "scoreboard-refresh");
+    const freshnessHoursRaw = hoursSince(scoreboardRefreshJob?.lastRunAt ?? null);
+    const dataFreshnessHours = freshnessHoursRaw == null ? null : Math.max(0, Math.round(freshnessHoursRaw));
+
+    const totalTasksForRate = taskSummaries.length;
+    const completedTasksForRate = taskSummaries.filter((task) => task.status === "completed").length;
+    const agentTaskCompletionRate =
+      totalTasksForRate > 0 ? Math.round((completedTasksForRate / totalTasksForRate) * 100) : null;
+
+    const systemHealth = {
+      dataFreshnessHours,
+      agentTaskCompletionRate,
+      agents: (agentHealth as AgentHealth[]).map(normalizeAgentHealth)
+    };
     const proofOfWorkEntries: ProofOfWorkEntry[] = taskSummaries
       .filter((task) => {
         if (task.status !== "completed") return false;
