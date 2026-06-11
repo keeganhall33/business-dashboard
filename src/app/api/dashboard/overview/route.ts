@@ -362,6 +362,139 @@ function statusFromGap(current: number | null, target: number | null) {
   return "healthy" as const;
 }
 
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0
+});
+
+const percentFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1
+});
+
+const numberFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0
+});
+
+const DEFAULT_EXECUTIVE_DIRECTIVE =
+  "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.";
+const DEFAULT_EXECUTIVE_PRIORITIES = [
+  "Increase AOV via premium tiered pricing",
+  "Fix homepage and product page conversion bottlenecks",
+  "Expand active partnership conversations"
+];
+const DEFAULT_EXECUTIVE_BOTTLENECKS = [
+  "AOV is far below target",
+  "Conversion rate is underperforming",
+  "Pipeline is too thin"
+];
+const DEFAULT_EXECUTIVE_RECOMMENDATION =
+  "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine.";
+const DEFAULT_BRAND_POWER_WINS = [
+  "Authority-based storytelling performs better than generic art promotion.",
+  "Collaboration-driven content has stronger prestige impact."
+];
+const DEFAULT_BRAND_POWER_ACTIONS = [
+  "Reposition homepage and campaign copy around Impossible in Pencil.",
+  "Create a collector-status narrative series."
+];
+
+function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
+  if (value == null || Number.isNaN(value)) return null;
+  if (unit === "usd") {
+    return currencyFormatter.format(value);
+  }
+  if (unit === "percent") {
+    return `${percentFormatter.format(value)}%`;
+  }
+  return numberFormatter.format(value);
+}
+
+function metricSeverity(metric: ScoreboardMetricRow) {
+  const current = toNumber(metric.current_value);
+  const target = toNumber(metric.target_value);
+  if (current == null || target == null || target === 0) return 0;
+  return (target - current) / Math.abs(target);
+}
+
+function describePriority(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  const statusLabel = status === "critical" ? "critical" : status === "warning" ? "off track" : "healthy";
+  if (status === "healthy") {
+    return `${name}: ${statusLabel}. Maintain ${current} (target ${target}).`;
+  }
+  return `${name}: ${statusLabel}. Move from ${current} toward ${target}.`;
+}
+
+function describeBottleneck(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  if (status === "healthy") return null;
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return `${name} is ${status === "critical" ? "far below" : "below"} target (${current} vs ${target}).`;
+}
+
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function isMetricOffTrack(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  return status === "critical" || status === "warning";
+}
+
+function describeBrandWin(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return `${name} is on track (${current} vs ${target}). Keep amplifying this narrative.`;
+}
+
+function getPriorityMetrics(
+  preferredKeys: string[],
+  metricByKey: Map<string, ScoreboardMetricRow>,
+  count = 3
+) {
+  const selected: ScoreboardMetricRow[] = [];
+  for (const key of preferredKeys) {
+    const metric = metricByKey.get(key);
+    if (isScoreboardMetricRow(metric) && !selected.some((m) => m.metric_key === metric.metric_key)) {
+      selected.push(metric);
+    }
+  }
+  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  if (selected.length >= count) {
+    return selected.slice(0, count);
+  }
+  const sorted = Array.from(metricByKey.values())
+    .filter(isScoreboardMetricRow)
+    .sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  for (const metric of sorted) {
+    if (selected.some((m) => m.metric_key === metric.metric_key)) continue;
+    selected.push(metric);
+    if (selected.length >= count) break;
+  }
+  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  return selected.slice(0, count);
+}
+
 function hoursSince(iso: string | null | undefined) {
   if (!iso) return null;
   const timestamp = new Date(iso).getTime();
@@ -992,17 +1125,45 @@ export async function GET(request: Request) {
       };
     });
 
+    const operatingModeJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
+    const directiveMetricKeys = Array.isArray(directive?.related_metric_keys)
+      ? (directive?.related_metric_keys as string[])
+      : [];
+    const priorityMetrics = getPriorityMetrics(directiveMetricKeys, metricByKey);
+    const offTrackPriorityMetrics = priorityMetrics.filter(isMetricOffTrack);
+    const prioritySourceMetrics = offTrackPriorityMetrics.length ? offTrackPriorityMetrics : priorityMetrics;
+    const topPriorities = dedupeStrings(prioritySourceMetrics.map((metric) => describePriority(metric)).filter(Boolean)).slice(
+      0,
+      3
+    );
+
+    const bottleneckMetrics: ScoreboardMetricRow[] = [...offTrackPriorityMetrics];
+    if (bottleneckMetrics.length < 2) {
+      const additional = Array.from(metricByKey.values())
+        .filter(isScoreboardMetricRow)
+        .sort((a, b) => metricSeverity(b) - metricSeverity(a));
+      for (const metric of additional) {
+        if (bottleneckMetrics.some((m) => m.metric_key === metric.metric_key)) continue;
+        if (!isMetricOffTrack(metric)) continue;
+        bottleneckMetrics.push(metric);
+        if (bottleneckMetrics.length >= 3) break;
+      }
+    }
+
+    const bottleneckStatements = dedupeStrings(
+      [
+        typeof operatingModeJson.reason === "string" ? (operatingModeJson.reason as string) : null,
+        ...bottleneckMetrics
+          .map((metric) => describeBottleneck(metric))
+          .filter((statement): statement is string => Boolean(statement))
+      ].filter(Boolean) as string[]
+    ).slice(0, 3);
+
     const executiveCommand = {
-      weeklyDirective:
-        directive?.summary ??
-        "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.",
-      topPriorities: [
-        "Increase AOV via premium tiered pricing",
-        "Fix homepage and product page conversion bottlenecks",
-        "Expand active partnership conversations"
-      ],
-      biggestBottlenecks: ["AOV is far below target", "Conversion rate is underperforming", "Pipeline is too thin"],
-      ceoRecommendation: "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine."
+      weeklyDirective: directive?.summary?.trim() || DEFAULT_EXECUTIVE_DIRECTIVE,
+      topPriorities: topPriorities.length ? topPriorities : DEFAULT_EXECUTIVE_PRIORITIES,
+      biggestBottlenecks: bottleneckStatements.length ? bottleneckStatements : DEFAULT_EXECUTIVE_BOTTLENECKS,
+      ceoRecommendation: directive?.detail_md?.trim() || DEFAULT_EXECUTIVE_RECOMMENDATION
     };
 
     const revenueEngineMetrics = [
@@ -1045,28 +1206,37 @@ export async function GET(request: Request) {
       ]
     };
 
+    const brandPowerMetricRows = ["social_growth_monthly", "engagement_rate", "cultural_relevance_score"]
+      .map((key) => metricByKey.get(key))
+      .filter(isScoreboardMetricRow);
+
+    const brandPowerMetrics = brandPowerMetricRows.map((m) => ({
+      metricKey: m.metric_key,
+      currentValue: toNumber(m.current_value) ?? 0,
+      targetValue: toNumber(m.target_value) ?? 0,
+      status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
+      unit: m.unit ?? null
+    }));
+
+    const brandWins = dedupeStrings(
+      brandPowerMetricRows
+        .filter((metric) => statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)) === "healthy")
+        .map((metric) => describeBrandWin(metric))
+    ).slice(0, 3);
+
+    const brandOpportunities = dedupeStrings(
+      brandPowerMetricRows
+        .map((metric) => describeBottleneck(metric))
+        .filter((statement): statement is string => Boolean(statement))
+    ).slice(0, 3);
+
     const brandPower = {
-      metrics: ["social_growth_monthly", "engagement_rate", "cultural_relevance_score"]
-        .map((key) => metricByKey.get(key))
-        .filter(isScoreboardMetricRow)
-        .map((m) => ({
-          metricKey: m.metric_key,
-          currentValue: toNumber(m.current_value) ?? 0,
-          targetValue: toNumber(m.target_value) ?? 0,
-          status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-          unit: m.unit ?? null
-        })),
-      whatIsWorking: [
-        "Authority-based storytelling performs better than generic art promotion.",
-        "Collaboration-driven content has stronger prestige impact."
-      ],
-      whatToDoNext: [
-        "Reposition homepage and campaign copy around Impossible in Pencil.",
-        "Create a collector-status narrative series."
-      ]
+      metrics: brandPowerMetrics,
+      whatIsWorking: brandWins.length ? brandWins : DEFAULT_BRAND_POWER_WINS,
+      whatToDoNext: brandOpportunities.length ? brandOpportunities : DEFAULT_BRAND_POWER_ACTIONS
     };
 
-    const warRoomStateJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
+    const warRoomStateJson = operatingModeJson;
     const dedupedEntries: Array<{
       id: string;
       title: string;
