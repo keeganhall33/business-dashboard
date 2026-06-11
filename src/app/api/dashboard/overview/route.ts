@@ -121,6 +121,8 @@ type OpportunityRow = {
 };
 
 const opportunityIdRegex = /opportunity id:\s*([a-z0-9_-]+)/gi;
+const opportunityDedupeKey = (name: string | null | undefined, organization: string | null | undefined) =>
+  `${(name ?? "").trim().toLowerCase()}|${(organization ?? "").trim().toLowerCase()}`;
 
 function extractOpportunityIdsFromText(...texts: Array<string | null | undefined>) {
   const joined = texts
@@ -460,6 +462,18 @@ function isMetricOffTrack(metric: ScoreboardMetricRow) {
   return status === "critical" || status === "warning";
 }
 
+function dedupeOpportunityRows(opportunities: OpportunityRow[]) {
+  const seen = new Set<string>();
+  const unique: OpportunityRow[] = [];
+  for (const opportunity of opportunities) {
+    const key = opportunityDedupeKey(opportunity.name, opportunity.organization);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(opportunity);
+  }
+  return unique;
+}
+
 function describeBrandWin(metric: ScoreboardMetricRow) {
   const name = metric.metric_name ?? metric.metric_key;
   const current =
@@ -491,6 +505,25 @@ function describeRevenueFastPath(metric: ScoreboardMetricRow) {
     move: `Increase ${name}`,
     estimatedImpact: `Move from ${current} toward ${target}`
   };
+}
+
+function describeOpportunityMove(opportunity: OpportunityRow) {
+  const name = opportunity.name ?? "Untitled";
+  const org = opportunity.organization ? ` (${opportunity.organization})` : "";
+  const step = opportunity.next_step?.trim() || "Define next step";
+  const due = opportunity.next_step_due_at ? formatDueDate(opportunity.next_step_due_at) : "no due date";
+  return `${name}${org}: ${step} (${due})`;
+}
+
+function formatDueDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "no due date";
+  const diffDays = Math.round((date.getTime() - Date.now()) / 86400000);
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  if (Math.abs(diffDays) < 14) {
+    return formatter.format(diffDays, "day");
+  }
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function getPriorityMetrics(
@@ -1519,6 +1552,8 @@ export async function GET(request: Request) {
       supportingDocs: buildSupportingDocs(collector)
     }));
 
+    const normalizedOpportunities = dedupeOpportunityRows(opportunities as OpportunityRow[]);
+
     const pipelineDeals: {
       id: string;
       name: string;
@@ -1534,7 +1569,7 @@ export async function GET(request: Request) {
       supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
     const seenPipelineDeals = new Set<string>();
-    for (const opportunity of opportunities) {
+    for (const opportunity of normalizedOpportunities) {
       if (["won", "lost", "parked"].includes(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
@@ -1558,10 +1593,10 @@ export async function GET(request: Request) {
       if (pipelineDeals.length >= 6) break;
     }
 
-    const activeCount = opportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
-    const readyForOutreachCount = opportunities.filter((o) => o.status === "ready_for_outreach").length;
+    const activeCount = normalizedOpportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
+    const readyForOutreachCount = normalizedOpportunities.filter((o) => o.status === "ready_for_outreach").length;
 
-    const sortedOpportunities = opportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const sortedOpportunities = normalizedOpportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
     const seenTopOpportunities = new Set<string>();
     const topOpportunities: {
       id: string;
@@ -1604,17 +1639,28 @@ export async function GET(request: Request) {
       if (topOpportunities.length >= 5) break;
     }
 
+    const upcomingMoves = normalizedOpportunities
+      .filter((opportunity) => !["won", "lost", "parked"].includes(opportunity.status))
+      .map((opportunity) => ({
+        label: describeOpportunityMove(opportunity),
+        dueAt: opportunity.next_step_due_at ?? null
+      }))
+      .filter((item) => Boolean(item.label));
+
+    upcomingMoves.sort((a, b) => {
+      if (a.dueAt && b.dueAt) return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+      if (a.dueAt) return -1;
+      if (b.dueAt) return 1;
+      return 0;
+    });
+
+    const nextFiveMoves = dedupeStrings(upcomingMoves.map((item) => item.label).filter(Boolean)).slice(0, 5);
+
     const opportunityRadar = {
       activeCount,
       readyForOutreachCount,
       topOpportunities,
-      nextFiveMoves: [
-        "Build 25-brand target list",
-        "Prioritize 10 high-prestige targets",
-        "Prepare pitch angles by category",
-        "Draft outreach assets for approval",
-        "Track response readiness by opportunity"
-      ]
+      nextFiveMoves
     };
 
     const pipelinePanel = {
