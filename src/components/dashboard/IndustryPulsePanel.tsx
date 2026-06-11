@@ -6,6 +6,7 @@ import type { IndustryPulseInteractions, IndustryPulseResponse, IndustryPulseOpp
 import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { requestDashboardRefresh, DASHBOARD_REFRESH_EVENT } from "@/lib/dashboard/events";
 import { extractResponseError } from "@/lib/dashboard/http";
+import { EmptyState } from "./ui/EmptyState";
 
 type Props = {
   initialSnapshot?: DashboardOverviewResponse["industryPulse"];
@@ -275,6 +276,23 @@ export function IndustryPulsePanel({ initialSnapshot }: Props) {
 
   const hasAnyItems = items.length > 0;
   const isCaughtUp = hasAnyItems && visibleItems.length === 0;
+
+  if (!snapshot && !isLoading && !hasAnyItems) {
+    return (
+      <section className="ui-glass ui-glass-hover rounded-3xl p-6">
+        <div className="flex flex-col gap-1">
+          <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Industry Pulse</div>
+          <p className="text-sm text-zinc-400">Live opportunity feed</p>
+        </div>
+        <div className="mt-4">
+          <EmptyState
+            title="Industry Pulse unavailable"
+            detail={error ? `Latest refresh failed: ${error}` : "No feed data has been ingested yet."}
+          />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
