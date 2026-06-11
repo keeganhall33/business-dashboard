@@ -74,6 +74,13 @@ type ScoreboardMetricStats = {
   changePercent: number | null;
 };
 
+const HEADER_CARD_CONFIG = [
+  { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
+  { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
+  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" },
+  { cardKey: "active_brand_conversations", fallbackName: "Active Brand Conversations", fallbackUnit: "count" }
+] as const;
+
 type TaskRow = {
   id: string;
   title: string;
@@ -927,33 +934,38 @@ export async function GET(request: Request) {
       });
     }
 
-    const headerMetricKeys = [
-      "monthly_revenue",
-      "aov",
-      "conversion_rate",
-      "active_brand_conversations"
-    ];
-
-    const headerMetrics = headerMetricKeys
-      .map((key) => {
-        const m = metricByKey.get(key);
-        if (!m) return null;
-        const currentValue = toNumber(m.current_value) ?? 0;
-        const targetValue = toNumber(m.target_value) ?? 0;
+    const headerMetrics = HEADER_CARD_CONFIG.map((card) => {
+      const metric = metricByKey.get(card.cardKey);
+      if (!metric) {
         return {
-          metricKey: m.metric_key,
-          metricName: m.metric_name,
-          category: m.category ?? "general",
-          currentValue,
-          targetValue,
-          deltaPercent: 0,
-          status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-          unit: m.unit ?? null,
-          ownerAgent: m.owner_agent ?? null,
-          measuredAt: m.measured_at ?? null
+          metricKey: card.cardKey,
+          metricName: card.fallbackName,
+          category: "general",
+          currentValue: 0,
+          targetValue: 0,
+          deltaPercent: null,
+          status: "warning" as const,
+          unit: card.fallbackUnit ?? null,
+          ownerAgent: null,
+          measuredAt: null
         };
-      })
-      .filter(Boolean);
+      }
+
+      const currentValue = toNumber(metric.current_value) ?? 0;
+      const targetValue = toNumber(metric.target_value) ?? 0;
+      return {
+        metricKey: metric.metric_key,
+        metricName: metric.metric_name ?? card.fallbackName,
+        category: metric.category ?? "general",
+        currentValue,
+        targetValue,
+        deltaPercent: metric.stats?.changePercent ?? null,
+        status: statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)),
+        unit: metric.unit ?? card.fallbackUnit ?? null,
+        ownerAgent: metric.owner_agent ?? null,
+        measuredAt: metric.measured_at ?? null
+      };
+    });
 
     const executiveCommand = {
       weeklyDirective:
