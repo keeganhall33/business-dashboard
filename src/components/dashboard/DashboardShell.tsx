@@ -99,7 +99,7 @@ export function DashboardShell({ data, agents }: Props) {
       >
         <div className="space-y-6">
           <AgentKpiStrip items={data.agentKpis} dense />
-          <AgentAreaBoard agents={agents} />
+          <AgentAreaBoard agents={agents} agentSla={data.agentSla} />
         </div>
       </DashboardSection>
 

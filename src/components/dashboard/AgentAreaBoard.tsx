@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentKey } from "@/lib/types/requests";
+import type { AgentSlaSnapshot } from "@/lib/types/dashboard";
+import { formatRelativeTimeFromNow } from "@/lib/date";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 import { InsightCard, type InsightObject } from "./ui/InsightCard";
 import { requestDashboardRefresh } from "@/lib/dashboard/events";
@@ -52,10 +54,12 @@ type AgentAreaDefinition = {
 
 type Props = {
   agents: AgentDashboardResponse[];
+  agentSla?: AgentSlaSnapshot[];
 };
 
-export function AgentAreaBoard({ agents }: Props) {
+export function AgentAreaBoard({ agents, agentSla = [] }: Props) {
   const agentMap = useMemo(() => new Map(agents.map((agent) => [agent.agent.agentKey, agent])), [agents]);
+  const slaMap = useMemo(() => new Map(agentSla.map((snapshot) => [snapshot.agentKey, snapshot])), [agentSla]);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   return (
@@ -85,6 +89,7 @@ export function AgentAreaBoard({ agents }: Props) {
                   key={agent.agent.agentKey}
                   agent={agent}
                   expanded={expandedAgent === agent.agent.agentKey}
+                  sla={slaMap.get(agent.agent.agentKey)}
                   onToggle={() =>
                     setExpandedAgent((current) => (current === agent.agent.agentKey ? null : agent.agent.agentKey))
                   }
@@ -101,10 +106,11 @@ export function AgentAreaBoard({ agents }: Props) {
 type AgentCardProps = {
   agent: AgentDashboardResponse;
   expanded: boolean;
+  sla?: AgentSlaSnapshot;
   onToggle: () => void;
 };
 
-function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
+function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [decisionStatus, setDecisionStatus] = useState<{ state: "idle" | "success" | "error"; message?: string }>({
@@ -148,6 +154,17 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
     : autoPlan
     ? "Auto brief"
     : "No plan submitted";
+
+  const pausedThresholdMinutes = 240;
+  const minutesSinceRun = sla?.minutesSinceRun ?? null;
+  const paused = minutesSinceRun != null && minutesSinceRun > pausedThresholdMinutes;
+  const pausedLabel = paused
+    ? minutesSinceRun
+      ? `Paused · last run ${formatRelativeTimeFromNow(sla?.lastRunAt ?? null)}`
+      : "Paused · no recent run"
+    : sla?.lastRunAt
+      ? `Active · refreshed ${formatRelativeTimeFromNow(sla.lastRunAt)}`
+      : null;
 
   useEffect(() => {
     setDecisionStatus({ state: "idle" });
@@ -200,6 +217,15 @@ function AgentDetailCard({ agent, expanded, onToggle }: AgentCardProps) {
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           <PlanStatusBadge label={planStatusLabel} />
+          {pausedLabel ? (
+            <div
+              className={`inline-flex items-center gap-2 rounded-full border ${paused ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"} px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em]`}
+              title={paused ? "Agent run cadence exceeded" : "Agent recently active"}
+            >
+              <span className="ui-status-dot" data-tone={paused ? "amber" : "emerald"} />
+              {pausedLabel}
+            </div>
+          ) : null}
           {latestThreadUpdate && (
             <div className="text-[11px] text-zinc-500">
               Last thread update {formatDate(latestThreadUpdate.createdAt)} · {summarizeMessage(latestThreadUpdate.body)}
