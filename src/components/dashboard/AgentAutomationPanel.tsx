@@ -13,6 +13,9 @@ const AGENT_METADATA: Array<{ agentKey: string; title: string; subtitle: string 
   { agentKey: "avery", title: "Avery", subtitle: "CEO Ops & Strategy" }
 ];
 
+const ATTENTION_THRESHOLD_MINUTES = 12 * 60; // 12 hours
+const CRITICAL_THRESHOLD_MINUTES = 24 * 60; // 24 hours
+
 type Props = {
   agentSla: AgentSlaSnapshot[];
 };
@@ -77,29 +80,56 @@ export function AgentAutomationPanel({ agentSla }: Props) {
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {agents.map(({ agentKey, title, subtitle, sla }) => (
-          <div key={agentKey} className="rounded-2xl border border-white/10 bg-black/30 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-zinc-50">{title}</div>
-                <div className="text-xs text-zinc-500">{subtitle}</div>
+        {agents.map(({ agentKey, title, subtitle, sla }) => {
+          const status = getRunStatus(sla);
+          return (
+            <div key={agentKey} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-zinc-50">{title}</div>
+                  <div className="text-xs text-zinc-500">{subtitle}</div>
+                </div>
+                <StatusChip label={status.label} tone={status.tone} />
               </div>
-              <StatusChip label={sla?.minutesSinceRun != null ? formatRelativeMinutes(sla.minutesSinceRun) : "No runs yet"} tone="zinc" />
+              <div className="mt-3 text-xs text-zinc-500">
+                Next due: {sla?.nextRunDueAt ? new Date(sla.nextRunDueAt).toLocaleString() : "—"}
+              </div>
+              {status.message ? (
+                <div className="mt-1 text-xs text-amber-300">{status.message}</div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => runAgent(agentKey)}
+                disabled={runningAgentKey === agentKey}
+                className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-zinc-100 transition hover:border-white/20 hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {runningAgentKey === agentKey ? "Running…" : "Run agent"}
+              </button>
             </div>
-            <div className="mt-3 text-xs text-zinc-500">
-              Next due: {sla?.nextRunDueAt ? new Date(sla.nextRunDueAt).toLocaleString() : "—"}
-            </div>
-            <button
-              type="button"
-              onClick={() => runAgent(agentKey)}
-              disabled={runningAgentKey === agentKey}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-zinc-100 transition hover:border-white/20 hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {runningAgentKey === agentKey ? "Running…" : "Run agent"}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function getRunStatus(sla: AgentSlaSnapshot | null) {
+  if (!sla || sla.minutesSinceRun == null) {
+    return { label: "No runs yet", tone: "rose" as const, message: "Run this agent to capture a fresh automation heartbeat." };
+  }
+  if (sla.minutesSinceRun >= CRITICAL_THRESHOLD_MINUTES) {
+    return {
+      label: formatRelativeMinutes(sla.minutesSinceRun),
+      tone: "rose" as const,
+      message: "Automation overdue. Trigger a run to clear the backlog."
+    };
+  }
+  if (sla.minutesSinceRun >= ATTENTION_THRESHOLD_MINUTES) {
+    return {
+      label: formatRelativeMinutes(sla.minutesSinceRun),
+      tone: "amber" as const,
+      message: "Due soon. Consider running the agent to stay on cadence."
+    };
+  }
+  return { label: formatRelativeMinutes(sla.minutesSinceRun), tone: "emerald" as const, message: null };
 }
