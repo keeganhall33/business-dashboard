@@ -29,23 +29,33 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
           <div className="text-sm text-zinc-400">Campaign-level spend over the last {snapshot.range} days.</div>
           <div className="text-xs text-zinc-500">Last updated {updatedLabel}</div>
         </div>
-        <StatusChip label={`Account ${snapshot.accountId}`} tone="zinc" />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip label={`Account ${snapshot.accountId}`} tone="zinc" />
+          <a
+            href="/dashboard/logs/meta_ads_agent.log"
+            className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-300 hover:text-sky-200"
+          >
+            LOG
+          </a>
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <Kpi label="Spend" value={currency.format(snapshot.summary.spend ?? 0)} tone="emerald" />
-        <Kpi label="Clicks" value={formatNumber(snapshot.summary.clicks)} />
         <Kpi label="Impressions" value={formatNumber(snapshot.summary.impressions)} />
+        <Kpi label="Clicks" value={formatNumber(snapshot.summary.clicks)} />
+        <Kpi label="CTR" value={formatPercent(getCtr(snapshot.summary))} tone="sky" />
+        <Kpi label="CPC" value={decimalCurrency.format(getCpc(snapshot.summary))} />
         <Kpi label="ROAS" value={formatRoas(snapshot.summary.roas)} tone="sky" />
       </div>
 
       <div className="mt-5">
         <div className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">Top campaigns</div>
-        <div className="mt-3 space-y-2">
-          {topCampaigns.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">No active campaigns reported.</div>
-          ) : (
-            topCampaigns.map((campaign) => (
+      <div className="mt-3 space-y-2">
+        {topCampaigns.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">No active campaigns reported.</div>
+        ) : (
+          topCampaigns.map((campaign) => (
               <div key={campaign.campaignId} className="rounded-2xl border border-white/8 bg-black/25 px-3 py-2 text-sm">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-zinc-200">{campaign.campaignName}</span>
@@ -61,6 +71,12 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
             ))
           )}
         </div>
+        <div className="mt-3 rounded-2xl border border-dashed border-white/10 bg-black/20 p-3 text-xs text-zinc-400">
+          Purchases/ROAS unavailable? Meta conversions may not be configured or may attribute elsewhere.
+        </div>
+      </div>
+      <div className="mt-4 text-xs text-zinc-500">
+        Directional reporting only. No publishing, budget, or billing actions run through this agent.
       </div>
     </section>
   );
@@ -94,4 +110,14 @@ function formatPercent(value?: number | null) {
 function formatRoas(value?: number | null) {
   if (value == null) return "–";
   return value >= 100 ? `${value.toFixed(0)}x` : value >= 10 ? `${value.toFixed(1)}x` : `${value.toFixed(2)}x`;
+}
+
+function getCtr(summary: MetaAdsSnapshot["summary"]) {
+  if (!summary.impressions) return null;
+  return (summary.clicks / summary.impressions) * 100;
+}
+
+function getCpc(summary: MetaAdsSnapshot["summary"]) {
+  if (!summary.clicks) return 0;
+  return summary.spend / summary.clicks;
 }
