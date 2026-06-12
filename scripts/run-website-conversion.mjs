@@ -36,6 +36,24 @@ function baseLog(payload) {
   );
 }
 
+async function sendSchedulerAlert(payload) {
+  const secret = process.env.SCHEDULER_SECRET?.trim();
+  const url = process.env.SCHEDULER_ALERT_URL?.trim();
+  if (!secret || !url) return;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-scheduler-secret': secret
+      },
+      body: JSON.stringify({ agentKey: 'website_conversion', ...payload })
+    });
+  } catch (error) {
+    console.warn('[website-agent] Failed to send scheduler alert:', error instanceof Error ? error.message : error);
+  }
+}
+
 function buildGa4RequestPayload() {
   return {
     dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
@@ -251,6 +269,12 @@ async function main() {
     await fs.writeFile(agentOutputPath, JSON.stringify(output, null, 2));
 
     await baseLog({ status: 'success', orders: wooSummary.orderCount, sessions: ga4Summary.sessions });
+    await sendSchedulerAlert({
+      status: 'success',
+      message: 'Website agent completed',
+      orders: wooSummary.orderCount,
+      sessions: ga4Summary.sessions
+    });
     console.log('[website-agent] Updated website metrics snapshot');
   } catch (error) {
     const friendlyMessage = error instanceof Error ? error.message : String(error);
@@ -259,6 +283,7 @@ async function main() {
       message: friendlyMessage,
       stack: error instanceof Error && error.stack ? error.stack : undefined
     });
+    await sendSchedulerAlert({ status: 'error', message: friendlyMessage });
     console.error('[website-agent] Failed:', friendlyMessage);
     if (error instanceof Error && error.stack) {
       console.error(error.stack);

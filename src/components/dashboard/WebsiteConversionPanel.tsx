@@ -18,12 +18,21 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
 
   return (
     <section className="ui-glass ui-glass-hover space-y-5 rounded-3xl p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce automation snapshot.</div>
+          <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
         </div>
-        <div className="text-xs text-zinc-500">Updated {generatedLabel}</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip label="View log" tone="zinc" />
+          <a
+            href="/dashboard/logs/website_agent.log"
+            className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-300 hover:text-sky-200"
+          >
+            LOG
+          </a>
+        </div>
       </div>
 
       {ga4 ? <Ga4Section data={ga4} /> : <EmptyState title="GA4 offline" detail="Website agent could not load GA4 metrics." />}
@@ -53,6 +62,11 @@ function Ga4Section({
           ))}
         </div>
       </div>
+      {data.addToCartEvents == null ? (
+        <div className="mt-2 rounded-xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
+          GA4 add-to-cart event not detected. Configure the `add_to_cart` event in GA4 to unlock funnel drop-off reporting. All other GA4 metrics are current.
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <BreakdownCard title="Device mix" items={data.deviceBreakdown} />
