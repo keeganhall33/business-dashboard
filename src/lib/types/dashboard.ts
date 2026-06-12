@@ -409,6 +409,70 @@ export type CommerceTelemetry = {
   };
 };
 
+export type WebsiteConversionSnapshot = {
+  generatedAt: string;
+  ga4?: {
+    totalUsers?: number;
+    sessions?: number;
+    eventCount?: number;
+    addToCartEvents?: number | null;
+    ecommercePurchases?: number | null;
+    purchaseRevenue?: number | null;
+    deviceBreakdown?: Array<{ label: string; sessions: number }>;
+    channelBreakdown?: Array<{ label: string; sessions: number }>;
+    warnings?: string[];
+  };
+  wooCommerce?: {
+    totalRevenue?: number;
+    orderCount?: number;
+    averageOrderValue?: number;
+    topProducts?: Array<{ name: string; units: number; revenue: number }>;
+    recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
+  };
+};
+
+export type AgentStatusPanelEntry = {
+  agentName: string;
+  cadence: string | null;
+  lastRunAt: string | null;
+  runStatus: string | null;
+  nextRunAt: string | null;
+  issues: string | null;
+  dataSources: string[];
+  actions: string[];
+};
+
+export type AutomationStatusEntry = {
+  jobName: string;
+  frequency: string | null;
+  expectedRunTime: string | null;
+  lastRunAt: string | null;
+  lastResult: string | null;
+  logLink: string | null;
+  nextRunAt: string | null;
+  alertStatus: string | null;
+  notes: string | null;
+};
+
+export type DataSourceAccessEntry = {
+  name: string;
+  status: string;
+  lastVerified: string | null;
+  owner: string | null;
+  credentialLocation: string | null;
+  accessMethod: string | null;
+  notes: string | null;
+};
+
+export type DashboardActionItem = {
+  title: string;
+  detail?: string | null;
+  owner?: string | null;
+  status?: string | null;
+  dueAt?: string | null;
+  tone?: "info" | "success" | "warning" | "danger";
+};
+
 export type LuxuryCollectibleKpis = {
   premiumEdition: {
     targetSellThroughPercent: number; // 0..100
@@ -475,6 +539,12 @@ export type DashboardOverviewResponse = {
   systemHealth: SystemHealth;
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
+  websiteConversion?: WebsiteConversionSnapshot | null;
+  agentStatusPanel?: AgentStatusPanelEntry[];
+  automationStatusPanel?: AutomationStatusEntry[];
+  dataSourceAccess?: DataSourceAccessEntry[];
+  topActions?: DashboardActionItem[];
+  blockedItems?: DashboardActionItem[];
 
   /** Luxury Cultural Collectible KPI bundle (optional for backwards compatibility). */
   luxuryCollectibles?: LuxuryCollectibleKpis;

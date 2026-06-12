@@ -29,6 +29,7 @@ import {
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
+import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
 import { RangePreset, type AgentHealth, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
@@ -681,7 +682,16 @@ export async function GET(request: Request) {
       // default (Supabase) runtime path.
       const { loadDashboardOverviewFromSeed } = await import("@/lib/dashboard/seed");
       const seeded = await loadDashboardOverviewFromSeed();
-      return ok(seeded);
+      const artifacts = await loadLocalDashboardArtifacts();
+      return ok({
+        ...seeded,
+        websiteConversion: artifacts.websiteSnapshot,
+        agentStatusPanel: artifacts.agentStatus,
+        automationStatusPanel: artifacts.automationStatus,
+        dataSourceAccess: artifacts.dataSourceMatrix,
+        topActions: artifacts.topActions,
+        blockedItems: artifacts.blockedItems
+      });
     }
 
     // E2E test harness: allow Playwright/Cypress to run without Supabase env + network.
@@ -952,7 +962,8 @@ export async function GET(request: Request) {
       recentIdeaComments,
       ceoQuestionResult,
       recentCeoComments,
-      industryPulseResult
+      industryPulseResult,
+      localArtifacts
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -973,7 +984,8 @@ export async function GET(request: Request) {
       getRecentIdeaComments(30) as Promise<IdeaCommentRow[]>,
       getCeoQuestions({ limit: 250 }) as Promise<{ items: CeoQuestionRow[]; count: number }>,
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
-      getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 })
+      getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
+      loadLocalDashboardArtifacts()
     ]);
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
@@ -1814,6 +1826,12 @@ export async function GET(request: Request) {
       systemHealth,
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
+      websiteConversion: localArtifacts.websiteSnapshot,
+      agentStatusPanel: localArtifacts.agentStatus,
+      automationStatusPanel: localArtifacts.automationStatus,
+      dataSourceAccess: localArtifacts.dataSourceMatrix,
+      topActions: localArtifacts.topActions,
+      blockedItems: localArtifacts.blockedItems,
       agentKpis,
       ideaBoard: {
         columns: ideaBoard,

@@ -29,6 +29,11 @@ import { DashboardSection } from "./ui/DashboardSection";
 import { ContextPanel, type ContextItem } from "./ui/ContextPanel";
 import { CommandBar } from "./CommandBar";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
+import { AgentStatusPanel } from "./AgentStatusPanel";
+import { AutomationStatusPanel } from "./AutomationStatusPanel";
+import { DataSourceMatrixPanel } from "./DataSourceMatrixPanel";
+import { ActionListPanel } from "./ActionListPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -75,6 +80,8 @@ export function DashboardShell({ data, agents }: Props) {
         <div id="command-center" className="responsive-columns" data-align="wide">
           <div className="column column-wide space-y-8">
             <ActionQueuePanel data={data.actionQueue} />
+            <ActionListPanel title="Top Actions" subtitle="Execution-ready moves" items={data.topActions} />
+            <ActionListPanel title="Blocked" subtitle="Needs attention" items={data.blockedItems} />
             <TaskBoard
               tasks={data.tasks}
               schedulerJobs={data.schedulerJobs}
@@ -91,6 +98,9 @@ export function DashboardShell({ data, agents }: Props) {
                 <EmptyState title="Luxury KPIs unavailable" detail="No live luxury collectible data has been ingested yet." />
               </div>
             )}
+            <AgentStatusPanel entries={data.agentStatusPanel} />
+            <AutomationStatusPanel entries={data.automationStatusPanel} />
+            <DataSourceMatrixPanel entries={data.dataSourceAccess} />
             <AutomationPanel jobs={data.schedulerJobs} />
             <AgentAutomationPanel agentSla={data.agentSla} />
             <SystemHealthPanel data={data.systemHealth} />
@@ -121,6 +131,7 @@ export function DashboardShell({ data, agents }: Props) {
       >
         <div className="responsive-columns" data-align="wide">
           <div className="column column-wide space-y-8">
+            <WebsiteConversionPanel snapshot={data.websiteConversion} />
             <ExecutiveCommandPanel data={data.executiveCommand} />
             <RevenueEnginePanel data={data.revenueEngine} />
             <BrandPowerPanel data={data.brandPower} />
