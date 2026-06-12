@@ -29,6 +29,7 @@ import { DashboardSection } from "./ui/DashboardSection";
 import { ContextPanel, type ContextItem } from "./ui/ContextPanel";
 import { CommandBar } from "./CommandBar";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { MetaAdsPanel } from "./MetaAdsPanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { AutomationStatusPanel } from "./AutomationStatusPanel";
@@ -140,6 +141,7 @@ export function DashboardShell({ data, agents }: Props) {
             <SalesPanel telemetry={data.commerceTelemetry} />
             <MarketingPerformancePanel telemetry={data.commerceTelemetry} />
             <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
+            <MetaAdsPanel snapshot={data.metaAds} />
           </div>
         </div>
       </DashboardSection>

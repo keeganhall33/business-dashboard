@@ -686,6 +686,7 @@ export async function GET(request: Request) {
       return ok({
         ...seeded,
         websiteConversion: artifacts.websiteSnapshot,
+        metaAds: artifacts.metaSnapshot,
         agentStatusPanel: artifacts.agentStatus,
         automationStatusPanel: artifacts.automationStatus,
         dataSourceAccess: artifacts.dataSourceMatrix,
@@ -1827,6 +1828,7 @@ export async function GET(request: Request) {
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
       websiteConversion: localArtifacts.websiteSnapshot,
+      metaAds: localArtifacts.metaSnapshot,
       agentStatusPanel: localArtifacts.agentStatus,
       automationStatusPanel: localArtifacts.automationStatus,
       dataSourceAccess: localArtifacts.dataSourceMatrix,

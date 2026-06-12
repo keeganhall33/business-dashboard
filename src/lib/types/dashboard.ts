@@ -431,6 +431,35 @@ export type WebsiteConversionSnapshot = {
   };
 };
 
+export type MetaAdsCampaign = {
+  campaignId: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  purchases: number | null;
+  purchaseValue: number | null;
+  roas: number | null;
+};
+
+export type MetaAdsSnapshot = {
+  generatedAt: string;
+  accountId: string;
+  range: number; // days
+  campaigns: MetaAdsCampaign[];
+  summary: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    purchases: number;
+    purchaseValue: number;
+    roas: number | null;
+  };
+};
+
 export type AgentStatusPanelEntry = {
   agentName: string;
   cadence: string | null;
@@ -540,6 +569,7 @@ export type DashboardOverviewResponse = {
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
   websiteConversion?: WebsiteConversionSnapshot | null;
+  metaAds?: MetaAdsSnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];
   dataSourceAccess?: DataSourceAccessEntry[];

@@ -12,7 +12,8 @@
     "test:e2e:ui": "playwright test --ui",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
-    "website:run": "node scripts/run-website-conversion.mjs"
+    "website:run": "node scripts/run-website-conversion.mjs",
+    "meta:run": "node scripts/run-meta-reporting.mjs"
   },
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
