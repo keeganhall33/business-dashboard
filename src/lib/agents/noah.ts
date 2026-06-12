@@ -2,40 +2,40 @@ import {
   AgentRunResult,
   ensureDailyIdeaAndKpis,
   formatNumberValue,
-  formatPercent,
   getSharedAgentContextForAgent,
-  metricSnapshot,
   publishAgentStatusSnapshot,
   submitAgentPlanDraft,
   writeAgentOutputs
 } from "./shared";
 
 export async function runNoah(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContextForAgent("noah");
-  const pipeline = metricSnapshot(metrics, "active_brand_conversations");
+  const { metrics, opportunities: contextOpportunities } = await getSharedAgentContextForAgent("noah");
+  const activeOpportunities = (contextOpportunities ?? []).filter(
+    (opp) => !["won", "lost", "parked"].includes(opp.status)
+  );
+  const prestigeOpportunities = activeOpportunities.filter((opp) => (opp.prestigeScore ?? 0) >= 8);
+  const readyForOutreach = activeOpportunities.filter((opp) => opp.status === "ready_for_outreach");
 
   const insights = [
     {
       title: "Partnership pipeline is too thin",
-      summary: `Only ${formatNumberValue(pipeline?.current)} active conversations are live (30d avg ${formatNumberValue(
-        pipeline?.average
-      )}, Δ ${formatPercent(pipeline?.changePercent)}).`,
+      summary: `Only ${formatNumberValue(activeOpportunities.length)} live opportunities are on deck; we need 10+ premium conversations at all times.`,
       detailMd: "The opportunity engine needs more top-of-funnel prestige targets.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     },
     {
       title: "Targeting should skew harder toward prestige leverage",
-      summary: "A smaller set of high-status targets can outperform a larger generic list.",
+      summary: `${formatNumberValue(prestigeOpportunities.length)} of the current opportunities clear the prestige bar; expand that list before moving to mid-tier targets.`,
       detailMd:
         "Focus on elite institutions, top sports properties, collectible brands, and culturally resonant figures.",
       priority: "high" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     },
     {
       title: "Timing opportunities should be mapped further ahead",
-      summary: "The system benefits from identifying cultural windows before they peak.",
-      detailMd: "This improves pitch timing and creative readiness.",
+      summary: `${formatNumberValue(readyForOutreach.length)} opportunities are staged for outreach; lock timing before they stall.`,
+      detailMd: "Proactive sequencing keeps the pipeline from idling while we chase new targets.",
       priority: "high" as const,
       relatedMetricKeys: []
     }
@@ -46,7 +46,7 @@ export async function runNoah(): Promise<AgentRunResult> {
       title: "Build next prestige target list",
       summary: "Identify 25 high-fit institutions, brands, and figures.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     },
     {
       title: "Map strongest near-term cultural openings",
@@ -59,7 +59,7 @@ export async function runNoah(): Promise<AgentRunResult> {
       title: "Prepare target-specific pitch angles",
       summary: "Define why each target is strategically right.",
       priority: "high" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     }
   ];
 
@@ -69,7 +69,7 @@ export async function runNoah(): Promise<AgentRunResult> {
       "Concentrate on a narrow set of high-upside targets with tailored pitch angles.",
     detailMd: "This should improve both deal quality and future brand leverage.",
     priority: "critical" as const,
-    relatedMetricKeys: ["active_brand_conversations", "tier1_brand_collabs"]
+    relatedMetricKeys: []
   };
 
   const tasks = [
@@ -81,14 +81,14 @@ export async function runNoah(): Promise<AgentRunResult> {
       expectedImpact: "Expand deal flow and increase likelihood of higher-value collaborations",
       impactScore: 8.8,
       whyThisMatters: "The opportunity engine is underfilled.",
-      relatedMetricKeys: ["active_brand_conversations"],
+      relatedMetricKeys: [],
       requiresApproval: true,
       executionType: "research" as const,
       expectedDurationDays: 6
     }
   ];
 
-  const opportunities = [
+  const opportunityDrafts = [
     {
       name: "Upper Deck Hall of Fame capsule",
       organization: "Upper Deck",
@@ -121,7 +121,7 @@ export async function runNoah(): Promise<AgentRunResult> {
         segments: ["sports", "collectibles", "institutional"],
         turnaroundDays: 3
       },
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     }
   ];
 
@@ -131,7 +131,7 @@ export async function runNoah(): Promise<AgentRunResult> {
     actions,
     bigBet,
     tasks,
-    opportunities,
+    opportunities: opportunityDrafts,
     research
   });
 
@@ -140,7 +140,7 @@ export async function runNoah(): Promise<AgentRunResult> {
     planTitle: "Partnership pipeline expansion plan",
     summary: "Refill the prestige pipeline with targeted outreach and cultural timing.",
     detailMd: bigBet.detailMd,
-    payload: { insights, actions, bigBet, tasks, opportunities }
+    payload: { insights, actions, bigBet, tasks, opportunities: opportunityDrafts }
   });
 
   const status = await publishAgentStatusSnapshot("noah");

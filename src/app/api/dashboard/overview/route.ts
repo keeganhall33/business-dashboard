@@ -77,8 +77,7 @@ type ScoreboardMetricStats = {
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
   { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
-  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" },
-  { cardKey: "active_brand_conversations", fallbackName: "Active Brand Conversations", fallbackUnit: "count" }
+  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" }
 ] as const;
 
 type TaskRow = {
@@ -1129,6 +1128,7 @@ export async function GET(request: Request) {
     const warRoomMessages = await getAgentMessages(warRoomThread.id, 5);
 
     const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
+    metricByKey.delete("active_brand_conversations");
 
     if (commerceTelemetry) {
       const wooSummary = (commerceTelemetry as Record<string, unknown>).woo as Record<string, unknown> | undefined;

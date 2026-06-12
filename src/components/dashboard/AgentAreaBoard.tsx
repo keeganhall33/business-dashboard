@@ -19,7 +19,7 @@ const agentAreaConfig: AgentAreaDefinition[] = [
     title: "CEO",
     subtitle: "Executive direction, approvals, and cross-agent enforcement",
     agentKeys: ["avery"],
-    kpiMetricKeys: ["monthly_revenue", "active_brand_conversations", "aov", "conversion_rate"]
+    kpiMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
   },
   {
     key: "product",
@@ -40,7 +40,7 @@ const agentAreaConfig: AgentAreaDefinition[] = [
     title: "Research & Intelligence",
     subtitle: "Market reconnaissance, collector intel, and partner diligence",
     agentKeys: ["noah"],
-    kpiMetricKeys: ["active_brand_conversations", "tier1_brand_collabs"]
+    kpiMetricKeys: ["tier1_brand_collabs"]
   }
 ];
 

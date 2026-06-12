@@ -41,18 +41,6 @@
       "unit": "percent",
       "ownerAgent": null,
       "measuredAt": "2026-05-18T00:00:00.000Z"
-    },
-    {
-      "metricKey": "active_brand_conversations",
-      "metricName": "Active brand conversations",
-      "category": "brand",
-      "currentValue": 7,
-      "targetValue": 12,
-      "deltaPercent": null,
-      "status": "warning",
-      "unit": null,
-      "ownerAgent": null,
-      "measuredAt": "2026-05-18T00:00:00.000Z"
     }
   ],
   "luxuryCollectibles": {
