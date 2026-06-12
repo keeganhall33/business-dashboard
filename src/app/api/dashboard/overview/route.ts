@@ -1050,9 +1050,16 @@ export async function GET(request: Request) {
       "shipped",
       "archived"
     ];
+    const seenIdeaKeys = new Set<string>();
     const ideaBoard = ideaBoardStatuses.reduce<Record<string, unknown>>((acc, status) => {
       acc[status] = ideas
-        .filter((idea) => idea.status === status)
+        .filter((idea) => {
+          if (idea.status !== status) return false;
+          const key = `${idea.agent_key}|${idea.status}|${(idea.title ?? "").trim().toLowerCase()}`;
+          if (seenIdeaKeys.has(key)) return false;
+          seenIdeaKeys.add(key);
+          return true;
+        })
         .slice(0, 50)
         .map((idea) => ({
           id: idea.id,
