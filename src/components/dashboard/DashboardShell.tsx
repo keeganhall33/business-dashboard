@@ -23,6 +23,8 @@ import { IdeaBoardPanel } from "./IdeaBoardPanel";
 import { CeoQuestionDeskPanel } from "./CeoQuestionDeskPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { ProofOfWorkPanel } from "./ProofOfWorkPanel";
+import { LuxuryCollectiblesKpiPanel } from "./LuxuryCollectiblesKpiPanel";
+import { EmptyState } from "./ui/EmptyState";
 import { DashboardSection } from "./ui/DashboardSection";
 import { ContextPanel, type ContextItem } from "./ui/ContextPanel";
 import { CommandBar } from "./CommandBar";
@@ -82,6 +84,13 @@ export function DashboardShell({ data, agents }: Props) {
             />
           </div>
           <div className="column column-medium space-y-8">
+            {data.luxuryCollectibles ? (
+              <LuxuryCollectiblesKpiPanel data={data.luxuryCollectibles} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <EmptyState title="Luxury KPIs unavailable" detail="No live luxury collectible data has been ingested yet." />
+              </div>
+            )}
             <AutomationPanel jobs={data.schedulerJobs} />
             <AgentAutomationPanel agentSla={data.agentSla} />
             <SystemHealthPanel data={data.systemHealth} />
