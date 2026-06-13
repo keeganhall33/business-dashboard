@@ -35,6 +35,7 @@ import { ExecutiveSummaryPanel } from "./ExecutiveSummaryPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { SocialIntelligencePanel } from "./SocialIntelligencePanel";
 import { LeadIntelligencePanel } from "./LeadIntelligencePanel";
+import { CloudflarePanel } from "./CloudflarePanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { AutomationStatusPanel } from "./AutomationStatusPanel";
@@ -174,6 +175,7 @@ export function DashboardShell({ data, agents }: Props) {
               <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
               <SocialIntelligencePanel snapshot={data.socialIntelligence} />
               <LeadIntelligencePanel snapshot={data.leadIntelligence} />
+              <CloudflarePanel snapshot={data.cloudflare} />
             </div>
           </div>
 

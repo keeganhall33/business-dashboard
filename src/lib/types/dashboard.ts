@@ -522,6 +522,10 @@ export type ExecutiveSummary = {
     highPriorityNoOwner: number;
   };
   leadActions?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  cloudflare?: CloudflareTelemetrySnapshot | null;
+  siteHealthWarnings?: string[];
+  siteSecurityRisks?: string[];
+  siteCacheIssues?: string[];
   decisionsNeeded: string[];
 };
 
@@ -566,6 +570,58 @@ export type SocialInsight = {
 export type SocialIntelligenceSnapshot = {
   generatedAt: string;
   insights: SocialInsight[];
+};
+
+export type CloudflareTelemetrySnapshot = {
+  generatedAt: string;
+  zone?: {
+    name?: string | null;
+    status?: string | null;
+    plan?: string | null;
+  } | null;
+  traffic?: {
+    requestsTotal?: number | null;
+    bandwidthBytes?: number | null;
+    cachedPercent?: number | null;
+    uncachedRequests?: number | null;
+    cacheHitRate?: number | null;
+    bandwidthCachedBytes?: number | null;
+    bandwidthUncachedBytes?: number | null;
+  } | null;
+  security?: {
+    threats?: number | null;
+    threatChangePct?: number | null;
+    blockedRequests?: number | null;
+    firewallEvents?: number | null;
+    botRequests?: number | null;
+    botScore?: number | null;
+  } | null;
+  performance?: {
+    avgResponseTimeMs?: number | null;
+    p95ResponseTimeMs?: number | null;
+    cacheHitWarning?: boolean;
+    latencyWarning?: boolean;
+    notes?: string | null;
+  } | null;
+  top?: {
+    countries?: Array<{ name: string; requests: number }>;
+    paths?: Array<{ path: string; requests: number }>;
+  } | null;
+  warnings?: string[];
+  status?: {
+    mode: string;
+    reason?: string;
+    source?: string;
+    zoneId?: string | null;
+    accountId?: string | null;
+  } | null;
+  summary?: {
+    cacheHitRate?: number | null;
+    cacheHealth: 'healthy' | 'needs attention' | 'unknown';
+    trafficHealth: 'active' | 'quiet' | 'unknown';
+    securityPressure?: number | null;
+    warnings?: string[];
+  };
 };
 
 export type LeadIntelligenceSnapshot = {
@@ -753,6 +809,7 @@ export type DashboardOverviewResponse = {
   metaAds?: MetaAdsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
+  cloudflare?: CloudflareTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];
   dataSourceAccess?: DataSourceAccessEntry[];

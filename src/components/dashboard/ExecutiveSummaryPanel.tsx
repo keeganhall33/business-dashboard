@@ -93,6 +93,13 @@ export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary 
 
       {summary.leadHygiene ? <LeadHygieneBar hygiene={summary.leadHygiene} /> : null}
 
+      {summary.cloudflare ? (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Site health (Cloudflare)</h4>
+          <CloudflareInline snapshot={summary.cloudflare} warnings={summary.siteHealthWarnings ?? []} cacheIssues={summary.siteCacheIssues ?? []} security={summary.siteSecurityRisks ?? []} />
+        </div>
+      ) : null}
+
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Decisions needed</h4>
         <SummaryList items={summary.decisionsNeeded} empty="No pending decisions." />
@@ -152,6 +159,28 @@ function LeadHygieneBar({ hygiene }: { hygiene: { missingData: number; stale: nu
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CloudflareInline({ snapshot, warnings, cacheIssues, security }: { snapshot: NonNullable<ExecutiveSummary['cloudflare']>; warnings: string[]; cacheIssues: string[]; security: string[] }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-xs">
+      <div className="text-zinc-100">
+        Zone: {snapshot.zone?.name ?? 'unknown'} – Cache health: {snapshot.summary?.cacheHealth ?? 'unknown'} – Traffic: {snapshot.summary?.trafficHealth ?? 'unknown'}
+      </div>
+      <ul className="mt-2 space-y-1 text-[11px] text-amber-200">
+        {warnings.map((w, idx) => (
+          <li key={`cf-warn-${idx}`}>Warning: {w}</li>
+        ))}
+        {cacheIssues.map((c, idx) => (
+          <li key={`cf-cache-${idx}`}>Cache issue: {c}</li>
+        ))}
+        {security.map((s, idx) => (
+          <li key={`cf-sec-${idx}`}>Security: {s}</li>
+        ))}
+        {warnings.length === 0 && cacheIssues.length === 0 && security.length === 0 ? <li>No active site health warnings.</li> : null}
+      </ul>
     </div>
   );
 }

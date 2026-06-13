@@ -8,6 +8,7 @@ import { parse } from 'csv-parse/sync';
 const DASHBOARD_ROOT = path.resolve('../dashboard');
 const WEBSITE_JSON = path.join(DASHBOARD_ROOT, 'data', 'website', 'latest.json');
 const META_JSON = path.join(DASHBOARD_ROOT, 'data', 'meta', 'latest.json');
+const CLOUDFLARE_JSON = path.join(DASHBOARD_ROOT, 'data', 'cloudflare', 'latest.json');
 const EXEC_OUTPUT = path.join(DASHBOARD_ROOT, 'data', 'executive', 'latest.json');
 const EXEC_LOG = path.join(DASHBOARD_ROOT, 'logs', 'executive_command.log');
 const DATA_SOURCE_CSV = path.join(DASHBOARD_ROOT, 'data_source_access_matrix.csv');
@@ -228,11 +229,12 @@ async function appendLog(entry) {
 }
 
 async function main() {
-  const [website, meta, social, leads] = await Promise.all([
+  const [website, meta, social, leads, cloudflare] = await Promise.all([
     readJson(WEBSITE_JSON),
     readJson(META_JSON),
     readJson(SOCIAL_JSON),
-    readJson(LEADS_JSON)
+    readJson(LEADS_JSON),
+    readJson(CLOUDFLARE_JSON)
   ]);
   const dataSourceRows = readCsv(DATA_SOURCE_CSV);
   const agentRows = readCsv(AGENT_STATUS_CSV);
@@ -261,6 +263,9 @@ async function main() {
     duplicates: leadSummary.duplicates?.length ?? 0,
     highPriorityNoOwner: leadQuality.highPriorityNoOwner?.length ?? 0
   };
+  const siteHealthWarnings = cloudflare?.summary?.warnings ?? cloudflare?.warnings ?? [];
+  const siteSecurityRisks = cloudflare?.security?.threats ? [`${cloudflare.security.threats} threats flagged in last window`] : [];
+  const siteCacheIssues = cloudflare?.summary?.cacheHealth === 'needs attention' ? ['Cache hit rate below 70%'] : [];
   const decisions = decisionsNeeded(dataSourceHealth);
 
   const payload = {
@@ -280,6 +285,10 @@ async function main() {
     leadResearchNeeded,
     leadActions,
     leadHygiene,
+    cloudflare: cloudflare ?? null,
+    siteHealthWarnings,
+    siteSecurityRisks,
+    siteCacheIssues,
     wins,
     decisionsNeeded: decisions
   };
