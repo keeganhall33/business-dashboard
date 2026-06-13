@@ -339,6 +339,7 @@ async function main() {
   let liveTasksRaw = [];
 
   if (HUBSPOT_TOKEN) {
+    await appendLog({ status: 'info', message: 'HubSpot live read attempted. Writes disabled.' });
     [liveCompaniesRaw, liveContactsRaw, liveDealsRaw, liveTasksRaw] = await Promise.all([
       fetchHubspotObjects('companies', [
         'name',
@@ -432,6 +433,8 @@ async function main() {
         'keegan_target_org'
       ], 100)
     ]);
+  } else {
+    await appendLog({ status: 'info', message: 'No HUBSPOT_ACCESS_TOKEN detected. Falling back to snapshot/manual mode.' });
   }
 
   const liveHubspotLeads = [
