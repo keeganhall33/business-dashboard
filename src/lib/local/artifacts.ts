@@ -8,13 +8,15 @@ import type {
   DataSourceAccessEntry,
   WebsiteConversionSnapshot,
   MetaAdsSnapshot,
-  ExecutiveSummary
+  ExecutiveSummary,
+  IndustryPulseSnapshot
 } from "@/lib/types/dashboard";
 
 const DASHBOARD_ROOT = path.resolve(process.cwd(), "..", "dashboard");
 const WEBSITE_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "website", "latest.json");
 const META_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "meta", "latest.json");
 const EXEC_SUMMARY_PATH = path.join(DASHBOARD_ROOT, "data", "executive", "latest.json");
+const INDUSTRY_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "industry", "latest.json");
 const AGENT_STATUS_PATH = path.join(DASHBOARD_ROOT, "agent_status_panel.csv");
 const AUTOMATION_STATUS_PATH = path.join(DASHBOARD_ROOT, "automation_status_panel.csv");
 const DATA_SOURCE_MATRIX_PATH = path.join(DASHBOARD_ROOT, "data_source_access_matrix.csv");
@@ -23,6 +25,7 @@ export type LocalDashboardArtifacts = {
   websiteSnapshot: WebsiteConversionSnapshot | null;
   metaSnapshot: MetaAdsSnapshot | null;
   executiveSummary: ExecutiveSummary | null;
+  industrySnapshot: IndustryPulseSnapshot | null;
   agentStatus: AgentStatusPanelEntry[];
   automationStatus: AutomationStatusEntry[];
   dataSourceMatrix: DataSourceAccessEntry[];
@@ -31,10 +34,11 @@ export type LocalDashboardArtifacts = {
 };
 
 export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtifacts> {
-  const [snapshot, meta, executive, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
+  const [snapshot, meta, executive, industry, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
     readJsonIfExists<WebsiteConversionSnapshot>(WEBSITE_SNAPSHOT_PATH),
     readJsonIfExists<MetaAdsSnapshot>(META_SNAPSHOT_PATH),
     readJsonIfExists<ExecutiveSummary>(EXEC_SUMMARY_PATH),
+    readJsonIfExists<IndustryPulseSnapshot>(INDUSTRY_SNAPSHOT_PATH),
     readCsvIfExists(AGENT_STATUS_PATH),
     readCsvIfExists(AUTOMATION_STATUS_PATH),
     readCsvIfExists(DATA_SOURCE_MATRIX_PATH)
@@ -50,6 +54,7 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
     websiteSnapshot: snapshot,
     metaSnapshot: meta,
     executiveSummary: executive,
+    industrySnapshot: industry,
     agentStatus,
     automationStatus,
     dataSourceMatrix,

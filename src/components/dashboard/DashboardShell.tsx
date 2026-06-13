@@ -32,6 +32,7 @@ import { formatRelativeTimeFromNow } from "@/lib/date";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { MetaWebsiteComparison } from "./MetaWebsiteComparison";
 import { ExecutiveSummaryPanel } from "./ExecutiveSummaryPanel";
+import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { AutomationStatusPanel } from "./AutomationStatusPanel";
@@ -158,6 +159,7 @@ export function DashboardShell({ data, agents }: Props) {
         context={pipelineContext}
       >
         <div id="pipeline" className="space-y-6">
+          <IndustryPulsePanel snapshot={data.industryPulse} />
           <div className="responsive-columns" data-align="equal">
             <div className="column space-y-8">
               <OpportunityRadarPanel data={data.opportunityRadar} />

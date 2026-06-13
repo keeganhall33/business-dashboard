@@ -514,6 +514,29 @@ export type ExecutiveSummary = {
   decisionsNeeded: string[];
 };
 
+export type IndustryAlert = {
+  title: string;
+  category: string;
+  source: string;
+  sourceUrl?: string | null;
+  date: string;
+  summary?: string | null;
+  whyItMatters: string;
+  opportunity: string;
+  recommendedAction: string;
+  urgency: "high" | "medium" | "low";
+  confidence: "high" | "medium" | "low";
+  related: string[];
+  owner?: string | null;
+  status: string;
+};
+
+export type IndustryPulseSnapshot = {
+  generatedAt: string;
+  sources: Array<{ name: string; url: string; category: string }>;
+  alerts: IndustryAlert[];
+};
+
 export type AgentStatusPanelEntry = {
   agentName: string;
   cadence: string | null;
