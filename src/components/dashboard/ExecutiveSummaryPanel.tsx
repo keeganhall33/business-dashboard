@@ -49,6 +49,19 @@ export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary 
         <SummaryList title="Blocked" items={summary.blockedItems.map((item) => `${item.name}: ${item.detail ?? ''}`)} tone="amber" empty="No blockers." />
       </div>
 
+      {summary.socialHighlights?.length ? (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Social highlights</h4>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-300">
+            {summary.socialHighlights.map((highlight, idx) => (
+              <li key={`${highlight.title}-${idx}`}>
+                {highlight.platform}: {highlight.title} → {highlight.nextIdea} ({highlight.confidence})
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Decisions needed</h4>
         <SummaryList items={summary.decisionsNeeded} empty="No pending decisions." />

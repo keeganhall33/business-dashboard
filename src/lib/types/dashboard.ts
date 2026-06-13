@@ -511,6 +511,7 @@ export type ExecutiveSummary = {
   blockedItems: Array<{ name: string; detail: string | null }>;
   risks: string[];
   wins: string[];
+  socialHighlights?: Array<{ platform: string; title: string; nextIdea: string; confidence: string }>;
   decisionsNeeded: string[];
 };
 
@@ -535,6 +536,26 @@ export type IndustryPulseSnapshot = {
   generatedAt: string;
   sources: Array<{ name: string; url: string; category: string }>;
   alerts: IndustryAlert[];
+};
+
+export type SocialInsight = {
+  platform: string;
+  title: string;
+  format: string;
+  date: string;
+  metrics: string;
+  engagement: string;
+  collectorSignal?: string | null;
+  why: string;
+  nextIdea: string;
+  confidence: "high" | "medium" | "low";
+  source?: string | null;
+  status: string;
+};
+
+export type SocialIntelligenceSnapshot = {
+  generatedAt: string;
+  insights: SocialInsight[];
 };
 
 export type AgentStatusPanelEntry = {
@@ -648,6 +669,7 @@ export type DashboardOverviewResponse = {
   websiteConversion?: WebsiteConversionSnapshot | null;
   metaAds?: MetaAdsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
+  socialIntelligence?: SocialIntelligenceSnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];
   dataSourceAccess?: DataSourceAccessEntry[];

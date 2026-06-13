@@ -13,6 +13,7 @@ const EXEC_LOG = path.join(DASHBOARD_ROOT, 'logs', 'executive_command.log');
 const DATA_SOURCE_CSV = path.join(DASHBOARD_ROOT, 'data_source_access_matrix.csv');
 const AGENT_STATUS_CSV = path.join(DASHBOARD_ROOT, 'agent_status_panel.csv');
 const AUTOMATION_STATUS_CSV = path.join(DASHBOARD_ROOT, 'automation_status_panel.csv');
+const SOCIAL_JSON = path.join(DASHBOARD_ROOT, 'data', 'social', 'latest.json');
 
 async function readJson(file) {
   try {
@@ -226,7 +227,7 @@ async function appendLog(entry) {
 }
 
 async function main() {
-  const [website, meta] = await Promise.all([readJson(WEBSITE_JSON), readJson(META_JSON)]);
+  const [website, meta, social] = await Promise.all([readJson(WEBSITE_JSON), readJson(META_JSON), readJson(SOCIAL_JSON)]);
   const dataSourceRows = readCsv(DATA_SOURCE_CSV);
   const agentRows = readCsv(AGENT_STATUS_CSV);
   const automationRows = readCsv(AUTOMATION_STATUS_CSV);
@@ -241,6 +242,7 @@ async function main() {
   const blockedItems = collectBlockedItems(dataSourceHealth);
   const risks = collectRisks(websiteSummary, metaSummary);
   const wins = collectWins(websiteSummary, metaSummary);
+  const socialInsights = Array.isArray(social?.insights) ? social.insights.slice(0, 3) : [];
   const decisions = decisionsNeeded(dataSourceHealth);
 
   const payload = {
@@ -254,6 +256,7 @@ async function main() {
     actions,
     blockedItems,
     risks,
+    socialHighlights: socialInsights,
     wins,
     decisionsNeeded: decisions
   };

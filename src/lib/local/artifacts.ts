@@ -9,7 +9,8 @@ import type {
   WebsiteConversionSnapshot,
   MetaAdsSnapshot,
   ExecutiveSummary,
-  IndustryPulseSnapshot
+  IndustryPulseSnapshot,
+  SocialIntelligenceSnapshot
 } from "@/lib/types/dashboard";
 
 const DASHBOARD_ROOT = path.resolve(process.cwd(), "..", "dashboard");
@@ -17,6 +18,7 @@ const WEBSITE_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "website", "late
 const META_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "meta", "latest.json");
 const EXEC_SUMMARY_PATH = path.join(DASHBOARD_ROOT, "data", "executive", "latest.json");
 const INDUSTRY_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "industry", "latest.json");
+const SOCIAL_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "social", "latest.json");
 const AGENT_STATUS_PATH = path.join(DASHBOARD_ROOT, "agent_status_panel.csv");
 const AUTOMATION_STATUS_PATH = path.join(DASHBOARD_ROOT, "automation_status_panel.csv");
 const DATA_SOURCE_MATRIX_PATH = path.join(DASHBOARD_ROOT, "data_source_access_matrix.csv");
@@ -26,6 +28,7 @@ export type LocalDashboardArtifacts = {
   metaSnapshot: MetaAdsSnapshot | null;
   executiveSummary: ExecutiveSummary | null;
   industrySnapshot: IndustryPulseSnapshot | null;
+  socialSnapshot: SocialIntelligenceSnapshot | null;
   agentStatus: AgentStatusPanelEntry[];
   automationStatus: AutomationStatusEntry[];
   dataSourceMatrix: DataSourceAccessEntry[];
@@ -34,11 +37,12 @@ export type LocalDashboardArtifacts = {
 };
 
 export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtifacts> {
-  const [snapshot, meta, executive, industry, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
+  const [snapshot, meta, executive, industry, social, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
     readJsonIfExists<WebsiteConversionSnapshot>(WEBSITE_SNAPSHOT_PATH),
     readJsonIfExists<MetaAdsSnapshot>(META_SNAPSHOT_PATH),
     readJsonIfExists<ExecutiveSummary>(EXEC_SUMMARY_PATH),
     readJsonIfExists<IndustryPulseSnapshot>(INDUSTRY_SNAPSHOT_PATH),
+    readJsonIfExists<SocialIntelligenceSnapshot>(SOCIAL_SNAPSHOT_PATH),
     readCsvIfExists(AGENT_STATUS_PATH),
     readCsvIfExists(AUTOMATION_STATUS_PATH),
     readCsvIfExists(DATA_SOURCE_MATRIX_PATH)
@@ -55,6 +59,7 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
     metaSnapshot: meta,
     executiveSummary: executive,
     industrySnapshot: industry,
+    socialSnapshot: social,
     agentStatus,
     automationStatus,
     dataSourceMatrix,

@@ -33,6 +33,7 @@ import { MetaAdsPanel } from "./MetaAdsPanel";
 import { MetaWebsiteComparison } from "./MetaWebsiteComparison";
 import { ExecutiveSummaryPanel } from "./ExecutiveSummaryPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
+import { SocialIntelligencePanel } from "./SocialIntelligencePanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { AutomationStatusPanel } from "./AutomationStatusPanel";
@@ -170,6 +171,7 @@ export function DashboardShell({ data, agents }: Props) {
             <div className="column space-y-8">
               <WarRoomPanel data={data.warRoom} />
               <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
+              <SocialIntelligencePanel snapshot={data.socialIntelligence} />
             </div>
           </div>
 
