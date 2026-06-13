@@ -558,6 +558,38 @@ export type SocialIntelligenceSnapshot = {
   insights: SocialInsight[];
 };
 
+export type LeadIntelligenceSnapshot = {
+  generatedAt: string;
+  categories: string[];
+  leads: Array<{
+    name: string | null;
+    organization: string | null;
+    title: string | null;
+    category: string;
+    opportunityType: string;
+    sourceUrl: string | null;
+    evidence: string;
+    whyItMatters: string;
+    angle: string;
+    introPath: string;
+    pathType: string;
+    priority: string;
+    confidence: string;
+    status: string;
+    hubspotId?: string | null;
+    nextAction: string;
+    owner: string;
+    lastReviewed: string;
+    notes?: string;
+  }>;
+  summary: {
+    categories: Array<{ category: string; count: number }>;
+    warmIntros: LeadIntelligenceSnapshot['leads'];
+    highPriority: LeadIntelligenceSnapshot['leads'];
+    researchNeeded: LeadIntelligenceSnapshot['leads'];
+  };
+};
+
 export type AgentStatusPanelEntry = {
   agentName: string;
   cadence: string | null;
