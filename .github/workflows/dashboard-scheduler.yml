@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which job to run (website|meta|executive)"
+        description: "Which job to run (website|meta|industry|executive)"
         required: true
         default: "website"
   schedule:
     - cron: "0 10 * * *" # Website agent at 02:00 PT (10:00 UTC)
     - cron: "0 11 * * *" # Meta agent at 03:00 PT (11:00 UTC)
-    - cron: "0 12 * * *" # Executive Command refresh at 04:00 PT (12:00 UTC)
+    - cron: "0 12 * * *" # Industry Pulse at 04:00 PT (12:00 UTC)
+    - cron: "0 13 * * *" # Executive Command refresh at 05:00 PT (13:00 UTC)
 
 jobs:
   website:
@@ -51,8 +52,19 @@ jobs:
           cp .env.meta.ci .env.meta
           op run --env-file .env.meta -- npm run meta:run
 
+  industry:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'industry' || github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Industry Pulse
+        run: npm run industry:run
+
   executive:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'executive' || github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'executive' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
