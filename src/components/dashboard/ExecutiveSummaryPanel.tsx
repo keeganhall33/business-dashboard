@@ -62,6 +62,37 @@ export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary 
         </div>
       ) : null}
 
+      {summary.leadHighlights?.length ? (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Lead highlights</h4>
+          <LeadInlineList leads={summary.leadHighlights} empty="No top lead opportunities." />
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {summary.leadWarmIntros ? (
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Warm intro opportunities</h4>
+            <LeadInlineList leads={summary.leadWarmIntros} empty="No warm intros queued." />
+          </div>
+        ) : null}
+        {summary.leadResearchNeeded ? (
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Lead research blockers</h4>
+            <LeadInlineList leads={summary.leadResearchNeeded} empty="No blocked research." tone="warning" />
+          </div>
+        ) : null}
+      </div>
+
+      {summary.leadActions?.length ? (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Next business development actions</h4>
+          <LeadInlineList leads={summary.leadActions} empty="No actions queued." tone="accent" />
+        </div>
+      ) : null}
+
+      {summary.leadHygiene ? <LeadHygieneBar hygiene={summary.leadHygiene} /> : null}
+
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Decisions needed</h4>
         <SummaryList items={summary.decisionsNeeded} empty="No pending decisions." />
@@ -84,6 +115,43 @@ function SummaryList({ title, items, empty, tone }: { title?: string; items: str
           <li key={`${entry}-${idx}`}>{entry}</li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function LeadInlineList({ leads, empty, tone }: { leads: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }> | undefined; empty: string; tone?: "warning" | "accent" }) {
+  if (!leads?.length) {
+    return <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">{empty}</div>;
+  }
+  const toneClass = tone === "warning" ? "text-amber-200" : tone === "accent" ? "text-sky-200" : "text-zinc-100";
+  return (
+    <ul className="mt-2 space-y-1 text-xs">
+      {leads.map((lead, idx) => (
+        <li key={`${lead.organization}-${idx}`} className={`rounded-xl border border-white/5 bg-black/20 px-3 py-2 ${toneClass}`}>
+          {(lead.name || lead.organization) ?? 'Lead'} → {lead.nextAction ?? 'Next step TBD'} ({lead.priority ?? 'priority?'})
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LeadHygieneBar({ hygiene }: { hygiene: { missingData: number; stale: number; duplicates: number; highPriorityNoOwner: number } }) {
+  const items = [
+    { label: 'Missing data', value: hygiene.missingData },
+    { label: 'Stale', value: hygiene.stale },
+    { label: 'Duplicates', value: hygiene.duplicates },
+    { label: 'High-priority no owner', value: hygiene.highPriorityNoOwner }
+  ];
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-[11px] text-white/80">
+      <div className="text-xs uppercase tracking-[0.25em] text-white/50">Lead hygiene</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span key={item.label} className="rounded-full border border-white/15 bg-black/40 px-3 py-1">
+            {item.label}: {item.value}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

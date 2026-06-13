@@ -512,6 +512,16 @@ export type ExecutiveSummary = {
   risks: string[];
   wins: string[];
   socialHighlights?: Array<{ platform: string; title: string; nextIdea: string; confidence: string }>;
+  leadHighlights?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null; status?: string | null }>;
+  leadWarmIntros?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  leadResearchNeeded?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  leadHygiene?: {
+    missingData: number;
+    stale: number;
+    duplicates: number;
+    highPriorityNoOwner: number;
+  };
+  leadActions?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
   decisionsNeeded: string[];
 };
 
@@ -580,13 +590,54 @@ export type LeadIntelligenceSnapshot = {
     nextAction: string;
     owner: string;
     lastReviewed: string;
+    dueDate?: string | null;
     notes?: string;
+    sourceType?: string;
+    issues?: string[];
+    daysSinceReview?: number | null;
   }>;
   summary: {
     categories: Array<{ category: string; count: number }>;
-    warmIntros: LeadIntelligenceSnapshot['leads'];
-    highPriority: LeadIntelligenceSnapshot['leads'];
-    researchNeeded: LeadIntelligenceSnapshot['leads'];
+    warmIntros: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    topOpportunities: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    researchNeeded: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    missingData: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    stale: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    duplicates: Array<{ key: string; leads: Array<LeadIntelligenceSnapshot['leads'][number]> }>;
+    recommendedActions: Array<{
+      name: string | null;
+      organization: string | null;
+      priority: string | null;
+      status: string | null;
+      hubspotId?: string | null;
+      pathType?: string | null;
+      nextAction?: string | null;
+      owner?: string | null;
+    }>;
+  };
+  quality: {
+    missingCategory: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingStatus: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingEvidence: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingNextAction: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingOwner: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    warmIntros: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    staleLeads: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    highPriorityNoOwner: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    duplicates: Array<{ key: string; leads: Array<LeadIntelligenceSnapshot['leads'][number]> }>;
+  };
+  meta: {
+    mode: 'hubspot-live' | 'snapshot';
+    recordCounts: {
+      manual: number;
+      snapshot: number;
+      hubspot: {
+        companies: number;
+        contacts: number;
+        deals: number;
+        tasks: number;
+      };
+    };
   };
 };
 

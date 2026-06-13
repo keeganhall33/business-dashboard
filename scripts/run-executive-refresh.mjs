@@ -14,6 +14,7 @@ const DATA_SOURCE_CSV = path.join(DASHBOARD_ROOT, 'data_source_access_matrix.csv
 const AGENT_STATUS_CSV = path.join(DASHBOARD_ROOT, 'agent_status_panel.csv');
 const AUTOMATION_STATUS_CSV = path.join(DASHBOARD_ROOT, 'automation_status_panel.csv');
 const SOCIAL_JSON = path.join(DASHBOARD_ROOT, 'data', 'social', 'latest.json');
+const LEADS_JSON = path.join(DASHBOARD_ROOT, 'data', 'leads', 'latest.json');
 
 async function readJson(file) {
   try {
@@ -227,7 +228,12 @@ async function appendLog(entry) {
 }
 
 async function main() {
-  const [website, meta, social] = await Promise.all([readJson(WEBSITE_JSON), readJson(META_JSON), readJson(SOCIAL_JSON)]);
+  const [website, meta, social, leads] = await Promise.all([
+    readJson(WEBSITE_JSON),
+    readJson(META_JSON),
+    readJson(SOCIAL_JSON),
+    readJson(LEADS_JSON)
+  ]);
   const dataSourceRows = readCsv(DATA_SOURCE_CSV);
   const agentRows = readCsv(AGENT_STATUS_CSV);
   const automationRows = readCsv(AUTOMATION_STATUS_CSV);
@@ -243,6 +249,18 @@ async function main() {
   const risks = collectRisks(websiteSummary, metaSummary);
   const wins = collectWins(websiteSummary, metaSummary);
   const socialInsights = Array.isArray(social?.insights) ? social.insights.slice(0, 3) : [];
+  const leadSummary = leads?.summary ?? {};
+  const leadHighlights = Array.isArray(leadSummary.topOpportunities) ? leadSummary.topOpportunities.slice(0, 3) : [];
+  const leadWarmIntros = Array.isArray(leadSummary.warmIntros) ? leadSummary.warmIntros.slice(0, 3) : [];
+  const leadResearchNeeded = Array.isArray(leadSummary.researchNeeded) ? leadSummary.researchNeeded.slice(0, 3) : [];
+  const leadActions = Array.isArray(leadSummary.recommendedActions) ? leadSummary.recommendedActions.slice(0, 3) : [];
+  const leadQuality = leads?.quality ?? {};
+  const leadHygiene = {
+    missingData: leadSummary.missingData?.length ?? 0,
+    stale: leadSummary.stale?.length ?? 0,
+    duplicates: leadSummary.duplicates?.length ?? 0,
+    highPriorityNoOwner: leadQuality.highPriorityNoOwner?.length ?? 0
+  };
   const decisions = decisionsNeeded(dataSourceHealth);
 
   const payload = {
@@ -257,6 +275,11 @@ async function main() {
     blockedItems,
     risks,
     socialHighlights: socialInsights,
+    leadHighlights,
+    leadWarmIntros,
+    leadResearchNeeded,
+    leadActions,
+    leadHygiene,
     wins,
     decisionsNeeded: decisions
   };
