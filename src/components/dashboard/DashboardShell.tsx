@@ -31,6 +31,7 @@ import { CommandBar } from "./CommandBar";
 import { formatRelativeTimeFromNow } from "@/lib/date";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { MetaWebsiteComparison } from "./MetaWebsiteComparison";
+import { ExecutiveSummaryPanel } from "./ExecutiveSummaryPanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { AutomationStatusPanel } from "./AutomationStatusPanel";
@@ -133,6 +134,7 @@ export function DashboardShell({ data, agents }: Props) {
       >
         <div className="responsive-columns" data-align="wide">
           <div className="column column-wide space-y-8">
+            <ExecutiveSummaryPanel summary={data.executiveSummary} />
             <WebsiteConversionPanel snapshot={data.websiteConversion} />
             <ExecutiveCommandPanel data={data.executiveCommand} />
             <RevenueEnginePanel data={data.revenueEngine} />

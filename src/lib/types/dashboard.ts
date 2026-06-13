@@ -460,6 +460,60 @@ export type MetaAdsSnapshot = {
   };
 };
 
+export type ExecutiveWebsiteSummary = {
+  available: boolean;
+  message?: string;
+  revenue?: number | null;
+  orders?: number | null;
+  topProduct?: string | null;
+  sessions?: number | null;
+  purchases?: number | null;
+  warnings?: string[];
+};
+
+export type ExecutiveMetaSummary = {
+  available: boolean;
+  message?: string;
+  spend?: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+  roas?: number | null;
+  purchases?: number | null;
+};
+
+export type ExecutiveAction = {
+  action: string;
+  why: string;
+  source?: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  owner?: string | null;
+  timing?: string | null;
+};
+
+export type ExecutiveSummary = {
+  generatedAt: string;
+  websiteSummary: ExecutiveWebsiteSummary;
+  metaSummary: ExecutiveMetaSummary;
+  comparison: {
+    caveat: string;
+    metaSpend: number | null;
+    metaClicks: number | null;
+    metaImpressions: number | null;
+    ga4Sessions: number | null;
+    wooRevenue: number | null;
+    wooOrders: number | null;
+    blendedRoas: number | null;
+  };
+  dataSourceHealth: Array<{ name: string; status: string; lastVerified: string | null; notes: string | null }>;
+  agentHealth: Array<{ agent: string; cadence: string | null; lastRun: string | null; runStatus: string | null; nextRun: string | null; issues: string | null }>;
+  automationHealth: Array<{ job: string; frequency: string | null; lastRun: string | null; result: string | null; nextRun: string | null; alertStatus: string | null; notes: string | null }>;
+  actions: ExecutiveAction[];
+  blockedItems: Array<{ name: string; detail: string | null }>;
+  risks: string[];
+  wins: string[];
+  decisionsNeeded: string[];
+};
+
 export type AgentStatusPanelEntry = {
   agentName: string;
   cadence: string | null;
@@ -570,6 +624,7 @@ export type DashboardOverviewResponse = {
   commerceTelemetry?: CommerceTelemetry;
   websiteConversion?: WebsiteConversionSnapshot | null;
   metaAds?: MetaAdsSnapshot | null;
+  executiveSummary?: ExecutiveSummary | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];
   dataSourceAccess?: DataSourceAccessEntry[];

@@ -7,12 +7,14 @@ import type {
   DashboardActionItem,
   DataSourceAccessEntry,
   WebsiteConversionSnapshot,
-  MetaAdsSnapshot
+  MetaAdsSnapshot,
+  ExecutiveSummary
 } from "@/lib/types/dashboard";
 
 const DASHBOARD_ROOT = path.resolve(process.cwd(), "..", "dashboard");
 const WEBSITE_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "website", "latest.json");
 const META_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "meta", "latest.json");
+const EXEC_SUMMARY_PATH = path.join(DASHBOARD_ROOT, "data", "executive", "latest.json");
 const AGENT_STATUS_PATH = path.join(DASHBOARD_ROOT, "agent_status_panel.csv");
 const AUTOMATION_STATUS_PATH = path.join(DASHBOARD_ROOT, "automation_status_panel.csv");
 const DATA_SOURCE_MATRIX_PATH = path.join(DASHBOARD_ROOT, "data_source_access_matrix.csv");
@@ -20,6 +22,7 @@ const DATA_SOURCE_MATRIX_PATH = path.join(DASHBOARD_ROOT, "data_source_access_ma
 export type LocalDashboardArtifacts = {
   websiteSnapshot: WebsiteConversionSnapshot | null;
   metaSnapshot: MetaAdsSnapshot | null;
+  executiveSummary: ExecutiveSummary | null;
   agentStatus: AgentStatusPanelEntry[];
   automationStatus: AutomationStatusEntry[];
   dataSourceMatrix: DataSourceAccessEntry[];
@@ -28,9 +31,10 @@ export type LocalDashboardArtifacts = {
 };
 
 export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtifacts> {
-  const [snapshot, meta, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
+  const [snapshot, meta, executive, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
     readJsonIfExists<WebsiteConversionSnapshot>(WEBSITE_SNAPSHOT_PATH),
     readJsonIfExists<MetaAdsSnapshot>(META_SNAPSHOT_PATH),
+    readJsonIfExists<ExecutiveSummary>(EXEC_SUMMARY_PATH),
     readCsvIfExists(AGENT_STATUS_PATH),
     readCsvIfExists(AUTOMATION_STATUS_PATH),
     readCsvIfExists(DATA_SOURCE_MATRIX_PATH)
@@ -45,6 +49,7 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
   return {
     websiteSnapshot: snapshot,
     metaSnapshot: meta,
+    executiveSummary: executive,
     agentStatus,
     automationStatus,
     dataSourceMatrix,
