@@ -30,10 +30,11 @@ const agentOutputPath = path.resolve('../dashboard/data/website/latest.json');
 const agentLogPath = path.resolve('../dashboard/logs/website_agent.log');
 
 function baseLog(payload) {
-  return fs.appendFile(
-    agentLogPath,
-    JSON.stringify({ timestamp: new Date().toISOString(), ...payload }) + '\n'
-  );
+  return fs.mkdir(path.dirname(agentLogPath), { recursive: true })
+    .then(() => fs.appendFile(
+      agentLogPath,
+      JSON.stringify({ timestamp: new Date().toISOString(), ...payload }) + '\n'
+    ));
 }
 
 async function sendSchedulerAlert(payload) {
