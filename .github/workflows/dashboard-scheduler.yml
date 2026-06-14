@@ -1,0 +1,124 @@
+name: Dashboard Scheduler
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which job to run (website|meta|industry|cloudflare|leads|social|executive)"
+        required: true
+        default: "website"
+  schedule:
+    - cron: "0 10 * * *" # Website agent at 02:00 PT (10:00 UTC)
+    - cron: "0 11 * * *" # Meta agent at 03:00 PT (11:00 UTC)
+    - cron: "0 12 * * *" # Industry Pulse at 04:00 PT (12:00 UTC)
+    - cron: "30 12 * * *" # Cloudflare telemetry at 04:30 PT (12:30 UTC)
+    - cron: "0 13 * * MON" # Lead Intelligence Monday 06:00 PT (13:00 UTC)
+    - cron: "0 4 * * MON" # Social Intelligence Sunday 20:00 PT (Monday 04:00 UTC)
+    - cron: "0 13 * * *" # Executive Command refresh at 05:00 PT (13:00 UTC)
+
+jobs:
+  website:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'website' || github.event_name == 'schedule' && github.event.schedule == '0 10 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install 1Password CLI
+        uses: 1password/install-op-cli-action@v1
+      - name: Run Website Agent
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
+        run: |
+          cp .env.website.ci .env.website
+          op run --env-file .env.website -- npm run website:run
+
+  meta:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'meta' || github.event_name == 'schedule' && github.event.schedule == '0 11 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install 1Password CLI
+        uses: 1password/install-op-cli-action@v1
+      - name: Run Meta Agent
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
+        run: |
+          cp .env.meta.ci .env.meta
+          op run --env-file .env.meta -- npm run meta:run
+
+  industry:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'industry' || github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Industry Pulse
+        run: npm run industry:run
+
+  cloudflare:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'cloudflare' || github.event_name == 'schedule' && github.event.schedule == '30 12 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install 1Password CLI
+        uses: 1password/install-op-cli-action@v1
+      - name: Run Cloudflare Telemetry
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          cp .env.cloudflare.ci .env.cloudflare
+          op run --env-file .env.cloudflare -- npm run cloudflare:run
+
+  leads:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'leads' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * MON'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install 1Password CLI
+        uses: 1password/install-op-cli-action@v1
+      - name: Run Lead Intelligence
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+        run: |
+          cp .env.leads.ci .env.leads
+          op run --env-file .env.leads -- npm run leads:run
+
+  social:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'social' || github.event_name == 'schedule' && github.event.schedule == '0 4 * * MON'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Social Intelligence
+        run: npm run social:run
+
+  executive:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'executive' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Executive Refresh
+        run: npm run executive:refresh
