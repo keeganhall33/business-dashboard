@@ -21,7 +21,8 @@ const logPath = path.resolve('../dashboard/logs/meta_ads_agent.log');
 
 function appendLog(payload) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...payload });
-  return fs.appendFile(logPath, line + '\n');
+  return fs.mkdir(path.dirname(logPath), { recursive: true })
+    .then(() => fs.appendFile(logPath, line + '\n'));
 }
 
 async function sendSchedulerAlert(payload) {
