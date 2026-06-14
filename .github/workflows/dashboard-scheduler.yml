@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Install 1Password CLI
         uses: 1Password/install-cli-action@v1
       - name: Run Website Agent
@@ -50,6 +52,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Install 1Password CLI
         uses: 1Password/install-cli-action@v1
       - name: Run Meta Agent
@@ -75,6 +79,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Run Industry Pulse
         run: npm run industry:run
 
@@ -86,6 +92,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Install 1Password CLI
         uses: 1Password/install-cli-action@v1
       - name: Run Cloudflare Telemetry
@@ -109,6 +117,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Install 1Password CLI
         uses: 1Password/install-cli-action@v1
       - name: Run Lead Intelligence
@@ -133,6 +143,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Run Social Intelligence
         run: npm run social:run
 
@@ -144,5 +156,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Run Executive Refresh
         run: npm run executive:refresh
