@@ -52,14 +52,25 @@ export function HeaderStatusBar({ metrics, refreshedAtIso, controls }: Props) {
             <div className="flex gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden snap-x snap-mandatory">
               {metrics.map((metric) => (
                 <div key={metric.metricKey} className="min-w-[86%] snap-start sm:min-w-[70%]">
-                  <MetricCard metric={metric} density="compact" dashboardUpdatedAtIso={refreshedAtIso} />
+                  <MetricCard
+                    metric={metric}
+                    density="compact"
+                    dashboardUpdatedAtIso={refreshedAtIso}
+                    hideSupportingDetails
+                  />
                 </div>
               ))}
             </div>
 
             <div className="hidden md:grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
               {metrics.map((metric) => (
-                <MetricCard key={metric.metricKey} metric={metric} density="comfortable" dashboardUpdatedAtIso={refreshedAtIso} />
+                <MetricCard
+                  key={metric.metricKey}
+                  metric={metric}
+                  density="compact"
+                  dashboardUpdatedAtIso={refreshedAtIso}
+                  hideSupportingDetails
+                />
               ))}
             </div>
           </>
