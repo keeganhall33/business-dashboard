@@ -7,6 +7,7 @@ import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { CloudflarePanel } from "./CloudflarePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
 import { AutomationPanel } from "./AutomationPanel";
+import { MetaAdsPanel } from "./MetaAdsPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -20,7 +21,10 @@ export function DashboardShell({ data }: Props) {
   const survivalSnapshot = data.survivalStrip ?? null;
   const schedulerJobs = data.schedulerJobs ?? [];
   const schedulerSummary = data.schedulerSummary ?? null;
-  const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "FALLBACK" : "BROKEN";
+  const metaSnapshot = data.metaAds ?? null;
+  const socialSnapshot = data.socialIntelligence ?? null;
+  const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "PARTIAL" : "BROKEN";
+  const metaPanelMode = metaSnapshot?.status === "LIVE" ? "LIVE" : metaSnapshot?.status === "PARTIAL" ? "PARTIAL" : "FALLBACK";
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
@@ -33,8 +37,8 @@ export function DashboardShell({ data }: Props) {
         <ul className="mt-4 space-y-1 text-sm text-amber-100/90">
           <li>• Command Center = RED while audit mode is active.</li>
           <li>• Website + Cloudflare slices = GREEN/LIVE with artifact proof.</li>
-          <li>• Scheduler, Meta, Social, Pipeline, War Room, Executive = locked.</li>
-          <li>• Automation claims are disabled until Fix Wave 3.</li>
+          <li>• Meta telemetry is live; Social, Pipeline, War Room, Executive remain locked.</li>
+          <li>• Scheduler automation claims stay disabled until Fix Wave 3 completes.</li>
         </ul>
         <div className="mt-4 text-xs uppercase tracking-[0.25em] text-amber-200/60">Audit containment build: e96bc28</div>
       </section>
@@ -84,6 +88,22 @@ export function DashboardShell({ data }: Props) {
         detail="Revenue engine, money-leak insights, and Fastest Path analysis stay OFF until upcoming Fix Wave 3 proves the inputs."
       />
 
+      {metaSnapshot ? (
+        <PanelWrapper mode={metaPanelMode} refreshedAtIso={metaSnapshot.generatedAt}>
+          <MetaAdsPanel snapshot={metaSnapshot} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Meta panel hidden"
+          detail="Meta reporting not available. Run the meta agent to populate dashboard/data/meta/latest.json."
+        />
+      )}
+
+      <PanelAuditPlaceholder
+        title="Social telemetry pending"
+        detail="Social telemetry pending. Current source is fallback/manual only, so the Social panel remains hidden until a live feed is verified."
+      />
+
       <PanelAuditPlaceholder
         title="Action queue locked"
         detail="Action queue automation is disabled during audit mode. Tasks will reappear after verification."
@@ -105,10 +125,6 @@ export function DashboardShell({ data }: Props) {
         detail="Supabase pipeline queries are offline in this environment. Once the live feed is restored the full pipeline view will return."
       />
 
-      <PanelAuditPlaceholder
-        title="Social & Meta panels hidden"
-        detail="These panels were sourcing snapshot/manual data. They will stay hidden until their APIs are confirmed live."
-      />
     </div>
   );
 }

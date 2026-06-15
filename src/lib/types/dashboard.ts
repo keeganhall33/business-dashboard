@@ -474,6 +474,7 @@ export type MetaAdsSnapshot = {
     purchaseValue: number;
     roas: number | null;
   };
+  status?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
 };
 
 export type ExecutiveWebsiteSummary = {
@@ -586,6 +587,9 @@ export type SocialInsight = {
 export type SocialIntelligenceSnapshot = {
   generatedAt: string;
   insights: SocialInsight[];
+  mode?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
+  source?: string | null;
+  sourceDetails?: Record<string, unknown>;
 };
 
 export type CloudflareTelemetrySnapshot = {
