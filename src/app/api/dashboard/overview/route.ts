@@ -233,11 +233,15 @@ type ScheduledJobRow = {
   job_name: string;
   cron_expression: string;
   route_path: string;
+  timezone?: string | null;
+  is_active?: boolean | null;
   next_run_at: string | null;
   latestRun?: {
     status: string;
     started_at: string;
     finished_at: string | null;
+    summary?: string | null;
+    error_md?: string | null;
   } | null;
 };
 
@@ -966,6 +970,8 @@ export async function GET(request: Request) {
       agentHealth,
       commerceTelemetry,
       operatingMode,
+      schedulerControlState,
+      schedulerStatusState,
       schedulerJobsRaw,
       tasksAwaitingApproval,
       pendingPlans,
@@ -989,6 +995,8 @@ export async function GET(request: Request) {
       getAgentHealth(),
       getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate }),
       getSystemState("operating_mode"),
+      getSystemState("scheduler_control"),
+      getSystemState("scheduler_status"),
       getScheduledJobsWithLatestRuns(),
       getTasksAwaitingApproval(25),
       getPendingAgentPlans(15),
@@ -1422,12 +1430,53 @@ export async function GET(request: Request) {
         jobName: job.job_name,
         cronExpression: job.cron_expression,
         routePath: job.route_path,
+        timezone: job.timezone ?? null,
+        isActive: job.is_active ?? true,
         lastRunAt: lastRun?.started_at ?? null,
         lastStatus: lastRun?.status ?? null,
         lastDurationSeconds: durationSeconds,
-        nextRunAt: job.next_run_at ?? null
+        lastSummary: lastRun?.summary ?? null,
+        lastError: lastRun?.error_md ?? null,
+        nextRunAt: job.next_run_at ?? null,
+        source: "supabase"
       };
     });
+    const failingCount = schedulerJobs.filter((job) => job.lastStatus === "failed").length;
+    const missingTelemetryCount = schedulerJobs.filter((job) => !job.lastRunAt).length;
+    const schedulerControlJson = (schedulerControlState?.value_json as Record<string, unknown> | undefined) ?? {};
+    const cronEnabled = typeof schedulerControlJson.cronEnabled === "boolean" ? schedulerControlJson.cronEnabled : false;
+    const schedulerStatusJson = (schedulerStatusState?.value_json as Record<string, unknown> | undefined) ?? null;
+    const schedulerSummary = schedulerStatusJson
+      ? {
+          status: (schedulerStatusJson.status as "LIVE" | "PARTIAL" | "BROKEN" | undefined) ?? (cronEnabled ? "PARTIAL" : "BROKEN"),
+          cronEnabled:
+            typeof schedulerStatusJson.cronEnabled === "boolean" ? Boolean(schedulerStatusJson.cronEnabled) : cronEnabled,
+          jobCount: typeof schedulerStatusJson.jobCount === "number" ? schedulerStatusJson.jobCount : schedulerJobs.length,
+          failingCount:
+            typeof schedulerStatusJson.failingCount === "number" ? schedulerStatusJson.failingCount : failingCount,
+          missingTelemetryCount:
+            typeof schedulerStatusJson.missingTelemetryCount === "number"
+              ? schedulerStatusJson.missingTelemetryCount
+              : missingTelemetryCount,
+          lastUpdatedAt:
+            schedulerStatusState?.updated_at ??
+            (typeof schedulerStatusJson.lastUpdatedAt === "string" ? schedulerStatusJson.lastUpdatedAt : null),
+          source: typeof schedulerStatusJson.source === "string" ? schedulerStatusJson.source : "scheduler-status-script"
+        }
+      : {
+          status:
+            schedulerJobs.length === 0
+              ? "BROKEN"
+              : cronEnabled && failingCount === 0 && missingTelemetryCount === 0
+                ? "LIVE"
+                : "PARTIAL",
+          cronEnabled,
+          jobCount: schedulerJobs.length,
+          failingCount,
+          missingTelemetryCount,
+          lastUpdatedAt: new Date().toISOString(),
+          source: "derived"
+        };
 
     const openTaskRows = tasks as TaskRow[];
     const recentTaskRows = recentTasks as TaskRow[];
@@ -1845,6 +1894,7 @@ export async function GET(request: Request) {
       tasks: taskSummaries,
       proofOfWork: proofOfWorkEntries,
       schedulerJobs,
+      schedulerSummary,
       agentSla,
       approvalBottlenecks,
       actionQueue,

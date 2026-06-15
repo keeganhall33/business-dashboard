@@ -132,6 +132,23 @@ jobs:
             ${{ env.DASHBOARD_PATH }}/logs/cloudflare_telemetry.log
           retention-days: 7
 
+  scheduler:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'scheduler'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Record scheduler telemetry snapshot
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npm run scheduler:status
+
   leads:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'leads' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * MON'
     runs-on: ubuntu-latest

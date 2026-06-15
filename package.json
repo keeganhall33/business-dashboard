@@ -18,7 +18,8 @@
     "industry:run": "node scripts/run-industry-pulse.mjs",
     "social:run": "node scripts/run-social-intelligence.mjs",
     "leads:run": "node scripts/run-lead-intelligence.mjs",
-    "cloudflare:run": "node scripts/run-cloudflare-telemetry.mjs"
+    "cloudflare:run": "node scripts/run-cloudflare-telemetry.mjs",
+    "scheduler:status": "node scripts/scheduler-status.mjs"
   },
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
