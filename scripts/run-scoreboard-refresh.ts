@@ -12,12 +12,15 @@ async function main() {
 
 function patchServerOnlyResolution() {
   const stubPath = fileURLToPath(new URL("./server-only-stub.js", import.meta.url));
-  const originalResolveFilename = Module._resolveFilename;
-  Module._resolveFilename = function (request, parent, isMain, options) {
+  type ResolveSignature = (request: string, parent: unknown, isMain: unknown, options: unknown) => string;
+  type ModuleWithResolve = typeof Module & { _resolveFilename?: ResolveSignature };
+  const moduleAny = Module as ModuleWithResolve;
+  const originalResolveFilename = moduleAny._resolveFilename;
+  moduleAny._resolveFilename = function (request: string, parent: unknown, isMain: unknown, options: unknown) {
     if (request === "server-only") {
       return stubPath;
     }
-    return originalResolveFilename.call(this, request, parent, isMain, options);
+    return (originalResolveFilename?.call(this, request, parent, isMain, options) ?? stubPath);
   };
 }
 
