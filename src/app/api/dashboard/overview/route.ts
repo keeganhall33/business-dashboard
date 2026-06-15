@@ -1,5 +1,6 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -28,7 +29,8 @@ import {
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
-import { RangePreset, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
+import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
+import { RangePreset, type AgentHealth, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 export const runtime = "nodejs";
@@ -73,6 +75,12 @@ type ScoreboardMetricStats = {
   changePercent: number | null;
 };
 
+const HEADER_CARD_CONFIG = [
+  { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
+  { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
+  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" }
+] as const;
+
 type TaskRow = {
   id: string;
   title: string;
@@ -113,6 +121,8 @@ type OpportunityRow = {
 };
 
 const opportunityIdRegex = /opportunity id:\s*([a-z0-9_-]+)/gi;
+const opportunityDedupeKey = (name: string | null | undefined, organization: string | null | undefined) =>
+  `${(name ?? "").trim().toLowerCase()}|${(organization ?? "").trim().toLowerCase()}`;
 
 function extractOpportunityIdsFromText(...texts: Array<string | null | undefined>) {
   const joined = texts
@@ -247,6 +257,7 @@ type FinanceSnapshotRow = {
   monthly_burn: number | string | null;
   projected_30d_revenue: number | string | null;
   survival_floor: number | string | null;
+  updated_at?: string | null;
 };
 
 type CollectorRow = {
@@ -354,6 +365,221 @@ function statusFromGap(current: number | null, target: number | null) {
   return "healthy" as const;
 }
 
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0
+});
+
+const percentFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1
+});
+
+const numberFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0
+});
+
+const DEFAULT_EXECUTIVE_DIRECTIVE =
+  "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.";
+const DEFAULT_EXECUTIVE_PRIORITIES = [
+  "Increase AOV via premium tiered pricing",
+  "Fix homepage and product page conversion bottlenecks",
+  "Expand active partnership conversations"
+];
+const DEFAULT_EXECUTIVE_BOTTLENECKS = [
+  "AOV is far below target",
+  "Conversion rate is underperforming",
+  "Pipeline is too thin"
+];
+const DEFAULT_EXECUTIVE_RECOMMENDATION =
+  "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine.";
+const SURVIVAL_STALE_DAYS = 7;
+const DEFAULT_BRAND_POWER_WINS = [
+  "Authority-based storytelling performs better than generic art promotion.",
+  "Collaboration-driven content has stronger prestige impact."
+];
+const DEFAULT_BRAND_POWER_ACTIONS = [
+  "Reposition homepage and campaign copy around Impossible in Pencil.",
+  "Create a collector-status narrative series."
+];
+const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "conversion_rate", "revenue_per_visitor"];
+
+function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
+  if (value == null || Number.isNaN(value)) return null;
+  if (unit === "usd") {
+    return currencyFormatter.format(value);
+  }
+  if (unit === "percent") {
+    return `${percentFormatter.format(value)}%`;
+  }
+  return numberFormatter.format(value);
+}
+
+function metricSeverity(metric: ScoreboardMetricRow) {
+  const current = toNumber(metric.current_value);
+  const target = toNumber(metric.target_value);
+  if (current == null || target == null || target === 0) return 0;
+  return (target - current) / Math.abs(target);
+}
+
+function describePriority(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  const statusLabel = status === "critical" ? "critical" : status === "warning" ? "off track" : "healthy";
+  if (status === "healthy") {
+    return `${name}: ${statusLabel}. Maintain ${current} (target ${target}).`;
+  }
+  return `${name}: ${statusLabel}. Move from ${current} toward ${target}.`;
+}
+
+function describeBottleneck(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  if (status === "healthy") return null;
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return `${name} is ${status === "critical" ? "far below" : "below"} target (${current} vs ${target}).`;
+}
+
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function isMetricOffTrack(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  return status === "critical" || status === "warning";
+}
+
+function dedupeOpportunityRows(opportunities: OpportunityRow[]) {
+  const seen = new Set<string>();
+  const unique: OpportunityRow[] = [];
+  for (const opportunity of opportunities) {
+    const key = opportunityDedupeKey(opportunity.name, opportunity.organization);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(opportunity);
+  }
+  return unique;
+}
+
+function describeBrandWin(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return `${name} is on track (${current} vs ${target}). Keep amplifying this narrative.`;
+}
+
+function describeRevenueLeak(metric: ScoreboardMetricRow) {
+  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
+  if (status === "healthy") return null;
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  const descriptor = status === "critical" ? "far below" : "below";
+  return `${name} is ${descriptor} target (${current} vs ${target}).`;
+}
+
+function describeRevenueFastPath(metric: ScoreboardMetricRow) {
+  const name = metric.metric_name ?? metric.metric_key;
+  const current =
+    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
+  const target =
+    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
+  return {
+    move: `Increase ${name}`,
+    estimatedImpact: `Move from ${current} toward ${target}`
+  };
+}
+
+function describeOpportunityMove(opportunity: OpportunityRow) {
+  const name = opportunity.name ?? "Untitled";
+  const org = opportunity.organization ? ` (${opportunity.organization})` : "";
+  const step = opportunity.next_step?.trim() || "Define next step";
+  const due = opportunity.next_step_due_at ? formatDueDate(opportunity.next_step_due_at) : "no due date";
+  return `${name}${org}: ${step} (${due})`;
+}
+
+function formatDueDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "no due date";
+  const diffDays = Math.round((date.getTime() - Date.now()) / 86400000);
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  if (Math.abs(diffDays) < 14) {
+    return formatter.format(diffDays, "day");
+  }
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function getPriorityMetrics(
+  preferredKeys: string[],
+  metricByKey: Map<string, ScoreboardMetricRow>,
+  count = 3
+) {
+  const selected: ScoreboardMetricRow[] = [];
+  for (const key of preferredKeys) {
+    const metric = metricByKey.get(key);
+    if (isScoreboardMetricRow(metric) && !selected.some((m) => m.metric_key === metric.metric_key)) {
+      selected.push(metric);
+    }
+  }
+  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  if (selected.length >= count) {
+    return selected.slice(0, count);
+  }
+  const sorted = Array.from(metricByKey.values())
+    .filter(isScoreboardMetricRow)
+    .sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  for (const metric of sorted) {
+    if (selected.some((m) => m.metric_key === metric.metric_key)) continue;
+    selected.push(metric);
+    if (selected.length >= count) break;
+  }
+  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
+  return selected.slice(0, count);
+}
+
+function hoursSince(iso: string | null | undefined) {
+  if (!iso) return null;
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  const diffMs = Date.now() - timestamp;
+  if (!Number.isFinite(diffMs) || diffMs < 0) return 0;
+  return diffMs / 36e5;
+}
+
+function normalizeAgentHealth(agent: AgentHealth): AgentHealth {
+  const hoursSinceRun = hoursSince(agent.lastRunAt);
+  let health: AgentHealth["health"] = "healthy";
+
+  if (hoursSinceRun == null || hoursSinceRun > 24) {
+    health = "unhealthy";
+  } else if (agent.openTaskCount >= 25) {
+    health = "warning";
+  }
+
+  return {
+    ...agent,
+    health
+  };
+}
+
 function mapTaskRowToSummary(task: TaskRow) {
   return {
     id: task.id,
@@ -383,13 +609,18 @@ function buildSurvivalStrip(snapshot: FinanceSnapshotRow | null) {
   const projection = toNumber(snapshot?.projected_30d_revenue);
   const runwayDays = cash != null && burn != null && burn > 0 ? Math.round((cash / burn) * 30) : null;
   const configured = cash != null || burn != null || projection != null;
+  const updatedAt = typeof snapshot?.updated_at === "string" ? snapshot?.updated_at : null;
+  const updatedHours = updatedAt ? hoursSince(updatedAt) : null;
+  const isStale = updatedHours == null ? true : updatedHours / 24 > SURVIVAL_STALE_DAYS;
   return {
     configured,
     cashOnHand: cash,
     survivalFloor: floor,
     monthlyBurn: burn,
     projected30dRevenue: projection,
-    runwayDays
+    runwayDays,
+    lastUpdatedAt: updatedAt,
+    isStale
   };
 }
 
@@ -441,6 +672,9 @@ function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string
 }
 
 export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This is intentionally temporary so the UI can render without env/network.
@@ -449,7 +683,22 @@ export async function GET(request: Request) {
       // default (Supabase) runtime path.
       const { loadDashboardOverviewFromSeed } = await import("@/lib/dashboard/seed");
       const seeded = await loadDashboardOverviewFromSeed();
-      return ok(seeded);
+      const artifacts = await loadLocalDashboardArtifacts();
+      return ok({
+        ...seeded,
+        websiteConversion: artifacts.websiteSnapshot,
+        metaAds: artifacts.metaSnapshot,
+        executiveSummary: artifacts.executiveSummary,
+        industryPulse: artifacts.industrySnapshot,
+        socialIntelligence: artifacts.socialSnapshot,
+        cloudflare: artifacts.cloudflareSnapshot,
+        leadIntelligence: artifacts.leadSnapshot,
+        agentStatusPanel: artifacts.agentStatus,
+        automationStatusPanel: artifacts.automationStatus,
+        dataSourceAccess: artifacts.dataSourceMatrix,
+        topActions: artifacts.topActions,
+        blockedItems: artifacts.blockedItems
+      });
     }
 
     // E2E test harness: allow Playwright/Cypress to run without Supabase env + network.
@@ -720,7 +969,8 @@ export async function GET(request: Request) {
       recentIdeaComments,
       ceoQuestionResult,
       recentCeoComments,
-      industryPulseResult
+      industryPulseResult,
+      localArtifacts
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -741,7 +991,8 @@ export async function GET(request: Request) {
       getRecentIdeaComments(30) as Promise<IdeaCommentRow[]>,
       getCeoQuestions({ limit: 250 }) as Promise<{ items: CeoQuestionRow[]; count: number }>,
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
-      getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 })
+      getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
+      loadLocalDashboardArtifacts()
     ]);
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
@@ -817,9 +1068,16 @@ export async function GET(request: Request) {
       "shipped",
       "archived"
     ];
+    const seenIdeaKeys = new Set<string>();
     const ideaBoard = ideaBoardStatuses.reduce<Record<string, unknown>>((acc, status) => {
       acc[status] = ideas
-        .filter((idea) => idea.status === status)
+        .filter((idea) => {
+          if (idea.status !== status) return false;
+          const key = `${idea.agent_key}|${idea.status}|${(idea.title ?? "").trim().toLowerCase()}`;
+          if (seenIdeaKeys.has(key)) return false;
+          seenIdeaKeys.add(key);
+          return true;
+        })
         .slice(0, 50)
         .map((idea) => ({
           id: idea.id,
@@ -889,6 +1147,7 @@ export async function GET(request: Request) {
     const warRoomMessages = await getAgentMessages(warRoomThread.id, 5);
 
     const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
+    metricByKey.delete("active_brand_conversations");
 
     if (commerceTelemetry) {
       const wooSummary = (commerceTelemetry as Record<string, unknown>).woo as Record<string, unknown> | undefined;
@@ -923,45 +1182,78 @@ export async function GET(request: Request) {
       });
     }
 
-    const headerMetricKeys = [
-      "monthly_revenue",
-      "aov",
-      "conversion_rate",
-      "active_brand_conversations"
-    ];
-
-    const headerMetrics = headerMetricKeys
-      .map((key) => {
-        const m = metricByKey.get(key);
-        if (!m) return null;
-        const currentValue = toNumber(m.current_value) ?? 0;
-        const targetValue = toNumber(m.target_value) ?? 0;
+    const headerMetrics = HEADER_CARD_CONFIG.map((card) => {
+      const metric = metricByKey.get(card.cardKey);
+      if (!metric) {
         return {
-          metricKey: m.metric_key,
-          metricName: m.metric_name,
-          category: m.category ?? "general",
-          currentValue,
-          targetValue,
-          deltaPercent: 0,
-          status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-          unit: m.unit ?? null,
-          ownerAgent: m.owner_agent ?? null,
-          measuredAt: m.measured_at ?? null
+          metricKey: card.cardKey,
+          metricName: card.fallbackName,
+          category: "general",
+          currentValue: 0,
+          targetValue: 0,
+          deltaPercent: null,
+          status: "warning" as const,
+          unit: card.fallbackUnit ?? null,
+          ownerAgent: null,
+          measuredAt: null
         };
-      })
-      .filter(Boolean);
+      }
+
+      const currentValue = toNumber(metric.current_value) ?? 0;
+      const targetValue = toNumber(metric.target_value) ?? 0;
+      return {
+        metricKey: metric.metric_key,
+        metricName: metric.metric_name ?? card.fallbackName,
+        category: metric.category ?? "general",
+        currentValue,
+        targetValue,
+        deltaPercent: metric.stats?.changePercent ?? null,
+        status: statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)),
+        unit: metric.unit ?? card.fallbackUnit ?? null,
+        ownerAgent: metric.owner_agent ?? null,
+        measuredAt: metric.measured_at ?? null
+      };
+    });
+
+    const operatingModeJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
+    const directiveMetricKeys = Array.isArray(directive?.related_metric_keys)
+      ? (directive?.related_metric_keys as string[])
+      : [];
+    const priorityMetrics = getPriorityMetrics(directiveMetricKeys, metricByKey);
+    const offTrackPriorityMetrics = priorityMetrics.filter(isMetricOffTrack);
+    const prioritySourceMetrics = offTrackPriorityMetrics.length ? offTrackPriorityMetrics : priorityMetrics;
+    const topPriorities = dedupeStrings(prioritySourceMetrics.map((metric) => describePriority(metric)).filter(Boolean)).slice(
+      0,
+      3
+    );
+
+    const bottleneckMetrics: ScoreboardMetricRow[] = [...offTrackPriorityMetrics];
+    if (bottleneckMetrics.length < 2) {
+      const additional = Array.from(metricByKey.values())
+        .filter(isScoreboardMetricRow)
+        .sort((a, b) => metricSeverity(b) - metricSeverity(a));
+      for (const metric of additional) {
+        if (bottleneckMetrics.some((m) => m.metric_key === metric.metric_key)) continue;
+        if (!isMetricOffTrack(metric)) continue;
+        bottleneckMetrics.push(metric);
+        if (bottleneckMetrics.length >= 3) break;
+      }
+    }
+
+    const bottleneckStatements = dedupeStrings(
+      [
+        typeof operatingModeJson.reason === "string" ? (operatingModeJson.reason as string) : null,
+        ...bottleneckMetrics
+          .map((metric) => describeBottleneck(metric))
+          .filter((statement): statement is string => Boolean(statement))
+      ].filter(Boolean) as string[]
+    ).slice(0, 3);
 
     const executiveCommand = {
-      weeklyDirective:
-        directive?.summary ??
-        "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.",
-      topPriorities: [
-        "Increase AOV via premium tiered pricing",
-        "Fix homepage and product page conversion bottlenecks",
-        "Expand active partnership conversations"
-      ],
-      biggestBottlenecks: ["AOV is far below target", "Conversion rate is underperforming", "Pipeline is too thin"],
-      ceoRecommendation: "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine."
+      weeklyDirective: directive?.summary?.trim() || DEFAULT_EXECUTIVE_DIRECTIVE,
+      topPriorities: topPriorities.length ? topPriorities : DEFAULT_EXECUTIVE_PRIORITIES,
+      biggestBottlenecks: bottleneckStatements.length ? bottleneckStatements : DEFAULT_EXECUTIVE_BOTTLENECKS,
+      ceoRecommendation: directive?.detail_md?.trim() || DEFAULT_EXECUTIVE_RECOMMENDATION
     };
 
     const revenueEngineMetrics = [
@@ -991,47 +1283,55 @@ export async function GET(request: Request) {
           : null
       }));
 
+    const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
+    const revenueLeaks = dedupeStrings(
+      revenueDiagRows
+        .map((metric) => describeRevenueLeak(metric))
+        .filter((value): value is string => Boolean(value))
+    ).slice(0, 3);
+    const fastestPaths = revenueDiagRows
+      .filter((metric) => isMetricOffTrack(metric))
+      .slice(0, 3)
+      .map((metric) => describeRevenueFastPath(metric));
+
     const revenueEngine = {
       metrics: revenueEngineMetrics,
-      moneyLeaks: [
-        "Low AOV is the single largest revenue constraint.",
-        "High cart abandonment is reducing recovered sales.",
-        "Weak conversion rate is suppressing total revenue."
-      ],
-      fastestPathToIncreaseRevenue: [
-        { move: "Raise AOV via premium offer architecture", estimatedImpact: "+$15K to +$20K / month" },
-        { move: "Recover 10% of abandoned carts", estimatedImpact: "+$4K to +$7K / month" }
-      ]
+      moneyLeaks: revenueLeaks,
+      fastestPathToIncreaseRevenue: fastestPaths,
+      isDiagnosticEmpty: revenueLeaks.length === 0 && fastestPaths.length === 0
     };
+
+    const brandPowerMetricRows = ["social_growth_monthly", "engagement_rate", "cultural_relevance_score"]
+      .map((key) => metricByKey.get(key))
+      .filter(isScoreboardMetricRow);
+
+    const brandPowerMetrics = brandPowerMetricRows.map((m) => ({
+      metricKey: m.metric_key,
+      currentValue: toNumber(m.current_value) ?? 0,
+      targetValue: toNumber(m.target_value) ?? 0,
+      status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
+      unit: m.unit ?? null
+    }));
+
+    const brandWins = dedupeStrings(
+      brandPowerMetricRows
+        .filter((metric) => statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)) === "healthy")
+        .map((metric) => describeBrandWin(metric))
+    ).slice(0, 3);
+
+    const brandOpportunities = dedupeStrings(
+      brandPowerMetricRows
+        .map((metric) => describeBottleneck(metric))
+        .filter((statement): statement is string => Boolean(statement))
+    ).slice(0, 3);
 
     const brandPower = {
-      metrics: ["social_growth_monthly", "engagement_rate", "cultural_relevance_score"]
-        .map((key) => metricByKey.get(key))
-        .filter(isScoreboardMetricRow)
-        .map((m) => ({
-          metricKey: m.metric_key,
-          currentValue: toNumber(m.current_value) ?? 0,
-          targetValue: toNumber(m.target_value) ?? 0,
-          status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-          unit: m.unit ?? null
-        })),
-      whatIsWorking: [
-        "Authority-based storytelling performs better than generic art promotion.",
-        "Collaboration-driven content has stronger prestige impact."
-      ],
-      whatToDoNext: [
-        "Reposition homepage and campaign copy around Impossible in Pencil.",
-        "Create a collector-status narrative series."
-      ]
+      metrics: brandPowerMetrics,
+      whatIsWorking: brandWins.length ? brandWins : DEFAULT_BRAND_POWER_WINS,
+      whatToDoNext: brandOpportunities.length ? brandOpportunities : DEFAULT_BRAND_POWER_ACTIONS
     };
 
-    const systemHealth = {
-      dataFreshnessHours: 6,
-      agentTaskCompletionRate: 62,
-      agents: agentHealth
-    };
-
-    const warRoomStateJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
+    const warRoomStateJson = operatingModeJson;
     const dedupedEntries: Array<{
       id: string;
       title: string;
@@ -1055,6 +1355,22 @@ export async function GET(request: Request) {
       });
     }
     dedupedEntries.reverse();
+
+    const triggerReason = typeof warRoomStateJson.reason === "string" ? warRoomStateJson.reason : null;
+    const triggerTimestamp =
+      typeof warRoomStateJson.activatedAt === "string" ? warRoomStateJson.activatedAt : warRoomMessages[0]?.created_at ?? null;
+    const reasonAlreadyLogged = triggerReason
+      ? dedupedEntries.some((entry) => entry.summary.trim() === triggerReason.trim())
+      : true;
+    if (triggerReason && !reasonAlreadyLogged) {
+      dedupedEntries.unshift({
+        id: `war-room-reason-${triggerTimestamp ?? Date.now().toString()}`,
+        title: "War room trigger",
+        summary: triggerReason,
+        detailMd: null,
+        createdAt: triggerTimestamp ?? new Date().toISOString()
+      });
+    }
 
     const warRoom = {
       mode: (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal",
@@ -1278,6 +1594,8 @@ export async function GET(request: Request) {
       supportingDocs: buildSupportingDocs(collector)
     }));
 
+    const normalizedOpportunities = dedupeOpportunityRows(opportunities as OpportunityRow[]);
+
     const pipelineDeals: {
       id: string;
       name: string;
@@ -1293,7 +1611,7 @@ export async function GET(request: Request) {
       supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
     const seenPipelineDeals = new Set<string>();
-    for (const opportunity of opportunities) {
+    for (const opportunity of normalizedOpportunities) {
       if (["won", "lost", "parked"].includes(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
@@ -1317,10 +1635,10 @@ export async function GET(request: Request) {
       if (pipelineDeals.length >= 6) break;
     }
 
-    const activeCount = opportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
-    const readyForOutreachCount = opportunities.filter((o) => o.status === "ready_for_outreach").length;
+    const activeCount = normalizedOpportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
+    const readyForOutreachCount = normalizedOpportunities.filter((o) => o.status === "ready_for_outreach").length;
 
-    const sortedOpportunities = opportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const sortedOpportunities = normalizedOpportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
     const seenTopOpportunities = new Set<string>();
     const topOpportunities: {
       id: string;
@@ -1363,17 +1681,28 @@ export async function GET(request: Request) {
       if (topOpportunities.length >= 5) break;
     }
 
+    const upcomingMoves = normalizedOpportunities
+      .filter((opportunity) => !["won", "lost", "parked"].includes(opportunity.status))
+      .map((opportunity) => ({
+        label: describeOpportunityMove(opportunity),
+        dueAt: opportunity.next_step_due_at ?? null
+      }))
+      .filter((item) => Boolean(item.label));
+
+    upcomingMoves.sort((a, b) => {
+      if (a.dueAt && b.dueAt) return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+      if (a.dueAt) return -1;
+      if (b.dueAt) return 1;
+      return 0;
+    });
+
+    const nextFiveMoves = dedupeStrings(upcomingMoves.map((item) => item.label).filter(Boolean)).slice(0, 5);
+
     const opportunityRadar = {
       activeCount,
       readyForOutreachCount,
       topOpportunities,
-      nextFiveMoves: [
-        "Build 25-brand target list",
-        "Prioritize 10 high-prestige targets",
-        "Prepare pitch angles by category",
-        "Draft outreach assets for approval",
-        "Track response readiness by opportunity"
-      ]
+      nextFiveMoves
     };
 
     const pipelinePanel = {
@@ -1382,6 +1711,20 @@ export async function GET(request: Request) {
     };
 
     const taskSummaries = allTaskRows.map(mapTaskRowToSummary);
+    const scoreboardRefreshJob = schedulerJobs.find((job) => job.jobKey === "scoreboard-refresh");
+    const freshnessHoursRaw = hoursSince(scoreboardRefreshJob?.lastRunAt ?? null);
+    const dataFreshnessHours = freshnessHoursRaw == null ? null : Math.max(0, Math.round(freshnessHoursRaw));
+
+    const totalTasksForRate = taskSummaries.length;
+    const completedTasksForRate = taskSummaries.filter((task) => task.status === "completed").length;
+    const agentTaskCompletionRate =
+      totalTasksForRate > 0 ? Math.round((completedTasksForRate / totalTasksForRate) * 100) : null;
+
+    const systemHealth = {
+      dataFreshnessHours,
+      agentTaskCompletionRate,
+      agents: (agentHealth as AgentHealth[]).map(normalizeAgentHealth)
+    };
     const proofOfWorkEntries: ProofOfWorkEntry[] = taskSummaries
       .filter((task) => {
         if (task.status !== "completed") return false;
@@ -1490,6 +1833,17 @@ export async function GET(request: Request) {
       systemHealth,
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
+      websiteConversion: localArtifacts.websiteSnapshot,
+      metaAds: localArtifacts.metaSnapshot,
+      executiveSummary: localArtifacts.executiveSummary,
+      socialIntelligence: localArtifacts.socialSnapshot,
+      cloudflare: localArtifacts.cloudflareSnapshot,
+      leadIntelligence: localArtifacts.leadSnapshot,
+      agentStatusPanel: localArtifacts.agentStatus,
+      automationStatusPanel: localArtifacts.automationStatus,
+      dataSourceAccess: localArtifacts.dataSourceMatrix,
+      topActions: localArtifacts.topActions,
+      blockedItems: localArtifacts.blockedItems,
       agentKpis,
       ideaBoard: {
         columns: ideaBoard,

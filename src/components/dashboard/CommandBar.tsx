@@ -21,6 +21,7 @@ export function CommandBar({ actionQueue, schedulerJobs, refreshedAtIso }: Props
 
   const automationMissing = schedulerJobs.filter((job) => !job.lastRunAt).length;
   const automationFailed = schedulerJobs.filter((job) => job.lastStatus === "failed").length;
+  const automationTelemetryUnavailable = schedulerJobs.length === 0;
 
   const runCommand = useCallback(async (path: string) => {
     try {
@@ -121,8 +122,14 @@ export function CommandBar({ actionQueue, schedulerJobs, refreshedAtIso }: Props
             </Pill>
             <Pill tone={decisionsDue > 0 ? "amber" : "zinc"}>Decisions {decisionsDue}</Pill>
             <Pill tone={invoicesDue > 0 ? "amber" : "zinc"}>Invoices {invoicesDue}</Pill>
-            <Pill tone={automationFailed > 0 ? "rose" : automationMissing > 0 ? "amber" : "emerald"}>
-              Automation {automationFailed > 0 ? `${automationFailed} failed` : automationMissing > 0 ? `${automationMissing} missing` : "green"}
+            <Pill tone={automationTelemetryUnavailable ? "amber" : automationFailed > 0 ? "rose" : automationMissing > 0 ? "amber" : "emerald"}>
+              {automationTelemetryUnavailable
+                ? "Automation telemetry unavailable"
+                : automationFailed > 0
+                  ? `Automation ${automationFailed} failed`
+                  : automationMissing > 0
+                    ? `Automation ${automationMissing} missing`
+                    : "Automation green"}
             </Pill>
           </div>
         </div>

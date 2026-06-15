@@ -2,8 +2,19 @@ name: Autopilot Scheduler
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch: {}
+    - cron: '0 12 * * *'  # deliverable-harvest (05:00 PT)
+    - cron: '0 13 * * *'  # ceo-digest (06:00 PT)
+    - cron: '10 13 * * *' # weekly-summary (06:10 PT)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which low-risk job to run"
+        required: true
+        type: choice
+        options:
+          - deliverable-harvest
+          - ceo-digest
+          - weekly-summary
 
 permissions:
   contents: read
@@ -15,66 +26,51 @@ jobs:
       BASE_URL: ${{ vars.SCHEDULER_BASE_URL || 'https://keegan-dashboard.fly.dev' }}
       SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
     steps:
-      - name: Compute Pacific time markers
-        id: time
+      - name: Determine target job
+        id: pick
         run: |
-          NOW_PST=$(TZ=America/Los_Angeles date +'%H:%M')
-          DOW_PST=$(TZ=America/Los_Angeles date +'%u')
-          echo "now=$NOW_PST" >> "$GITHUB_OUTPUT"
-          echo "dow=$DOW_PST" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.job }}"
+          else
+            case "${{ github.event.schedule }}" in
+              '0 12 * * *') TARGET="deliverable-harvest" ;;
+              '0 13 * * *') TARGET="ceo-digest" ;;
+              '10 13 * * *') TARGET="weekly-summary" ;;
+              *)
+                echo "Unknown schedule ${{ github.event.schedule }}" >&2
+                exit 1
+                ;;
+            esac
+          fi
+          echo "target_job=$TARGET" >> "$GITHUB_OUTPUT"
+
       - name: Log target endpoint
         run: |
-          echo "Scheduler target: $BASE_URL"
           if [ -z "$SCHEDULER_SECRET" ]; then
-            echo "Using GitHub token auth"
-          else
-            echo "Using shared secret auth"
+            echo "SCHEDULER_SECRET must be configured" >&2
+            exit 1
           fi
-      - name: Daily health check (06:15 PT)
-        if: steps.time.outputs.now == '06:15'
+          echo "Scheduler target: $BASE_URL"
+          echo "Running job: ${{ steps.pick.outputs.target_job }}"
+
+      - name: Call scheduler endpoint
         run: |
-          if [ -n "$SCHEDULER_SECRET" ]; then
-            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
-          else
-            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
-          fi
+          case "${{ steps.pick.outputs.target_job }}" in
+            deliverable-harvest)
+              ENDPOINT="/api/scheduler/deliverable-harvest"
+              ;;
+            ceo-digest)
+              ENDPOINT="/api/scheduler/ceo-digest"
+              ;;
+            weekly-summary)
+              ENDPOINT="/api/scheduler/weekly-summary"
+              ;;
+            *)
+              echo "Unknown job ${{ steps.pick.outputs.target_job }}" >&2
+              exit 1
+              ;;
+          esac
 
           curl -sS --fail -X POST \
-            -H "$AUTH_HEADER" \
-            "$BASE_URL/api/scheduler/daily-health-check"
-      - name: Daily command cycle (07:00 PT)
-        if: steps.time.outputs.now == '07:00'
-        run: |
-          if [ -n "$SCHEDULER_SECRET" ]; then
-            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
-          else
-            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
-          fi
-
-          curl -sS --fail -X POST \
-            -H "$AUTH_HEADER" \
-            "$BASE_URL/api/scheduler/weekly-command-cycle"
-      - name: Midweek opportunity pulse (Wed 11:30 PT)
-        if: steps.time.outputs.dow == '3' && steps.time.outputs.now == '11:30'
-        run: |
-          if [ -n "$SCHEDULER_SECRET" ]; then
-            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
-          else
-            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
-          fi
-
-          curl -sS --fail -X POST \
-            -H "$AUTH_HEADER" \
-            "$BASE_URL/api/scheduler/midweek-opportunity-pulse"
-      - name: Evening closeout (19:30 PT)
-        if: steps.time.outputs.now == '19:30'
-        run: |
-          if [ -n "$SCHEDULER_SECRET" ]; then
-            AUTH_HEADER="x-scheduler-secret: $SCHEDULER_SECRET"
-          else
-            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
-          fi
-
-          curl -sS --fail -X POST \
-            -H "$AUTH_HEADER" \
-            "$BASE_URL/api/scheduler/evening-closeout"
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "$BASE_URL$ENDPOINT"

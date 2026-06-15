@@ -24,7 +24,32 @@ export function CollectorPipelinePanel({ data }: Props) {
     const value = collector.estimatedValue ?? 0;
     return value > max ? value : max;
   }, 0);
-  const totalCollectorValue = collectors.reduce((sum, collector) => sum + (collector.estimatedValue ?? 0), 0);
+  const collectorPipelineValue = collectors.reduce((sum, collector) => sum + (collector.estimatedValue ?? 0), 0);
+  const dealPipelineValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
+  const totalPipelineValue = collectorPipelineValue + dealPipelineValue;
+
+  const hasCollectors = collectors.length > 0;
+  const hasDeals = deals.length > 0;
+
+  if (!hasCollectors && !hasDeals) {
+    return (
+      <section className="ui-glass ui-glass-hover rounded-3xl p-6">
+        <div className="flex items-center gap-3">
+          <span className="ui-status-dot" data-tone="zinc" />
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Collector & Deal Pipeline</div>
+            <p className="mt-1 text-sm text-zinc-400">Tier A/B collectors + licensing deals</p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+            <p className="text-sm text-zinc-400">No collector or deal data available.</p>
+            <p className="mt-2 text-xs text-zinc-500">Either Supabase hasn’t ingested pipeline records yet, or the active list is empty. Update the opportunity tracker to populate this view.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
@@ -44,7 +69,7 @@ export function CollectorPipelinePanel({ data }: Props) {
                   <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Collectors</div>
                   <div className="mt-1 text-lg font-semibold text-zinc-100">Tier A / B</div>
                   <div className="text-xs uppercase tracking-[0.35em] text-zinc-500">
-                    Pipeline {totalCollectorValue != null ? formatCurrency(totalCollectorValue) : "—"}
+                    Pipeline {formatCurrency(totalPipelineValue)}
                   </div>
                 </div>
               </div>
@@ -56,9 +81,9 @@ export function CollectorPipelinePanel({ data }: Props) {
             <PipelineHealthWidget data={data} />
           </div>
           <div className="ui-scroll-snap-x mt-4 flex gap-3 overflow-x-auto pb-2 md:block md:space-y-3 md:overflow-visible">
-            {collectors.length === 0 && (
-              <div className="ui-snap-item w-[86vw] min-w-[280px] rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-zinc-500 md:w-auto md:min-w-0">
-                Add Tier A/B collectors to see relationship status here.
+            {!hasCollectors && (
+              <div className="ui-snap-item w-[86vw] min-w-[280px] rounded-2xl border border-amber-900/40 bg-amber-900/10 p-4 text-sm text-amber-200 md:w-auto md:min-w-0">
+                No collectors logged. Add Tier A/B relationships in Supabase to populate this section.
               </div>
             )}
             {collectors.map((collector) => {
@@ -139,9 +164,9 @@ export function CollectorPipelinePanel({ data }: Props) {
             <span className="text-xs text-zinc-500">{deals.length} active</span>
           </div>
           <div className="ui-scroll-snap-x mt-4 flex gap-3 overflow-x-auto pb-2 md:block md:space-y-3 md:overflow-visible">
-            {deals.length === 0 && (
-              <div className="ui-snap-item w-[86vw] min-w-[280px] rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-zinc-500 md:w-auto md:min-w-0">
-                No active deals tracked. Update the opportunity pipeline to populate this list.
+            {!hasDeals && (
+              <div className="ui-snap-item w-[86vw] min-w-[280px] rounded-2xl border border-amber-900/40 bg-amber-900/10 p-4 text-sm text-amber-200 md:w-auto md:min-w-0">
+                No active deals tracked. Log deals in the opportunity pipeline to populate this list.
               </div>
             )}
             {deals.map((deal) => (

@@ -32,7 +32,6 @@ export async function evaluateWarRoomMode() {
   const monthlyRevenue = getMetric(metrics, "monthly_revenue");
   const aov = getMetric(metrics, "aov");
   const conversion = getMetric(metrics, "conversion_rate");
-  const activeOpps = getMetric(metrics, "active_brand_conversations");
   const dealsClosed = getMetric(metrics, "deals_closed_quarterly");
 
   const triggers: string[] = [];
@@ -42,7 +41,6 @@ export async function evaluateWarRoomMode() {
   const monthlyRevenueTarget = asNumber(monthlyRevenue?.target_value);
   const aovCurrent = asNumber(aov?.current_value);
   const conversionCurrent = asNumber(conversion?.current_value);
-  const activeOppsCurrent = asNumber(activeOpps?.current_value);
   const dealsClosedCurrent = asNumber(dealsClosed?.current_value);
 
   if (
@@ -61,10 +59,6 @@ export async function evaluateWarRoomMode() {
 
   if (Number.isFinite(conversionCurrent) && conversionCurrent < 1.0) {
     triggers.push("Conversion rate is below 1.0%");
-  }
-
-  if (Number.isFinite(activeOppsCurrent) && activeOppsCurrent < 3) {
-    triggers.push("Active opportunities are below 3");
   }
 
   if (Number.isFinite(dealsClosedCurrent) && dealsClosedCurrent <= 0) {

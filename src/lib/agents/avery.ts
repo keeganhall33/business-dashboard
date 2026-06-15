@@ -28,16 +28,12 @@ export async function runAvery(): Promise<AgentRunResult> {
 
   const aov = metricSnapshot(metrics, "aov");
   const conversion = metricSnapshot(metrics, "conversion_rate");
-  const pipeline = metricSnapshot(metrics, "active_brand_conversations");
   const aovAvgValue = aov?.average ?? aov?.current ?? null;
   const aovCurrentValue = aov?.current ?? aov?.average ?? null;
   const aovDeltaValue = aov?.changePercent ?? null;
   const conversionAvgValue = conversion?.average ?? conversion?.current ?? null;
   const conversionCurrentValue = conversion?.current ?? conversion?.average ?? null;
   const conversionDeltaValue = conversion?.changePercent ?? null;
-  const pipelineAvgValue = pipeline?.average ?? pipeline?.current ?? null;
-  const pipelineCurrentValue = pipeline?.current ?? pipeline?.average ?? null;
-  const pipelineDeltaValue = pipeline?.changePercent ?? null;
   const dateEnd = new Date();
   const dateStart = new Date(dateEnd);
   dateStart.setUTCDate(dateStart.getUTCDate() - 30);
@@ -49,19 +45,17 @@ export async function runAvery(): Promise<AgentRunResult> {
   const orders = commerceTelemetry?.woo?.summary?.orders ?? null;
   const sessions = commerceTelemetry?.ga4?.summary?.sessions ?? null;
   const fallbackConversionValue = orders != null && sessions ? (orders / sessions) * 100 : null;
-  const fallbackPipelineValue = (opportunities ?? []).length;
   const resolvedAovAvg = aovAvgValue ?? fallbackAovValue;
   const resolvedAovCurrent = aovCurrentValue ?? fallbackAovValue;
   const resolvedConversionAvg = conversionAvgValue ?? fallbackConversionValue;
   const resolvedConversionCurrent = conversionCurrentValue ?? fallbackConversionValue;
-  const resolvedPipelineAvg = pipelineAvgValue ?? fallbackPipelineValue;
-  const resolvedPipelineCurrent = pipelineCurrentValue ?? fallbackPipelineValue;
+  const activeOpportunityCount = opportunities?.length ?? 0;
   const directiveSummary =
-    `Pricing, conversion, and pipeline are all below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
+    `Pricing and conversion remain below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
       aovDeltaValue
-    )}), conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(conversionDeltaValue)}), active convos ${formatNumberValue(
-      resolvedPipelineAvg
-    )} (current ${formatNumberValue(resolvedPipelineCurrent)}).`;
+    )}), conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(
+      conversionDeltaValue
+    )}). Active opportunities tracked: ${formatNumberValue(activeOpportunityCount)}.`;
 
   const insights = [
     {
@@ -80,12 +74,10 @@ export async function runAvery(): Promise<AgentRunResult> {
     },
     {
       title: "Pipeline expansion must accelerate",
-      summary: `Only ${formatNumberValue(resolvedPipelineCurrent)} convos are live (30d avg ${formatNumberValue(
-        resolvedPipelineAvg
-      )}, Δ ${formatPercent(pipelineDeltaValue)}).`,
+      summary: `Only ${formatNumberValue(activeOpportunityCount)} high-priority opportunities are active right now.`,
       detailMd: "The system needs more high-status opportunities entering the funnel.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     },
     {
       title: "Cross-agent work must stay coordinated",
@@ -101,7 +93,7 @@ export async function runAvery(): Promise<AgentRunResult> {
       title: "Reprioritize all agents around AOV, conversion, and pipeline",
       summary: "Kill low-leverage drift and force concentration on the highest-value bottlenecks.",
       priority: "critical" as const,
-      relatedMetricKeys: ["aov", "conversion_rate", "active_brand_conversations"]
+      relatedMetricKeys: ["aov", "conversion_rate"]
     },
     {
       title: "Sequence work into one clear operating week",
@@ -122,7 +114,7 @@ export async function runAvery(): Promise<AgentRunResult> {
     summary: "Coordinate product, brand, and partnership systems around one premium growth push.",
     detailMd: "The business should behave like a focused luxury operator, not a generalist content machine.",
     priority: "critical" as const,
-    relatedMetricKeys: ["monthly_revenue", "aov", "active_brand_conversations"]
+    relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
   };
 
   const tasks = [
@@ -154,7 +146,7 @@ export async function runAvery(): Promise<AgentRunResult> {
         detailMd: bigBet.detailMd,
         impactScore: 9.1,
         impactWindow: "7d",
-        relatedMetricKeys: ["aov", "conversion_rate", "active_brand_conversations"],
+        relatedMetricKeys: ["aov", "conversion_rate"],
         metadata: {
           sloanUpdates: sloanUpdates.length,
           lyraUpdates: lyraUpdates.length,
@@ -182,7 +174,7 @@ export async function runAvery(): Promise<AgentRunResult> {
           detailMd:
             "Top priorities: premium pricing, conversion clarity, and partnership pipeline expansion.",
           priority: "critical",
-          relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate", "active_brand_conversations"]
+          relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
         }
       ]
     }
@@ -205,8 +197,7 @@ export async function runAvery(): Promise<AgentRunResult> {
         aov_avg_30d: aov?.average ?? null,
         conversion_rate_current: conversion?.current ?? null,
         conversion_rate_avg_30d: conversion?.average ?? null,
-        active_brand_conversations_current: pipeline?.current ?? null,
-        active_brand_conversations_avg_30d: pipeline?.average ?? null
+        active_opportunities_count: activeOpportunityCount
       }
     }
   });

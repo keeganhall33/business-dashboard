@@ -47,26 +47,13 @@ Returns the full command-surface payload used to render the dashboard.
       "unit": "percent",
       "ownerAgent": "sloan",
       "measuredAt": "2026-03-28T18:00:00.000Z"
-    },
-    {
-      "metricKey": "active_brand_conversations",
-      "metricName": "Active Brand Conversations",
-      "category": "partnerships",
-      "currentValue": 3,
-      "targetValue": 10,
-      "deltaPercent": 0,
-      "status": "critical",
-      "unit": "count",
-      "ownerAgent": "noah",
-      "measuredAt": "2026-03-28T18:00:00.000Z"
-    }
   ],
   "executiveCommand": {
     "weeklyDirective": "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.",
     "topPriorities": [
       "Increase AOV via premium tiered pricing",
       "Fix homepage and product page conversion bottlenecks",
-      "Expand active partnership conversations from 3 to 10"
+      "Rebuild the prestige partnership pipeline"
     ],
     "biggestBottlenecks": [
       "AOV is far below target",
@@ -155,6 +142,8 @@ Returns the full command-surface payload used to render the dashboard.
   }
 }
 ```
+
+**Note:** The former `active_brand_conversations` KPI is offline until a live data pipeline exists. The API omits it and downstream surfaces should rely on opportunity counts instead.
 
 ### GET `/api/dashboard/agent/:agentKey`
 ```json

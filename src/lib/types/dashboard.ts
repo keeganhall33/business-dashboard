@@ -46,6 +46,7 @@ export type RevenueEngine = {
   metrics: RevenueMetric[];
   moneyLeaks: string[];
   fastestPathToIncreaseRevenue: Array<{ move: string; estimatedImpact: string }>;
+  isDiagnosticEmpty?: boolean;
 };
 
 export type BrandPower = {
@@ -95,6 +96,8 @@ export type SurvivalStrip = {
   monthlyBurn: number | null;
   projected30dRevenue: number | null;
   runwayDays: number | null;
+  lastUpdatedAt?: string | null;
+  isStale?: boolean;
 };
 
 export type PipelinePanel = {
@@ -406,6 +409,336 @@ export type CommerceTelemetry = {
   };
 };
 
+export type WebsiteConversionSnapshot = {
+  generatedAt: string;
+  ga4?: {
+    totalUsers?: number;
+    sessions?: number;
+    eventCount?: number;
+    addToCartEvents?: number | null;
+    ecommercePurchases?: number | null;
+    purchaseRevenue?: number | null;
+    deviceBreakdown?: Array<{ label: string; sessions: number }>;
+    channelBreakdown?: Array<{ label: string; sessions: number }>;
+    warnings?: string[];
+  };
+  wooCommerce?: {
+    totalRevenue?: number;
+    orderCount?: number;
+    averageOrderValue?: number;
+    topProducts?: Array<{ name: string; units: number; revenue: number }>;
+    recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
+  };
+};
+
+export type MetaAdsCampaign = {
+  campaignId: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  purchases: number | null;
+  purchaseValue: number | null;
+  roas: number | null;
+};
+
+export type MetaAdsSnapshot = {
+  generatedAt: string;
+  accountId: string;
+  range: number; // days
+  campaigns: MetaAdsCampaign[];
+  summary: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    purchases: number;
+    purchaseValue: number;
+    roas: number | null;
+  };
+};
+
+export type ExecutiveWebsiteSummary = {
+  available: boolean;
+  message?: string;
+  revenue?: number | null;
+  orders?: number | null;
+  topProduct?: string | null;
+  sessions?: number | null;
+  purchases?: number | null;
+  warnings?: string[];
+};
+
+export type ExecutiveMetaSummary = {
+  available: boolean;
+  message?: string;
+  spend?: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+  roas?: number | null;
+  purchases?: number | null;
+};
+
+export type ExecutiveAction = {
+  action: string;
+  why: string;
+  source?: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  owner?: string | null;
+  timing?: string | null;
+};
+
+export type ExecutiveSummary = {
+  generatedAt: string;
+  websiteSummary: ExecutiveWebsiteSummary;
+  metaSummary: ExecutiveMetaSummary;
+  comparison: {
+    caveat: string;
+    metaSpend: number | null;
+    metaClicks: number | null;
+    metaImpressions: number | null;
+    ga4Sessions: number | null;
+    wooRevenue: number | null;
+    wooOrders: number | null;
+    blendedRoas: number | null;
+  };
+  dataSourceHealth: Array<{ name: string; status: string; lastVerified: string | null; notes: string | null }>;
+  agentHealth: Array<{ agent: string; cadence: string | null; lastRun: string | null; runStatus: string | null; nextRun: string | null; issues: string | null }>;
+  automationHealth: Array<{ job: string; frequency: string | null; lastRun: string | null; result: string | null; nextRun: string | null; alertStatus: string | null; notes: string | null }>;
+  actions: ExecutiveAction[];
+  blockedItems: Array<{ name: string; detail: string | null }>;
+  risks: string[];
+  wins: string[];
+  socialHighlights?: Array<{ platform: string; title: string; nextIdea: string; confidence: string }>;
+  leadHighlights?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null; status?: string | null }>;
+  leadWarmIntros?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  leadResearchNeeded?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  leadHygiene?: {
+    missingData: number;
+    stale: number;
+    duplicates: number;
+    highPriorityNoOwner: number;
+  };
+  leadActions?: Array<{ name: string | null; organization: string | null; nextAction?: string | null; priority?: string | null }>;
+  cloudflare?: CloudflareTelemetrySnapshot | null;
+  siteHealthWarnings?: string[];
+  siteSecurityRisks?: string[];
+  siteCacheIssues?: string[];
+  decisionsNeeded: string[];
+};
+
+export type IndustryAlert = {
+  title: string;
+  category: string;
+  source: string;
+  sourceUrl?: string | null;
+  date: string;
+  summary?: string | null;
+  whyItMatters: string;
+  opportunity: string;
+  recommendedAction: string;
+  urgency: "high" | "medium" | "low";
+  confidence: "high" | "medium" | "low";
+  related: string[];
+  owner?: string | null;
+  status: string;
+};
+
+export type IndustryPulseSnapshot = {
+  generatedAt: string;
+  sources: Array<{ name: string; url: string; category: string }>;
+  alerts: IndustryAlert[];
+};
+
+export type SocialInsight = {
+  platform: string;
+  title: string;
+  format: string;
+  date: string;
+  metrics: string;
+  engagement: string;
+  collectorSignal?: string | null;
+  why: string;
+  nextIdea: string;
+  confidence: "high" | "medium" | "low";
+  source?: string | null;
+  status: string;
+};
+
+export type SocialIntelligenceSnapshot = {
+  generatedAt: string;
+  insights: SocialInsight[];
+};
+
+export type CloudflareTelemetrySnapshot = {
+  generatedAt: string;
+  zone?: {
+    name?: string | null;
+    status?: string | null;
+    plan?: string | null;
+  } | null;
+  traffic?: {
+    requestsTotal?: number | null;
+    bandwidthBytes?: number | null;
+    cachedPercent?: number | null;
+    uncachedRequests?: number | null;
+    cacheHitRate?: number | null;
+    bandwidthCachedBytes?: number | null;
+    bandwidthUncachedBytes?: number | null;
+  } | null;
+  security?: {
+    threats?: number | null;
+    threatChangePct?: number | null;
+    blockedRequests?: number | null;
+    firewallEvents?: number | null;
+    botRequests?: number | null;
+    botScore?: number | null;
+  } | null;
+  performance?: {
+    avgResponseTimeMs?: number | null;
+    p95ResponseTimeMs?: number | null;
+    cacheHitWarning?: boolean;
+    latencyWarning?: boolean;
+    notes?: string | null;
+  } | null;
+  top?: {
+    countries?: Array<{ name: string; requests: number }>;
+    paths?: Array<{ path: string; requests: number }>;
+  } | null;
+  warnings?: string[];
+  status?: {
+    mode: string;
+    reason?: string;
+    source?: string;
+    zoneId?: string | null;
+    accountId?: string | null;
+  } | null;
+  summary?: {
+    cacheHitRate?: number | null;
+    cacheHealth: 'healthy' | 'needs attention' | 'unknown';
+    trafficHealth: 'active' | 'quiet' | 'unknown';
+    securityPressure?: number | null;
+    warnings?: string[];
+  };
+};
+
+export type LeadIntelligenceSnapshot = {
+  generatedAt: string;
+  categories: string[];
+  leads: Array<{
+    name: string | null;
+    organization: string | null;
+    title: string | null;
+    category: string;
+    opportunityType: string;
+    sourceUrl: string | null;
+    evidence: string;
+    whyItMatters: string;
+    angle: string;
+    introPath: string;
+    pathType: string;
+    priority: string;
+    confidence: string;
+    status: string;
+    hubspotId?: string | null;
+    nextAction: string;
+    owner: string;
+    lastReviewed: string;
+    dueDate?: string | null;
+    notes?: string;
+    sourceType?: string;
+    issues?: string[];
+    daysSinceReview?: number | null;
+  }>;
+  summary: {
+    categories: Array<{ category: string; count: number }>;
+    warmIntros: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    topOpportunities: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    researchNeeded: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    missingData: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    stale: Array<LeadIntelligenceSnapshot['leads'][number]>;
+    duplicates: Array<{ key: string; leads: Array<LeadIntelligenceSnapshot['leads'][number]> }>;
+    recommendedActions: Array<{
+      name: string | null;
+      organization: string | null;
+      priority: string | null;
+      status: string | null;
+      hubspotId?: string | null;
+      pathType?: string | null;
+      nextAction?: string | null;
+      owner?: string | null;
+    }>;
+  };
+  quality: {
+    missingCategory: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingStatus: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingEvidence: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingNextAction: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    missingOwner: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    warmIntros: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    staleLeads: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    highPriorityNoOwner: Array<{ name: string | null; organization: string | null; priority: string | null; status: string | null; hubspotId?: string | null; pathType?: string | null; nextAction?: string | null; owner?: string | null }>;
+    duplicates: Array<{ key: string; leads: Array<LeadIntelligenceSnapshot['leads'][number]> }>;
+  };
+  meta: {
+    mode: 'hubspot-live' | 'snapshot';
+    recordCounts: {
+      manual: number;
+      snapshot: number;
+      hubspot: {
+        companies: number;
+        contacts: number;
+        deals: number;
+        tasks: number;
+      };
+    };
+  };
+};
+
+export type AgentStatusPanelEntry = {
+  agentName: string;
+  cadence: string | null;
+  lastRunAt: string | null;
+  runStatus: string | null;
+  nextRunAt: string | null;
+  issues: string | null;
+  dataSources: string[];
+  actions: string[];
+};
+
+export type AutomationStatusEntry = {
+  jobName: string;
+  frequency: string | null;
+  expectedRunTime: string | null;
+  lastRunAt: string | null;
+  lastResult: string | null;
+  logLink: string | null;
+  nextRunAt: string | null;
+  alertStatus: string | null;
+  notes: string | null;
+};
+
+export type DataSourceAccessEntry = {
+  name: string;
+  status: string;
+  lastVerified: string | null;
+  owner: string | null;
+  credentialLocation: string | null;
+  accessMethod: string | null;
+  notes: string | null;
+};
+
+export type DashboardActionItem = {
+  title: string;
+  detail?: string | null;
+  owner?: string | null;
+  status?: string | null;
+  dueAt?: string | null;
+  tone?: "info" | "success" | "warning" | "danger";
+};
+
 export type LuxuryCollectibleKpis = {
   premiumEdition: {
     targetSellThroughPercent: number; // 0..100
@@ -472,6 +805,16 @@ export type DashboardOverviewResponse = {
   systemHealth: SystemHealth;
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
+  websiteConversion?: WebsiteConversionSnapshot | null;
+  metaAds?: MetaAdsSnapshot | null;
+  executiveSummary?: ExecutiveSummary | null;
+  socialIntelligence?: SocialIntelligenceSnapshot | null;
+  cloudflare?: CloudflareTelemetrySnapshot | null;
+  agentStatusPanel?: AgentStatusPanelEntry[];
+  automationStatusPanel?: AutomationStatusEntry[];
+  dataSourceAccess?: DataSourceAccessEntry[];
+  topActions?: DashboardActionItem[];
+  blockedItems?: DashboardActionItem[];
 
   /** Luxury Cultural Collectible KPI bundle (optional for backwards compatibility). */
   luxuryCollectibles?: LuxuryCollectibleKpis;

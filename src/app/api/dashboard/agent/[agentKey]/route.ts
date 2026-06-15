@@ -1,4 +1,5 @@
 import { notFound, ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
 import {
   getAgentProfile,
@@ -57,7 +58,10 @@ function toNumber(value: unknown) {
   return null;
 }
 
-export async function GET(_req: Request, context: { params: Promise<{ agentKey: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ agentKey: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { agentKey } = await context.params;
 

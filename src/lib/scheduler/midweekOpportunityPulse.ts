@@ -50,7 +50,7 @@ export async function runMidweekOpportunityPulse() {
           expectedImpact: "Restart conversation momentum or decide to park",
           impactScore: 7.8,
           whyThisMatters: "Stalled opportunities rot pipeline health.",
-          relatedMetricKeys: ["active_brand_conversations"],
+          relatedMetricKeys: [],
           requiresApproval: true,
           executionType: "outreach_prep",
           createdBy: "system"

@@ -538,32 +538,18 @@ Example skeleton for Noah:
 
 ```ts
 // src/lib/agents/noah.ts
-import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shared";
+import { AgentRunResult, getSharedAgentContextForAgent, writeAgentOutputs } from "./shared";
 
 export async function runNoah(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
-  const pipeline = metrics.find((m) => m.metric_key === "active_brand_conversations");
+  const { metrics, opportunities } = await getSharedAgentContextForAgent("noah");
+  const activeOpportunities = (opportunities ?? []).filter((opp) => !["won", "lost", "parked"].includes(opp.status));
 
   const insights = [
     {
       title: "Partnership pipeline is too thin",
-      summary: `Only ${pipeline?.current_value} active conversations are live.`,
+      summary: `Only ${activeOpportunities.length} live opportunities are on deck; we need double that to stay healthy.`,
       detailMd: "The opportunity engine needs more top-of-funnel prestige targets.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
-    },
-    {
-      title: "Targeting should skew harder toward prestige leverage",
-      summary: "A smaller set of high-status targets can outperform a larger generic list.",
-      detailMd: "Focus on elite institutions, top sports properties, collectible brands, and culturally resonant figures.",
-      priority: "high" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
-    },
-    {
-      title: "Timing opportunities should be mapped further ahead",
-      summary: "The system benefits from identifying cultural windows before they peak.",
-      detailMd: "This improves pitch timing and creative readiness.",
-      priority: "high" as const,
       relatedMetricKeys: []
     }
   ];
@@ -573,19 +559,7 @@ export async function runNoah(): Promise<AgentRunResult> {
       title: "Build next prestige target list",
       summary: "Identify 25 high-fit institutions, brands, and figures.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
-    },
-    {
-      title: "Map strongest near-term cultural openings",
-      summary: "Identify upcoming moments that align with sports, celebrity, or institutional collaborations.",
-      priority: "high" as const,
       relatedMetricKeys: []
-    },
-    {
-      title: "Prepare target-specific pitch angles",
-      summary: "Define why each target is strategically right.",
-      priority: "high" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
     }
   ];
 
@@ -594,46 +568,15 @@ export async function runNoah(): Promise<AgentRunResult> {
     summary: "Concentrate on a narrow set of high-upside targets with tailored pitch angles.",
     detailMd: "This should improve both deal quality and future brand leverage.",
     priority: "critical" as const,
-    relatedMetricKeys: ["active_brand_conversations", "tier1_brand_collabs"]
+    relatedMetricKeys: []
   };
-
-  const tasks = [
-    {
-      title: "Research 25 prestige-fit targets",
-      description: "Build the next high-value target list with target type, rationale, and next-step suggestion.",
-      priority: "critical" as const,
-      expectedImpact: "Expand deal flow and increase likelihood of higher-value collaborations",
-      impactScore: 8.8,
-      whyThisMatters: "The opportunity engine is underfilled.",
-      relatedMetricKeys: ["active_brand_conversations"],
-      requiresApproval: true,
-      executionType: "research" as const
-    }
-  ];
-
-  const opportunities = [
-    {
-      name: "Topps sports collectible collaboration",
-      organization: "Topps",
-      opportunityType: "licensing" as const,
-      status: "researching" as const,
-      valueEstimate: 50000,
-      prestigeScore: 9.2,
-      probabilityScore: 0.35,
-      nextStep: "Find the right category or licensing contact and tailor the angle",
-      nextStepDueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      notesMd: "Strong fit with sports-adjacent prestige and collectible behavior.",
-      source: "research"
-    }
-  ];
 
   const output = await writeAgentOutputs({
     agentKey: "noah",
     insights,
     actions,
     bigBet,
-    tasks,
-    opportunities
+    opportunities: activeOpportunities.slice(0, 5)
   });
 
   return {
@@ -651,7 +594,7 @@ import { AgentRunResult, getSharedAgentContext, writeAgentOutputs } from "./shar
 import { createAgentUpdate, getAgentUpdates } from "@/lib/supabase/queries";
 
 export async function runAvery(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContext();
+  const { metrics, opportunities } = await getSharedAgentContext();
   const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
     getAgentUpdates("sloan", 5),
     getAgentUpdates("lyra", 5),
@@ -660,7 +603,7 @@ export async function runAvery(): Promise<AgentRunResult> {
 
   const aov = metrics.find((m) => m.metric_key === "aov");
   const conversion = metrics.find((m) => m.metric_key === "conversion_rate");
-  const pipeline = metrics.find((m) => m.metric_key === "active_brand_conversations");
+  const activeOpportunityCount = (opportunities ?? []).length;
   const directiveSummary = "Shift the system toward pricing power, conversion clarity, and rapid partnership pipeline expansion.";
 
   const insights = [
@@ -673,10 +616,10 @@ export async function runAvery(): Promise<AgentRunResult> {
     },
     {
       title: "Pipeline expansion must accelerate",
-      summary: `Only ${pipeline?.current_value} active brand conversations are live.`,
+      summary: `Only ${activeOpportunityCount} high-priority opportunities are active right now.`,
       detailMd: "The system needs more high-status opportunities entering the funnel.",
       priority: "critical" as const,
-      relatedMetricKeys: ["active_brand_conversations"]
+      relatedMetricKeys: []
     },
     {
       title: "Cross-agent work must stay coordinated",
@@ -692,7 +635,7 @@ export async function runAvery(): Promise<AgentRunResult> {
       title: "Reprioritize all agents around AOV, conversion, and pipeline",
       summary: "Kill low-leverage drift and force concentration on the highest-value bottlenecks.",
       priority: "critical" as const,
-      relatedMetricKeys: ["aov", "conversion_rate", "active_brand_conversations"]
+      relatedMetricKeys: ["aov", "conversion_rate"]
     },
     {
       title: "Sequence work into one clear operating week",
@@ -713,7 +656,7 @@ export async function runAvery(): Promise<AgentRunResult> {
     summary: "Coordinate product, brand, and partnership systems around one premium growth push.",
     detailMd: "The business should behave like a focused luxury operator, not a generalist content machine.",
     priority: "critical" as const,
-    relatedMetricKeys: ["monthly_revenue", "aov", "active_brand_conversations"]
+    relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
   };
 
   const tasks = [
@@ -745,7 +688,7 @@ export async function runAvery(): Promise<AgentRunResult> {
     summary: directiveSummary,
     detailMd: "Top priorities: premium pricing, conversion clarity, and partnership pipeline expansion.",
     priority: "critical",
-    relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate", "active_brand_conversations"]
+    relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
   });
 
   return {

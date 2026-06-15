@@ -1,5 +1,6 @@
 import type { ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
+import { EmptyState } from "./ui/EmptyState";
 
 const relativeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -13,6 +14,19 @@ type Props = {
 
 export function ProofOfWorkPanel({ items }: Props) {
   const topEntries = items.slice(0, 4);
+  const hasEntries = topEntries.length > 0;
+  const latestCompletedAt = topEntries.reduce<Date | null>((latest, entry) => {
+    if (!entry.completedAt) return latest;
+    const date = new Date(entry.completedAt);
+    if (Number.isNaN(date.getTime())) return latest;
+    if (!latest || date.getTime() > latest.getTime()) return date;
+    return latest;
+  }, null);
+  const isStale = (() => {
+    if (!latestCompletedAt) return true;
+    const diffDays = Math.round((Date.now() - latestCompletedAt.getTime()) / 86400000);
+    return diffDays > 14;
+  })();
 
   return (
     <section className="rounded-2xl border border-[var(--ui-border)] bg-white/[0.03] p-4">
@@ -26,11 +40,13 @@ export function ProofOfWorkPanel({ items }: Props) {
         ) : null}
       </div>
 
-      {topEntries.length === 0 ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 px-4 py-6 text-sm text-zinc-500">
-          No proof has been logged yet. Once agents attach links or summaries to completed tasks, you’ll see them here.
+      {hasEntries && isStale ? (
+        <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+          Last proof was logged {formatRelative(latestCompletedAt?.toISOString() ?? null)}. New deliverables have not been captured in over two weeks.
         </div>
-      ) : (
+      ) : null}
+
+      {hasEntries ? (
         <div className="mt-4 space-y-4">
           {topEntries.map((entry) => (
             <div key={entry.taskId} className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -43,6 +59,13 @@ export function ProofOfWorkPanel({ items }: Props) {
               <DeliverableAttachmentList attachments={entry.deliverableLinks} tone="emerald" />
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <EmptyState
+            title="No proof logged"
+            detail="Agents haven’t attached deliverables or summaries yet. When tasks include proof links, they’ll show here."
+          />
         </div>
       )}
     </section>

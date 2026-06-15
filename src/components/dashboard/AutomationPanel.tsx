@@ -46,6 +46,8 @@ const timeFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit"
 });
 
+const OVERDUE_BUFFER_MS = 5 * 60 * 1000; // allow 5 minutes of slack before flagging overdue
+
 function formatTimestamp(value?: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -53,10 +55,18 @@ function formatTimestamp(value?: string | null) {
   return timeFormatter.format(date);
 }
 
-function statusTone(status?: string | null) {
+function statusTone(status?: string | null, overdue?: boolean) {
   if (status === "failed") return "text-rose-400";
-  if (!status) return "text-amber-400";
+  if (overdue || !status) return "text-amber-400";
   return "text-emerald-400";
+}
+
+function isOverdue(job?: SchedulerJobHealth | null) {
+  if (!job) return true;
+  if (!job.nextRunAt) return false;
+  const nextRun = new Date(job.nextRunAt).getTime();
+  if (!Number.isFinite(nextRun)) return false;
+  return nextRun + OVERDUE_BUFFER_MS < Date.now();
 }
 
 export function AutomationPanel({ jobs }: Props) {
@@ -135,11 +145,13 @@ export function AutomationPanel({ jobs }: Props) {
   const remaining = jobs.filter((job) => !EXPECTED_AUTOMATION.find((meta) => meta.jobKey === job.jobKey));
 
   const unhealthyCount = prioritized.filter(({ job }) => !job || job.lastStatus === "failed").length;
+  const overdueCount = prioritized.filter(({ job }) => isOverdue(job)).length;
   const healthPct = Math.max(0, Math.min(100, ((prioritized.length - unhealthyCount) / Math.max(1, prioritized.length)) * 100));
 
   const insightObjects = prioritized.map(({ job, label, cadence, summary, jobKey }): InsightObject => {
-    const statusLabel = job ? (job.lastStatus === "failed" ? "Failed" : "Healthy") : "Missing";
-    const isActionNeeded = !job || job.lastStatus === "failed";
+    const overdue = isOverdue(job);
+    const statusLabel = job ? (job.lastStatus === "failed" ? "Failed" : overdue ? "Overdue" : "Healthy") : "Missing";
+    const isActionNeeded = !job || job.lastStatus === "failed" || overdue;
     const isRunning = runningJobKey === jobKey;
 
     return {
@@ -179,8 +191,8 @@ export function AutomationPanel({ jobs }: Props) {
         <div>
           <div className="flex items-center gap-3">
             <span
-              className={`ui-status-dot ${unhealthyCount > 0 ? "ui-pulse" : ""}`}
-              data-tone={unhealthyCount > 0 ? "amber" : "emerald"}
+              className={`ui-status-dot ${unhealthyCount > 0 || overdueCount > 0 ? "ui-pulse" : ""}`}
+              data-tone={unhealthyCount > 0 || overdueCount > 0 ? "amber" : "emerald"}
             />
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Automation cadence</div>
@@ -189,10 +201,18 @@ export function AutomationPanel({ jobs }: Props) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <StatusChip label={unhealthyCount > 0 ? `${unhealthyCount} needs attention` : "HEALTHY"} tone={unhealthyCount > 0 ? "amber" : "emerald"} />
+          <StatusChip
+            label={unhealthyCount > 0 ? `${unhealthyCount} needs attention` : "HEALTHY"}
+            tone={unhealthyCount > 0 ? "amber" : "emerald"}
+          />
           <div className="w-36">
             <ProgressBar value={healthPct} tone={unhealthyCount > 0 ? "amber" : "emerald"} className="bg-black/25" />
           </div>
+          {overdueCount > 0 ? (
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">
+              Automation overdue · {overdueCount} job{overdueCount === 1 ? "" : "s"}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -210,9 +230,16 @@ export function AutomationPanel({ jobs }: Props) {
         </div>
 
         {prioritized.map(({ job, label, cadence, summary, jobKey }) => {
-          const statusLabel = job ? (job.lastStatus === "failed" ? "Failed" : "Healthy") : "Missing";
-          const statusClass = job ? statusTone(job.lastStatus) : "text-amber-400";
-          const dotTone = !job ? "amber" : job.lastStatus === "failed" ? "rose" : "emerald";
+          const overdue = isOverdue(job);
+          const statusLabel = job
+            ? job.lastStatus === "failed"
+              ? "Failed"
+              : overdue
+                ? "Overdue"
+                : "Healthy"
+            : "Missing";
+          const statusClass = job ? statusTone(job.lastStatus, overdue) : "text-amber-400";
+          const dotTone = !job ? "amber" : job.lastStatus === "failed" ? "rose" : overdue ? "amber" : "emerald";
           return (
             <div key={jobKey} className="ui-glass-hover rounded-2xl border border-white/10 bg-white/[0.02] p-4">
               <div className="flex items-center justify-between gap-3">
