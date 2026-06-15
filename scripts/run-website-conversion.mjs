@@ -14,14 +14,19 @@ const REQUIRED_ENV_VARS = [
 ];
 
 for (const key of REQUIRED_ENV_VARS) {
-  if (!process.env[key]) {
+  if (!process.env[key] || !process.env[key].trim()) {
     console.error(`[website-agent] Missing env var: ${key}`);
     process.exit(1);
   }
 }
 
 const ga4CredentialRaw = process.env.GA4_CREDENTIALS_JSON.trim();
-const propertyId = process.env.GA4_PROPERTY_ID;
+const propertyIdRaw = process.env.GA4_PROPERTY_ID.trim();
+const propertyIdIsNumeric = /^\d+$/.test(propertyIdRaw);
+console.log(
+  `[website-agent] GA4 property id detected (present=${Boolean(propertyIdRaw)}, len=${propertyIdRaw.length}, numeric=${propertyIdIsNumeric})`
+);
+const propertyId = propertyIdRaw;
 const wooBaseUrl = process.env.WOO_BASE_URL.replace(/\/$/, '');
 const wooKey = process.env.WOO_CONSUMER_KEY;
 const wooSecret = process.env.WOO_CONSUMER_SECRET;
@@ -63,6 +68,7 @@ function buildGa4RequestPayload() {
       { name: 'sessions' },
       { name: 'eventCount' },
       { name: 'addToCartEvents' },
+      { name: 'beginCheckoutEvents' },
       { name: 'ecommercePurchases' },
       { name: 'purchaseRevenue' }
     ],
@@ -86,6 +92,8 @@ const [baseReport] = await client.runReport({
     { name: 'totalUsers' },
     { name: 'sessions' },
     { name: 'eventCount' },
+    { name: 'addToCartEvents' },
+    { name: 'beginCheckoutEvents' },
     { name: 'ecommercePurchases' },
     { name: 'purchaseRevenue' }
   ]
@@ -165,16 +173,27 @@ async function fetchGA4WithApiKey() {
 }
 
 function normalizeGa4Response(summary) {
-  const metricValues = summary.rows?.[0]?.metricValues ?? [];
-  const toNumber = (index) => Number(metricValues[index]?.value ?? 0);
+  const firstRow = summary.rows?.[0];
+  const metricIndex = new Map(
+    (summary.metricHeaders ?? []).map((header, idx) => [header.name, idx])
+  );
+  const metricValue = (name) => {
+    const idx = metricIndex.get(name);
+    if (idx == null) return null;
+    const raw = firstRow?.metricValues?.[idx]?.value;
+    if (raw == null || raw === '') return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
 
   return {
-    totalUsers: toNumber(0),
-    sessions: toNumber(1),
-    eventCount: toNumber(2),
-    addToCartEvents: toNumber(3),
-    ecommercePurchases: toNumber(4),
-    purchaseRevenue: Number(metricValues[5]?.value ?? 0),
+    totalUsers: metricValue('totalUsers'),
+    sessions: metricValue('sessions'),
+    eventCount: metricValue('eventCount'),
+    addToCartEvents: metricValue('addToCartEvents'),
+    beginCheckoutEvents: metricValue('beginCheckoutEvents'),
+    ecommercePurchases: metricValue('ecommercePurchases'),
+    purchaseRevenue: metricValue('purchaseRevenue'),
     deviceBreakdown: (summary.rows ?? []).map((row) => ({
       deviceCategory: row.dimensionValues?.[0]?.value,
       channelGroup: row.dimensionValues?.[1]?.value,
@@ -276,6 +295,20 @@ async function main() {
       orders: wooSummary.orderCount,
       sessions: ga4Summary.sessions
     });
+    const conversionRate =
+      ga4Summary?.sessions && ga4Summary.sessions > 0 && ga4Summary?.ecommercePurchases != null
+        ? ((ga4Summary.ecommercePurchases / ga4Summary.sessions) * 100).toFixed(2)
+        : 'n/a';
+    const websiteStatus = ga4Summary && wooSummary ? 'LIVE' : ga4Summary || wooSummary ? 'PARTIAL' : 'BROKEN';
+    console.log(
+      `[website-agent] Summary: generatedAt=${output.generatedAt} ga4.users=${ga4Summary?.totalUsers ?? 'n/a'} ga4.sessions=${
+        ga4Summary?.sessions ?? 'n/a'
+      } ga4.purchases=${ga4Summary?.ecommercePurchases ?? 'n/a'} ga4.add_to_cart=${
+        ga4Summary?.addToCartEvents ?? 'n/a'
+      } ga4.begin_checkout=${ga4Summary?.beginCheckoutEvents ?? 'n/a'} ga4.conversion_rate=${conversionRate}% woo.revenue=${
+        wooSummary.totalRevenue ?? 'n/a'
+      } woo.orders=${wooSummary.orderCount ?? 'n/a'} woo.aov=${wooSummary.averageOrderValue ?? 'n/a'} status=${websiteStatus}`
+    );
     console.log('[website-agent] Updated website metrics snapshot');
   } catch (error) {
     const friendlyMessage = error instanceof Error ? error.message : String(error);
