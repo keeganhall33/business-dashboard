@@ -117,6 +117,16 @@ jobs:
           fi
           cp .env.cloudflare.ci .env.cloudflare
           op run --env-file .env.cloudflare -- npm run cloudflare:run
+      - name: Resolve dashboard artifact path
+        run: echo "DASHBOARD_PATH=$(realpath ../dashboard)" >> "$GITHUB_ENV"
+      - name: Upload Cloudflare Snapshot Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-latest-json
+          path: |
+            ${{ env.DASHBOARD_PATH }}/data/cloudflare/latest.json
+            ${{ env.DASHBOARD_PATH }}/logs/cloudflare_telemetry.log
+          retention-days: 7
 
   leads:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'leads' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * MON'
