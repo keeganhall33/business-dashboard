@@ -12,6 +12,45 @@ const SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, 'data', 'cloudflare', 'snapshot.
 const CF_TOKEN = process.env.CLOUDFLARE_API_TOKEN?.trim();
 const CF_ZONE = process.env.CLOUDFLARE_ZONE_ID?.trim();
 const CF_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+const schedulerSecretPresent = Boolean(process.env.SCHEDULER_SECRET?.trim());
+const schedulerAlertUrlPresent = Boolean(process.env.SCHEDULER_ALERT_URL?.trim());
+const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
+const GRAPHQL_LOOKBACK_HOURS = Number(process.env.CLOUDFLARE_LOOKBACK_HOURS ?? 12);
+const GRAPHQL_QUERY = `
+  query GetZoneAnalytics($zoneTag: ID!, $from: Time!, $to: Time!) {
+    viewer {
+      zones(filter: { zoneTag: $zoneTag }) {
+        totals: httpRequestsAdaptiveGroups(limit: 1, filter: { datetime_geq: $from, datetime_lt: $to }) {
+          count
+          sum {
+            edgeResponseBytes
+          }
+        }
+        countryGroups: httpRequestsAdaptiveGroups(
+          limit: 5,
+          filter: { datetime_geq: $from, datetime_lt: $to },
+          orderBy: [count_DESC]
+        ) {
+          dimensions {
+            clientCountryName
+          }
+          count
+        }
+        pathGroups: httpRequestsAdaptiveGroups(
+          limit: 5,
+          filter: { datetime_geq: $from, datetime_lt: $to },
+          orderBy: [count_DESC]
+        ) {
+          dimensions {
+            clientRequestHTTPHost
+            clientRequestPath
+          }
+          count
+        }
+      }
+    }
+  }
+`;
 
 async function safeReadJson(file) {
   try {
@@ -69,82 +108,123 @@ function summarize(snapshot) {
 }
 
 async function fetchCloudflareTelemetry() {
+  await appendLog({
+    status: 'diagnostic',
+    env: {
+      tokenPresent: Boolean(CF_TOKEN),
+      tokenLength: CF_TOKEN?.length ?? 0,
+      accountIdPresent: Boolean(CF_ACCOUNT),
+      accountIdLength: CF_ACCOUNT?.length ?? 0,
+      zoneIdPresent: Boolean(CF_ZONE),
+      zoneIdLength: CF_ZONE?.length ?? 0,
+      schedulerSecretPresent,
+      schedulerAlertUrlPresent
+    }
+  });
+
   if (!CF_TOKEN || !CF_ZONE) {
-    await appendLog({ status: 'info', message: 'No Cloudflare env vars detected. Snapshot/manual mode only.' });
-    return { data: null, status: { mode: 'snapshot', reason: 'missing_env' } };
+    await appendLog({ status: 'info', message: 'Cloudflare env vars missing. Snapshot/manual mode only.' });
+    return { data: null, status: { mode: 'SNAPSHOT', reason: 'missing_env' } };
   }
 
-  const params = new URLSearchParams({ since: '-43200', continuous: 'true' });
-  const url = `https://api.cloudflare.com/client/v4/zones/${CF_ZONE}/analytics/dashboard?${params}`;
+  const now = new Date();
+  const from = new Date(now.getTime() - GRAPHQL_LOOKBACK_HOURS * 60 * 60 * 1000);
+  const variables = {
+    zoneTag: CF_ZONE,
+    from: from.toISOString(),
+    to: now.toISOString()
+  };
+
   try {
-    await appendLog({ status: 'info', message: 'Cloudflare live read attempted. Writes disabled.' });
-    const response = await fetch(url, {
+    await appendLog({ status: 'info', message: 'Cloudflare GraphQL live read attempted', meta: { endpoint: GRAPHQL_ENDPOINT, lookbackHours: GRAPHQL_LOOKBACK_HOURS } });
+    const response = await fetch(GRAPHQL_ENDPOINT, {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${CF_TOKEN}`,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({ query: GRAPHQL_QUERY, variables })
     });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Cloudflare analytics call failed: ${response.status} ${text}`);
-    }
-    const json = await response.json();
-    const result = json?.result;
-    if (!result) throw new Error('Cloudflare API returned no analytics result');
 
-    const zoneInfo = {
-      name: result.zone_name ?? null,
-      status: result.zone_status ?? null,
-      plan: result.plan ?? null
-    };
+    const rawText = await response.text();
+    let json;
+    try {
+      json = JSON.parse(rawText);
+    } catch {
+      throw new Error(`Cloudflare GraphQL parse failure: ${rawText}`);
+    }
+
+    if (!response.ok || json?.errors?.length) {
+      const gqlErrors = json?.errors?.map((err) => `${err.code ?? err.extensions?.code ?? 'ERR'} ${err.message}`).join('; ');
+      throw new Error(`Cloudflare GraphQL call failed: ${response.status} ${gqlErrors || rawText}`);
+    }
+
+    const zoneData = json?.data?.viewer?.zones?.[0];
+    if (!zoneData) {
+      throw new Error('Cloudflare GraphQL returned no zone data');
+    }
+
+    const totalsNode = zoneData.totals?.[0] ?? {};
+    const totalsSum = totalsNode.sum ?? {};
+    const countries = (zoneData.countryGroups ?? [])
+      .map((group) => ({ name: group.dimensions?.clientCountryName ?? 'Unknown', requests: group.count ?? 0 }))
+      .filter((entry) => entry.requests)
+      .slice(0, 5);
+    const paths = (zoneData.pathGroups ?? [])
+      .map((group) => ({
+        host: group.dimensions?.clientRequestHTTPHost ?? '',
+        path: group.dimensions?.clientRequestPath ?? '/',
+        requests: group.count ?? 0
+      }))
+      .filter((entry) => entry.requests)
+      .map((entry) => ({ path: entry.host ? `${entry.host}${entry.path}` : entry.path, requests: entry.requests }))
+      .slice(0, 5);
 
     const traffic = {
-      requestsTotal: result.totals?.requests ?? null,
-      bandwidthBytes: result.totals?.bandwidth ?? null,
-      cachedPercent: result.totals?.cachedRequests ? (result.totals.cachedRequests / (result.totals.requests || 1)) * 100 : null,
-      uncachedRequests: result.totals?.uncachedRequests ?? null,
-      cacheHitRate: result.totals?.cachedRequests && result.totals?.requests ? result.totals.cachedRequests / result.totals.requests : null,
-      bandwidthCachedBytes: result.totals?.cachedBandwidth ?? null,
-      bandwidthUncachedBytes: result.totals?.uncachedBandwidth ?? null
+      requestsTotal: totalsNode.count ?? null,
+      bandwidthBytes: totalsSum.edgeResponseBytes ?? null
     };
+    traffic.cacheHitRate = null;
+    traffic.cachedPercent = null;
 
-    const security = {
-      threats: result.totals?.threats ?? null,
-      blockedRequests: result.totals?.pageViews ?? null,
-      firewallEvents: result.totals?.pageViews ?? null,
-      botRequests: result?.totals?.botRequests ?? null,
-      botScore: null
-    };
-
-    const performance = {
-      avgResponseTimeMs: result.totals?.responseTime ?? null,
-      p95ResponseTimeMs: null,
-      cacheHitWarning: traffic.cacheHitRate !== null && traffic.cacheHitRate < 0.7,
-      latencyWarning: false,
-      notes: null
-    };
+    const warnings = [];
+    if (!traffic.requestsTotal) warnings.push('No request totals returned from GraphQL');
+    if (!countries.length) warnings.push('Top countries unavailable');
+    if (!paths.length) warnings.push('Top paths unavailable');
 
     return {
       data: {
-        zone: zoneInfo,
-        traffic,
-        security,
-        performance,
-        top: {
-          countries: (result.top?.countries ?? []).map((c) => ({ name: c.clientCountry, requests: c.requests })),
-          paths: (result.top?.urls ?? []).map((p) => ({ path: p.url, requests: p.requests }))
+        generatedAt: now.toISOString(),
+        zone: {
+          name: CF_ZONE,
+          status: null,
+          plan: null
         },
-        warnings: []
+        traffic,
+        security: {
+          threats: null
+        },
+        performance: {
+          cacheHitWarning: typeof traffic.cacheHitRate === 'number' ? traffic.cacheHitRate < 0.7 : null
+        },
+        top: {
+          countries,
+          paths
+        },
+        warnings
       },
       status: {
-        mode: 'cloudflare-live',
-        accountId: CF_ACCOUNT ?? null,
-        zoneId: CF_ZONE
+        mode: warnings.length && !traffic.requestsTotal ? 'PARTIAL' : 'LIVE',
+        source: 'cloudflare_graphql',
+        accountIdSuffix: CF_ACCOUNT ? CF_ACCOUNT.slice(-4) : null,
+        zoneIdLength: CF_ZONE.length,
+        lookbackHours: GRAPHQL_LOOKBACK_HOURS
       }
     };
   } catch (error) {
-    await appendLog({ status: 'warning', message: String(error) });
-    return { data: null, status: { mode: 'snapshot', reason: String(error) } };
+    const message = error instanceof Error ? error.message : String(error);
+    await appendLog({ status: 'warning', message, meta: { endpoint: GRAPHQL_ENDPOINT } });
+    return { data: null, status: { mode: 'BROKEN', reason: message, source: 'cloudflare_graphql' } };
   }
 }
 
@@ -156,7 +236,7 @@ async function main() {
   ]);
 
   const baseData = live.data ? { ...live.data, status: live.status } : null;
-  const fallbackData = snapshot || manualInput ? { ...(snapshot ?? manualInput), status: { mode: 'snapshot', source: snapshot ? 'snapshot.json' : 'manual_input' } } : null;
+  const fallbackData = snapshot || manualInput ? { ...(snapshot ?? manualInput), status: { mode: 'SNAPSHOT', source: snapshot ? 'snapshot.json' : 'manual_input' } } : null;
   const merged = summarize(mergeTelemetry(baseData, fallbackData));
 
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
