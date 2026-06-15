@@ -197,7 +197,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run Social Intelligence
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npm run social:run
+      - name: Upload Social Snapshot Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-latest-json
+          path: |
+            dashboard/data/social/latest.json
+            dashboard/logs/social_intelligence.log
+          retention-days: 7
 
   executive:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'executive' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * *'
