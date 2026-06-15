@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import fetch from 'node-fetch';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import { createClient } from '@supabase/supabase-js';
 
 const REQUIRED_ENV_VARS = [
   'GA4_CREDENTIALS_JSON',
@@ -30,6 +31,19 @@ const propertyId = propertyIdRaw;
 const wooBaseUrl = process.env.WOO_BASE_URL.replace(/\/$/, '');
 const wooKey = process.env.WOO_CONSUMER_KEY;
 const wooSecret = process.env.WOO_CONSUMER_SECRET;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseEnabled = Boolean(supabaseUrl && supabaseServiceRoleKey);
+if (!supabaseEnabled) {
+  console.warn(
+    `[website-agent] Supabase env missing; urlPresent=${Boolean(supabaseUrl)} keyPresent=${Boolean(supabaseServiceRoleKey)} - skipping remote snapshot upsert`
+  );
+}
+const supabaseClient = supabaseEnabled
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  : null;
 
 const repoRoot = process.cwd();
 const agentOutputPath = path.join(repoRoot, 'dashboard', 'data', 'website', 'latest.json');
@@ -79,6 +93,28 @@ function buildGa4RequestPayload() {
       { name: 'sessionDefaultChannelGroup' }
     ]
   };
+}
+
+async function upsertSupabaseSnapshot(snapshot, mode) {
+  if (!supabaseClient) return;
+  try {
+    const { error } = await supabaseClient
+      .from('dashboard_snapshots')
+      .upsert({
+        key: 'website',
+        payload: snapshot,
+        mode: mode ?? snapshot?.status ?? null,
+        generated_at: typeof snapshot?.generatedAt === 'string' ? snapshot.generatedAt : null
+      });
+    if (error) {
+      console.error('[website-agent] Supabase snapshot upsert failed:', error.message);
+      await baseLog({ status: 'warning', message: `supabase upsert failed: ${error.message}` });
+    } else {
+      console.log('[website-agent] Supabase dashboard snapshot updated (website)');
+    }
+  } catch (error) {
+    console.error('[website-agent] Supabase snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
 }
 
 async function fetchGA4WithServiceAccount() {
@@ -353,6 +389,9 @@ async function main() {
         ? ((ga4Summary.ecommercePurchases / ga4Summary.sessions) * 100).toFixed(2)
         : 'n/a';
     const websiteStatus = ga4Summary && wooSummary ? 'LIVE' : ga4Summary || wooSummary ? 'PARTIAL' : 'BROKEN';
+    output.status = websiteStatus;
+    await upsertSupabaseSnapshot(output, websiteStatus);
+
     console.log(
       `[website-agent] Summary: generatedAt=${output.generatedAt} ga4.users=${ga4Summary?.totalUsers ?? 'n/a'} ga4.sessions=${
         ga4Summary?.sessions ?? 'n/a'
@@ -383,6 +422,7 @@ async function main() {
     };
     await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
     await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
+    await upsertSupabaseSnapshot(failureOutput, 'BROKEN');
 
     try {
       const snapshotExists = await fs
