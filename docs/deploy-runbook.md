@@ -56,6 +56,14 @@ The smoke check validates:
 - `GET /dashboard` returns 200
 - `GET /api/dashboard/overview` returns JSON containing `ok:true`
 
+## Dashboard SSR auth header
+
+Fly production requires the Next.js server to call protected dashboard APIs with `x-dashboard-secret`:
+
+- Set `DASHBOARD_ADMIN_TOKEN` in Fly (and `.env.local` for local SSR smoke tests).
+- `src/lib/api/dashboard.ts` automatically injects the header on the server; do **not** expose the token client-side.
+- If the header/secret is missing, `/dashboard` 500s with Fly digest `1522480018` even when `/api/dashboard/overview` works directly. Vercel preview can pass, so always verify Fly after deploys.
+
 ## Supabase service role key rotation (safe)
 
 Do **not** rotate keys by editing code. Rotate by **staging the new key**, deploying, validating, then revoking the old key.
