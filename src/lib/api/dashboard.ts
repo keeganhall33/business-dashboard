@@ -20,8 +20,33 @@ function getAppUrl() {
   return "http://localhost:3000";
 }
 
+let hasLoggedMissingToken = false;
+
+function getServerAuthHeaders(): HeadersInit | null {
+  if (typeof window !== "undefined") return null;
+  const token = process.env.DASHBOARD_ADMIN_TOKEN?.trim();
+  if (!token) {
+    if (!hasLoggedMissingToken) {
+      console.warn("[dashboard] Missing DASHBOARD_ADMIN_TOKEN; internal fetches may fail");
+      hasLoggedMissingToken = true;
+    }
+    return null;
+  }
+  return { "x-dashboard-secret": token };
+}
+
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, { ...init, cache: "no-store" });
+  const headers = new Headers(init?.headers ?? {});
+  const serverHeaders = getServerAuthHeaders();
+  if (serverHeaders) {
+    for (const [key, value] of Object.entries(serverHeaders)) {
+      if (!headers.has(key)) {
+        headers.set(key, value);
+      }
+    }
+  }
+
+  const res = await fetch(input, { ...init, headers, cache: "no-store" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Request failed (${res.status}): ${text || res.statusText}`);
