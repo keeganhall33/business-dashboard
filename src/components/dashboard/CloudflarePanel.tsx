@@ -24,13 +24,16 @@ export function CloudflarePanel({ snapshot }: { snapshot?: CloudflareTelemetrySn
 
   return (
     <section className="ui-glass rounded-3xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Cloudflare / Site Health</div>
         <div className="text-sm text-zinc-400">Traffic, cache, and security status.</div>
         <div className="text-xs text-emerald-200/70">Mode: {snapshot.status?.mode ?? 'unknown'}</div>
         </div>
-        <StatusChip label={`Updated ${updated}`} tone="zinc" />
+        <div className="flex flex-wrap gap-2">
+          <StatusChip label="Live telemetry" tone="emerald" />
+          <StatusChip label={`Updated ${updated}`} tone="zinc" />
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">

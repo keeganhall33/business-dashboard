@@ -27,21 +27,13 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
 
   return (
     <section className="ui-glass ui-glass-hover space-y-5 rounded-3xl p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce automation snapshot.</div>
           <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusChip label="View log" tone="zinc" />
-          <a
-            href="/dashboard/logs/website_agent.log"
-            className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-300 hover:text-sky-200"
-          >
-            LOG
-          </a>
-        </div>
+        <StatusChip label="Live telemetry" tone="emerald" />
       </div>
 
       {hasFunnelGap ? (

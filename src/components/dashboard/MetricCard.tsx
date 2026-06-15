@@ -11,9 +11,10 @@ type Props = {
   /** @deprecated Prefer density="compact". */
   compact?: boolean;
   dashboardUpdatedAtIso?: string;
+  hideSupportingDetails?: boolean;
 };
 
-export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso }: Props) {
+export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hideSupportingDetails = false }: Props) {
   const resolvedDensity: DensityMode = density ?? (compact ? "compact" : "comfortable");
 
   const ownerAgent = (metric as { ownerAgent?: string | null }).ownerAgent;
@@ -61,89 +62,93 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso }: 
       </div>
       <div className="mt-1 text-xs text-zinc-500">Target {formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
 
-      <MetricProvenance
-        title={title}
-        definition={definition}
-        measuredAtIso={measuredAt}
-        dashboardUpdatedAtIso={dashboardUpdatedAtIso}
-        density={resolvedDensity}
-      />
+      {!hideSupportingDetails && (
+        <>
+          <MetricProvenance
+            title={title}
+            definition={definition}
+            measuredAtIso={measuredAt}
+            dashboardUpdatedAtIso={dashboardUpdatedAtIso}
+            density={resolvedDensity}
+          />
 
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <div className="lg:col-span-7">
-          <div className="rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Trend</div>
-              {stats?.min != null && stats?.max != null && (
-                <div className="text-[11px] text-zinc-500">
-                  Range {formatMetricValue(stats.min, metric.unit)}–{formatMetricValue(stats.max, metric.unit)}
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Trend</div>
+                  {stats?.min != null && stats?.max != null && (
+                    <div className="text-[11px] text-zinc-500">
+                      Range {formatMetricValue(stats.min, metric.unit)}–{formatMetricValue(stats.max, metric.unit)}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="mt-2">
-              <Sparkline
-                values={historyValues.length ? historyValues : [metric.currentValue, metric.currentValue * 0.98, metric.currentValue * 1.01]}
-                tone={tone}
-              />
-            </div>
-          </div>
-
-          <div className="mt-3">
-            <TargetProgress current={metric.currentValue ?? 0} target={metric.targetValue ?? 0} unit={metric.unit} tone={tone} />
-          </div>
-        </div>
-
-        <div className="lg:col-span-5">
-          {(ownerAgent || (tactics && tactics.length > 0) || (evidence && evidence.length > 0)) ? (
-            <div className="h-full rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Tactics & Evidence</div>
-                {ownerAgent && <div className="text-[11px] text-zinc-500">Owner <span className="text-zinc-300">{ownerAgent}</span></div>}
+                <div className="mt-2">
+                  <Sparkline
+                    values={historyValues.length ? historyValues : [metric.currentValue, metric.currentValue * 0.98, metric.currentValue * 1.01]}
+                    tone={tone}
+                  />
+                </div>
               </div>
 
-              {tactics && tactics.length > 0 && (
-                <ul className="mt-3 space-y-2 text-xs text-zinc-200">
-                  {tactics.slice(0, 3).map((t) => (
-                    <li key={t} className="flex gap-2">
-                      <span className="mt-[2px] text-zinc-500">•</span>
-                      <span className="leading-relaxed text-zinc-200">{t}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div className="mt-3">
+                <TargetProgress current={metric.currentValue ?? 0} target={metric.targetValue ?? 0} unit={metric.unit} tone={tone} />
+              </div>
+            </div>
 
-              {evidence && evidence.length > 0 && (
-                <div className={tactics && tactics.length > 0 ? "mt-4" : "mt-3"}>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Evidence</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {evidence.slice(0, 4).map((link) => (
-                      <a
-                        key={`${link.label}|${link.url}`}
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={link.label}
-                        className="max-w-full min-w-0 truncate rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.05]"
-                      >
-                        {link.label}
-                      </a>
-                    ))}
+            <div className="lg:col-span-5">
+              {(ownerAgent || (tactics && tactics.length > 0) || (evidence && evidence.length > 0)) ? (
+                <div className="h-full rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Tactics & Evidence</div>
+                    {ownerAgent && <div className="text-[11px] text-zinc-500">Owner <span className="text-zinc-300">{ownerAgent}</span></div>}
                   </div>
+
+                  {tactics && tactics.length > 0 && (
+                    <ul className="mt-3 space-y-2 text-xs text-zinc-200">
+                      {tactics.slice(0, 3).map((t) => (
+                        <li key={t} className="flex gap-2">
+                          <span className="mt-[2px] text-zinc-500">•</span>
+                          <span className="leading-relaxed text-zinc-200">{t}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {evidence && evidence.length > 0 && (
+                    <div className={tactics && tactics.length > 0 ? "mt-4" : "mt-3"}>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Evidence</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {evidence.slice(0, 4).map((link) => (
+                          <a
+                            key={`${link.label}|${link.url}`}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={link.label}
+                            className="max-w-full min-w-0 truncate rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.05]"
+                          >
+                            {link.label}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!tactics?.length && !evidence?.length && (
+                    <div className="mt-3 text-xs text-zinc-500">No linked tactics or evidence yet.</div>
+                  )}
+                </div>
+              ) : (
+                <div className="h-full rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Tactics & Evidence</div>
+                  <div className="mt-3 text-xs text-zinc-500">No linked tactics or evidence yet.</div>
                 </div>
               )}
-
-              {!tactics?.length && !evidence?.length && (
-                <div className="mt-3 text-xs text-zinc-500">No linked tactics or evidence yet.</div>
-              )}
             </div>
-          ) : (
-            <div className="h-full rounded-xl border border-[var(--ui-border)] bg-white/[0.02] p-3">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Tactics & Evidence</div>
-              <div className="mt-3 text-xs text-zinc-500">No linked tactics or evidence yet.</div>
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
