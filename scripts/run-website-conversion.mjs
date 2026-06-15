@@ -84,7 +84,7 @@ const client = new BetaAnalyticsDataClient({ credentials: credentialJson });
 
 const warnings = [];
 
-const [baseReport] = await client.runReport({
+const baseReportRequest = {
   property: `properties/${propertyId}`,
   dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
   metrics: [
@@ -95,7 +95,19 @@ const [baseReport] = await client.runReport({
     { name: 'ecommercePurchases' },
     { name: 'purchaseRevenue' }
   ]
-});
+};
+
+console.log('[website-agent] GA4 request metrics:', baseReportRequest.metrics.map((m) => m.name));
+
+let baseReport;
+try {
+  [baseReport] = await client.runReport(baseReportRequest);
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const metadata = error && typeof error === 'object' && 'metadata' in error ? error.metadata : undefined;
+  console.error('[website-agent] GA4 runReport failed:', detail, metadata ? JSON.stringify(metadata) : '');
+  throw error;
+}
 
 async function fetchBreakdown(dimensionName) {
   try {
@@ -316,7 +328,8 @@ async function main() {
   } catch (error) {
     const friendlyMessage = error instanceof Error ? error.message : String(error);
     const errorDetails = error && typeof error === 'object' && 'details' in error ? error.details : undefined;
-    const diagnostic = { message: friendlyMessage, details: errorDetails };
+    const errorCode = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    const diagnostic = { message: friendlyMessage, details: errorDetails, code: errorCode };
 
     await baseLog({
       status: 'error',
@@ -327,10 +340,31 @@ async function main() {
 
     const failureOutput = {
       generatedAt: new Date().toISOString(),
+      status: 'BROKEN',
       error: diagnostic
     };
     await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
     await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
+
+    try {
+      const snapshotExists = await fs
+        .access(agentOutputPath)
+        .then(() => true)
+        .catch(() => false);
+      const logExists = await fs
+        .access(agentLogPath)
+        .then(() => true)
+        .catch(() => false);
+      console.error('[website-agent] Failure artifacts', {
+        cwd: process.cwd(),
+        snapshotExists,
+        logExists,
+        snapshotPath: agentOutputPath,
+        logPath: agentLogPath
+      });
+    } catch (artifactError) {
+      console.error('[website-agent] Artifact existence check failed', artifactError);
+    }
 
     console.error('[website-agent] Failed:', friendlyMessage);
     if (error instanceof Error && error.stack) {
