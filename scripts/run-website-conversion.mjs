@@ -68,7 +68,6 @@ function buildGa4RequestPayload() {
       { name: 'sessions' },
       { name: 'eventCount' },
       { name: 'addToCartEvents' },
-      { name: 'beginCheckoutEvents' },
       { name: 'ecommercePurchases' },
       { name: 'purchaseRevenue' }
     ],
@@ -93,7 +92,6 @@ const [baseReport] = await client.runReport({
     { name: 'sessions' },
     { name: 'eventCount' },
     { name: 'addToCartEvents' },
-    { name: 'beginCheckoutEvents' },
     { name: 'ecommercePurchases' },
     { name: 'purchaseRevenue' }
   ]
@@ -145,13 +143,28 @@ async function fetchAddToCartEvents() {
   }
 }
 
-const [deviceBreakdown, channelBreakdown, addToCartEvents] = await Promise.all([
+async function fetchBeginCheckoutEvents() {
+  try {
+    const [report] = await client.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      metrics: [{ name: 'beginCheckoutEvents' }]
+    });
+    return Number(report.rows?.[0]?.metricValues?.[0]?.value ?? 0);
+  } catch (error) {
+    warnings.push(`beginCheckoutEvents unavailable: ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+}
+
+const [deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents] = await Promise.all([
   fetchBreakdown('deviceCategory'),
   fetchBreakdown('sessionDefaultChannelGroup'),
-  fetchAddToCartEvents()
+  fetchAddToCartEvents(),
+  fetchBeginCheckoutEvents()
 ]);
 
-return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, warnings };
+return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings };
 }
 
 async function fetchGA4WithApiKey() {
@@ -173,27 +186,16 @@ async function fetchGA4WithApiKey() {
 }
 
 function normalizeGa4Response(summary) {
-  const firstRow = summary.rows?.[0];
-  const metricIndex = new Map(
-    (summary.metricHeaders ?? []).map((header, idx) => [header.name, idx])
-  );
-  const metricValue = (name) => {
-    const idx = metricIndex.get(name);
-    if (idx == null) return null;
-    const raw = firstRow?.metricValues?.[idx]?.value;
-    if (raw == null || raw === '') return null;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
+  const metricValues = summary.rows?.[0]?.metricValues ?? [];
+  const toNumber = (index) => Number(metricValues[index]?.value ?? 0);
 
   return {
-    totalUsers: metricValue('totalUsers'),
-    sessions: metricValue('sessions'),
-    eventCount: metricValue('eventCount'),
-    addToCartEvents: metricValue('addToCartEvents'),
-    beginCheckoutEvents: metricValue('beginCheckoutEvents'),
-    ecommercePurchases: metricValue('ecommercePurchases'),
-    purchaseRevenue: metricValue('purchaseRevenue'),
+    totalUsers: toNumber(0),
+    sessions: toNumber(1),
+    eventCount: toNumber(2),
+    addToCartEvents: toNumber(3),
+    ecommercePurchases: toNumber(4),
+    purchaseRevenue: Number(metricValues[5]?.value ?? 0),
     deviceBreakdown: (summary.rows ?? []).map((row) => ({
       deviceCategory: row.dimensionValues?.[0]?.value,
       channelGroup: row.dimensionValues?.[1]?.value,
@@ -208,12 +210,13 @@ async function fetchGA4Summary() {
     return normalizeGa4Response(await fetchGA4WithApiKey());
   }
 
-  const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, warnings } =
+  const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings } =
     await fetchGA4WithServiceAccount();
   const normalized = normalizeGa4Response(baseReport);
   return {
     ...normalized,
     addToCartEvents,
+    beginCheckoutEvents,
     deviceBreakdown,
     channelBreakdown,
     warnings
@@ -312,12 +315,23 @@ async function main() {
     console.log('[website-agent] Updated website metrics snapshot');
   } catch (error) {
     const friendlyMessage = error instanceof Error ? error.message : String(error);
+    const errorDetails = error && typeof error === 'object' && 'details' in error ? error.details : undefined;
+    const diagnostic = { message: friendlyMessage, details: errorDetails };
+
     await baseLog({
       status: 'error',
-      message: friendlyMessage,
+      ...diagnostic,
       stack: error instanceof Error && error.stack ? error.stack : undefined
     });
     await sendSchedulerAlert({ status: 'error', message: friendlyMessage });
+
+    const failureOutput = {
+      generatedAt: new Date().toISOString(),
+      error: diagnostic
+    };
+    await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
+    await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
+
     console.error('[website-agent] Failed:', friendlyMessage);
     if (error instanceof Error && error.stack) {
       console.error(error.stack);
