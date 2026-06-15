@@ -20,6 +20,8 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
   const updatedLabel = formatRelativeTimeFromNow(snapshot.generatedAt);
   const campaigns = snapshot.campaigns ?? [];
   const topCampaigns = campaigns.slice(0, 5);
+  const purchases = snapshot.summary.purchases ?? 0;
+  const purchaseCopy = purchases > 0 ? `${formatNumber(purchases)} Meta-reported purchases` : "No Meta-reported purchases in this window.";
 
   return (
     <section className="ui-glass rounded-3xl p-5">
@@ -47,6 +49,10 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
         <Kpi label="CTR" value={formatPercent(getCtr(snapshot.summary))} tone="sky" />
         <Kpi label="CPC" value={decimalCurrency.format(getCpc(snapshot.summary))} />
         <Kpi label="ROAS" value={formatRoas(snapshot.summary.roas)} tone="sky" />
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-dashed border-white/10 bg-black/20 p-3 text-xs text-zinc-400">
+        {purchaseCopy} Meta ROAS is reported as-is from Meta Ads Manager and may differ from GA4 or WooCommerce attribution.
       </div>
 
       <div className="mt-5">

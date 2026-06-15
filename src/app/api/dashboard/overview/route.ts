@@ -38,7 +38,9 @@ import {
   type DeliverableLink,
   type ProofOfWorkEntry,
   type WebsiteConversionSnapshot,
-  type CloudflareTelemetrySnapshot
+  type CloudflareTelemetrySnapshot,
+  type MetaAdsSnapshot,
+  type SocialIntelligenceSnapshot
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
@@ -1011,7 +1013,7 @@ export async function GET(request: Request) {
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
       loadLocalDashboardArtifacts(),
-      getDashboardSnapshots(["website", "cloudflare"])
+      getDashboardSnapshots(["website", "cloudflare", "meta", "social"])
     ]);
 
     const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
@@ -1020,6 +1022,8 @@ export async function GET(request: Request) {
       (snapshotMap.get("website")?.payload as WebsiteConversionSnapshot | null) ?? localArtifacts.websiteSnapshot;
     const cloudflareSnapshot =
       (snapshotMap.get("cloudflare")?.payload as CloudflareTelemetrySnapshot | null) ?? localArtifacts.cloudflareSnapshot;
+    const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
+    const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1902,9 +1906,9 @@ export async function GET(request: Request) {
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
       websiteConversion: websiteSnapshot,
-      metaAds: localArtifacts.metaSnapshot,
+      metaAds: metaSnapshot,
       executiveSummary: localArtifacts.executiveSummary,
-      socialIntelligence: localArtifacts.socialSnapshot,
+      socialIntelligence: socialSnapshot,
       cloudflare: cloudflareSnapshot,
       leadIntelligence: localArtifacts.leadSnapshot,
       agentStatusPanel: localArtifacts.agentStatus,
