@@ -32,6 +32,7 @@ export function DashboardShell({ data }: Props) {
           <li>• Scheduler, Meta, Social, Pipeline, War Room, Executive = locked.</li>
           <li>• Automation claims are disabled until Fix Wave 3.</li>
         </ul>
+        <div className="mt-4 text-xs uppercase tracking-[0.25em] text-amber-200/60">Audit containment build: e96bc28</div>
       </section>
 
       <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
