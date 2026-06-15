@@ -397,14 +397,19 @@ for each row execute function set_updated_at();
 create table if not exists collector_relationships (
   id uuid primary key default gen_random_uuid(),
   collector_name text not null,
-  tier text not null check (tier in ('A','B')),
+  tier text not null check (tier in ('A','B','C','Unrated')),
   relationship_status text not null default 'quiet',
   last_outreach_at timestamptz,
+  last_touch_at timestamptz,
   next_move text,
   next_move_due_at timestamptz,
+  next_touch_due_at timestamptz,
   estimated_value numeric,
   priority integer not null default 0,
   notes text,
+  source text,
+  updated_by text,
+  import_batch_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -413,6 +418,8 @@ create index if not exists idx_collector_relationships_tier_priority
   on collector_relationships(tier, priority desc);
 create index if not exists idx_collector_relationships_next_move_due
   on collector_relationships(next_move_due_at);
+create index if not exists idx_collector_relationships_last_touch
+  on collector_relationships(last_touch_at desc);
 
 drop trigger if exists trg_collector_relationships_updated_at on collector_relationships;
 create trigger trg_collector_relationships_updated_at

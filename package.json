@@ -49,6 +49,7 @@
     "eslint-config-next": "16.2.1",
     "storybook": "^8.4.0",
     "tailwindcss": "^4",
+    "tsx": "^4.16.2",
     "typescript": "^5"
   }
 }
