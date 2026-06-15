@@ -257,6 +257,7 @@ type FinanceSnapshotRow = {
   monthly_burn: number | string | null;
   projected_30d_revenue: number | string | null;
   survival_floor: number | string | null;
+  updated_at?: string | null;
 };
 
 type CollectorRow = {
@@ -1835,7 +1836,6 @@ export async function GET(request: Request) {
       websiteConversion: localArtifacts.websiteSnapshot,
       metaAds: localArtifacts.metaSnapshot,
       executiveSummary: localArtifacts.executiveSummary,
-      industryPulse: localArtifacts.industrySnapshot,
       socialIntelligence: localArtifacts.socialSnapshot,
       cloudflare: localArtifacts.cloudflareSnapshot,
       leadIntelligence: localArtifacts.leadSnapshot,
