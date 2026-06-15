@@ -15,6 +15,15 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const missingAddToCart = ga4?.addToCartEvents == null;
+  const missingBeginCheckout = ga4?.beginCheckoutEvents == null;
+  const hasFunnelGap = Boolean(missingAddToCart || missingBeginCheckout);
+  const funnelLabel =
+    missingAddToCart && missingBeginCheckout
+      ? "`add_to_cart` and `begin_checkout` events"
+      : missingAddToCart
+        ? "`add_to_cart` event"
+        : "`begin_checkout` event";
 
   return (
     <section className="ui-glass ui-glass-hover space-y-5 rounded-3xl p-6">
@@ -34,6 +43,13 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
           </a>
         </div>
       </div>
+
+      {hasFunnelGap ? (
+        <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
+          Optional GA4 {funnelLabel} is still unavailable. Website data is LIVE, but funnel drop-off insights stay disabled until GA4 instrumentation is
+          fixed. These metrics remain best-effort and will continue to warn instead of blocking the run.
+        </div>
+      ) : null}
 
       {ga4 ? <Ga4Section data={ga4} /> : <EmptyState title="GA4 offline" detail="Website agent could not load GA4 metrics." />}
       {woo ? <WooSection data={woo} /> : <EmptyState title="WooCommerce offline" detail="Unable to load latest order data." />}
@@ -62,12 +78,6 @@ function Ga4Section({
           ))}
         </div>
       </div>
-      {data.addToCartEvents == null ? (
-        <div className="mt-2 rounded-xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
-          GA4 add-to-cart event not detected. Configure the `add_to_cart` event in GA4 to unlock funnel drop-off reporting. All other GA4 metrics are current.
-        </div>
-      ) : null}
-
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <BreakdownCard title="Device mix" items={data.deviceBreakdown} />
         <BreakdownCard title="Channel mix" items={data.channelBreakdown} />

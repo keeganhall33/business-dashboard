@@ -416,6 +416,7 @@ export type WebsiteConversionSnapshot = {
     sessions?: number;
     eventCount?: number;
     addToCartEvents?: number | null;
+    beginCheckoutEvents?: number | null;
     ecommercePurchases?: number | null;
     purchaseRevenue?: number | null;
     deviceBreakdown?: Array<{ label: string; sessions: number }>;

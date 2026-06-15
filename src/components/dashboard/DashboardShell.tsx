@@ -4,6 +4,9 @@ import { ActionQueuePanel } from "./ActionQueuePanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelWrapper } from "./ui/PanelWrapper";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
+import { HeaderStatusBar } from "./HeaderStatusBar";
+import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
+import { RevenueEnginePanel } from "./RevenueEnginePanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -12,29 +15,50 @@ type Props = {
 
 export function DashboardShell({ data }: Props) {
   const refreshedAt = data.timestamp;
+  const websiteSnapshot = data.websiteConversion ?? null;
+  const websiteRefreshedAt = websiteSnapshot?.generatedAt ?? refreshedAt;
 
   return (
     <div className="layout-shell space-y-6">
       <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-6 text-sm text-amber-100">
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Integrity audit mode</div>
         <p className="mt-2 text-base text-amber-50">
-          Command Center panels are temporarily limited while we verify each data source. Only the sections below are safe to reference.
-          Cron remains disabled until this audit completes.
+          Command Center panels remain limited while we verify every data source. Website ingestion (GA4 + WooCommerce) is now LIVE, but optional GA4
+          funnel events are still pending. Cron remains disabled until the broader audit completes.
         </p>
       </section>
+
+      <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
+        <HeaderStatusBar metrics={data.headerMetrics} refreshedAtIso={refreshedAt} />
+      </PanelWrapper>
+
+      {websiteSnapshot ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={websiteRefreshedAt}>
+          <WebsiteConversionPanel snapshot={websiteSnapshot} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Website snapshot unavailable"
+          detail="The latest GA4 + WooCommerce snapshot could not be loaded. Re-run the website agent to regenerate dashboard/data/website/latest.json."
+        />
+      )}
+
+      <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
+        <RevenueEnginePanel data={data.revenueEngine} />
+      </PanelWrapper>
 
       <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
         <ActionQueuePanel data={data.actionQueue} />
       </PanelWrapper>
 
       <PanelAuditPlaceholder
-        title="Industry pulse snapshot hidden"
-        detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
+        title="Executive summary hidden"
+        detail="Executive copy references cross-agent data (Meta, Cloudflare, scheduler). It stays offline until all data sources are verified."
       />
 
       <PanelAuditPlaceholder
-        title="Website & revenue panels hidden"
-        detail="GA4 + WooCommerce metrics are being revalidated. Website conversion, revenue engine, and executive copy will return once the data passes integrity checks."
+        title="Industry pulse snapshot hidden"
+        detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
       />
 
       <PanelAuditPlaceholder
