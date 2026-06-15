@@ -44,3 +44,7 @@ next-env.d.ts
 
 # supabase
 supabase/.temp/
+
+# collector import artifacts
+collector-imports/
+*.collectors.csv

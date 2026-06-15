@@ -1,0 +1,3 @@
+collector_name,tier,relationship_status,last_touch_at,last_outreach_at,next_move,next_move_due_at,next_touch_due_at,estimated_value,priority,notes,source
+Sample Collector Alpha,A,active,2026-06-10T17:30:00Z,2026-06-09T15:00:00Z,Deliver executive folio,2026-06-20,2026-06-25,25000,high,"Reference folio sent in May—follow up with bespoke framing quote.",manual_import
+Sample Collector Beta,B,quiet,2026-05-28T21:00:00Z,,Invite to studio preview,2026-06-18,,12000,medium,"Prefers text updates; align with Seahawks pre-season milestone.",manual_import
