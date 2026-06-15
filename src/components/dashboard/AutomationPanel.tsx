@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { SchedulerJobHealth } from "@/lib/types/dashboard";
+import { SchedulerJobHealth, SchedulerSummary } from "@/lib/types/dashboard";
 import { requestDashboardRefresh } from "@/lib/dashboard/events";
 import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { ProgressBar } from "./ui/ProgressBar";
@@ -10,6 +10,7 @@ import { InsightCard, type InsightObject } from "./ui/InsightCard";
 
 type Props = {
   jobs: SchedulerJobHealth[];
+  summary?: SchedulerSummary | null;
 };
 
 const EXPECTED_AUTOMATION = [
@@ -69,7 +70,7 @@ function isOverdue(job?: SchedulerJobHealth | null) {
   return nextRun + OVERDUE_BUFFER_MS < Date.now();
 }
 
-export function AutomationPanel({ jobs }: Props) {
+export function AutomationPanel({ jobs, summary }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const [runningJobKey, setRunningJobKey] = useState<string | null>(null);
 
@@ -147,6 +148,15 @@ export function AutomationPanel({ jobs }: Props) {
   const unhealthyCount = prioritized.filter(({ job }) => !job || job.lastStatus === "failed").length;
   const overdueCount = prioritized.filter(({ job }) => isOverdue(job)).length;
   const healthPct = Math.max(0, Math.min(100, ((prioritized.length - unhealthyCount) / Math.max(1, prioritized.length)) * 100));
+  const cronEnabled = summary?.cronEnabled ?? false;
+  const telemetryStatus = summary?.status ?? (jobs.length ? (cronEnabled ? "LIVE" : "PARTIAL") : "BROKEN");
+  const topChipLabel = telemetryStatus === "LIVE"
+    ? "Scheduler telemetry live"
+    : telemetryStatus === "PARTIAL"
+      ? cronEnabled
+        ? "Telemetry partial"
+        : "Cron OFF"
+      : "Telemetry unavailable";
 
   const insightObjects = prioritized.map(({ job, label, cadence, summary, jobKey }): InsightObject => {
     const overdue = isOverdue(job);
@@ -197,13 +207,16 @@ export function AutomationPanel({ jobs }: Props) {
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Automation cadence</div>
               <div className="mt-1 text-lg font-semibold text-zinc-100">Deliverables + enforcement</div>
+              {!cronEnabled ? (
+                <div className="text-[11px] uppercase tracking-[0.25em] text-amber-300">Cron OFF — manual runs only</div>
+              ) : null}
             </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusChip
-            label={unhealthyCount > 0 ? `${unhealthyCount} needs attention` : "HEALTHY"}
-            tone={unhealthyCount > 0 ? "amber" : "emerald"}
+            label={topChipLabel}
+            tone={telemetryStatus === "LIVE" ? "emerald" : telemetryStatus === "PARTIAL" ? "amber" : "zinc"}
           />
           <div className="w-36">
             <ProgressBar value={healthPct} tone={unhealthyCount > 0 ? "amber" : "emerald"} className="bg-black/25" />
@@ -220,7 +233,10 @@ export function AutomationPanel({ jobs }: Props) {
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Automation insights</div>
-            <StatusChip label={unhealthyCount > 0 ? `${unhealthyCount} action needed` : "All supported"} tone={unhealthyCount > 0 ? "amber" : "emerald"} />
+            <StatusChip
+              label={unhealthyCount > 0 ? `${unhealthyCount} action needed` : `${jobs.length} job${jobs.length === 1 ? "" : "s"}`}
+              tone={unhealthyCount > 0 ? "amber" : "zinc"}
+            />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {insightObjects.map((insight) => (

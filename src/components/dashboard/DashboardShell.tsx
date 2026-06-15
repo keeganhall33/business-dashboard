@@ -6,6 +6,7 @@ import { HeaderStatusBar } from "./HeaderStatusBar";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { CloudflarePanel } from "./CloudflarePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
+import { AutomationPanel } from "./AutomationPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -17,6 +18,9 @@ export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const websiteRefreshedAt = websiteSnapshot?.generatedAt ?? refreshedAt;
   const survivalSnapshot = data.survivalStrip ?? null;
+  const schedulerJobs = data.schedulerJobs ?? [];
+  const schedulerSummary = data.schedulerSummary ?? null;
+  const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "FALLBACK" : "BROKEN";
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
@@ -64,6 +68,17 @@ export function DashboardShell({ data }: Props) {
         <PanelAuditPlaceholder title="Cloudflare panel hidden" detail="Cloudflare GraphQL telemetry unavailable. Re-run the cloudflare job to repopulate." />
       )}
 
+      {schedulerJobs.length ? (
+        <PanelWrapper mode={schedulerPanelMode} refreshedAtIso={schedulerSummary?.lastUpdatedAt ?? refreshedAt}>
+          <AutomationPanel jobs={schedulerJobs} summary={schedulerSummary} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Scheduler telemetry unavailable"
+          detail="No scheduler job metadata loaded. Run the scheduler status workflow to capture current telemetry before re-enabling cron."
+        />
+      )}
+
       <PanelAuditPlaceholder
         title="Revenue & forecasts hidden"
         detail="Revenue engine, money-leak insights, and Fastest Path analysis stay OFF until upcoming Fix Wave 3 proves the inputs."
@@ -84,10 +99,6 @@ export function DashboardShell({ data }: Props) {
         detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
       />
 
-      <PanelAuditPlaceholder
-        title="Automation + scheduler panels hidden"
-        detail="Scheduler health strips were contradicting GitHub runs. We are wiring them to real telemetry before re-enabling."
-      />
 
       <PanelAuditPlaceholder
         title="Pipeline, war room, collectors hidden"

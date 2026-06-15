@@ -284,10 +284,25 @@ export type SchedulerJobHealth = {
   jobName: string;
   cronExpression: string;
   routePath: string;
+  timezone?: string | null;
+  isActive?: boolean;
   lastRunAt: string | null;
   lastStatus: "running" | "completed" | "failed" | string | null;
   lastDurationSeconds: number | null;
+  lastSummary?: string | null;
+  lastError?: string | null;
   nextRunAt: string | null;
+  source?: string | null;
+};
+
+export type SchedulerSummary = {
+  status: "LIVE" | "PARTIAL" | "BROKEN";
+  cronEnabled: boolean;
+  jobCount: number;
+  failingCount: number;
+  missingTelemetryCount: number;
+  lastUpdatedAt: string | null;
+  source?: string | null;
 };
 
 export type AgentSlaSnapshot = {
@@ -800,6 +815,7 @@ export type DashboardOverviewResponse = {
   tasks: TaskSummary[];
   proofOfWork: ProofOfWorkEntry[];
   schedulerJobs: SchedulerJobHealth[];
+  schedulerSummary?: SchedulerSummary;
   agentSla: AgentSlaSnapshot[];
   approvalBottlenecks: ApprovalBottleneck;
   actionQueue: ActionQueue;
