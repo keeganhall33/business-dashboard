@@ -8,6 +8,8 @@ import { CloudflarePanel } from "./CloudflarePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
 import { AutomationPanel } from "./AutomationPanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
+import { PipelineDealsPanel } from "./PipelineDealsPanel";
+import { WarRoomPanel } from "./WarRoomPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -23,8 +25,12 @@ export function DashboardShell({ data }: Props) {
   const schedulerSummary = data.schedulerSummary ?? null;
   const metaSnapshot = data.metaAds ?? null;
   const socialSnapshot = data.socialIntelligence ?? null;
+  const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [] };
+  const pipelineDeals = pipelinePanel.deals ?? [];
   const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "PARTIAL" : "BROKEN";
   const metaPanelMode = metaSnapshot?.status === "LIVE" ? "LIVE" : metaSnapshot?.status === "PARTIAL" ? "PARTIAL" : "FALLBACK";
+  const warRoomState = data.warRoom;
+  const hasWarRoomEntries = Boolean(warRoomState && (warRoomState.entries?.length || warRoomState.reason));
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
@@ -119,10 +125,34 @@ export function DashboardShell({ data }: Props) {
         detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
       />
 
+      {pipelineDeals.length ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
+          <PipelineDealsPanel deals={pipelineDeals} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Pipeline deals hidden"
+          detail="No safe opportunity data was loaded. When Supabase opportunity_pipeline refreshes with live deals this panel will reappear."
+          mode="PARTIAL"
+        />
+      )}
+
+      {hasWarRoomEntries ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={warRoomState?.lastUpdated ?? refreshedAt}>
+          <WarRoomPanel data={warRoomState} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="War Room hidden"
+          detail="War Room state could not be loaded. Once the operating_mode state and thread history are verified this panel will return."
+          mode="PARTIAL"
+        />
+      )}
 
       <PanelAuditPlaceholder
-        title="Pipeline, war room, collectors hidden"
-        detail="Supabase pipeline queries are offline in this environment. Once the live feed is restored the full pipeline view will return."
+        title="Collectors hidden"
+        detail="Collectors hidden. Source is stale. Latest collector touch: May 18. Manual fallback table last changed Apr 30."
+        mode="BROKEN"
       />
 
     </div>
