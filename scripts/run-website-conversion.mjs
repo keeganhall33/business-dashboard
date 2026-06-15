@@ -31,8 +31,18 @@ const wooBaseUrl = process.env.WOO_BASE_URL.replace(/\/$/, '');
 const wooKey = process.env.WOO_CONSUMER_KEY;
 const wooSecret = process.env.WOO_CONSUMER_SECRET;
 
-const agentOutputPath = path.resolve('../dashboard/data/website/latest.json');
-const agentLogPath = path.resolve('../dashboard/logs/website_agent.log');
+const repoRoot = process.cwd();
+const agentOutputPath = path.join(repoRoot, 'dashboard', 'data', 'website', 'latest.json');
+const agentLogPath = path.join(repoRoot, 'dashboard', 'logs', 'website_agent.log');
+
+const GA4_DATE_RANGE = { startDate: '7daysAgo', endDate: 'today' };
+const REQUIRED_GA4_METRICS = [
+  'totalUsers',
+  'sessions',
+  'eventCount',
+  'ecommercePurchases',
+  'purchaseRevenue'
+];
 
 function baseLog(payload) {
   return fs.mkdir(path.dirname(agentLogPath), { recursive: true })
@@ -62,15 +72,8 @@ async function sendSchedulerAlert(payload) {
 
 function buildGa4RequestPayload() {
   return {
-    dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
-    metrics: [
-      { name: 'totalUsers' },
-      { name: 'sessions' },
-      { name: 'eventCount' },
-      { name: 'addToCartEvents' },
-      { name: 'ecommercePurchases' },
-      { name: 'purchaseRevenue' }
-    ],
+    dateRanges: [GA4_DATE_RANGE],
+    metrics: REQUIRED_GA4_METRICS.map((name) => ({ name })),
     dimensions: [
       { name: 'deviceCategory' },
       { name: 'sessionDefaultChannelGroup' }
@@ -86,15 +89,8 @@ const warnings = [];
 
 const baseReportRequest = {
   property: `properties/${propertyId}`,
-  dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
-  metrics: [
-    { name: 'totalUsers' },
-    { name: 'sessions' },
-    { name: 'eventCount' },
-    { name: 'addToCartEvents' },
-    { name: 'ecommercePurchases' },
-    { name: 'purchaseRevenue' }
-  ]
+  dateRanges: [GA4_DATE_RANGE],
+  metrics: REQUIRED_GA4_METRICS.map((name) => ({ name }))
 };
 
 console.log('[website-agent] GA4 request metrics:', baseReportRequest.metrics.map((m) => m.name));
@@ -113,7 +109,7 @@ async function fetchBreakdown(dimensionName) {
   try {
     const [report] = await client.runReport({
       property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      dateRanges: [GA4_DATE_RANGE],
       dimensions: [{ name: dimensionName }],
       metrics: [{ name: 'sessions' }]
     });
@@ -131,7 +127,7 @@ async function fetchAddToCartEvents() {
   try {
     const [directMetric] = await client.runReport({
       property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'addToCartEvents' }]
     });
     const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
@@ -139,7 +135,7 @@ async function fetchAddToCartEvents() {
 
     const [eventFilterReport] = await client.runReport({
       property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'eventCount' }],
       dimensionFilter: {
         filter: {
@@ -159,7 +155,7 @@ async function fetchBeginCheckoutEvents() {
   try {
     const [report] = await client.runReport({
       property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'beginCheckoutEvents' }]
     });
     return Number(report.rows?.[0]?.metricValues?.[0]?.value ?? 0);
@@ -180,12 +176,16 @@ return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCh
 }
 
 async function fetchGA4WithApiKey() {
+  return runGa4ApiKeyReport(buildGa4RequestPayload());
+}
+
+async function runGa4ApiKeyReport(body) {
   const response = await fetch(
     `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport?key=${ga4CredentialRaw}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildGa4RequestPayload())
+      body: JSON.stringify(body)
     }
   );
 
@@ -197,6 +197,35 @@ async function fetchGA4WithApiKey() {
   return await response.json();
 }
 
+async function fetchAddToCartEventsWithApiKey() {
+  try {
+    const directMetric = await runGa4ApiKeyReport({
+      dateRanges: [GA4_DATE_RANGE],
+      metrics: [{ name: 'addToCartEvents' }]
+    });
+    const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
+    if (!Number.isNaN(directValue) && directValue) return { value: directValue };
+
+    const fallbackMetric = await runGa4ApiKeyReport({
+      dateRanges: [GA4_DATE_RANGE],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'eventName',
+          stringFilter: { matchType: 'EXACT', value: 'add_to_cart' }
+        }
+      }
+    });
+
+    return {
+      value: Number(fallbackMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0)
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { value: null, warning: `addToCartEvents unavailable: ${message}` };
+  }
+}
+
 function normalizeGa4Response(summary) {
   const metricValues = summary.rows?.[0]?.metricValues ?? [];
   const toNumber = (index) => Number(metricValues[index]?.value ?? 0);
@@ -205,9 +234,8 @@ function normalizeGa4Response(summary) {
     totalUsers: toNumber(0),
     sessions: toNumber(1),
     eventCount: toNumber(2),
-    addToCartEvents: toNumber(3),
-    ecommercePurchases: toNumber(4),
-    purchaseRevenue: Number(metricValues[5]?.value ?? 0),
+    ecommercePurchases: toNumber(3),
+    purchaseRevenue: Number(metricValues[4]?.value ?? 0),
     deviceBreakdown: (summary.rows ?? []).map((row) => ({
       deviceCategory: row.dimensionValues?.[0]?.value,
       channelGroup: row.dimensionValues?.[1]?.value,
@@ -219,7 +247,17 @@ function normalizeGa4Response(summary) {
 async function fetchGA4Summary() {
   const looksLikeJson = ga4CredentialRaw.trim().startsWith('{');
   if (!looksLikeJson) {
-    return normalizeGa4Response(await fetchGA4WithApiKey());
+    const warnings = [];
+    const summary = await fetchGA4WithApiKey();
+    const normalized = normalizeGa4Response(summary);
+    const { value: addToCartEvents, warning } = await fetchAddToCartEventsWithApiKey();
+    if (warning) warnings.push(warning);
+    return {
+      ...normalized,
+      addToCartEvents,
+      beginCheckoutEvents: null,
+      warnings
+    };
   }
 
   const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings } =
