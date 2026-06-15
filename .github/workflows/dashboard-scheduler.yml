@@ -43,6 +43,15 @@ jobs:
           fi
           cp .env.website.ci .env.website
           op run --env-file .env.website -- npm run website:run
+      - name: Upload Website Snapshot Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-latest-json
+          path: |
+            dashboard/data/website/latest.json
+            dashboard/logs/website_agent.log
+          retention-days: 7
 
   meta:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'meta' || github.event_name == 'schedule' && github.event.schedule == '0 11 * * *'
