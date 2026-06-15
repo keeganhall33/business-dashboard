@@ -72,6 +72,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
           SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
             echo "OP service account token present"
@@ -81,6 +83,15 @@ jobs:
           fi
           cp .env.meta.ci .env.meta
           op run --env-file .env.meta -- npm run meta:run
+      - name: Upload Meta Snapshot Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-latest-json
+          path: |
+            dashboard/data/meta/latest.json
+            dashboard/logs/meta_ads_agent.log
+          retention-days: 7
 
   industry:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'industry' || github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'

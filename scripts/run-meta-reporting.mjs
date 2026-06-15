@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import fetch from 'node-fetch';
+import { createClient } from '@supabase/supabase-js';
 
 const REQUIRED_ENV_VARS = ['META_ACCESS_TOKEN'];
 for (const key of REQUIRED_ENV_VARS) {
@@ -15,9 +16,23 @@ for (const key of REQUIRED_ENV_VARS) {
 const accessToken = process.env.META_ACCESS_TOKEN.trim();
 const configuredAccountId = process.env.META_AD_ACCOUNT_ID?.trim();
 const reportDays = Math.max(1, Number(process.env.META_REPORT_DAYS ?? 7));
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseEnabled = Boolean(supabaseUrl && supabaseServiceRoleKey);
+const supabaseClient = supabaseEnabled
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  : null;
+if (!supabaseEnabled) {
+  console.warn(
+    `[meta-agent] Supabase env missing; urlPresent=${Boolean(supabaseUrl)} keyPresent=${Boolean(supabaseServiceRoleKey)} - skipping remote snapshot upsert`
+  );
+}
 
-const outputPath = path.resolve('../dashboard/data/meta/latest.json');
-const logPath = path.resolve('../dashboard/logs/meta_ads_agent.log');
+const repoRoot = process.cwd();
+const outputPath = path.join(repoRoot, 'dashboard', 'data', 'meta', 'latest.json');
+const logPath = path.join(repoRoot, 'dashboard', 'logs', 'meta_ads_agent.log');
 
 function appendLog(payload) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...payload });
@@ -168,6 +183,15 @@ async function main() {
       )
     );
 
+    await upsertSupabaseSnapshot({
+      generatedAt: new Date().toISOString(),
+      accountId: `act_${adAccountId}`,
+      range: reportDays,
+      campaigns,
+      summary,
+      status: summary.spend > 0 ? 'LIVE' : 'PARTIAL'
+    });
+
     await appendLog({ status: 'success', campaigns: campaigns.length, spend: summary.spend });
     await sendSchedulerAlert({ status: 'success', message: 'Meta reporting agent completed', spend: summary.spend });
     console.log('[meta-agent] Updated Meta insights snapshot');
@@ -184,3 +208,25 @@ async function main() {
 }
 
 await main();
+
+async function upsertSupabaseSnapshot(snapshot) {
+  if (!supabaseClient) return;
+  try {
+    const { error } = await supabaseClient
+      .from('dashboard_snapshots')
+      .upsert({
+        key: 'meta',
+        payload: snapshot,
+        mode: snapshot?.status ?? null,
+        generated_at: typeof snapshot?.generatedAt === 'string' ? snapshot.generatedAt : null
+      });
+    if (error) {
+      console.error('[meta-agent] Supabase snapshot upsert failed:', error.message);
+      await appendLog({ status: 'warning', message: `supabase upsert failed: ${error.message}` });
+    } else {
+      console.log('[meta-agent] Supabase dashboard snapshot updated (meta)');
+    }
+  } catch (error) {
+    console.error('[meta-agent] Supabase snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
+}
