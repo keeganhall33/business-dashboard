@@ -34,6 +34,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
           SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
             echo "OP service account token present"
@@ -108,6 +110,8 @@ jobs:
       - name: Run Cloudflare Telemetry
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
             echo "OP service account token present"

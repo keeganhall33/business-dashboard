@@ -25,12 +25,21 @@ import {
   getIdeas,
   getRecentIdeaComments,
   getCeoQuestions,
-  getRecentCeoQuestionComments
+  getRecentCeoQuestionComments,
+  getDashboardSnapshots,
+  type DashboardSnapshotRecord
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
-import { RangePreset, type AgentHealth, type DeliverableLink, type ProofOfWorkEntry } from "@/lib/types/dashboard";
+import {
+  RangePreset,
+  type AgentHealth,
+  type DeliverableLink,
+  type ProofOfWorkEntry,
+  type WebsiteConversionSnapshot,
+  type CloudflareTelemetrySnapshot
+} from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 export const runtime = "nodejs";
@@ -970,7 +979,8 @@ export async function GET(request: Request) {
       ceoQuestionResult,
       recentCeoComments,
       industryPulseResult,
-      localArtifacts
+      localArtifacts,
+      dashboardSnapshotRows
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -992,8 +1002,16 @@ export async function GET(request: Request) {
       getCeoQuestions({ limit: 250 }) as Promise<{ items: CeoQuestionRow[]; count: number }>,
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
-      loadLocalDashboardArtifacts()
+      loadLocalDashboardArtifacts(),
+      getDashboardSnapshots(["website", "cloudflare"])
     ]);
+
+    const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
+    const snapshotMap = new Map(snapshotRows.map((row) => [row.key, row]));
+    const websiteSnapshot =
+      (snapshotMap.get("website")?.payload as WebsiteConversionSnapshot | null) ?? localArtifacts.websiteSnapshot;
+    const cloudflareSnapshot =
+      (snapshotMap.get("cloudflare")?.payload as CloudflareTelemetrySnapshot | null) ?? localArtifacts.cloudflareSnapshot;
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1833,11 +1851,11 @@ export async function GET(request: Request) {
       systemHealth,
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
-      websiteConversion: localArtifacts.websiteSnapshot,
+      websiteConversion: websiteSnapshot,
       metaAds: localArtifacts.metaSnapshot,
       executiveSummary: localArtifacts.executiveSummary,
       socialIntelligence: localArtifacts.socialSnapshot,
-      cloudflare: localArtifacts.cloudflareSnapshot,
+      cloudflare: cloudflareSnapshot,
       leadIntelligence: localArtifacts.leadSnapshot,
       agentStatusPanel: localArtifacts.agentStatus,
       automationStatusPanel: localArtifacts.automationStatus,

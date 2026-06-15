@@ -2196,3 +2196,25 @@ export async function getRecentCeoQuestionComments(limit = 25) {
   }
   return data ?? [];
 }
+
+export type DashboardSnapshotRecord = {
+  key: string;
+  payload: unknown;
+  mode: string | null;
+  generated_at: string | null;
+  updated_at: string | null;
+};
+
+export async function getDashboardSnapshots(keys: string[]): Promise<DashboardSnapshotRecord[]> {
+  if (!keys.length) return [];
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("dashboard_snapshots")
+    .select("key, payload, mode, generated_at, updated_at")
+    .in("key", keys);
+  if (error) {
+    if (isMissingTableError(error, "dashboard_snapshots")) return [];
+    throw error;
+  }
+  return (data ?? []) as DashboardSnapshotRecord[];
+}

@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
+import { createClient } from '@supabase/supabase-js';
 
 const DASHBOARD_ROOT = path.resolve('../dashboard');
 const OUTPUT_PATH = path.join(DASHBOARD_ROOT, 'data', 'cloudflare', 'latest.json');
@@ -14,6 +15,18 @@ const CF_ZONE = process.env.CLOUDFLARE_ZONE_ID?.trim();
 const CF_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 const schedulerSecretPresent = Boolean(process.env.SCHEDULER_SECRET?.trim());
 const schedulerAlertUrlPresent = Boolean(process.env.SCHEDULER_ALERT_URL?.trim());
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseClient = supabaseUrl && supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  : null;
+if (!supabaseClient) {
+  console.warn(
+    `[cloudflare] Supabase env missing; urlPresent=${Boolean(supabaseUrl)} keyPresent=${Boolean(supabaseServiceRoleKey)} - skipping remote snapshot upsert`
+  );
+}
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
 const GRAPHQL_LOOKBACK_HOURS = Number(process.env.CLOUDFLARE_LOOKBACK_HOURS ?? 12);
 const GRAPHQL_QUERY = `
@@ -118,7 +131,9 @@ async function fetchCloudflareTelemetry() {
       zoneIdPresent: Boolean(CF_ZONE),
       zoneIdLength: CF_ZONE?.length ?? 0,
       schedulerSecretPresent,
-      schedulerAlertUrlPresent
+      schedulerAlertUrlPresent,
+      supabaseUrlPresent: Boolean(supabaseUrl),
+      supabaseKeyPresent: Boolean(supabaseServiceRoleKey)
     }
   });
 
@@ -242,6 +257,7 @@ async function main() {
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await fs.writeFile(OUTPUT_PATH, JSON.stringify(merged, null, 2));
   await appendLog({ status: 'success', mode: merged?.status?.mode ?? 'unknown' });
+  await upsertSupabaseSnapshot(merged);
   console.log('[cloudflare] Telemetry snapshot written');
 }
 
@@ -251,3 +267,25 @@ main().catch(async (error) => {
   console.error('[cloudflare] Failed:', message);
   process.exit(1);
 });
+
+async function upsertSupabaseSnapshot(snapshot) {
+  if (!supabaseClient || !snapshot) return;
+  try {
+    const { error } = await supabaseClient
+      .from('dashboard_snapshots')
+      .upsert({
+        key: 'cloudflare',
+        payload: snapshot,
+        mode: snapshot?.status?.mode ?? null,
+        generated_at: typeof snapshot?.generatedAt === 'string' ? snapshot.generatedAt : null
+      });
+    if (error) {
+      console.error('[cloudflare] Supabase snapshot upsert failed:', error.message);
+      await appendLog({ status: 'warning', message: `supabase upsert failed: ${error.message}` });
+    } else {
+      console.log('[cloudflare] Supabase dashboard snapshot updated (cloudflare)');
+    }
+  } catch (error) {
+    console.error('[cloudflare] Supabase snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
+}
