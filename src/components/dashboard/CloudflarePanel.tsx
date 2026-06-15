@@ -3,6 +3,7 @@
 import type { CloudflareTelemetrySnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { PanelWrapper } from "./ui/PanelWrapper";
 
 export function CloudflarePanel({ snapshot }: { snapshot?: CloudflareTelemetrySnapshot | null }) {
   if (!snapshot) {
@@ -18,22 +19,24 @@ export function CloudflarePanel({ snapshot }: { snapshot?: CloudflareTelemetrySn
   const cacheHealth = snapshot.summary?.cacheHealth ?? 'unknown';
   const trafficHealth = snapshot.summary?.trafficHealth ?? 'unknown';
   const warnings = snapshot.summary?.warnings ?? snapshot.warnings ?? [];
+  const cacheMessage = cacheHitRate == null ? 'Cache data unavailable from GraphQL' : `Cache health: ${cacheHealth}`;
+  const threatMessage = snapshot.security?.threats == null ? 'Threat telemetry unavailable' : `${snapshot.security.threats} threats detected`;
 
   return (
     <section className="ui-glass rounded-3xl p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Cloudflare / Site Health</div>
-          <div className="text-sm text-zinc-400">Traffic, cache, and security status.</div>
-          <div className="text-xs text-emerald-200/70">Mode: {snapshot.status?.mode ?? 'unknown'}</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Cloudflare / Site Health</div>
+        <div className="text-sm text-zinc-400">Traffic, cache, and security status.</div>
+        <div className="text-xs text-emerald-200/70">Mode: {snapshot.status?.mode ?? 'unknown'}</div>
         </div>
         <StatusChip label={`Updated ${updated}`} tone="zinc" />
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard label="Traffic health" value={trafficHealth} description={`${snapshot.traffic?.requestsTotal ?? 0} requests`} />
-        <MetricCard label="Cache hit rate" value={cacheHitRate ? `${(cacheHitRate * 100).toFixed(1)}%` : 'n/a'} description={`Cache health: ${cacheHealth}`} />
-        <MetricCard label="Threats blocked" value={snapshot.security?.threats ?? 0} description={`Firewall events: ${snapshot.security?.firewallEvents ?? 0}`} />
+        <MetricCard label="Cache hit rate" value={cacheHitRate ? `${(cacheHitRate * 100).toFixed(1)}%` : 'n/a'} description={cacheMessage} />
+        <MetricCard label="Threat signals" value={snapshot.security?.threats ?? 'n/a'} description={threatMessage} />
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -86,14 +89,14 @@ function ListCard({ title, items, empty, tone }: { title: string; items: string[
 
 function buildSecuritySignals(snapshot: CloudflareTelemetrySnapshot) {
   const list: string[] = [];
-  if (snapshot.security?.botRequests) {
+  if (snapshot.security?.botRequests != null) {
     list.push(`Bot requests: ${snapshot.security.botRequests}`);
   }
-  if (snapshot.security?.threats) {
-    list.push(`Threats detected: ${snapshot.security.threats}`);
-  }
-  if (snapshot.security?.blockedRequests) {
+  if (snapshot.security?.blockedRequests != null) {
     list.push(`Blocked requests: ${snapshot.security.blockedRequests}`);
+  }
+  if (!list.length) {
+    list.push('Live security signals unavailable from GraphQL dataset');
   }
   return list;
 }

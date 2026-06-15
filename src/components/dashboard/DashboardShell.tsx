@@ -7,6 +7,7 @@ import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { HeaderStatusBar } from "./HeaderStatusBar";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { RevenueEnginePanel } from "./RevenueEnginePanel";
+import { CloudflarePanel } from "./CloudflarePanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -47,6 +48,14 @@ export function DashboardShell({ data }: Props) {
         <RevenueEnginePanel data={data.revenueEngine} />
       </PanelWrapper>
 
+      {data.cloudflare ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={data.cloudflare.generatedAt}>
+          <CloudflarePanel snapshot={data.cloudflare} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder title="Cloudflare panel hidden" detail="Cloudflare GraphQL telemetry unavailable. Re-run the cloudflare job to repopulate." />
+      )}
+
       <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
         <ActionQueuePanel data={data.actionQueue} />
       </PanelWrapper>
@@ -72,7 +81,7 @@ export function DashboardShell({ data }: Props) {
       />
 
       <PanelAuditPlaceholder
-        title="Social, Cloudflare, Meta panels hidden"
+        title="Social & Meta panels hidden"
         detail="These panels were sourcing snapshot/manual data. They will stay hidden until their APIs are confirmed live."
       />
     </div>
