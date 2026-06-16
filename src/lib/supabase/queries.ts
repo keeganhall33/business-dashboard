@@ -1007,56 +1007,15 @@ export async function getRecentOpportunities(limit = 200) {
 
 export async function getCollectorRelationships(limit = 60) {
   const supabase = getSupabaseServerClient();
-  type CollectorDashboardViewRow = {
-    collector_id: string | null;
-    name: string | null;
-    tier: string | null;
-    last_touch_at: string | null;
-    next_touch_due_at: string | null;
-    revenue_lifetime: number | null;
-    state_chip: string | null;
-    drift_status: string | null;
-    drift_reason: string | null;
-  };
-
-  const viewQuery = await supabase
-    .from("vw_collectors_dashboard")
-    .select(
-      "collector_id,name,tier,last_touch_at,next_touch_due_at,revenue_lifetime,state_chip,drift_status,drift_reason"
-    )
-    .order("revenue_lifetime", { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  if (!viewQuery.error && Array.isArray(viewQuery.data) && viewQuery.data.length > 0) {
-    return (viewQuery.data as CollectorDashboardViewRow[]).map((row, idx) => ({
-      id: row.collector_id ?? row.name ?? `collector-${idx}`,
-      collector_name: row.name ?? "Collector",
-      tier: row.tier ?? "B",
-      relationship_status: row.state_chip ?? row.drift_status ?? "quiet",
-      last_outreach_at: row.last_touch_at ?? null,
-      next_move: row.drift_reason ?? null,
-      next_move_due_at: row.next_touch_due_at ?? null,
-      estimated_value: row.revenue_lifetime ?? null,
-      notes_md: null,
-      source: null,
-      deliverables: null,
-      deliverable_links: null
-    }));
-  }
-
-  if (viewQuery.error && !isMissingTableError(viewQuery.error, "vw_collectors_dashboard")) {
-    throw viewQuery.error;
-  }
-
-  const legacy = await supabase
+  const { data, error } = await supabase
     .from("collector_relationships")
     .select("*")
     .order("tier", { ascending: true })
     .order("priority", { ascending: false })
     .order("collector_name", { ascending: true })
     .limit(limit);
-  if (legacy.error) throw legacy.error;
-  return legacy.data ?? [];
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function getLatestOpportunitiesByStatus(status: string, limit = 50) {
