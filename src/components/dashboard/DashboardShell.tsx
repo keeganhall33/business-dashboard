@@ -10,6 +10,7 @@ import { AutomationPanel } from "./AutomationPanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { PipelineDealsPanel } from "./PipelineDealsPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
+import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -24,9 +25,9 @@ export function DashboardShell({ data }: Props) {
   const schedulerJobs = data.schedulerJobs ?? [];
   const schedulerSummary = data.schedulerSummary ?? null;
   const metaSnapshot = data.metaAds ?? null;
-  const socialSnapshot = data.socialIntelligence ?? null;
   const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [] };
   const pipelineDeals = pipelinePanel.deals ?? [];
+  const collectorSnapshot = data.collectorTelemetry ?? null;
   const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "PARTIAL" : "BROKEN";
   const metaPanelMode = metaSnapshot?.status === "LIVE" ? "LIVE" : metaSnapshot?.status === "PARTIAL" ? "PARTIAL" : "FALLBACK";
   const warRoomState = data.warRoom;
@@ -149,11 +150,17 @@ export function DashboardShell({ data }: Props) {
         />
       )}
 
-      <PanelAuditPlaceholder
-        title="Collectors hidden"
-        detail="Collectors hidden. Source is stale. Latest collector touch: May 18. Manual fallback table last changed Apr 30."
-        mode="BROKEN"
-      />
+      {collectorSnapshot ? (
+        <PanelWrapper mode="PARTIAL" refreshedAtIso={collectorSnapshot.lastImportedAt ?? refreshedAt}>
+          <CollectorsStatusPanel snapshot={collectorSnapshot} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Collectors hidden"
+          detail="Collectors hidden. Source is stale. Latest collector touch: May 18. Manual fallback table last changed Apr 30."
+          mode="BROKEN"
+        />
+      )}
 
     </div>
   );

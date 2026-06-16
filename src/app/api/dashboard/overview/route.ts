@@ -35,6 +35,7 @@ import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
 import {
   RangePreset,
   type AgentHealth,
+  type CollectorTelemetrySnapshot,
   type DeliverableLink,
   type ProofOfWorkEntry,
   type WebsiteConversionSnapshot,
@@ -281,11 +282,15 @@ type CollectorRow = {
   tier: string;
   relationship_status: string | null;
   last_outreach_at: string | null;
+  last_touch_at?: string | null;
   next_move: string | null;
   next_move_due_at: string | null;
   estimated_value: number | null;
   notes_md?: string | null;
   source?: string | null;
+  priority?: number | null;
+  updated_at?: string | null;
+  import_batch_id?: string | null;
   deliverables?: unknown;
   deliverable_links?: unknown;
 };
@@ -1004,7 +1009,7 @@ export async function GET(request: Request) {
       getPendingAgentPlans(15),
       getDecisionsRequiringReview({ withinDays: 21, limit: 20 }),
       getLatestFinanceSnapshot(),
-      getCollectorRelationships(12),
+      getCollectorRelationships(60),
       getRecentTasks(500),
       listAgentKpis({ limit: 250 }) as Promise<AgentKpiRow[]>,
       getIdeas({ limit: 250 }) as Promise<{ items: IdeaRow[]; count: number }>,
@@ -1658,12 +1663,14 @@ export async function GET(request: Request) {
       name: collector.collector_name,
       tier: collector.tier,
       status: collector.relationship_status,
-      lastOutreachAt: collector.last_outreach_at,
+      lastOutreachAt: collector.last_touch_at ?? collector.last_outreach_at,
       nextMove: collector.next_move,
       nextMoveDueAt: collector.next_move_due_at,
       estimatedValue: collector.estimated_value,
       supportingDocs: buildSupportingDocs(collector)
     }));
+
+    const collectorTelemetry = buildCollectorTelemetry(collectorRows as CollectorRow[]);
 
     const normalizedOpportunities = dedupeOpportunityRows(opportunities as OpportunityRow[]);
 
@@ -1894,6 +1901,7 @@ export async function GET(request: Request) {
       brandPower,
       opportunityRadar,
       pipelinePanel,
+      collectorTelemetry,
       survivalStrip,
       tasks: taskSummaries,
       proofOfWork: proofOfWorkEntries,
@@ -1958,4 +1966,113 @@ export async function GET(request: Request) {
       message: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+function buildCollectorTelemetry(rows: CollectorRow[]): CollectorTelemetrySnapshot {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const totalRecords = safeRows.length;
+  const wooRecords = safeRows.filter((row) => (row.source ?? "").toLowerCase() === "woocommerce_orders");
+  const manualRecords = totalRecords - wooRecords.length;
+  const estimatedValueUsd = roundCurrency(
+    safeRows.reduce((sum, row) => sum + Number(row.estimated_value ?? 0), 0)
+  );
+
+  const tierCounts = ensureKeys(
+    countOccurrences(safeRows.map((row) => (row.tier ?? "Unknown").toUpperCase())),
+    ["A", "B"]
+  );
+  const priorityCounts = ensureKeys(countOccurrences(safeRows.map((row) => priorityLabel(row.priority))), ["critical", "high", "medium", "unknown"]);
+  const relationshipCounts = ensureKeys(
+    countOccurrences(safeRows.map((row) => normalizeRelationship(row.relationship_status))),
+    ["active", "recent", "quiet", "dormant"]
+  );
+
+  const wooSliceValueUsd = roundCurrency(
+    wooRecords.reduce((sum, row) => sum + Number(row.estimated_value ?? 0), 0)
+  );
+
+  const touchIsos = safeRows
+    .map((row) => row.last_touch_at ?? row.last_outreach_at ?? null)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).toISOString())
+    .sort();
+  const newestTouch = touchIsos[touchIsos.length - 1] ?? null;
+  const oldestTouch = touchIsos[0] ?? null;
+  const freshnessDays = newestTouch ? Math.round(((Date.now() - new Date(newestTouch).getTime()) / 86400000) * 10) / 10 : null;
+  const freshnessDaysRounded = freshnessDays != null ? Math.max(0, Math.round(freshnessDays)) : null;
+  const freshnessCopy = freshnessDaysRounded != null ? `Most recent touch ${freshnessDaysRounded}d ago` : "Most recent touch —";
+
+  const lastImportedAt = wooRecords
+    .map((row) => row.updated_at ?? row.last_touch_at ?? row.last_outreach_at ?? null)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).toISOString())
+    .sort()
+    .pop() ?? null;
+
+  const status = wooRecords.length > 0 ? "PARTIAL" : "BROKEN";
+  const statusLabel = wooRecords.length > 0 ? "PARTIAL · Woo import · stale touchpoints" : "BROKEN · collectors unavailable";
+  const statusDetail = wooRecords.length > 0 ? "Imported slice only; touchpoints remain stale" : "No collector datasets loaded";
+
+  return {
+    status,
+    statusLabel,
+    statusDetail,
+    freshnessCopy,
+    totals: {
+      totalRecords,
+      wooRecords: wooRecords.length,
+      manualRecords,
+      estimatedValueUsd
+    },
+    wooSliceValueUsd,
+    tiers: tierCounts,
+    priorities: priorityCounts,
+    relationships: relationshipCounts,
+    lastTouch: {
+      newest: newestTouch,
+      oldest: oldestTouch,
+      freshnessDays,
+      freshnessDaysRounded
+    },
+    lastImportedAt,
+    sourceNote: `${wooRecords.length} WooCommerce imports + ${manualRecords} manual records. No outreach implied.`
+  };
+}
+
+function countOccurrences(values: Array<string | null | undefined>) {
+  return values.reduce<Record<string, number>>((acc, value) => {
+    const key = (value ?? "unknown").trim();
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+}
+
+function ensureKeys(counts: Record<string, number>, keys: string[]) {
+  const next = { ...counts };
+  keys.forEach((key) => {
+    if (!(key in next)) next[key] = 0;
+  });
+  return next;
+}
+
+function priorityLabel(score: number | null | undefined) {
+  if (score === 3) return "critical";
+  if (score === 2) return "high";
+  if (score === 1) return "medium";
+  if (score === 0) return "low";
+  return "unknown";
+}
+
+function normalizeRelationship(status: string | null | undefined) {
+  if (!status) return "unknown";
+  const normalized = status.toLowerCase();
+  if (normalized.includes("active")) return "active";
+  if (normalized.includes("recent")) return "recent";
+  if (normalized.includes("dormant")) return "dormant";
+  if (normalized.includes("quiet")) return "quiet";
+  return normalized;
+}
+
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100;
 }

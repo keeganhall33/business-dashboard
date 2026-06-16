@@ -408,6 +408,7 @@ create table if not exists collector_relationships (
   priority integer not null default 0,
   notes text,
   source text,
+  identity_hash text,
   updated_by text,
   import_batch_id uuid,
   created_at timestamptz not null default now(),
@@ -420,6 +421,9 @@ create index if not exists idx_collector_relationships_next_move_due
   on collector_relationships(next_move_due_at);
 create index if not exists idx_collector_relationships_last_touch
   on collector_relationships(last_touch_at desc);
+create unique index if not exists idx_collector_identity_hash_unique
+  on collector_relationships(identity_hash)
+  where identity_hash is not null;
 
 drop trigger if exists trg_collector_relationships_updated_at on collector_relationships;
 create trigger trg_collector_relationships_updated_at

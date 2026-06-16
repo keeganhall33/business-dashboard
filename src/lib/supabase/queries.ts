@@ -1005,7 +1005,7 @@ export async function getRecentOpportunities(limit = 200) {
   return data ?? [];
 }
 
-export async function getCollectorRelationships(limit = 30) {
+export async function getCollectorRelationships(limit = 60) {
   const supabase = getSupabaseServerClient();
   type CollectorDashboardViewRow = {
     collector_id: string | null;
@@ -1027,7 +1027,7 @@ export async function getCollectorRelationships(limit = 30) {
     .order("revenue_lifetime", { ascending: false, nullsFirst: false })
     .limit(limit);
 
-  if (!viewQuery.error && Array.isArray(viewQuery.data)) {
+  if (!viewQuery.error && Array.isArray(viewQuery.data) && viewQuery.data.length > 0) {
     return (viewQuery.data as CollectorDashboardViewRow[]).map((row, idx) => ({
       id: row.collector_id ?? row.name ?? `collector-${idx}`,
       collector_name: row.name ?? "Collector",

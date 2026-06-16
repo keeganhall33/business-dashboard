@@ -89,6 +89,31 @@ export type CollectorRelationship = {
   supportingDocs?: DeliverableLink[] | null;
 };
 
+export type CollectorTelemetrySnapshot = {
+  status: "BROKEN" | "PARTIAL" | "LIVE";
+  statusLabel: string;
+  statusDetail: string;
+  freshnessCopy: string;
+  totals: {
+    totalRecords: number;
+    wooRecords: number;
+    manualRecords: number;
+    estimatedValueUsd: number;
+  };
+  wooSliceValueUsd: number;
+  tiers: Record<string, number>;
+  priorities: Record<string, number>;
+  relationships: Record<string, number>;
+  lastTouch: {
+    newest: string | null;
+    oldest: string | null;
+    freshnessDays: number | null;
+    freshnessDaysRounded: number | null;
+  };
+  lastImportedAt: string | null;
+  sourceNote: string;
+};
+
 export type SurvivalStrip = {
   configured: boolean;
   cashOnHand: number | null;
@@ -831,6 +856,7 @@ export type DashboardOverviewResponse = {
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
   cloudflare?: CloudflareTelemetrySnapshot | null;
+  collectorTelemetry?: CollectorTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];
   dataSourceAccess?: DataSourceAccessEntry[];

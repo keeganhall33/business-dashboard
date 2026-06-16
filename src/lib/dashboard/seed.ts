@@ -9,6 +9,7 @@ type DashboardSeedPartial = {
   pipelinePanel?: {
     collectors?: CollectorRelationship[];
   };
+  collectorTelemetry?: DashboardOverviewResponse["collectorTelemetry"];
 };
 
 function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
@@ -53,6 +54,30 @@ function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
     agentKpis: [],
     ideaBoard: { columns: {}, recentComments: [], linkedTasks: {} },
     ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] },
+    collectorTelemetry: {
+      status: "BROKEN",
+      statusLabel: "BROKEN · collectors unavailable",
+      statusDetail: "No collector relationships loaded",
+      freshnessCopy: "Most recent touch —",
+      totals: {
+        totalRecords: 0,
+        wooRecords: 0,
+        manualRecords: 0,
+        estimatedValueUsd: 0
+      },
+      wooSliceValueUsd: 0,
+      tiers: {},
+      priorities: {},
+      relationships: {},
+      lastTouch: {
+        newest: null,
+        oldest: null,
+        freshnessDays: null,
+        freshnessDaysRounded: null
+      },
+      lastImportedAt: null,
+      sourceNote: "No collector data available."
+    },
 
     luxuryCollectibles: {
       premiumEdition: {
@@ -136,6 +161,7 @@ export async function loadDashboardOverviewFromSeed(options?: {
     pipelinePanel: {
       ...base.pipelinePanel,
       collectors: partial.pipelinePanel?.collectors ?? base.pipelinePanel.collectors
-    }
+    },
+    collectorTelemetry: partial.collectorTelemetry ?? base.collectorTelemetry
   };
 }
