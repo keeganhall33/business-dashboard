@@ -11,6 +11,7 @@ import { MetaAdsPanel } from "./MetaAdsPanel";
 import { PipelineDealsPanel } from "./PipelineDealsPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
+import { ConversionWatchPanel } from "./ConversionWatchPanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -70,6 +71,12 @@ export function DashboardShell({ data }: Props) {
           detail="The latest GA4 + WooCommerce snapshot could not be loaded. Re-run the website agent to regenerate dashboard/data/website/latest.json."
         />
       )}
+
+      {websiteSnapshot ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={websiteRefreshedAt}>
+          <ConversionWatchPanel snapshot={websiteSnapshot} />
+        </PanelWrapper>
+      ) : null}
 
       {data.cloudflare ? (
         <PanelWrapper mode="LIVE" refreshedAtIso={data.cloudflare.generatedAt}>
