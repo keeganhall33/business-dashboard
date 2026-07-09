@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
-import { formatRelativeTimeFromNow } from "@/lib/date";
+import { formatDateRangeLabel, formatRelativeTimeFromNow } from "@/lib/date";
 
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -11,6 +11,7 @@ export function ConversionWatchPanel({ snapshot }: { snapshot?: WebsiteConversio
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const wooWindowLabel = getWooWindowLabel(snapshot);
   const [now] = useState(() => Date.now());
   const ageHours = snapshot?.generatedAt ? (now - new Date(snapshot.generatedAt).getTime()) / 36e5 : null;
   const stale = ageHours == null || ageHours > 24;
@@ -37,7 +38,10 @@ export function ConversionWatchPanel({ snapshot }: { snapshot?: WebsiteConversio
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Conversion Watch</p>
           <p className="text-sm text-zinc-400">Quick gate on GA4 vs Woo telemetry.</p>
-          <p className="text-xs text-zinc-500">Snapshot {generatedLabel}</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+            Reporting window: {wooWindowLabel ?? "Woo range unavailable"} · GA4 last 7 days (rolling)
+          </p>
+          <p className="text-xs text-zinc-500">Snapshot generated {generatedLabel}</p>
         </div>
         <StatusChip label={stateCopy.badge} tone={stateCopy.tone} />
       </div>
@@ -100,4 +104,17 @@ function buildStateCopy(args: {
 function formatNumber(value?: number | null) {
   if (value == null) return "–";
   return numberFormatter.format(value);
+}
+
+function getWooWindowLabel(snapshot?: WebsiteConversionSnapshot | null) {
+  const start = snapshot?.wooCommerce?.windowStart;
+  const end = snapshot?.wooCommerce?.windowEnd;
+  if (start && end) {
+    return formatDateRangeLabel({ startDate: start, endDate: end });
+  }
+  const rangeDays = snapshot?.wooCommerce?.rangeDays;
+  if (rangeDays) {
+    return `Last ${rangeDays} days`;
+  }
+  return null;
 }

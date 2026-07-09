@@ -2,7 +2,7 @@
 
 import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
-import { formatRelativeTimeFromNow } from "@/lib/date";
+import { formatDateRangeLabel, formatRelativeTimeFromNow } from "@/lib/date";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const decimalCurrency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -15,6 +15,7 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const wooWindowLabel = getWooWindowLabel(snapshot);
   const missingAddToCart = ga4?.addToCartEvents == null;
   const missingBeginCheckout = ga4?.beginCheckoutEvents == null;
   const hasFunnelGap = Boolean(missingAddToCart || missingBeginCheckout);
@@ -31,7 +32,10 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce automation snapshot.</div>
-          <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
+          <div className="text-xs text-zinc-500">Snapshot generated {generatedLabel}</div>
+          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+            Reporting window: {wooWindowLabel ?? "Woo range unavailable"} · GA4 last 7 days (rolling)
+          </div>
         </div>
         <StatusChip label="Live telemetry" tone="emerald" />
       </div>
@@ -171,4 +175,17 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 function formatNumber(value?: number | null) {
   if (value == null) return "–";
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function getWooWindowLabel(snapshot?: WebsiteConversionSnapshot | null) {
+  const start = snapshot?.wooCommerce?.windowStart;
+  const end = snapshot?.wooCommerce?.windowEnd;
+  if (start && end) {
+    return formatDateRangeLabel({ startDate: start, endDate: end });
+  }
+  const rangeDays = snapshot?.wooCommerce?.rangeDays;
+  if (rangeDays) {
+    return `Last ${rangeDays} days`;
+  }
+  return null;
 }
