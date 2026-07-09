@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
-import { formatDateRangeLabel, formatRelativeTimeFromNow } from "@/lib/date";
+import { formatRelativeTimeFromNow } from "@/lib/date";
 
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -107,14 +107,20 @@ function formatNumber(value?: number | null) {
 }
 
 function getWooWindowLabel(snapshot?: WebsiteConversionSnapshot | null) {
-  const start = snapshot?.wooCommerce?.windowStart;
-  const end = snapshot?.wooCommerce?.windowEnd;
+  const woo = (snapshot?.wooCommerce ?? null) as { windowStart?: string; windowEnd?: string; rangeDays?: number } | null;
+  const start = woo?.windowStart ?? null;
+  const end = woo?.windowEnd ?? null;
   if (start && end) {
-    return formatDateRangeLabel({ startDate: start, endDate: end });
+    return formatDateRangeLabelLocal(start, end);
   }
-  const rangeDays = snapshot?.wooCommerce?.rangeDays;
+  const rangeDays = woo?.rangeDays ?? null;
   if (rangeDays) {
     return `Last ${rangeDays} days`;
   }
   return null;
+}
+
+function formatDateRangeLabelLocal(start: string, end: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
 }
