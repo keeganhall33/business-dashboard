@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import fetch from 'node-fetch';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const REQUIRED_ENV_VARS = [
@@ -114,6 +115,94 @@ async function upsertSupabaseSnapshot(snapshot, mode) {
     }
   } catch (error) {
     console.error('[website-agent] Supabase snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
+}
+
+function buildHistoryPayload(snapshot) {
+  if (!snapshot) return null;
+  const { ga4, wooCommerce, windowStart, windowEnd, generatedAt } = snapshot;
+  const safePayload = {
+    ga4: {
+      totalUsers: ga4?.totalUsers ?? null,
+      sessions: ga4?.sessions ?? null,
+      eventCount: ga4?.eventCount ?? null,
+      ecommercePurchases: ga4?.ecommercePurchases ?? null,
+      purchaseRevenue: ga4?.purchaseRevenue ?? null,
+      viewItemEvents: ga4?.viewItemEvents ?? null,
+      addToCartEvents: ga4?.addToCartEvents ?? null,
+      beginCheckoutEvents: ga4?.beginCheckoutEvents ?? null,
+      purchaseEvents: ga4?.purchaseEvents ?? null,
+      channelBreakdown: ga4?.channelBreakdown ?? [],
+      deviceBreakdown: ga4?.deviceBreakdown ?? [],
+      warnings: ga4?.warnings ?? []
+    },
+    wooCommerce: {
+      orderCount: wooCommerce?.orderCount ?? null,
+      totalRevenue: wooCommerce?.totalRevenue ?? null,
+      averageOrderValue: wooCommerce?.averageOrderValue ?? null,
+      refunds: wooCommerce?.refunds ?? null,
+      discounts: wooCommerce?.discounts ?? null,
+      topProducts: (wooCommerce?.topProducts ?? []).map((product) => ({
+        name: product?.name ?? 'unknown',
+        units: product?.units ?? null,
+        revenue: product?.revenue ?? null
+      }))
+    },
+    windowStart,
+    windowEnd,
+    generatedAt
+  };
+  return safePayload;
+}
+
+function toPacificDate(dateIso) {
+  const date = dateIso ? new Date(dateIso) : new Date();
+  const pacific = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = pacific.formatToParts(date).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+async function upsertGrowthHistory(payload) {
+  if (!supabaseClient || !payload) return;
+  const snapshotDate = toPacificDate(payload.generatedAt);
+  const windowKey = '7d';
+  const source = 'website';
+  const payloadHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  try {
+    const { error } = await supabaseClient
+      .from('growth_snapshots')
+      .upsert(
+        {
+          source,
+          window_key: windowKey,
+          snapshot_date: snapshotDate,
+          generated_at: payload.generatedAt ?? new Date().toISOString(),
+          window_start: payload.windowStart ?? null,
+          window_end: payload.windowEnd ?? null,
+          payload,
+          payload_hash: payloadHash,
+          schema_version: 1
+        },
+        {
+          onConflict: 'source,window_key,snapshot_date'
+        }
+      );
+    if (error) {
+      console.error('[website-agent] growth_snapshots upsert failed:', error.message);
+      await baseLog({ status: 'warning', message: `history upsert failed: ${error.message}` });
+    } else {
+      console.log('[website-agent] growth snapshot recorded (website, 7d, %s)', snapshotDate);
+    }
+  } catch (error) {
+    console.error('[website-agent] growth snapshot upsert threw:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -368,8 +457,14 @@ async function main() {
       fetchWooCommerceSummary()
     ]);
 
+    const generatedAt = new Date();
+    const windowEnd = generatedAt.toISOString();
+    const windowStart = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
     const output = {
-      generatedAt: new Date().toISOString(),
+      generatedAt: windowEnd,
+      windowStart,
+      windowEnd,
       ga4: ga4Summary,
       wooCommerce: wooSummary
     };
@@ -391,6 +486,8 @@ async function main() {
     const websiteStatus = ga4Summary && wooSummary ? 'LIVE' : ga4Summary || wooSummary ? 'PARTIAL' : 'BROKEN';
     output.status = websiteStatus;
     await upsertSupabaseSnapshot(output, websiteStatus);
+    const historyPayload = buildHistoryPayload(output);
+    await upsertGrowthHistory(historyPayload);
 
     console.log(
       `[website-agent] Summary: generatedAt=${output.generatedAt} ga4.users=${ga4Summary?.totalUsers ?? 'n/a'} ga4.sessions=${
