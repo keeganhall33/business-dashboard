@@ -19,18 +19,25 @@ export function ConversionWatchPanel({ snapshot }: { snapshot?: WebsiteConversio
   const sessions = ga4?.sessions ?? null;
   const gaPurchases = ga4?.ecommercePurchases ?? null;
   const addToCartEvents = ga4?.addToCartEvents ?? null;
+  const beginCheckoutEvents = ga4?.beginCheckoutEvents ?? null;
+  const purchaseEvents = ga4?.purchaseEvents ?? null;
   const wooOrders = woo?.orderCount ?? null;
 
-  const trackingSuspect = Boolean(
-    !stale &&
-    (((wooOrders ?? 0) > 0 && (gaPurchases ?? 0) === 0) ||
-      ((wooOrders ?? 0) > 2 && (sessions ?? 0) <= 5) ||
-      ((wooOrders ?? 0) > 0 && (addToCartEvents ?? 0) === 0))
-  );
-
-  const lowActivity = Boolean(!stale && !trackingSuspect && (wooOrders ?? 0) === 0 && (sessions ?? 0) < 10);
-  const state: WatchState = stale ? "STALE" : trackingSuspect ? "TRACKING" : lowActivity ? "LOW" : "HEALTHY";
-  const stateCopy = buildStateCopy({ state, sessions, wooOrders, gaPurchases, addToCartEvents });
+  const hasWooOrders = (wooOrders ?? 0) > 0;
+  const funnelEmpty = (addToCartEvents ?? 0) === 0 && (beginCheckoutEvents ?? 0) === 0 && (purchaseEvents ?? 0) === 0;
+  const trackingSuspect = Boolean(!stale && hasWooOrders && funnelEmpty);
+  const purchasePending = Boolean(!stale && hasWooOrders && !funnelEmpty && (gaPurchases ?? 0) === 0);
+  const lowActivity = Boolean(!stale && !trackingSuspect && !purchasePending && (wooOrders ?? 0) === 0 && (sessions ?? 0) < 10);
+  const state: WatchState = stale
+    ? "STALE"
+    : trackingSuspect
+      ? "TRACKING"
+      : purchasePending
+        ? "PENDING_PURCHASE"
+        : lowActivity
+          ? "LOW"
+          : "HEALTHY";
+  const stateCopy = buildStateCopy({ state, sessions, wooOrders, gaPurchases, addToCartEvents, beginCheckoutEvents, purchaseEvents });
 
   return (
     <section className="rounded-3xl border border-white/10 bg-black/20 p-5" data-testid="conversion-watch">
@@ -59,7 +66,7 @@ export function ConversionWatchPanel({ snapshot }: { snapshot?: WebsiteConversio
   );
 }
 
-type WatchState = "HEALTHY" | "TRACKING" | "LOW" | "STALE";
+type WatchState = "HEALTHY" | "TRACKING" | "LOW" | "STALE" | "PENDING_PURCHASE";
 
 function buildStateCopy(args: {
   state: WatchState;
@@ -67,8 +74,10 @@ function buildStateCopy(args: {
   wooOrders: number | null;
   gaPurchases: number | null;
   addToCartEvents: number | null;
+  beginCheckoutEvents: number | null;
+  purchaseEvents: number | null;
 }) {
-  const { state, sessions, wooOrders, gaPurchases, addToCartEvents } = args;
+  const { state, sessions, wooOrders, gaPurchases, addToCartEvents, beginCheckoutEvents, purchaseEvents } = args;
   if (state === "STALE") {
     return {
       badge: "Data stale",
@@ -82,7 +91,15 @@ function buildStateCopy(args: {
       badge: "Tracking suspect",
       tone: "amber" as const,
       message: `Woo recorded ${formatNumber(wooOrders)} order(s) while GA4 shows ${formatNumber(gaPurchases)} purchases and ${formatNumber(addToCartEvents)} add-to-cart events. Investigate GA4 instrumentation.`,
-      hint: (addToCartEvents ?? 0) === 0 ? "GA4 add_to_cart events were missing while Woo saw orders." : null
+      hint: (addToCartEvents ?? 0) === 0 && (beginCheckoutEvents ?? 0) === 0 ? "GA4 funnel events were missing while Woo saw orders." : null
+    };
+  }
+  if (state === "PENDING_PURCHASE") {
+    return {
+      badge: "Purchase tracking pending",
+      tone: "sky" as const,
+      message: "GA4 funnel activity is flowing again, but purchase tracking has not been confirmed yet.",
+      hint: purchaseEvents === 0 ? "Waiting on GA4 purchase events." : null
     };
   }
   if (state === "LOW") {
@@ -105,6 +122,7 @@ function formatNumber(value?: number | null) {
   if (value == null) return "–";
   return numberFormatter.format(value);
 }
+
 
 function getWooWindowLabel(snapshot?: WebsiteConversionSnapshot | null) {
   const woo = (snapshot?.wooCommerce ?? null) as { windowStart?: string; windowEnd?: string; rangeDays?: number } | null;
