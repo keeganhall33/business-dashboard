@@ -11,6 +11,7 @@ import { MetaAdsPanel } from "./MetaAdsPanel";
 import { PipelineDealsPanel } from "./PipelineDealsPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
+import { IndustryPulsePanel } from "./IndustryPulsePanel";
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -121,10 +122,16 @@ export function DashboardShell({ data }: Props) {
         detail="Executive copy references cross-agent data (Meta, Cloudflare, scheduler). It stays offline until all data sources are verified."
       />
 
-      <PanelAuditPlaceholder
-        title="Industry pulse snapshot hidden"
-        detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
-      />
+      {data.industryPulseSnapshot ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={data.industryPulseSnapshot.generatedAt}>
+          <IndustryPulsePanel snapshot={data.industryPulseSnapshot} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Industry pulse snapshot hidden"
+          detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
+        />
+      )}
 
       {pipelineDeals.length ? (
         <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>

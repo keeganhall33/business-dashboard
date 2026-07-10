@@ -855,6 +855,7 @@ export type DashboardOverviewResponse = {
   metaAds?: MetaAdsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
+  industryPulseSnapshot?: IndustryPulseSnapshot | null;
   cloudflare?: CloudflareTelemetrySnapshot | null;
   collectorTelemetry?: CollectorTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];

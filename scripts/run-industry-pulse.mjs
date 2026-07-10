@@ -4,10 +4,21 @@ import path from 'node:path';
 import process from 'node:process';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
+import { createClient } from '@supabase/supabase-js';
 
 const DASHBOARD_ROOT = path.resolve('../dashboard');
 const OUTPUT_PATH = path.join(DASHBOARD_ROOT, 'data', 'industry', 'latest.json');
 const LOG_PATH = path.join(DASHBOARD_ROOT, 'logs', 'industry_pulse.log');
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseEnabled = Boolean(supabaseUrl && supabaseServiceRoleKey);
+const supabaseClient =
+  supabaseEnabled && supabaseUrl && supabaseServiceRoleKey
+    ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+    : null;
 
 const SOURCES = [
   {
@@ -142,6 +153,11 @@ async function main() {
 
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await fs.writeFile(OUTPUT_PATH, JSON.stringify(payload, null, 2));
+  if (supabaseClient) {
+    await upsertSupabaseSnapshot(payload);
+  } else {
+    console.log('[industry] Supabase env not configured; snapshot stored locally only.');
+  }
   await appendLog({ status: 'success', alertCount: alerts.length });
   console.log('[industry] Industry pulse updated');
 }
@@ -152,3 +168,25 @@ main().catch(async (error) => {
   console.error('[industry] Failed:', message);
   process.exit(1);
 });
+
+async function upsertSupabaseSnapshot(snapshot) {
+  if (!supabaseClient) return;
+  const mode = snapshot.alerts?.length ? 'LIVE' : 'PARTIAL';
+  try {
+    const { error } = await supabaseClient
+      .from('dashboard_snapshots')
+      .upsert({
+        key: 'industry_pulse',
+        payload: snapshot,
+        mode,
+        generated_at: snapshot.generatedAt ?? null
+      });
+    if (error) {
+      console.error('[industry] Supabase dashboard snapshot upsert failed:', error.message);
+    } else {
+      console.log('[industry] Supabase dashboard snapshot updated (industry_pulse)');
+    }
+  } catch (error) {
+    console.error('[industry] Supabase dashboard snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
+}
