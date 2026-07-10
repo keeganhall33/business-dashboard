@@ -120,7 +120,7 @@ async function upsertSupabaseSnapshot(snapshot, mode) {
 
 function buildHistoryPayload(snapshot) {
   if (!snapshot) return null;
-  const { ga4, wooCommerce, windowStart, windowEnd, generatedAt } = snapshot;
+  const { ga4, wooCommerce, ga4Window, wooWindow, windowStart, windowEnd, generatedAt } = snapshot;
   const safePayload = {
     ga4: {
       totalUsers: ga4?.totalUsers ?? null,
@@ -148,6 +148,8 @@ function buildHistoryPayload(snapshot) {
         revenue: product?.revenue ?? null
       }))
     },
+    ga4Window: ga4Window ?? null,
+    wooWindow: wooWindow ?? null,
     windowStart,
     windowEnd,
     generatedAt
@@ -400,8 +402,19 @@ async function fetchGA4Summary() {
 
 async function fetchWooCommerceSummary() {
   const auth = Buffer.from(`${wooKey}:${wooSecret}`).toString('base64');
+  const now = new Date();
+  const wooWindowEnd = now.toISOString();
+  const wooWindowStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const searchParams = new URLSearchParams({
+    per_page: '100',
+    status: 'completed',
+    orderby: 'date',
+    order: 'desc',
+    after: wooWindowStart,
+    before: wooWindowEnd
+  });
   const response = await fetch(
-    `${wooBaseUrl}/wp-json/wc/v3/orders?per_page=50&status=completed`,
+    `${wooBaseUrl}/wp-json/wc/v3/orders?${searchParams.toString()}`,
     {
       headers: {
         Authorization: `Basic ${auth}`
@@ -441,12 +454,26 @@ async function fetchWooCommerceSummary() {
       `${order.billing?.first_name ?? ''} ${order.billing?.last_name ?? ''}`.trim() : 'Unknown'
   }));
 
+  const wooDates = orders
+    .map((order) => (order.date_created ? new Date(order.date_created).getTime() : null))
+    .filter((value) => Number.isFinite(value));
+  const observedOrderRange = wooDates.length
+    ? {
+        oldestOrder: new Date(Math.min(...wooDates)).toISOString(),
+        newestOrder: new Date(Math.max(...wooDates)).toISOString()
+      }
+    : null;
+
   return {
     totalRevenue,
     orderCount: orders.length,
     averageOrderValue: orders.length ? totalRevenue / orders.length : 0,
     topProducts,
-    recentOrders: orderSummaries
+    recentOrders: orderSummaries,
+    windowStart: wooWindowStart,
+    windowEnd: wooWindowEnd,
+    rangeDays: 7,
+    observedOrderRange
   };
 }
 
@@ -461,12 +488,26 @@ async function main() {
     const windowEnd = generatedAt.toISOString();
     const windowStart = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+    const ga4Window = {
+      label: 'Rolling 7 days',
+      startDate: windowStart,
+      endDate: windowEnd
+    };
+
+    const wooWindow = {
+      windowStart: wooSummary?.windowStart ?? null,
+      windowEnd: wooSummary?.windowEnd ?? null,
+      rangeDays: wooSummary?.rangeDays ?? 7
+    };
+
     const output = {
       generatedAt: windowEnd,
       windowStart,
       windowEnd,
       ga4: ga4Summary,
-      wooCommerce: wooSummary
+      ga4Window,
+      wooCommerce: wooSummary,
+      wooWindow
     };
 
     await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
