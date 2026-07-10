@@ -20,7 +20,7 @@ export function ConversionWatchPanel({ snapshot }: { snapshot?: WebsiteConversio
   const gaPurchases = ga4?.ecommercePurchases ?? null;
   const addToCartEvents = ga4?.addToCartEvents ?? null;
   const beginCheckoutEvents = ga4?.beginCheckoutEvents ?? null;
-  const purchaseEvents = ga4?.purchaseEvents ?? null;
+  const purchaseEvents = (ga4 as { purchaseEvents?: number | null } | null)?.purchaseEvents ?? null;
   const wooOrders = woo?.orderCount ?? null;
 
   const hasWooOrders = (wooOrders ?? 0) > 0;
