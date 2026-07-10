@@ -857,6 +857,7 @@ export type DashboardOverviewResponse = {
   socialIntelligence?: SocialIntelligenceSnapshot | null;
   industryPulseSnapshot?: IndustryPulseSnapshot | null;
   cloudflare?: CloudflareTelemetrySnapshot | null;
+  leadIntelligence?: LeadIntelligenceSnapshot | null;
   collectorTelemetry?: CollectorTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
   automationStatusPanel?: AutomationStatusEntry[];

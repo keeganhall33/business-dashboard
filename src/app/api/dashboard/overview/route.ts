@@ -42,7 +42,8 @@ import {
   type CloudflareTelemetrySnapshot,
   type MetaAdsSnapshot,
   type SocialIntelligenceSnapshot,
-  type IndustryPulseSnapshot
+  type IndustryPulseSnapshot,
+  type LeadIntelligenceSnapshot
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
@@ -1019,7 +1020,7 @@ export async function GET(request: Request) {
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
       loadLocalDashboardArtifacts(),
-      getDashboardSnapshots(["website", "cloudflare", "meta", "social", "industry_pulse"])
+      getDashboardSnapshots(["website", "cloudflare", "meta", "social", "industry_pulse", "lead_intelligence"])
     ]);
 
     const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
@@ -1032,6 +1033,8 @@ export async function GET(request: Request) {
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
     const industryPulseSnapshot =
       (snapshotMap.get("industry_pulse")?.payload as IndustryPulseSnapshot | null) ?? localArtifacts.industrySnapshot;
+    const leadSnapshot =
+      (snapshotMap.get("lead_intelligence")?.payload as LeadIntelligenceSnapshot | null) ?? localArtifacts.leadSnapshot;
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1922,7 +1925,7 @@ export async function GET(request: Request) {
       socialIntelligence: socialSnapshot,
       industryPulseSnapshot: industryPulseSnapshot ?? null,
       cloudflare: cloudflareSnapshot,
-      leadIntelligence: localArtifacts.leadSnapshot,
+      leadIntelligence: leadSnapshot,
       agentStatusPanel: localArtifacts.agentStatus,
       automationStatusPanel: localArtifacts.automationStatus,
       dataSourceAccess: localArtifacts.dataSourceMatrix,

@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
+import { createClient } from '@supabase/supabase-js';
 
 const DASHBOARD_ROOT = path.resolve('../dashboard');
 const HUBSPOT_CACHE = path.join(DASHBOARD_ROOT, 'data', 'leads', 'hubspot_snapshot.json');
@@ -9,6 +10,14 @@ const OUTPUT_PATH = path.join(DASHBOARD_ROOT, 'data', 'leads', 'latest.json');
 const LOG_PATH = path.join(DASHBOARD_ROOT, 'logs', 'lead_intelligence.log');
 const MANUAL_INPUT = path.join(DASHBOARD_ROOT, 'data', 'leads', 'manual_input.json');
 const HUBSPOT_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN?.trim();
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseClient =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+    : null;
 const STALE_DAYS = 45;
 const MS_PER_DAY = 86_400_000;
 const PRIORITY_WEIGHT = { high: 3, medium: 2, low: 1 };
@@ -486,7 +495,10 @@ async function main() {
     }
   };
 
-  const mode = HUBSPOT_TOKEN ? 'hubspot-live' : 'snapshot';
+  const hasLiveHubspotData = Boolean(HUBSPOT_TOKEN) &&
+    (liveCompaniesRaw.length || liveContactsRaw.length || liveDealsRaw.length || liveTasksRaw.length);
+  const mode = hasLiveHubspotData ? 'hubspot-live' : 'snapshot';
+  const supabaseMode = hasLiveHubspotData && leads.length ? 'LIVE' : 'PARTIAL';
 
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -499,6 +511,11 @@ async function main() {
 
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await fs.writeFile(OUTPUT_PATH, JSON.stringify(payload, null, 2));
+  if (supabaseClient) {
+    await upsertSupabaseSnapshot(payload, supabaseMode);
+  } else {
+    console.log('[leads] Supabase env not configured; snapshot stored locally only.');
+  }
   await appendLog({ status: 'success', leadCount: leads.length, mode, recordCounts });
   console.log('[leads] Lead intelligence snapshot written');
 }
@@ -509,3 +526,24 @@ main().catch(async (error) => {
   console.error('[leads] Failed:', message);
   process.exit(1);
 });
+
+async function upsertSupabaseSnapshot(snapshot, mode) {
+  if (!supabaseClient || !snapshot) return;
+  try {
+    const { error } = await supabaseClient
+      .from('dashboard_snapshots')
+      .upsert({
+        key: 'lead_intelligence',
+        payload: snapshot,
+        mode,
+        generated_at: snapshot.generatedAt ?? null
+      });
+    if (error) {
+      console.error('[leads] Supabase dashboard snapshot upsert failed:', error.message);
+    } else {
+      console.log('[leads] Supabase dashboard snapshot updated (lead_intelligence)');
+    }
+  } catch (error) {
+    console.error('[leads] Supabase dashboard snapshot upsert threw:', error instanceof Error ? error.message : error);
+  }
+}
