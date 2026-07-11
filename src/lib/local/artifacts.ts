@@ -185,9 +185,11 @@ function buildTopActions(snapshot: WebsiteConversionSnapshot | null, agentStatus
 
   const mostRecentOrder = snapshot?.wooCommerce?.recentOrders?.[0];
   if (mostRecentOrder) {
+    const paidIso = mostRecentOrder.date_paid || mostRecentOrder.date_paid_gmt;
+    const paidDetail = paidIso ? ` on ${formatShortDate(paidIso)}` : "";
     items.push({
-      title: `Follow up with ${mostRecentOrder.customer || "latest buyer"}`,
-      detail: `Closed ${currency.format(mostRecentOrder.total ?? 0)} on ${formatShortDate(mostRecentOrder.date)}`,
+      title: `Follow up on order #${mostRecentOrder.id ?? "latest buyer"}`,
+      detail: `Closed ${currency.format(mostRecentOrder.total ?? 0)}${paidDetail}`,
       owner: "Collector Success",
       tone: "info"
     });

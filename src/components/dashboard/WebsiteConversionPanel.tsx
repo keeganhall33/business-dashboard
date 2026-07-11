@@ -83,14 +83,16 @@ function WooSection({
 }: {
   data: NonNullable<WebsiteConversionSnapshot["wooCommerce"]>;
 }) {
-  const aov = data.averageOrderValue ?? (data.orderCount ? (data.totalRevenue ?? 0) / data.orderCount : 0);
+  const orders = data.paidOrdersInWindow ?? 0;
+  const revenue = data.netRevenue ?? data.grossOrderRevenue ?? 0;
+  const aov = data.grossAov ?? (orders ? revenue / orders : 0);
   return (
     <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm font-semibold text-zinc-200">Sales</div>
         <div className="flex flex-wrap gap-2">
-          <StatusChip label={`Revenue ${currency.format(data.totalRevenue ?? 0)}`} tone="emerald" />
-          <StatusChip label={`Orders ${formatNumber(data.orderCount)}`} tone="zinc" />
+          <StatusChip label={`Revenue ${currency.format(revenue ?? 0)}`} tone="emerald" />
+          <StatusChip label={`Orders ${formatNumber(orders)}`} tone="zinc" />
           <StatusChip label={`AOV ${decimalCurrency.format(aov || 0)}`} tone="sky" />
         </div>
       </div>
@@ -114,17 +116,24 @@ function WooSection({
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">Recent orders</div>
           <ul className="mt-3 space-y-2 text-sm text-zinc-200">
-            {(data.recentOrders ?? []).slice(0, 5).map((order) => (
-              <li key={order.id} className="rounded-xl border border-white/5 bg-black/30 px-3 py-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-300">{order.customer || `Order #${order.id}`}</span>
-                  <span className="text-zinc-400">{decimalCurrency.format(order.total ?? 0)}</span>
-                </div>
-                <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {new Date(order.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {order.status}
-                </div>
-              </li>
-            ))}
+            {(data.recentOrders ?? []).slice(0, 5).map((order, idx) => {
+              const paidIso = order.date_paid || order.date_paid_gmt;
+              const paidLabel = paidIso
+                ? new Date(paidIso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                : "Unknown date";
+              return (
+                <li key={`${order.id ?? paidIso ?? `order-${idx}`}`} className="rounded-xl border border-white/5 bg-black/30 px-3 py-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-zinc-300">{`Order #${order.id ?? "n/a"}`}</span>
+                    <span className="text-zinc-400">{decimalCurrency.format(order.total ?? 0)}</span>
+                  </div>
+                  <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                    {paidLabel}
+                    {order.status ? ` · ${order.status}` : null}
+                  </div>
+                </li>
+              );
+            })}
             {!data.recentOrders?.length ? <li className="text-xs text-zinc-500">No orders in range</li> : null}
           </ul>
         </div>

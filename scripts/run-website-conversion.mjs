@@ -50,7 +50,7 @@ const repoRoot = process.cwd();
 const agentOutputPath = path.join(repoRoot, 'dashboard', 'data', 'website', 'latest.json');
 const agentLogPath = path.join(repoRoot, 'dashboard', 'logs', 'website_agent.log');
 
-const GA4_DATE_RANGE = { startDate: '7daysAgo', endDate: 'today' };
+const GA4_DATE_RANGE = { startDate: '6daysAgo', endDate: 'today' };
 const REQUIRED_GA4_METRICS = [
   'totalUsers',
   'sessions',
@@ -67,6 +67,9 @@ const GA4_EVENT_FIELD_MAP = {
 const REQUIRED_GA4_EVENTS = Object.keys(GA4_EVENT_FIELD_MAP);
 const WOO_PAGE_SIZE = 100;
 const WOO_MAX_PAGES = 10;
+const REPORTING_TIMEZONE = 'America/Los_Angeles';
+const REPORTING_RANGE_DAYS = 7;
+const REPORTING_LABEL = 'Rolling 7 days';
 
 const apiCallCounts = {
   ga4: 0,
@@ -75,6 +78,24 @@ const apiCallCounts = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const pacificDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: REPORTING_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
+const pacificDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: REPORTING_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -87,6 +108,57 @@ function sumNumeric(collection, selector) {
     const value = selector(item, index);
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
+}
+
+function getPacificDateParts(date) {
+  const parts = pacificDateTimeFormatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+  const required = ['year', 'month', 'day', 'hour', 'minute', 'second'];
+  for (const key of required) {
+    if (!(key in parts)) {
+      throw new Error(`Missing ${key} in Pacific date parts`);
+    }
+  }
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second)
+  };
+}
+
+function getPacificMidnight(date) {
+  const parts = getPacificDateParts(date);
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0));
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * DAY_MS);
+}
+
+function formatPacificDate(date) {
+  return pacificDateFormatter.format(date);
+}
+
+function computeReportingWindow(now = new Date()) {
+  const todayMidnightPacific = getPacificMidnight(now);
+  const startInstant = addDays(todayMidnightPacific, -(REPORTING_RANGE_DAYS - 1));
+  const endInstantExclusive = addDays(todayMidnightPacific, 1);
+  return {
+    timezone: REPORTING_TIMEZONE,
+    rangeDays: REPORTING_RANGE_DAYS,
+    label: REPORTING_LABEL,
+    startInstant,
+    endInstantExclusive,
+    startDateText: formatPacificDate(startInstant),
+    endDateText: formatPacificDate(addDays(endInstantExclusive, -1))
+  };
 }
 
 function roundCurrency(value) {
@@ -230,21 +302,24 @@ function buildHistoryPayload(snapshot) {
       funnelRates
     },
     wooCommerce: {
-      orderCount: wooCommerce?.orderCount ?? null,
-      totalRevenue: wooCommerce?.totalRevenue ?? null,
-      grossRevenue: wooCommerce?.grossRevenue ?? null,
-      netRevenue: wooCommerce?.netRevenue ?? wooCommerce?.totalRevenue ?? null,
-      revenueBeforeDiscounts: wooCommerce?.revenueBeforeDiscounts ?? null,
-      averageOrderValue: wooCommerce?.averageOrderValue ?? null,
-      shippingTotal: wooCommerce?.shippingTotal ?? null,
-      taxTotal: wooCommerce?.taxTotal ?? null,
-      refunds: sanitizeMoneyStat(wooCommerce?.refunds),
-      discounts: sanitizeMoneyStat(wooCommerce?.discounts),
-      topProducts: (wooCommerce?.topProducts ?? []).map((product) => ({
-        name: product?.name ?? 'unknown',
-        units: product?.units ?? null,
-        revenue: product?.revenue ?? null
-      }))
+      paidOrdersInWindow: wooCommerce?.paidOrdersInWindow ?? null,
+      grossOrderRevenue: wooCommerce?.grossOrderRevenue ?? null,
+      merchandiseRevenue: wooCommerce?.merchandiseRevenue ?? null,
+      shippingRevenue: wooCommerce?.shippingRevenue ?? null,
+      taxCollected: wooCommerce?.taxCollected ?? null,
+      discountTotal: wooCommerce?.discountTotal ?? null,
+      netRevenue: wooCommerce?.netRevenue ?? null,
+      grossAov: wooCommerce?.grossAov ?? null,
+      netAov: wooCommerce?.netAov ?? null,
+      refundTotal: wooCommerce?.refundTotal ?? null,
+      refundCount: wooCommerce?.refundCount ?? null,
+      refundDefinition: wooCommerce?.refundDefinition ?? null,
+      refundDataComplete: wooCommerce?.refundDataComplete ?? null,
+      refundWindow: wooCommerce?.refundWindow ?? null,
+      observedRefundRange: wooCommerce?.observedRefundRange ?? null,
+      observedPaidRange: wooCommerce?.observedPaidRange ?? null,
+      refundRate: wooCommerce?.refundRate ?? null,
+      discountRate: wooCommerce?.discountRate ?? null
     },
     ga4Window: ga4Window ?? null,
     wooWindow: wooWindow ?? null,
@@ -270,29 +345,6 @@ function computeFunnelRates(ga4) {
     cartToCheckout: computeRate(ga4.beginCheckoutEvents, ga4.addToCartEvents),
     checkoutToPurchase: computeRate(ga4.purchaseEvents ?? ga4.ecommercePurchases, ga4.beginCheckoutEvents),
     sessionToPurchase: computeRate(ga4.ecommercePurchases, ga4.sessions)
-  };
-}
-
-function sanitizeMoneyStat(stat) {
-  if (!stat || typeof stat !== 'object') return null;
-  const amount = stat.amount != null ? roundCurrency(stat.amount) : null;
-  const countValue = stat.count != null ? Number(stat.count) : null;
-  const count = Number.isFinite(countValue) ? countValue : null;
-  const rateValue = stat.rate != null ? Number(stat.rate) : null;
-  const rate = Number.isFinite(rateValue) ? roundRatio(rateValue) : null;
-  const windowStart = 'windowStart' in stat ? stat.windowStart ?? null : null;
-  const windowEnd = 'windowEnd' in stat ? stat.windowEnd ?? null : null;
-  const observedRange = stat.observedRange ?? null;
-  if (amount == null && count == null && rate == null && !windowStart && !windowEnd && !observedRange) {
-    return null;
-  }
-  return {
-    amount,
-    count,
-    rate,
-    windowStart,
-    windowEnd,
-    observedRange
   };
 }
 
@@ -505,48 +557,77 @@ async function fetchGA4Summary() {
   };
 }
 
-async function fetchWooCommerceSummary() {
+async function fetchWooCommerceSummary(reportingWindow) {
   const auth = Buffer.from(`${wooKey}:${wooSecret}`).toString('base64');
-  const now = new Date();
-  const wooWindowEnd = now.toISOString();
-  const wooWindowStart = new Date(now.getTime() - 7 * DAY_MS).toISOString();
+  const { startInstant, endInstantExclusive, timezone } = reportingWindow;
+  const afterIso = startInstant.toISOString();
+  const beforeIso = endInstantExclusive.toISOString();
   const orderParams = new URLSearchParams({
-    status: 'completed',
     orderby: 'date',
     order: 'desc',
-    after: wooWindowStart,
-    before: wooWindowEnd
+    per_page: String(WOO_PAGE_SIZE),
+    status: 'processing,completed',
+    modified_after: afterIso,
+    modified_before: beforeIso
   });
   const refundParams = new URLSearchParams({
     orderby: 'date',
     order: 'desc',
-    after: wooWindowStart,
-    before: wooWindowEnd
+    after: afterIso,
+    before: beforeIso
   });
 
-  const [orders, refunds] = await Promise.all([
+  const [rawOrders, refunds] = await Promise.all([
     fetchWooCollection('orders', orderParams, 'wooOrders', auth),
     fetchWooCollection('refunds', refundParams, 'wooRefunds', auth)
   ]);
 
-  const recognizedRevenue = sumNumeric(orders, (order) => toNumber(order.total));
-  const discountTotal = sumNumeric(orders, (order) => toNumber(order.discount_total));
-  const shippingTotal = sumNumeric(orders, (order) => toNumber(order.shipping_total));
-  const taxTotal = sumNumeric(orders, (order) => toNumber(order.total_tax));
-  const grossRevenueValue = recognizedRevenue;
-  const revenueBeforeDiscountsValue = recognizedRevenue + discountTotal;
-  const refundTotal = sumNumeric(refunds, (refund) => toNumber(refund.amount ?? refund.total ?? refund.total_refunded));
-  const netRevenueValue = recognizedRevenue - refundTotal;
-  const grossRevenue = roundCurrency(grossRevenueValue);
-  const revenueBeforeDiscounts = roundCurrency(revenueBeforeDiscountsValue);
-  const netRevenue = roundCurrency(netRevenueValue);
-  const discountRate = revenueBeforeDiscountsValue > 0 ? roundRatio(discountTotal / revenueBeforeDiscountsValue) : null;
-  const refundRate = grossRevenueValue > 0 ? roundRatio(refundTotal / grossRevenueValue) : null;
-  const orderCount = orders.length;
-  const averageOrderValue = orderCount ? roundCurrency(recognizedRevenue / orderCount) : 0;
-  const productMap = new Map();
+  const dedupedOrders = [];
+  const seenOrderIds = new Set();
+  for (const order of rawOrders) {
+    const id = order?.id ?? order?.number;
+    const key = id != null ? String(id) : crypto.randomUUID();
+    if (seenOrderIds.has(key)) continue;
+    seenOrderIds.add(key);
+    dedupedOrders.push(order);
+  }
 
-  for (const order of orders) {
+  const disqualifyingStatuses = new Set(['pending', 'cancelled', 'failed', 'trash']);
+  const paidOrders = dedupedOrders.filter((order) => {
+    if (disqualifyingStatuses.has(order?.status)) return false;
+    const paidIso = order?.date_paid_gmt || order?.date_paid;
+    if (!paidIso) return false;
+    const paidDate = new Date(paidIso);
+    if (!Number.isFinite(paidDate.getTime())) return false;
+    return paidDate >= startInstant && paidDate < endInstantExclusive;
+  });
+
+  const paidOrdersInWindow = paidOrders.length;
+  const grossOrderRevenueValue = sumNumeric(paidOrders, (order) => toNumber(order.total));
+  const merchandiseRevenueValue = paidOrders.reduce((sum, order) => {
+    return sum + sumNumeric(order.line_items ?? [], (item) => toNumber(item.total));
+  }, 0);
+  const shippingRevenueValue = sumNumeric(paidOrders, (order) => toNumber(order.shipping_total));
+  const taxCollectedValue = sumNumeric(paidOrders, (order) => toNumber(order.total_tax));
+  const discountTotalValue = sumNumeric(paidOrders, (order) => toNumber(order.discount_total));
+  const refundTotalValue = sumNumeric(refunds, (refund) => toNumber(refund.amount ?? refund.total ?? refund.total_refunded));
+
+  const grossOrderRevenue = roundCurrency(grossOrderRevenueValue);
+  const merchandiseRevenue = roundCurrency(merchandiseRevenueValue);
+  const shippingRevenue = roundCurrency(shippingRevenueValue);
+  const taxCollected = roundCurrency(taxCollectedValue);
+  const discountTotal = roundCurrency(discountTotalValue);
+  const refundTotal = roundCurrency(refundTotalValue);
+  const netRevenue = roundCurrency(grossOrderRevenueValue - refundTotalValue);
+  const grossAov = paidOrdersInWindow ? roundCurrency(grossOrderRevenueValue / paidOrdersInWindow) : null;
+  const netAov = paidOrdersInWindow ? roundCurrency((grossOrderRevenueValue - refundTotalValue) / paidOrdersInWindow) : null;
+  const refundCount = refunds.length;
+
+  const discountRate = grossOrderRevenueValue > 0 ? roundRatio(discountTotalValue / grossOrderRevenueValue) : null;
+  const refundRate = grossOrderRevenueValue > 0 ? roundRatio(refundTotalValue / grossOrderRevenueValue) : null;
+
+  const productMap = new Map();
+  for (const order of paidOrders) {
     for (const item of order.line_items ?? []) {
       const current = productMap.get(item.name) ?? { units: 0, revenue: 0 };
       current.units += item.quantity ?? 0;
@@ -554,29 +635,32 @@ async function fetchWooCommerceSummary() {
       productMap.set(item.name, current);
     }
   }
-
   const topProducts = [...productMap.entries()]
     .map(([name, stats]) => ({ name, ...stats }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  const orderSummaries = orders.slice(0, 10).map((order) => ({
-    id: order.id,
-    status: order.status,
-    total: Number(order.total),
-    currency: order.currency,
-    date: order.date_created,
-    customer: order.billing?.first_name || order.billing?.last_name ?
-      `${order.billing?.first_name ?? ''} ${order.billing?.last_name ?? ''}`.trim() : 'Unknown'
-  }));
+  const recentOrders = paidOrders
+    .map((order) => ({
+      id: order.id,
+      status: order.status,
+      total: Number(order.total),
+      currency: order.currency,
+      date_paid: order.date_paid,
+      date_paid_gmt: order.date_paid_gmt
+    }))
+    .slice(0, 10);
 
-  const wooDates = orders
-    .map((order) => (order.date_created ? new Date(order.date_created).getTime() : null))
+  const orderPaidTimes = paidOrders
+    .map((order) => {
+      const paidIso = order?.date_paid_gmt || order?.date_paid;
+      return paidIso ? new Date(paidIso).getTime() : null;
+    })
     .filter((value) => Number.isFinite(value));
-  const observedOrderRange = wooDates.length
+  const observedPaidRange = orderPaidTimes.length
     ? {
-        oldestOrder: new Date(Math.min(...wooDates)).toISOString(),
-        newestOrder: new Date(Math.max(...wooDates)).toISOString()
+        earliestPaid: new Date(Math.min(...orderPaidTimes)).toISOString(),
+        latestPaid: new Date(Math.max(...orderPaidTimes)).toISOString()
       }
     : null;
 
@@ -591,63 +675,70 @@ async function fetchWooCommerceSummary() {
     : null;
 
   return {
-    totalRevenue: netRevenue,
+    paidOrdersInWindow,
+    grossOrderRevenue,
+    merchandiseRevenue,
+    shippingRevenue,
+    taxCollected,
+    discountTotal,
     netRevenue,
-    grossRevenue,
-    revenueBeforeDiscounts,
-    orderCount,
-    averageOrderValue,
-    discountTotal: roundCurrency(discountTotal),
-    shippingTotal: roundCurrency(shippingTotal),
-    taxTotal: roundCurrency(taxTotal),
-    discounts: {
-      amount: roundCurrency(discountTotal),
-      rate: discountRate
+    grossAov,
+    netAov,
+    refundTotal,
+    refundCount,
+    refundDefinition: 'Refunds issued during the reporting window (Pacific time).',
+    refundDataComplete: false,
+    refundWindow: {
+      windowStart: afterIso,
+      windowEndExclusive: beforeIso,
+      timezone
     },
-    refunds: {
-      amount: roundCurrency(refundTotal),
-      count: refunds.length,
-      rate: refundRate,
-      windowStart: wooWindowStart,
-      windowEnd: wooWindowEnd,
-      observedRange: observedRefundRange
-    },
+    observedRefundRange,
+    observedPaidRange,
+    refundRate,
+    discountRate,
     topProducts,
-    recentOrders: orderSummaries,
-    windowStart: wooWindowStart,
-    windowEnd: wooWindowEnd,
-    rangeDays: 7,
-    observedOrderRange
+    recentOrders,
+    timezone,
+    windowStart: afterIso,
+    windowEndExclusive: beforeIso,
+    rangeDays: reportingWindow.rangeDays
   };
 }
 
 async function main() {
   try {
+    const reportingWindow = computeReportingWindow();
     const [ga4Summary, wooSummary] = await Promise.all([
       fetchGA4Summary(),
-      fetchWooCommerceSummary()
+      fetchWooCommerceSummary(reportingWindow)
     ]);
 
     const generatedAt = new Date();
-    const windowEnd = generatedAt.toISOString();
-    const windowStart = new Date(generatedAt.getTime() - 7 * DAY_MS).toISOString();
+    const generatedAtIso = generatedAt.toISOString();
+    const windowStartIso = reportingWindow.startInstant.toISOString();
+    const windowEndIso = reportingWindow.endInstantExclusive.toISOString();
 
     const ga4Window = {
-      label: 'Rolling 7 days',
-      startDate: windowStart,
-      endDate: windowEnd
+      label: reportingWindow.label,
+      startDate: reportingWindow.startDateText,
+      endDate: reportingWindow.endDateText,
+      timezone: reportingWindow.timezone,
+      rangeDays: reportingWindow.rangeDays
     };
 
     const wooWindow = {
-      windowStart: wooSummary?.windowStart ?? null,
-      windowEnd: wooSummary?.windowEnd ?? null,
-      rangeDays: wooSummary?.rangeDays ?? 7
+      label: reportingWindow.label,
+      windowStart: windowStartIso,
+      windowEndExclusive: windowEndIso,
+      timezone: reportingWindow.timezone,
+      rangeDays: reportingWindow.rangeDays
     };
 
     const output = {
-      generatedAt: windowEnd,
-      windowStart,
-      windowEnd,
+      generatedAt: generatedAtIso,
+      windowStart: windowStartIso,
+      windowEnd: windowEndIso,
       ga4: ga4Summary,
       ga4Window,
       wooCommerce: wooSummary,
@@ -657,11 +748,11 @@ async function main() {
     await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
     await fs.writeFile(agentOutputPath, JSON.stringify(output, null, 2));
 
-    await baseLog({ status: 'success', orders: wooSummary.orderCount, sessions: ga4Summary.sessions });
+    await baseLog({ status: 'success', orders: wooSummary.paidOrdersInWindow, sessions: ga4Summary.sessions });
     await sendSchedulerAlert({
       status: 'success',
       message: 'Website agent completed',
-      orders: wooSummary.orderCount,
+      orders: wooSummary.paidOrdersInWindow,
       sessions: ga4Summary.sessions
     });
     const conversionRate =
@@ -679,9 +770,11 @@ async function main() {
         ga4Summary?.sessions ?? 'n/a'
       } ga4.purchases=${ga4Summary?.ecommercePurchases ?? 'n/a'} ga4.add_to_cart=${
         ga4Summary?.addToCartEvents ?? 'n/a'
-      } ga4.begin_checkout=${ga4Summary?.beginCheckoutEvents ?? 'n/a'} ga4.conversion_rate=${conversionRate}% woo.revenue=${
-        wooSummary.totalRevenue ?? 'n/a'
-      } woo.orders=${wooSummary.orderCount ?? 'n/a'} woo.aov=${wooSummary.averageOrderValue ?? 'n/a'} status=${websiteStatus}`
+      } ga4.begin_checkout=${ga4Summary?.beginCheckoutEvents ?? 'n/a'} ga4.conversion_rate=${conversionRate}% woo.paid_orders=${
+        wooSummary.paidOrdersInWindow ?? 'n/a'
+      } woo.gross=${wooSummary.grossOrderRevenue ?? 'n/a'} woo.net=${wooSummary.netRevenue ?? 'n/a'} woo.gross_aov=${
+        wooSummary.grossAov ?? 'n/a'
+      } status=${websiteStatus}`
     );
     console.log('[website-agent] Updated website metrics snapshot');
   } catch (error) {

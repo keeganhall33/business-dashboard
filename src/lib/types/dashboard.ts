@@ -472,31 +472,36 @@ export type WebsiteConversionSnapshot = {
     } | null;
   };
   wooCommerce?: {
-    totalRevenue?: number;
+    paidOrdersInWindow?: number | null;
+    grossOrderRevenue?: number | null;
+    merchandiseRevenue?: number | null;
+    shippingRevenue?: number | null;
+    taxCollected?: number | null;
+    discountTotal?: number | null;
     netRevenue?: number | null;
-    grossRevenue?: number | null;
-    revenueBeforeDiscounts?: number | null;
-    orderCount?: number;
-    averageOrderValue?: number;
-    shippingTotal?: number | null;
-    taxTotal?: number | null;
-    refunds?: {
-      amount?: number | null;
-      count?: number | null;
-      rate?: number | null;
+    grossAov?: number | null;
+    netAov?: number | null;
+    refundTotal?: number | null;
+    refundCount?: number | null;
+    refundDefinition?: string | null;
+    refundDataComplete?: boolean | null;
+    refundWindow?: {
       windowStart?: string | null;
-      windowEnd?: string | null;
-      observedRange?: {
-        firstRefund?: string | null;
-        lastRefund?: string | null;
-      } | null;
+      windowEndExclusive?: string | null;
+      timezone?: string | null;
     } | null;
-    discounts?: {
-      amount?: number | null;
-      rate?: number | null;
+    observedRefundRange?: {
+      firstRefund?: string | null;
+      lastRefund?: string | null;
     } | null;
+    observedPaidRange?: {
+      earliestPaid?: string | null;
+      latestPaid?: string | null;
+    } | null;
+    refundRate?: number | null;
+    discountRate?: number | null;
     topProducts?: Array<{ name: string; units: number; revenue: number }>;
-    recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
+    recentOrders?: Array<{ id: number | string | null; status: string | null; total: number | null; currency: string | null; date_paid?: string | null; date_paid_gmt?: string | null }>;
   };
 };
 

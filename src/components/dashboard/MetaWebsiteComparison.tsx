@@ -23,8 +23,8 @@ export function MetaWebsiteComparison({
   const metaClicks = meta.summary.clicks ?? 0;
   const metaImpressions = meta.summary.impressions ?? 0;
   const gaSessions = website.ga4?.sessions ?? 0;
-  const wooRevenue = website.wooCommerce?.totalRevenue ?? 0;
-  const wooOrders = website.wooCommerce?.orderCount ?? 0;
+  const wooRevenue = website.wooCommerce?.netRevenue ?? website.wooCommerce?.grossOrderRevenue ?? 0;
+  const wooOrders = website.wooCommerce?.paidOrdersInWindow ?? 0;
   const blendedRoas = metaSpend ? wooRevenue / metaSpend : null;
 
   return (
