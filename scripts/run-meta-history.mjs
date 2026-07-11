@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// Production execution: use 1Password, e.g.
+// op run \
+//  --env-file=/Users/keeganhall/.openclaw/workspace/business-dashboard/.env \
+//  --env-file=/Users/keeganhall/.openclaw/workspace/business-dashboard/.env.meta \
+//  -- npm run meta:history:run
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -14,6 +19,17 @@ for (const key of REQUIRED_ENV) {
     process.exit(1);
   }
 }
+
+const OBSERVED_KEYS = [
+  { key: 'META_ACCESS_TOKEN', optional: false },
+  { key: 'META_AD_ACCOUNT_ID', optional: true },
+  { key: 'NEXT_PUBLIC_SUPABASE_URL', optional: true },
+  { key: 'SUPABASE_SERVICE_ROLE_KEY', optional: true }
+];
+console.info(
+  '[meta-history] Env key status:',
+  OBSERVED_KEYS.map(({ key, optional }) => `${key}=${process.env[key] ? 'set' : optional ? 'missing(optional)' : 'missing'}`).join(' ')
+);
 
 const accessToken = process.env.META_ACCESS_TOKEN.trim();
 const configuredAccountId = process.env.META_AD_ACCOUNT_ID?.trim();

@@ -1,4 +1,4 @@
-import type { MetaAction, NormalizedActionMetricKey, NormalizedActionMetrics } from "./types";
+import type { MetaAction, NormalizedActionMetricKey, NormalizedActionMetrics } from "./types.ts";
 
 const ACTION_SEMANTICS_VERSION = "meta-actions-v1";
 

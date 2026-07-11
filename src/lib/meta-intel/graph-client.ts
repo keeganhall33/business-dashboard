@@ -1,5 +1,5 @@
 import fetch, { Response } from "node-fetch";
-import type { GraphRequestCounters, GraphUsageSnapshot } from "./types";
+import type { GraphRequestCounters, GraphUsageSnapshot } from "./types.ts";
 
 const GRAPH_BASE = "https://graph.facebook.com";
 const DEFAULT_VERSION = "v25.0";
@@ -12,6 +12,7 @@ type GraphClientOptions = {
   maxRetries?: number;
   maxPages?: number;
   logger?: (message: string) => void;
+  fetchImpl?: typeof fetch;
 };
 
 type RequestConfig = {
@@ -28,6 +29,7 @@ export class GraphClient {
   private readonly usage: GraphUsageSnapshot = { throttleEvents: [] };
   private versionWarnings = new Set<string>();
   private lastReportedVersion: string | null = null;
+  private readonly fetchImpl: typeof fetch;
 
   constructor(options: GraphClientOptions) {
     this.accessToken = options.accessToken;
@@ -35,6 +37,7 @@ export class GraphClient {
     this.maxRetries = Math.max(0, options.maxRetries ?? 3);
     this.maxPages = Math.max(1, options.maxPages ?? 25);
     this.logger = options.logger;
+    this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   getUsageSnapshot(): GraphUsageSnapshot {
@@ -105,7 +108,7 @@ export class GraphClient {
 
     while (attempt <= this.maxRetries) {
       attempt += 1;
-      const response = await fetch(url, {
+      const response = await this.fetchImpl(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${this.accessToken}`
@@ -156,7 +159,7 @@ export class GraphClient {
 
   private recordThrottleEvent(url: string, response: Response, body: unknown) {
     const graphError = extractGraphError(body);
-    const message = graphError?.message ?? response.statusText;
+    const message = sanitizeGraphMessage(graphError?.message ?? response.statusText);
     this.usage.throttleEvents.push({
       endpoint: redactUrl(url),
       status: response.status,
@@ -189,7 +192,7 @@ function buildErrorMessage(url: string, response: Response, body: unknown): stri
   const base = `Graph API ${response.status} ${response.statusText} for ${redactUrl(url)}`;
   const graphError = extractGraphError(body);
   if (graphError?.message) {
-    return `${base}: ${graphError.message}`;
+    return `${base}: ${sanitizeGraphMessage(graphError.message)}`;
   }
   return base;
 }
@@ -241,4 +244,9 @@ function extractGraphError(payload: unknown): { message?: string; code?: number 
   const code = typeof error.code === "number" ? error.code : undefined;
   if (message === undefined && code === undefined) return null;
   return { message, code };
+}
+
+function sanitizeGraphMessage(message: string | undefined): string {
+  if (!message) return "";
+  return message.replace(/access_token=[^&\s]+/gi, "access_token=REDACTED");
 }

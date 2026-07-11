@@ -1,5 +1,55 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export type GraphClientFactory = () => GraphClientLike;
+
+export interface GraphClientLike {
+  fetchCollection(path: string, params: Record<string, unknown>, config: { label: string }): Promise<unknown[]>;
+  get(path: string, params: Record<string, unknown>, config: { label: string }): Promise<unknown>;
+  getUsageSnapshot(): GraphUsageSnapshot;
+  getRequestCounters(): GraphRequestCounters;
+  getVersionWarnings(): string[];
+  getReturnedVersion(): string | null;
+}
+
+export const INSIGHT_CONFLICT_KEYS = {
+  meta_account_daily: "account_id,metric_date,attribution_setting",
+  meta_campaign_daily: "account_id,campaign_id,metric_date,attribution_setting",
+  meta_adset_daily: "account_id,adset_id,metric_date,attribution_setting",
+  meta_ad_daily: "account_id,ad_id,metric_date,attribution_setting"
+} as const;
+
+export interface MetaWriter {
+  createRun(runId: string, payload: {
+    startedAt: string;
+    requestedVersion: string;
+    sourceCommit?: string | null;
+  }): Promise<void>;
+  finalizeRun(runId: string, payload: {
+    status: "RUNNING" | "LIVE" | "PARTIAL" | "FAILED";
+    completedAt: string;
+    accountId: string | null;
+    accountTimezone: string | null;
+    accountCurrency: string | null;
+    dateStart: string;
+    dateEnd: string;
+    attributionSetting: string;
+    rowCounts: Record<string, number>;
+    apiCallCounts: GraphRequestCounters;
+    usage: GraphUsageSnapshot;
+    warnings: string[];
+    errorSummary: string | null;
+    requestedVersion: string;
+    returnedVersion: string | null;
+    payloadHash: string;
+  }): Promise<void>;
+  upsertInsights(table: keyof typeof INSIGHT_CONFLICT_KEYS, rows: Record<string, unknown>[]): Promise<void>;
+  upsertCreatives(rows: CreativeIdentityRow[]): Promise<void>;
+  upsertCreativeVersions(rows: NormalizedCreativeVersion[]): Promise<void>;
+  upsertAdCreativeMap(rows: AdCreativeMapRow[]): Promise<void>;
+  fetchExistingCreatives(creativeIds: string[]): Promise<Record<string, { first_seen_at: string | null; current_content_hash: string | null }>>;
+  fetchExistingAdCreativeMap(adIds: string[]): Promise<Record<string, { first_seen_at: string | null }>>;
+}
+
 export type MetaAction = {
   action_type?: string | null;
   value?: string | number | null;
@@ -150,7 +200,10 @@ export type MetaHistoryOptions = {
   maxPages?: number;
   maxRetries?: number;
   supabaseClient?: SupabaseClient;
+  writer?: MetaWriter;
+  graphClientFactory?: GraphClientFactory;
   sourceCommit?: string | null;
+  referenceDate?: Date;
 };
 
 export type NormalizedInsightRow = {

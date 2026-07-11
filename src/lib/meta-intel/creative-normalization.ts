@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { NormalizedCreative } from "./types";
+import type { NormalizedCreative } from "./types.ts";
 
 const CDN_HOST_PATTERNS = [
   /\.fbcdn\.net$/i,

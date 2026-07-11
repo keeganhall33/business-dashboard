@@ -48,11 +48,14 @@ function validateExplicitDate(value: string | undefined, label: string): string 
   return value;
 }
 
-export function computeIngestionRange(options: {
-  since?: string;
-  until?: string;
-  defaultDays?: number;
-}): { since: string; until: string; days: number; label: string; source: "default" | "explicit" } {
+export function computeIngestionRange(
+  options: {
+    since?: string;
+    until?: string;
+    defaultDays?: number;
+  },
+  referenceDate: Date = new Date()
+): { since: string; until: string; days: number; label: string; source: "default" | "explicit" } {
   const { since, until, defaultDays = 3 } = options;
   if (since && !until) throw new Error("until is required when since is provided");
   if (until && !since) throw new Error("since is required when until is provided");
@@ -76,7 +79,7 @@ export function computeIngestionRange(options: {
   }
 
   if (defaultDays < 1) throw new Error("defaultDays must be >= 1");
-  const todayParts = toPacificParts(new Date());
+  const todayParts = toPacificParts(referenceDate);
   const lastCompleted = shiftParts(todayParts, -1);
   const startParts = shiftParts(lastCompleted, -(defaultDays - 1));
   const sinceStr = format(startParts);

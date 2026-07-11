@@ -4,20 +4,19 @@ import type {
   CreativeIdentityRow,
   GraphRequestCounters,
   GraphUsageSnapshot,
+  MetaWriter,
   NormalizedCreativeVersion
-} from "./types";
-
-const INSIGHT_CONFLICT_KEYS: Record<string, string> = {
-  meta_account_daily: "account_id,metric_date,attribution_setting",
-  meta_campaign_daily: "account_id,campaign_id,metric_date,attribution_setting",
-  meta_adset_daily: "account_id,adset_id,metric_date,attribution_setting",
-  meta_ad_daily: "account_id,ad_id,metric_date,attribution_setting"
-};
+} from "./types.ts";
+import { INSIGHT_CONFLICT_KEYS } from "./types.ts";
 
 const UPSERT_CHUNK = 500;
 
-export class MetaSupabaseWriter {
-  constructor(private readonly client: SupabaseClient) {}
+export class MetaSupabaseWriter implements MetaWriter {
+  private readonly client: SupabaseClient;
+
+  constructor(client: SupabaseClient) {
+    this.client = client;
+  }
 
   async createRun(runId: string, payload: {
     startedAt: string;
@@ -37,9 +36,9 @@ export class MetaSupabaseWriter {
   }
 
   async finalizeRun(runId: string, payload: {
-    status: "LIVE" | "PARTIAL" | "FAILED";
+    status: "RUNNING" | "LIVE" | "PARTIAL" | "FAILED";
     completedAt: string;
-    accountId: string;
+    accountId: string | null;
     accountTimezone: string | null;
     accountCurrency: string | null;
     dateStart: string;
