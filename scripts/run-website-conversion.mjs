@@ -86,12 +86,15 @@ const pacificDateFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit'
 });
 
-const pacificOffsetFormatter = new Intl.DateTimeFormat('en-US', {
+const pacificDateTimePartsFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: REPORTING_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
-  hour12: false,
-  timeZoneName: 'short'
+  second: '2-digit',
+  hour12: false
 });
 
 function toNumber(value, fallback = 0) {
@@ -127,17 +130,32 @@ function shiftPacificDate(parts, deltaDays) {
   return getPacificCalendarDate(shifted);
 }
 
+function getLocalizedDateTimeParts(date) {
+  return pacificDateTimePartsFormatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+}
+
 function getTimeZoneOffsetMinutes(date) {
-  const parts = pacificOffsetFormatter.formatToParts(date);
-  const tzName = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
-  const match = tzName.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/i);
-  if (!match) {
-    throw new Error(`Unable to parse timezone offset from ${tzName}`);
+  const parts = getLocalizedDateTimeParts(date);
+  const required = ['year', 'month', 'day', 'hour', 'minute', 'second'];
+  for (const key of required) {
+    if (!(key in parts)) {
+      throw new Error(`Unable to resolve localized date part: ${key}`);
+    }
   }
-  const hours = Number(match[1]);
-  const minutes = Number(match[2] ?? '0');
-  const minuteAdjustment = minutes * (hours >= 0 ? 1 : -1);
-  return hours * 60 + minuteAdjustment;
+  const localMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return (localMs - date.getTime()) / 60000;
 }
 
 function createPacificInstant(year, month, day, hour = 0, minute = 0, second = 0) {
@@ -805,35 +823,6 @@ async function main() {
       stack: error instanceof Error && error.stack ? error.stack : undefined
     });
     await sendSchedulerAlert({ status: 'error', message: friendlyMessage });
-
-    const failureOutput = {
-      generatedAt: new Date().toISOString(),
-      status: 'BROKEN',
-      error: diagnostic
-    };
-    await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
-    await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
-    await upsertSupabaseSnapshot(failureOutput, 'BROKEN');
-
-    try {
-      const snapshotExists = await fs
-        .access(agentOutputPath)
-        .then(() => true)
-        .catch(() => false);
-      const logExists = await fs
-        .access(agentLogPath)
-        .then(() => true)
-        .catch(() => false);
-      console.error('[website-agent] Failure artifacts', {
-        cwd: process.cwd(),
-        snapshotExists,
-        logExists,
-        snapshotPath: agentOutputPath,
-        logPath: agentLogPath
-      });
-    } catch (artifactError) {
-      console.error('[website-agent] Artifact existence check failed', artifactError);
-    }
 
     console.error('[website-agent] Failed:', friendlyMessage);
     if (error instanceof Error && error.stack) {
