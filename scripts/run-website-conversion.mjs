@@ -58,6 +58,66 @@ const REQUIRED_GA4_METRICS = [
   'ecommercePurchases',
   'purchaseRevenue'
 ];
+const GA4_EVENT_FIELD_MAP = {
+  view_item: 'viewItemEvents',
+  add_to_cart: 'addToCartEvents',
+  begin_checkout: 'beginCheckoutEvents',
+  purchase: 'purchaseEvents'
+};
+const REQUIRED_GA4_EVENTS = Object.keys(GA4_EVENT_FIELD_MAP);
+const WOO_PAGE_SIZE = 100;
+const WOO_MAX_PAGES = 10;
+
+const apiCallCounts = {
+  ga4: 0,
+  wooOrders: 0,
+  wooRefunds: 0
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function sumNumeric(collection, selector) {
+  if (!Array.isArray(collection) || !collection.length) return 0;
+  return collection.reduce((sum, item, index) => {
+    const value = selector(item, index);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+}
+
+function roundCurrency(value) {
+  const numericValue = toNumber(value, 0);
+  return Math.round(numericValue * 100) / 100;
+}
+
+function roundRatio(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 10000) / 10000;
+}
+
+function buildEventCountRecord(defaultValue) {
+  return Object.values(GA4_EVENT_FIELD_MAP).reduce((acc, field) => {
+    acc[field] = defaultValue;
+    return acc;
+  }, {});
+}
+
+function mapEventRowsToCounts(rows, defaultValue = 0) {
+  const counts = buildEventCountRecord(defaultValue);
+  for (const row of rows ?? []) {
+    const eventName = row?.dimensionValues?.[0]?.value;
+    if (!eventName) continue;
+    const fieldName = GA4_EVENT_FIELD_MAP[eventName];
+    if (!fieldName) continue;
+    const metricValue = row?.metricValues?.[0]?.value;
+    counts[fieldName] = toNumber(metricValue, defaultValue);
+  }
+  return counts;
+}
 
 function baseLog(payload) {
   return fs.mkdir(path.dirname(agentLogPath), { recursive: true })
@@ -65,6 +125,37 @@ function baseLog(payload) {
       agentLogPath,
       JSON.stringify({ timestamp: new Date().toISOString(), ...payload }) + '\n'
     ));
+}
+
+async function fetchWooCollection(resource, params, counterKey, auth) {
+  const items = [];
+  let page = 1;
+  while (true) {
+    params.set('page', String(page));
+    params.set('per_page', String(WOO_PAGE_SIZE));
+    const url = `${wooBaseUrl}/wp-json/wc/v3/${resource}?${params.toString()}`;
+    apiCallCounts[counterKey] += 1;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Basic ${auth}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`WooCommerce API failed (${resource}): ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      items.push(...data);
+    }
+    const totalPages = Number(response.headers.get('x-wp-totalpages')) || 1;
+    if (page >= totalPages) break;
+    page += 1;
+    if (page > WOO_MAX_PAGES) {
+      await baseLog({ status: 'warning', message: `${resource} pagination truncated at ${WOO_MAX_PAGES} pages` });
+      break;
+    }
+  }
+  return items;
 }
 
 async function sendSchedulerAlert(payload) {
@@ -121,6 +212,7 @@ async function upsertSupabaseSnapshot(snapshot, mode) {
 function buildHistoryPayload(snapshot) {
   if (!snapshot) return null;
   const { ga4, wooCommerce, ga4Window, wooWindow, windowStart, windowEnd, generatedAt } = snapshot;
+  const funnelRates = computeFunnelRates(ga4);
   const safePayload = {
     ga4: {
       totalUsers: ga4?.totalUsers ?? null,
@@ -134,14 +226,20 @@ function buildHistoryPayload(snapshot) {
       purchaseEvents: ga4?.purchaseEvents ?? null,
       channelBreakdown: ga4?.channelBreakdown ?? [],
       deviceBreakdown: ga4?.deviceBreakdown ?? [],
-      warnings: ga4?.warnings ?? []
+      warnings: ga4?.warnings ?? [],
+      funnelRates
     },
     wooCommerce: {
       orderCount: wooCommerce?.orderCount ?? null,
       totalRevenue: wooCommerce?.totalRevenue ?? null,
+      grossRevenue: wooCommerce?.grossRevenue ?? null,
+      netRevenue: wooCommerce?.netRevenue ?? wooCommerce?.totalRevenue ?? null,
+      revenueBeforeDiscounts: wooCommerce?.revenueBeforeDiscounts ?? null,
       averageOrderValue: wooCommerce?.averageOrderValue ?? null,
-      refunds: wooCommerce?.refunds ?? null,
-      discounts: wooCommerce?.discounts ?? null,
+      shippingTotal: wooCommerce?.shippingTotal ?? null,
+      taxTotal: wooCommerce?.taxTotal ?? null,
+      refunds: sanitizeMoneyStat(wooCommerce?.refunds),
+      discounts: sanitizeMoneyStat(wooCommerce?.discounts),
       topProducts: (wooCommerce?.topProducts ?? []).map((product) => ({
         name: product?.name ?? 'unknown',
         units: product?.units ?? null,
@@ -155,6 +253,47 @@ function buildHistoryPayload(snapshot) {
     generatedAt
   };
   return safePayload;
+}
+
+function computeFunnelRates(ga4) {
+  if (!ga4) return null;
+  const computeRate = (numerator, denominator) => {
+    if (numerator == null || denominator == null) return null;
+    const num = Number(numerator);
+    const denom = Number(denominator);
+    if (!Number.isFinite(num) || !Number.isFinite(denom) || denom <= 0) return null;
+    return roundRatio(num / denom);
+  };
+
+  return {
+    viewToCart: computeRate(ga4.addToCartEvents, ga4.viewItemEvents),
+    cartToCheckout: computeRate(ga4.beginCheckoutEvents, ga4.addToCartEvents),
+    checkoutToPurchase: computeRate(ga4.purchaseEvents ?? ga4.ecommercePurchases, ga4.beginCheckoutEvents),
+    sessionToPurchase: computeRate(ga4.ecommercePurchases, ga4.sessions)
+  };
+}
+
+function sanitizeMoneyStat(stat) {
+  if (!stat || typeof stat !== 'object') return null;
+  const amount = stat.amount != null ? roundCurrency(stat.amount) : null;
+  const countValue = stat.count != null ? Number(stat.count) : null;
+  const count = Number.isFinite(countValue) ? countValue : null;
+  const rateValue = stat.rate != null ? Number(stat.rate) : null;
+  const rate = Number.isFinite(rateValue) ? roundRatio(rateValue) : null;
+  const windowStart = 'windowStart' in stat ? stat.windowStart ?? null : null;
+  const windowEnd = 'windowEnd' in stat ? stat.windowEnd ?? null : null;
+  const observedRange = stat.observedRange ?? null;
+  if (amount == null && count == null && rate == null && !windowStart && !windowEnd && !observedRange) {
+    return null;
+  }
+  return {
+    amount,
+    count,
+    rate,
+    windowStart,
+    windowEnd,
+    observedRange
+  };
 }
 
 function toPacificDate(dateIso) {
@@ -250,56 +389,13 @@ async function fetchBreakdown(dimensionName) {
   }
 }
 
-async function fetchAddToCartEvents() {
-  try {
-    const [directMetric] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'addToCartEvents' }]
-    });
-    const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-    if (!Number.isNaN(directValue) && directValue) return directValue;
-
-    const [eventFilterReport] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'eventCount' }],
-      dimensionFilter: {
-        filter: {
-          fieldName: 'eventName',
-          stringFilter: { matchType: 'EXACT', value: 'add_to_cart' }
-        }
-      }
-    });
-    return Number(eventFilterReport.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-  } catch (error) {
-    warnings.push(`addToCartEvents unavailable: ${error instanceof Error ? error.message : error}`);
-    return null;
-  }
-}
-
-async function fetchBeginCheckoutEvents() {
-  try {
-    const [report] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'beginCheckoutEvents' }]
-    });
-    return Number(report.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-  } catch (error) {
-    warnings.push(`beginCheckoutEvents unavailable: ${error instanceof Error ? error.message : error}`);
-    return null;
-  }
-}
-
-const [deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents] = await Promise.all([
+const [deviceBreakdown, channelBreakdown, eventCounts] = await Promise.all([
   fetchBreakdown('deviceCategory'),
   fetchBreakdown('sessionDefaultChannelGroup'),
-  fetchAddToCartEvents(),
-  fetchBeginCheckoutEvents()
+  fetchGaEventCountsWithClient(client, warnings)
 ]);
 
-return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings };
+return { baseReport, deviceBreakdown, channelBreakdown, eventCounts, warnings };
 }
 
 async function fetchGA4WithApiKey() {
@@ -324,32 +420,44 @@ async function runGa4ApiKeyReport(body) {
   return await response.json();
 }
 
-async function fetchAddToCartEventsWithApiKey() {
+async function fetchGaEventCountsWithClient(client, warnings) {
   try {
-    const directMetric = await runGa4ApiKeyReport({
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'addToCartEvents' }]
-    });
-    const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-    if (!Number.isNaN(directValue) && directValue) return { value: directValue };
-
-    const fallbackMetric = await runGa4ApiKeyReport({
+    const [report] = await client.runReport({
+      property: `properties/${propertyId}`,
       dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'eventCount' }],
+      dimensions: [{ name: 'eventName' }],
       dimensionFilter: {
         filter: {
           fieldName: 'eventName',
-          stringFilter: { matchType: 'EXACT', value: 'add_to_cart' }
+          inListFilter: { values: REQUIRED_GA4_EVENTS }
         }
       }
     });
-
-    return {
-      value: Number(fallbackMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0)
-    };
+    return mapEventRowsToCounts(report.rows ?? []);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { value: null, warning: `addToCartEvents unavailable: ${message}` };
+    warnings.push(`eventName counts unavailable: ${error instanceof Error ? error.message : error}`);
+    return buildEventCountRecord(null);
+  }
+}
+
+async function fetchGaEventCountsWithApiKey(warnings) {
+  try {
+    const report = await runGa4ApiKeyReport({
+      dateRanges: [GA4_DATE_RANGE],
+      metrics: [{ name: 'eventCount' }],
+      dimensions: [{ name: 'eventName' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'eventName',
+          inListFilter: { values: REQUIRED_GA4_EVENTS }
+        }
+      }
+    });
+    return mapEventRowsToCounts(report.rows ?? []);
+  } catch (error) {
+    warnings.push(`eventName counts unavailable: ${error instanceof Error ? error.message : error}`);
+    return buildEventCountRecord(null);
   }
 }
 
@@ -377,23 +485,20 @@ async function fetchGA4Summary() {
     const warnings = [];
     const summary = await fetchGA4WithApiKey();
     const normalized = normalizeGa4Response(summary);
-    const { value: addToCartEvents, warning } = await fetchAddToCartEventsWithApiKey();
-    if (warning) warnings.push(warning);
+    const eventCounts = await fetchGaEventCountsWithApiKey(warnings);
     return {
       ...normalized,
-      addToCartEvents,
-      beginCheckoutEvents: null,
+      ...eventCounts,
       warnings
     };
   }
 
-  const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings } =
+  const { baseReport, deviceBreakdown, channelBreakdown, eventCounts, warnings } =
     await fetchGA4WithServiceAccount();
   const normalized = normalizeGa4Response(baseReport);
   return {
     ...normalized,
-    addToCartEvents,
-    beginCheckoutEvents,
+    ...eventCounts,
     deviceBreakdown,
     channelBreakdown,
     warnings
@@ -404,30 +509,41 @@ async function fetchWooCommerceSummary() {
   const auth = Buffer.from(`${wooKey}:${wooSecret}`).toString('base64');
   const now = new Date();
   const wooWindowEnd = now.toISOString();
-  const wooWindowStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const searchParams = new URLSearchParams({
-    per_page: '100',
+  const wooWindowStart = new Date(now.getTime() - 7 * DAY_MS).toISOString();
+  const orderParams = new URLSearchParams({
     status: 'completed',
     orderby: 'date',
     order: 'desc',
     after: wooWindowStart,
     before: wooWindowEnd
   });
-  const response = await fetch(
-    `${wooBaseUrl}/wp-json/wc/v3/orders?${searchParams.toString()}`,
-    {
-      headers: {
-        Authorization: `Basic ${auth}`
-      }
-    }
-  );
+  const refundParams = new URLSearchParams({
+    orderby: 'date',
+    order: 'desc',
+    after: wooWindowStart,
+    before: wooWindowEnd
+  });
 
-  if (!response.ok) {
-    throw new Error(`WooCommerce API failed: ${response.status} ${response.statusText}`);
-  }
+  const [orders, refunds] = await Promise.all([
+    fetchWooCollection('orders', orderParams, 'wooOrders', auth),
+    fetchWooCollection('refunds', refundParams, 'wooRefunds', auth)
+  ]);
 
-  const orders = await response.json();
-  const totalRevenue = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const recognizedRevenue = sumNumeric(orders, (order) => toNumber(order.total));
+  const discountTotal = sumNumeric(orders, (order) => toNumber(order.discount_total));
+  const shippingTotal = sumNumeric(orders, (order) => toNumber(order.shipping_total));
+  const taxTotal = sumNumeric(orders, (order) => toNumber(order.total_tax));
+  const grossRevenueValue = recognizedRevenue;
+  const revenueBeforeDiscountsValue = recognizedRevenue + discountTotal;
+  const refundTotal = sumNumeric(refunds, (refund) => toNumber(refund.amount ?? refund.total ?? refund.total_refunded));
+  const netRevenueValue = recognizedRevenue - refundTotal;
+  const grossRevenue = roundCurrency(grossRevenueValue);
+  const revenueBeforeDiscounts = roundCurrency(revenueBeforeDiscountsValue);
+  const netRevenue = roundCurrency(netRevenueValue);
+  const discountRate = revenueBeforeDiscountsValue > 0 ? roundRatio(discountTotal / revenueBeforeDiscountsValue) : null;
+  const refundRate = grossRevenueValue > 0 ? roundRatio(refundTotal / grossRevenueValue) : null;
+  const orderCount = orders.length;
+  const averageOrderValue = orderCount ? roundCurrency(recognizedRevenue / orderCount) : 0;
   const productMap = new Map();
 
   for (const order of orders) {
@@ -464,10 +580,38 @@ async function fetchWooCommerceSummary() {
       }
     : null;
 
+  const refundDates = refunds
+    .map((refund) => (refund.date_created ? new Date(refund.date_created).getTime() : null))
+    .filter((value) => Number.isFinite(value));
+  const observedRefundRange = refundDates.length
+    ? {
+        firstRefund: new Date(Math.min(...refundDates)).toISOString(),
+        lastRefund: new Date(Math.max(...refundDates)).toISOString()
+      }
+    : null;
+
   return {
-    totalRevenue,
-    orderCount: orders.length,
-    averageOrderValue: orders.length ? totalRevenue / orders.length : 0,
+    totalRevenue: netRevenue,
+    netRevenue,
+    grossRevenue,
+    revenueBeforeDiscounts,
+    orderCount,
+    averageOrderValue,
+    discountTotal: roundCurrency(discountTotal),
+    shippingTotal: roundCurrency(shippingTotal),
+    taxTotal: roundCurrency(taxTotal),
+    discounts: {
+      amount: roundCurrency(discountTotal),
+      rate: discountRate
+    },
+    refunds: {
+      amount: roundCurrency(refundTotal),
+      count: refunds.length,
+      rate: refundRate,
+      windowStart: wooWindowStart,
+      windowEnd: wooWindowEnd,
+      observedRange: observedRefundRange
+    },
     topProducts,
     recentOrders: orderSummaries,
     windowStart: wooWindowStart,
@@ -486,7 +630,7 @@ async function main() {
 
     const generatedAt = new Date();
     const windowEnd = generatedAt.toISOString();
-    const windowStart = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const windowStart = new Date(generatedAt.getTime() - 7 * DAY_MS).toISOString();
 
     const ga4Window = {
       label: 'Rolling 7 days',

@@ -455,18 +455,46 @@ export type WebsiteConversionSnapshot = {
     totalUsers?: number;
     sessions?: number;
     eventCount?: number;
+    viewItemEvents?: number | null;
     addToCartEvents?: number | null;
     beginCheckoutEvents?: number | null;
+    purchaseEvents?: number | null;
     ecommercePurchases?: number | null;
     purchaseRevenue?: number | null;
     deviceBreakdown?: Array<{ label: string; sessions: number }>;
     channelBreakdown?: Array<{ label: string; sessions: number }>;
     warnings?: string[];
+    funnelRates?: {
+      viewToCart?: number | null;
+      cartToCheckout?: number | null;
+      checkoutToPurchase?: number | null;
+      sessionToPurchase?: number | null;
+    } | null;
   };
   wooCommerce?: {
     totalRevenue?: number;
+    netRevenue?: number | null;
+    grossRevenue?: number | null;
+    revenueBeforeDiscounts?: number | null;
     orderCount?: number;
     averageOrderValue?: number;
+    shippingTotal?: number | null;
+    taxTotal?: number | null;
+    refunds?: {
+      amount?: number | null;
+      count?: number | null;
+      rate?: number | null;
+      windowStart?: string | null;
+      windowEnd?: string | null;
+      observedRange?: {
+        firstRefund?: string | null;
+        lastRefund?: string | null;
+      } | null;
+    } | null;
+    discounts?: {
+      amount?: number | null;
+      rate?: number | null;
+    } | null;
     topProducts?: Array<{ name: string; units: number; revenue: number }>;
     recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
   };
