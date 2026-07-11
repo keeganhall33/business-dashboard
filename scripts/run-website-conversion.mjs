@@ -79,22 +79,19 @@ const apiCallCounts = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const pacificDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: REPORTING_TIMEZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false
-});
-
 const pacificDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: REPORTING_TIMEZONE,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit'
+});
+
+const pacificOffsetFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: REPORTING_TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZoneName: 'short'
 });
 
 function toNumber(value, fallback = 0) {
@@ -110,36 +107,44 @@ function sumNumeric(collection, selector) {
   }, 0);
 }
 
-function getPacificDateParts(date) {
-  const parts = pacificDateTimeFormatter.formatToParts(date).reduce((acc, part) => {
+function getPacificCalendarDate(date) {
+  const parts = pacificDateFormatter.formatToParts(date).reduce((acc, part) => {
     if (part.type !== 'literal') {
       acc[part.type] = part.value;
     }
     return acc;
   }, {});
-  const required = ['year', 'month', 'day', 'hour', 'minute', 'second'];
-  for (const key of required) {
-    if (!(key in parts)) {
-      throw new Error(`Missing ${key} in Pacific date parts`);
-    }
-  }
   return {
     year: Number(parts.year),
     month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second)
+    day: Number(parts.day)
   };
 }
 
-function getPacificMidnight(date) {
-  const parts = getPacificDateParts(date);
-  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0));
+function shiftPacificDate(parts, deltaDays) {
+  const anchorUtc = Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0);
+  const shifted = new Date(anchorUtc + deltaDays * DAY_MS);
+  return getPacificCalendarDate(shifted);
 }
 
-function addDays(date, days) {
-  return new Date(date.getTime() + days * DAY_MS);
+function getTimeZoneOffsetMinutes(date) {
+  const parts = pacificOffsetFormatter.formatToParts(date);
+  const tzName = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+  const match = tzName.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/i);
+  if (!match) {
+    throw new Error(`Unable to parse timezone offset from ${tzName}`);
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] ?? '0');
+  const minuteAdjustment = minutes * (hours >= 0 ? 1 : -1);
+  return hours * 60 + minuteAdjustment;
+}
+
+function createPacificInstant(year, month, day, hour = 0, minute = 0, second = 0) {
+  const guessUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(guessUtcMs));
+  const utcMs = guessUtcMs - offsetMinutes * 60 * 1000;
+  return new Date(utcMs);
 }
 
 function formatPacificDate(date) {
@@ -147,9 +152,12 @@ function formatPacificDate(date) {
 }
 
 function computeReportingWindow(now = new Date()) {
-  const todayMidnightPacific = getPacificMidnight(now);
-  const startInstant = addDays(todayMidnightPacific, -(REPORTING_RANGE_DAYS - 1));
-  const endInstantExclusive = addDays(todayMidnightPacific, 1);
+  const todayParts = getPacificCalendarDate(now);
+  const startParts = shiftPacificDate(todayParts, -(REPORTING_RANGE_DAYS - 1));
+  const endExclusiveParts = shiftPacificDate(todayParts, 1);
+  const todayInstant = createPacificInstant(todayParts.year, todayParts.month, todayParts.day);
+  const startInstant = createPacificInstant(startParts.year, startParts.month, startParts.day);
+  const endInstantExclusive = createPacificInstant(endExclusiveParts.year, endExclusiveParts.month, endExclusiveParts.day);
   return {
     timezone: REPORTING_TIMEZONE,
     rangeDays: REPORTING_RANGE_DAYS,
@@ -157,7 +165,11 @@ function computeReportingWindow(now = new Date()) {
     startInstant,
     endInstantExclusive,
     startDateText: formatPacificDate(startInstant),
-    endDateText: formatPacificDate(addDays(endInstantExclusive, -1))
+    endDateText: formatPacificDate(todayInstant),
+    localStartDate: formatPacificDate(startInstant),
+    localEndDateExclusive: formatPacificDate(endInstantExclusive),
+    windowStartUtc: startInstant.toISOString(),
+    windowEndExclusiveUtc: endInstantExclusive.toISOString()
   };
 }
 
@@ -559,14 +571,13 @@ async function fetchGA4Summary() {
 
 async function fetchWooCommerceSummary(reportingWindow) {
   const auth = Buffer.from(`${wooKey}:${wooSecret}`).toString('base64');
-  const { startInstant, endInstantExclusive, timezone } = reportingWindow;
-  const afterIso = startInstant.toISOString();
-  const beforeIso = endInstantExclusive.toISOString();
+  const { startInstant, endInstantExclusive, timezone, localStartDate, localEndDateExclusive, windowStartUtc, windowEndExclusiveUtc, label, rangeDays } = reportingWindow;
+  const afterIso = windowStartUtc;
+  const beforeIso = windowEndExclusiveUtc;
   const orderParams = new URLSearchParams({
     orderby: 'date',
     order: 'desc',
     per_page: String(WOO_PAGE_SIZE),
-    status: 'processing,completed',
     modified_after: afterIso,
     modified_before: beforeIso
   });
@@ -700,9 +711,12 @@ async function fetchWooCommerceSummary(reportingWindow) {
     topProducts,
     recentOrders,
     timezone,
-    windowStart: afterIso,
-    windowEndExclusive: beforeIso,
-    rangeDays: reportingWindow.rangeDays
+    windowStartUtc,
+    windowEndExclusiveUtc,
+    localStartDate,
+    localEndDateExclusive,
+    label,
+    rangeDays
   };
 }
 
@@ -729,8 +743,10 @@ async function main() {
 
     const wooWindow = {
       label: reportingWindow.label,
-      windowStart: windowStartIso,
-      windowEndExclusive: windowEndIso,
+      localStartDate: reportingWindow.localStartDate,
+      localEndDateExclusive: reportingWindow.localEndDateExclusive,
+      windowStartUtc: reportingWindow.windowStartUtc,
+      windowEndExclusiveUtc: reportingWindow.windowEndExclusiveUtc,
       timezone: reportingWindow.timezone,
       rangeDays: reportingWindow.rangeDays
     };
