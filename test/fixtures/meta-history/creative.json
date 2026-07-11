@@ -1,0 +1,46 @@
+{
+  "id": "6021234567890",
+  "name": "Collector Welcome",
+  "object_story_id": "123_456",
+  "effective_object_story_id": "123_456",
+  "call_to_action_type": "LEARN_MORE",
+  "instagram_actor_id": "insta_actor_1",
+  "object_story_spec": {
+    "page_id": "987654321",
+    "link_data": {
+      "link": "https://keeganhall.com/collectors/welcome?utm_source=meta&session=abc",
+      "message": "Join the collector circle",
+      "name": "Collector welcome",
+      "description": "Limited access",
+      "picture": "https://scontent.xx.fbcdn.net/picture.jpg?token=ephemeral",
+      "child_attachments": [
+        {
+          "name": "Card A",
+          "description": "Story A",
+          "link": "https://keeganhall.com/drop/card-a?ref=meta",
+          "picture": "https://cdninstagram.com/cardA.jpg?tmp=1"
+        }
+      ],
+      "call_to_action": { "type": "LEARN_MORE" }
+    },
+    "video_data": {
+      "video_id": "9988",
+      "video_url": "https://video.xx.fbcdn.net/v1234.mp4?Expires=9999&Signature=aaa"
+    }
+  },
+  "asset_feed_spec": {
+    "ad_formats": ["CAROUSEL"],
+    "call_to_action_types": ["LEARN_MORE"],
+    "bodies": ["Join now"],
+    "descriptions": ["Only 25"],
+    "images": [
+      { "hash": "img_123", "url": "https://cdn.fbsbx.com/img.png?temp" }
+    ],
+    "product_set_ids": ["ps1"]
+  },
+  "image_hash": "hash_img",
+  "thumbnail_url": "https://scontent.xx.fbcdn.net/thumb.jpg?token=1",
+  "image_url": "https://keeganhall.com/assets/main.jpg?tracking=1",
+  "video_id": "9988",
+  "dynamic_ad_voice": "DYNAMIC"
+}

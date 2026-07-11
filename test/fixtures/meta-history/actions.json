@@ -1,0 +1,28 @@
+{
+  "baseline": {
+    "actions": [
+      { "action_type": "offsite_conversion.fb_pixel_purchase", "value": "12" },
+      { "action_type": "offsite_conversion.fb_pixel_add_to_cart", "value": "30" },
+      { "action_type": "landing_page_view", "value": "150" },
+      { "action_type": "thruplay", "value": "25" }
+    ],
+    "action_values": [
+      { "action_type": "offsite_conversion.fb_pixel_purchase", "value": "1200.50" }
+    ]
+  },
+  "conflict": {
+    "actions": [
+      { "action_type": "offsite_conversion.fb_pixel_add_to_cart", "value": "10" },
+      { "action_type": "add_to_cart", "value": "5" }
+    ],
+    "action_values": []
+  },
+  "mismatch": {
+    "actions": [
+      { "action_type": "offsite_conversion.purchase", "value": "4" }
+    ],
+    "action_values": [
+      { "action_type": "purchase", "value": "99.95" }
+    ]
+  }
+}
