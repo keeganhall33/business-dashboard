@@ -14,6 +14,7 @@
     "storybook:build": "storybook build",
     "website:run": "node scripts/run-website-conversion.mjs",
     "meta:run": "node scripts/run-meta-reporting.mjs",
+    "meta:history:run": "tsx scripts/run-meta-history.mjs",
     "executive:refresh": "node scripts/run-executive-refresh.mjs",
     "industry:run": "node scripts/run-industry-pulse.mjs",
     "social:run": "node scripts/run-social-intelligence.mjs",
