@@ -18,23 +18,26 @@ test("account-level fields exclude deprecated metrics", () => {
   assert.ok(!fields.includes("video_plays"));
 });
 
-test("campaign-level fields include campaign metadata", () => {
+test("campaign-level fields exclude unsupported metadata", () => {
   const fields = parseFields("campaign");
   assert.ok(fields.includes("campaign_id"));
-  assert.ok(fields.includes("campaign_name"));
-  assert.ok(fields.includes("daily_budget"));
+  assert.ok(!fields.includes("campaign_name"));
+  assert.ok(!fields.includes("daily_budget"));
+  assert.ok(!fields.includes("effective_status"));
 });
 
-test("ad set fields include optimization metadata", () => {
+test("ad set fields only include identifiers", () => {
   const fields = parseFields("adset");
   assert.ok(fields.includes("adset_id"));
-  assert.ok(fields.includes("optimization_goal"));
-  assert.ok(fields.includes("bid_strategy"));
+  assert.ok(!fields.includes("adset_name"));
+  assert.ok(!fields.includes("bid_strategy"));
 });
 
-test("ad-level fields include creative references", () => {
+test("ad-level fields exclude ad metadata", () => {
   const fields = parseFields("ad");
   assert.ok(fields.includes("ad_id"));
-  assert.ok(fields.includes("creative_id"));
   assert.ok(fields.includes("inline_link_click_ctr"));
+  assert.ok(!fields.includes("ad_name"));
+  assert.ok(!fields.includes("creative_id"));
+  assert.ok(!fields.includes("effective_status"));
 });

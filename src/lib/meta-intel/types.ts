@@ -204,6 +204,7 @@ export type MetaHistoryOptions = {
   graphClientFactory?: GraphClientFactory;
   sourceCommit?: string | null;
   referenceDate?: Date;
+  dryRun?: boolean;
 };
 
 export type NormalizedInsightRow = {
@@ -231,4 +232,34 @@ export type MetaHistorySummary = {
   warnings: string[];
   payloadHash: string;
   usage: GraphUsageSnapshot;
+};
+
+export type CampaignMetadata = {
+  id: string;
+  name: string | null;
+  objective: string | null;
+  buying_type: string | null;
+  effective_status: string | null;
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+};
+
+export type AdsetMetadata = {
+  id: string;
+  name: string | null;
+  effective_status: string | null;
+  optimization_goal: string | null;
+  billing_event: string | null;
+  bid_strategy: string | null;
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+  promoted_object: Record<string, unknown> | null;
+  targeting: Record<string, unknown> | null;
+};
+
+export type AdMetadata = {
+  id: string;
+  name: string | null;
+  effective_status: string | null;
+  creative_id: string | null;
 };

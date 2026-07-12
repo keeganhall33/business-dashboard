@@ -16,10 +16,24 @@ import type {
   MetaAction,
   MetaWriter,
   GraphClientLike,
-  GraphUsageSnapshot
+  GraphUsageSnapshot,
+  CampaignMetadata,
+  AdsetMetadata,
+  AdMetadata
 } from "./types.ts";
 
 type InsightLevel = "account" | "campaign" | "adset" | "ad";
+type MetadataMaps = {
+  campaign: Map<string, CampaignMetadata>;
+  adset: Map<string, AdsetMetadata>;
+  ad: Map<string, AdMetadata>;
+};
+type CreativePayload = {
+  creatives: CreativeIdentityRow[];
+  versions: NormalizedCreativeVersion[];
+  map: AdCreativeMapRow[];
+  adMetadata: Map<string, AdMetadata>;
+};
 
 const REQUESTED_API_VERSION = "v25.0";
 const REQUESTED_ATTR_LABEL = "7d_click_1d_view";
@@ -41,6 +55,7 @@ export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Prom
   const referenceDate = options.referenceDate ?? new Date();
   const range = computeIngestionRange({ since: options.since, until: options.until, defaultDays: 3 }, referenceDate);
   const runId = crypto.randomUUID();
+  const isDryRun = options.dryRun ?? false;
 
   const graphClient: GraphClientLike =
     options.graphClientFactory?.() ??
@@ -53,7 +68,7 @@ export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Prom
     });
 
   const writer: MetaWriter | null =
-    options.writer ?? (options.supabaseClient ? new MetaSupabaseWriter(options.supabaseClient) : null);
+    isDryRun ? null : options.writer ?? (options.supabaseClient ? new MetaSupabaseWriter(options.supabaseClient) : null);
 
   if (writer) {
     await writer.createRun(runId, {
@@ -64,6 +79,9 @@ export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Prom
   }
 
   const warnings: string[] = [];
+  if (isDryRun) {
+    warnings.push("dry-run: Supabase writes skipped");
+  }
   let finalStatus: "LIVE" | "PARTIAL" | "FAILED" = "FAILED";
   let errorSummary: string | null = null;
   let summary: MetaHistorySummary | null = null;
@@ -82,6 +100,9 @@ export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Prom
       accountId: accountContext.accountId,
       range
     });
+    const idSets = collectInsightIds(levelData);
+    const campaignMetadata = await fetchCampaignMetadata(graphClient, idSets.campaignIds);
+    const adsetMetadata = await fetchAdsetMetadata(graphClient, idSets.adsetIds);
 
     const creativeResult = await buildCreativePayloadSafe({
       graphClient,
@@ -93,12 +114,19 @@ export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Prom
     });
 
     creativePayload = creativeResult.payload;
+    const adMetadata = await completeAdMetadata(graphClient, idSets.adIds, creativePayload.adMetadata);
+    const metadataMaps: MetadataMaps = {
+      campaign: campaignMetadata,
+      adset: adsetMetadata,
+      ad: adMetadata
+    };
     normalizedRows = buildNormalizedRows({
       levelData,
       accountContext,
       runId,
       nowIso,
-      warnings
+      warnings,
+      metadata: metadataMaps
     });
 
     rowCounts = computeRowCounts(normalizedRows, creativePayload);
@@ -228,26 +256,13 @@ export function insightFieldsFor(level: InsightLevel): string {
 
   if (level === "campaign") {
     common.push(
-      "campaign_id",
-      "campaign_name",
-      "objective",
-      "buying_type",
-      "daily_budget",
-      "lifetime_budget",
-      "effective_status"
+      "campaign_id"
     );
   }
   if (level === "adset") {
     common.push(
       "campaign_id",
-      "adset_id",
-      "adset_name",
-      "effective_status",
-      "optimization_goal",
-      "billing_event",
-      "bid_strategy",
-      "promoted_object",
-      "targeting"
+      "adset_id"
     );
   }
   if (level === "ad") {
@@ -255,9 +270,6 @@ export function insightFieldsFor(level: InsightLevel): string {
       "campaign_id",
       "adset_id",
       "ad_id",
-      "ad_name",
-      "creative_id",
-      "effective_status",
       "inline_link_click_ctr"
     );
   }
@@ -271,6 +283,7 @@ function buildNormalizedRows(params: {
   runId: string;
   nowIso: string;
   warnings: string[];
+  metadata: MetadataMaps;
 }) {
   return {
     account: normalizeLevel("account", params.levelData.account, params),
@@ -288,6 +301,7 @@ function normalizeLevel(
     runId: string;
     nowIso: string;
     warnings: string[];
+    metadata: MetadataMaps;
   }
 ) {
   const output: Record<string, unknown>[] = [];
@@ -306,6 +320,7 @@ function normalizeInsightRow(
     runId: string;
     nowIso: string;
     warnings: string[];
+    metadata: MetadataMaps;
   }
 ): Record<string, unknown> | null {
   const metricDate = asString(row["date_start"]) ?? asString(row["date_stop"]);
@@ -323,6 +338,7 @@ function normalizeInsightRow(
   );
   const warnings = [...actions.warnings];
   if (attribution.warning) warnings.push(attribution.warning);
+  const metadataMaps = context.metadata;
 
   const spend = parseMoney(row?.spend);
   const purchaseValue = actions.values.purchase_value;
@@ -383,15 +399,16 @@ function normalizeInsightRow(
       context.warnings.push("Skipping campaign row missing campaign_id");
       return null;
     }
+    const campaignMeta = metadataMaps.campaign.get(campaignId);
     return {
       ...baseRow,
       campaign_id: campaignId,
-      campaign_name: asString(row["campaign_name"]),
-      objective: asString(row["objective"]),
-      buying_type: asString(row["buying_type"]),
-      effective_status: asString(row["effective_status"]),
-      daily_budget: parseMoney(row["daily_budget"]),
-      lifetime_budget: parseMoney(row["lifetime_budget"])
+      campaign_name: campaignMeta?.name ?? null,
+      objective: campaignMeta?.objective ?? null,
+      buying_type: campaignMeta?.buying_type ?? null,
+      effective_status: campaignMeta?.effective_status ?? null,
+      daily_budget: parseMoney(campaignMeta?.daily_budget ?? null),
+      lifetime_budget: parseMoney(campaignMeta?.lifetime_budget ?? null)
     };
   }
 
@@ -401,19 +418,20 @@ function normalizeInsightRow(
       context.warnings.push("Skipping ad set row missing adset_id");
       return null;
     }
+    const adsetMeta = metadataMaps.adset.get(adsetId);
     return {
       ...baseRow,
       campaign_id: asString(row["campaign_id"]),
       adset_id: adsetId,
-      adset_name: asString(row["adset_name"]),
-      effective_status: asString(row["effective_status"]),
-      optimization_goal: asString(row["optimization_goal"]),
-      billing_event: asString(row["billing_event"]),
-      bid_strategy: asString(row["bid_strategy"]),
-      daily_budget: parseMoney(row["daily_budget"]),
-      lifetime_budget: parseMoney(row["lifetime_budget"]),
-      promoted_object: row["promoted_object"] ?? null,
-      targeting_summary: row["targeting"] ?? null
+      adset_name: adsetMeta?.name ?? null,
+      effective_status: adsetMeta?.effective_status ?? null,
+      optimization_goal: adsetMeta?.optimization_goal ?? null,
+      billing_event: adsetMeta?.billing_event ?? null,
+      bid_strategy: adsetMeta?.bid_strategy ?? null,
+      daily_budget: parseMoney(adsetMeta?.daily_budget ?? null),
+      lifetime_budget: parseMoney(adsetMeta?.lifetime_budget ?? null),
+      promoted_object: adsetMeta?.promoted_object ?? null,
+      targeting_summary: adsetMeta?.targeting ?? null
     };
   }
 
@@ -423,14 +441,15 @@ function normalizeInsightRow(
       context.warnings.push("Skipping ad row missing ad_id");
       return null;
     }
+    const adMeta = metadataMaps.ad.get(adId);
     return {
       ...baseRow,
       campaign_id: asString(row["campaign_id"]),
       adset_id: asString(row["adset_id"]),
       ad_id: adId,
-      ad_name: asString(row["ad_name"]),
-      creative_id: asString(row["creative_id"]),
-      effective_status: asString(row["effective_status"]),
+      ad_name: adMeta?.name ?? null,
+      creative_id: adMeta?.creative_id ?? asString(row["creative_id"]),
+      effective_status: adMeta?.effective_status ?? null,
       inline_link_clicks: parseInteger(row["inline_link_clicks"]),
       outbound_clicks: extractClickCount(row["outbound_clicks"])
     };
@@ -536,15 +555,16 @@ async function buildCreativePayload(params: {
       "adset_id",
       "campaign_id",
       "effective_status",
-      "creative{effective_object_story_id,object_story_id,name,call_to_action_type,object_story_spec,asset_feed_spec,template_url,template_url_spec,image_url,thumbnail_url,image_hash,body,title,description,instagram_actor_id,product_set_id,video_id,dynamic_ad_voice}"
+      "creative{effective_object_story_id,object_story_id,name,call_to_action_type,object_story_spec,asset_feed_spec,template_url,template_url_spec,image_url,thumbnail_url,image_hash,instagram_actor_id,product_set_id,video_id,dynamic_ad_voice}"
     ].join(","),
-    limit: 200
+    limit: 100
   }, { label: "ads" });
   const ads = castRecords(adsRaw);
   const creativeMap = new Map<string, NormalizedCreative>();
   const adCreativeRows: AdCreativeMapRow[] = [];
   const creativeVersions: NormalizedCreativeVersion[] = [];
   const creativeIdentities: CreativeIdentityRow[] = [];
+  const adMetadata = new Map<string, AdMetadata>();
 
   const creativeIds = new Set<string>();
   const adIds = new Set<string>();
@@ -574,6 +594,13 @@ async function buildCreativePayload(params: {
     if (!creativeRawRecord) continue;
     const creativeId = asString(creativeRawRecord["id"]);
     if (!creativeId) continue;
+    adMetadata.set(adId, {
+      id: adId,
+      name: asString(ad["name"]),
+      effective_status: asString(ad["effective_status"]),
+      creative_id: creativeId
+    });
+
     let normalized = creativeMap.get(creativeId);
     if (!normalized) {
       normalized = normalizeCreative(creativeRawRecord);
@@ -647,7 +674,7 @@ async function buildCreativePayload(params: {
     });
   }
 
-  return { creatives: creativeIdentities, versions: creativeVersions, map: adCreativeRows };
+  return { creatives: creativeIdentities, versions: creativeVersions, map: adCreativeRows, adMetadata };
 }
 
 async function performSupabaseWrites(payload: {
@@ -658,11 +685,7 @@ async function performSupabaseWrites(payload: {
     adset: Record<string, unknown>[];
     ad: Record<string, unknown>[];
   };
-  creativePayload: {
-    creatives: CreativeIdentityRow[];
-    versions: NormalizedCreativeVersion[];
-    map: AdCreativeMapRow[];
-  };
+  creativePayload: CreativePayload;
 }) {
   await payload.writer.upsertInsights("meta_account_daily", payload.normalizedRows.account);
   await payload.writer.upsertInsights("meta_campaign_daily", payload.normalizedRows.campaign);
@@ -680,11 +703,7 @@ function computePayloadHash(
     adset: Record<string, unknown>[];
     ad: Record<string, unknown>[];
   },
-  creativePayload: {
-    creatives: CreativeIdentityRow[];
-    versions: NormalizedCreativeVersion[];
-    map: AdCreativeMapRow[];
-  }
+  creativePayload: CreativePayload
 ): string {
   const hash = crypto.createHash("sha256");
   const snapshot = {
@@ -725,6 +744,37 @@ function asString(value: unknown): string | null {
   return null;
 }
 
+function collectInsightIds(levelData: Record<InsightLevel, Record<string, unknown>[]>): {
+  campaignIds: Set<string>;
+  adsetIds: Set<string>;
+  adIds: Set<string>;
+} {
+  const campaignIds = new Set<string>();
+  const adsetIds = new Set<string>();
+  const adIds = new Set<string>();
+
+  for (const row of levelData.campaign ?? []) {
+    const id = asString(row["campaign_id"]);
+    if (id) campaignIds.add(id);
+  }
+  for (const row of levelData.adset ?? []) {
+    const id = asString(row["adset_id"]);
+    if (id) adsetIds.add(id);
+    const campaignId = asString(row["campaign_id"]);
+    if (campaignId) campaignIds.add(campaignId);
+  }
+  for (const row of levelData.ad ?? []) {
+    const adsetId = asString(row["adset_id"]);
+    if (adsetId) adsetIds.add(adsetId);
+    const campaignId = asString(row["campaign_id"]);
+    if (campaignId) campaignIds.add(campaignId);
+    const adId = asString(row["ad_id"]);
+    if (adId) adIds.add(adId);
+  }
+
+  return { campaignIds, adsetIds, adIds };
+}
+
 function extractRawActionValue(actions: MetaAction[], aliases: string[]): number | null {
   for (const alias of aliases) {
     const entry = actions.find((action) => action.action_type === alias);
@@ -753,6 +803,105 @@ function readActionNumericValue(action?: MetaAction): number | null {
   return null;
 }
 
+async function fetchCampaignMetadata(graphClient: GraphClientLike, ids: Set<string>): Promise<Map<string, CampaignMetadata>> {
+  const metadata = new Map<string, CampaignMetadata>();
+  for (const id of ids) {
+    try {
+      const response = await graphClient.get(
+        id,
+        { fields: "id,name,objective,buying_type,effective_status,daily_budget,lifetime_budget" },
+        { label: `campaign_${id}` }
+      );
+      const record = asRecord(response);
+      const recordId = record ? asString(record["id"]) : null;
+      if (recordId) {
+        if (!record) continue;
+        metadata.set(recordId, {
+          id: recordId,
+          name: asString(record["name"]),
+          objective: asString(record["objective"]),
+          buying_type: asString(record["buying_type"]),
+          effective_status: asString(record["effective_status"]),
+          daily_budget: asString(record["daily_budget"]),
+          lifetime_budget: asString(record["lifetime_budget"])
+        });
+      }
+    } catch (error) {
+      console.warn(`[meta-history] Campaign metadata fetch failed for ${id}: ${sanitizeErrorMessage(error)}`);
+    }
+  }
+  return metadata;
+}
+
+async function fetchAdsetMetadata(graphClient: GraphClientLike, ids: Set<string>): Promise<Map<string, AdsetMetadata>> {
+  const metadata = new Map<string, AdsetMetadata>();
+  for (const id of ids) {
+    try {
+      const response = await graphClient.get(
+        id,
+        {
+          fields:
+            "id,name,effective_status,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,promoted_object,targeting"
+        },
+        { label: `adset_${id}` }
+      );
+      const record = asRecord(response);
+      const recordId = record ? asString(record["id"]) : null;
+      if (recordId) {
+        if (!record) continue;
+        metadata.set(recordId, {
+          id: recordId,
+          name: asString(record["name"]),
+          effective_status: asString(record["effective_status"]),
+          optimization_goal: asString(record["optimization_goal"]),
+          billing_event: asString(record["billing_event"]),
+          bid_strategy: asString(record["bid_strategy"]),
+          daily_budget: asString(record["daily_budget"]),
+          lifetime_budget: asString(record["lifetime_budget"]),
+          promoted_object: asRecord(record["promoted_object"]),
+          targeting: asRecord(record["targeting"])
+        });
+      }
+    } catch (error) {
+      console.warn(`[meta-history] Ad set metadata fetch failed for ${id}: ${sanitizeErrorMessage(error)}`);
+    }
+  }
+  return metadata;
+}
+
+async function completeAdMetadata(
+  graphClient: GraphClientLike,
+  ids: Set<string>,
+  existing: Map<string, AdMetadata>
+): Promise<Map<string, AdMetadata>> {
+  const metadata = new Map(existing);
+  const missing = Array.from(ids).filter((id) => !metadata.has(id));
+  for (const id of missing) {
+    try {
+      const response = await graphClient.get(
+        id,
+        { fields: "id,name,effective_status,creative" },
+        { label: `ad_${id}` }
+      );
+      const record = asRecord(response);
+      const recordId = record ? asString(record["id"]) : null;
+      if (recordId) {
+        if (!record) continue;
+        const creativeRecord = asRecord(record["creative"]);
+        metadata.set(recordId, {
+          id: recordId,
+          name: asString(record["name"]),
+          effective_status: asString(record["effective_status"]),
+          creative_id: creativeRecord ? asString(creativeRecord["id"]) : null
+        });
+      }
+    } catch (error) {
+      console.warn(`[meta-history] Ad metadata fetch failed for ${id}: ${sanitizeErrorMessage(error)}`);
+    }
+  }
+  return metadata;
+}
+
 function emptyNormalizedRows() {
   return {
     account: [] as Record<string, unknown>[],
@@ -762,11 +911,12 @@ function emptyNormalizedRows() {
   };
 }
 
-function emptyCreativePayload() {
+function emptyCreativePayload(): CreativePayload {
   return {
     creatives: [] as CreativeIdentityRow[],
     versions: [] as NormalizedCreativeVersion[],
-    map: [] as AdCreativeMapRow[]
+    map: [] as AdCreativeMapRow[],
+    adMetadata: new Map<string, AdMetadata>()
   };
 }
 
@@ -789,11 +939,7 @@ function computeRowCounts(
     adset: Record<string, unknown>[];
     ad: Record<string, unknown>[];
   },
-  creativePayload: {
-    creatives: CreativeIdentityRow[];
-    versions: NormalizedCreativeVersion[];
-    map: AdCreativeMapRow[];
-  }
+  creativePayload: CreativePayload
 ) {
   return {
     account_daily: normalizedRows.account.length,

@@ -38,15 +38,19 @@ const until = process.env.META_HISTORY_UNTIL?.trim();
 const maxPages = parseIntegerEnv('META_HISTORY_MAX_PAGES');
 const maxRetries = parseIntegerEnv('META_HISTORY_MAX_RETRIES');
 
+const isPreview = process.env.META_HISTORY_PREVIEW === '1';
+if (isPreview) {
+  console.warn('[meta-history] Running in PREVIEW (dry-run) mode; Supabase writes disabled');
+}
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-const supabaseClient = supabaseUrl && supabaseKey
+const supabaseClient = !isPreview && supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     })
   : null;
 
-if (!supabaseClient) {
+if (!supabaseClient && !isPreview) {
   console.warn('[meta-history] Supabase credentials missing; run will be local-only');
 }
 
@@ -63,8 +67,9 @@ async function main() {
       until,
       maxPages,
       maxRetries,
-      supabaseClient,
-      sourceCommit
+      supabaseClient: supabaseClient ?? undefined,
+      sourceCommit,
+      dryRun: isPreview
     });
 
     await writeValidationArtifact(summary, outputPath);
