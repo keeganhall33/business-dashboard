@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { DateTime } from 'luxon';
 import { createClient } from '@supabase/supabase-js';
 
 function arg(flag) {
@@ -28,11 +27,49 @@ const allowedWarnings = [
 ];
 const previewOnlyWarning = /^dry-run: Supabase writes skipped$/;
 
+const pacificFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+
+function getPacificYmd(date) {
+  const parts = pacificFormatter.formatToParts(date);
+  const values = {};
+  for (const part of parts) {
+    if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+      values[part.type] = Number(part.value);
+    }
+  }
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day
+  };
+}
+
+function shiftDate({ year, month, day }, deltaDays) {
+  const base = new Date(Date.UTC(year, month - 1, day));
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  return {
+    year: base.getUTCFullYear(),
+    month: base.getUTCMonth() + 1,
+    day: base.getUTCDate()
+  };
+}
+
+function formatYmd({ year, month, day }) {
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${year}-${mm}-${dd}`;
+}
+
 function latestPacificRange() {
-  const now = DateTime.now().setZone('America/Los_Angeles');
-  const end = now.minus({ days: 1 }).startOf('day');
-  const start = end.minus({ days: 2 });
-  return { since: start.toFormat('yyyy-MM-dd'), until: end.toFormat('yyyy-MM-dd') };
+  const today = getPacificYmd(new Date());
+  const end = shiftDate(today, -1);
+  const start = shiftDate(end, -2);
+  return { since: formatYmd(start), until: formatYmd(end) };
 }
 
 const expected = latestPacificRange();
