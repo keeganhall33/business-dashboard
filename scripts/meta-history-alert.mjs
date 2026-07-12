@@ -23,15 +23,19 @@ if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
 }
 
 const webhook = process.env.SCHEDULER_ALERT_URL;
-if (!webhook) {
-  console.error('[meta-history-alert] SCHEDULER_ALERT_URL not set');
+const schedulerSecret = process.env.SCHEDULER_SECRET;
+if (!webhook || !schedulerSecret) {
+  console.error('[meta-history-alert] Missing scheduler alert configuration');
   process.exit(3);
 }
 
 try {
   const response = await fetch(webhook, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-scheduler-secret': schedulerSecret
+    },
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
