@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS meta_ingestion_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.meta_ingestion_runs ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_ingestion_runs FROM anon;
+REVOKE ALL ON TABLE public.meta_ingestion_runs FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_ingestion_runs TO service_role;
+
+
 CREATE INDEX IF NOT EXISTS meta_ingestion_runs_status_started_idx ON meta_ingestion_runs (status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS meta_account_daily (
@@ -57,6 +63,12 @@ CREATE TABLE IF NOT EXISTS meta_account_daily (
   warnings JSONB DEFAULT '[]'::JSONB,
   PRIMARY KEY (account_id, metric_date, attribution_setting)
 );
+
+ALTER TABLE public.meta_account_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_account_daily FROM anon;
+REVOKE ALL ON TABLE public.meta_account_daily FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_account_daily TO service_role;
+
 
 CREATE INDEX IF NOT EXISTS meta_account_daily_metric_date_idx ON meta_account_daily (metric_date);
 CREATE INDEX IF NOT EXISTS meta_account_daily_source_run_idx ON meta_account_daily (source_run_id);
@@ -95,6 +107,12 @@ CREATE TABLE IF NOT EXISTS meta_campaign_daily (
   warnings JSONB DEFAULT '[]'::JSONB,
   PRIMARY KEY (account_id, campaign_id, metric_date, attribution_setting)
 );
+
+ALTER TABLE public.meta_campaign_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_campaign_daily FROM anon;
+REVOKE ALL ON TABLE public.meta_campaign_daily FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_campaign_daily TO service_role;
+
 
 CREATE INDEX IF NOT EXISTS meta_campaign_daily_metric_date_idx ON meta_campaign_daily (metric_date);
 CREATE INDEX IF NOT EXISTS meta_campaign_daily_campaign_idx ON meta_campaign_daily (campaign_id);
@@ -139,6 +157,12 @@ CREATE TABLE IF NOT EXISTS meta_adset_daily (
   PRIMARY KEY (account_id, adset_id, metric_date, attribution_setting)
 );
 
+ALTER TABLE public.meta_adset_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_adset_daily FROM anon;
+REVOKE ALL ON TABLE public.meta_adset_daily FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_adset_daily TO service_role;
+
+
 CREATE INDEX IF NOT EXISTS meta_adset_daily_metric_date_idx ON meta_adset_daily (metric_date);
 CREATE INDEX IF NOT EXISTS meta_adset_daily_adset_idx ON meta_adset_daily (adset_id);
 CREATE INDEX IF NOT EXISTS meta_adset_daily_campaign_idx ON meta_adset_daily (campaign_id);
@@ -180,6 +204,12 @@ CREATE TABLE IF NOT EXISTS meta_ad_daily (
   PRIMARY KEY (account_id, ad_id, metric_date, attribution_setting)
 );
 
+ALTER TABLE public.meta_ad_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_ad_daily FROM anon;
+REVOKE ALL ON TABLE public.meta_ad_daily FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_ad_daily TO service_role;
+
+
 CREATE INDEX IF NOT EXISTS meta_ad_daily_metric_date_idx ON meta_ad_daily (metric_date);
 CREATE INDEX IF NOT EXISTS meta_ad_daily_ad_idx ON meta_ad_daily (ad_id);
 CREATE INDEX IF NOT EXISTS meta_ad_daily_adset_idx ON meta_ad_daily (adset_id);
@@ -211,6 +241,12 @@ CREATE TABLE IF NOT EXISTS meta_creatives (
   metadata JSONB DEFAULT '{}'::JSONB
 );
 
+ALTER TABLE public.meta_creatives ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_creatives FROM anon;
+REVOKE ALL ON TABLE public.meta_creatives FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_creatives TO service_role;
+
+
 CREATE INDEX IF NOT EXISTS meta_creatives_last_seen_idx ON meta_creatives (last_seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS meta_creative_versions (
@@ -231,6 +267,12 @@ CREATE TABLE IF NOT EXISTS meta_creative_versions (
   PRIMARY KEY (creative_id, content_hash)
 );
 
+ALTER TABLE public.meta_creative_versions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_creative_versions FROM anon;
+REVOKE ALL ON TABLE public.meta_creative_versions FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_creative_versions TO service_role;
+
+
 CREATE INDEX IF NOT EXISTS meta_creative_versions_captured_idx ON meta_creative_versions (captured_at DESC);
 
 CREATE TABLE IF NOT EXISTS meta_ad_creative_map (
@@ -243,6 +285,12 @@ CREATE TABLE IF NOT EXISTS meta_ad_creative_map (
   source_run_id UUID REFERENCES meta_ingestion_runs(run_id) ON DELETE SET NULL,
   PRIMARY KEY (ad_id, creative_id)
 );
+
+ALTER TABLE public.meta_ad_creative_map ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.meta_ad_creative_map FROM anon;
+REVOKE ALL ON TABLE public.meta_ad_creative_map FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.meta_ad_creative_map TO service_role;
+
 
 CREATE INDEX IF NOT EXISTS meta_ad_creative_map_ad_idx ON meta_ad_creative_map (ad_id);
 CREATE INDEX IF NOT EXISTS meta_ad_creative_map_creative_idx ON meta_ad_creative_map (creative_id);
