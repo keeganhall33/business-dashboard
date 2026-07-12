@@ -23,6 +23,18 @@ type InsightLevel = "account" | "campaign" | "adset" | "ad";
 
 const REQUESTED_API_VERSION = "v25.0";
 const REQUESTED_ATTR_LABEL = "7d_click_1d_view";
+const LANDING_PAGE_VIEW_ACTIONS = [
+  "landing_page_view",
+  "landing_page_views",
+  "onsite_conversion.post_save_link_click"
+];
+const VIDEO_VIEW_ACTIONS = [
+  "video_view",
+  "video_views",
+  "video_play",
+  "video_plays",
+  "thruplay"
+];
 
 export async function runMetaHistoryIngestion(options: MetaHistoryOptions): Promise<MetaHistorySummary> {
   const startedAt = new Date().toISOString();
@@ -193,7 +205,7 @@ function stripActPrefix(value: string): string {
   return value.replace(/^act_/, "");
 }
 
-function insightFieldsFor(level: InsightLevel): string {
+export function insightFieldsFor(level: InsightLevel): string {
   const common = [
     "account_id",
     "date_start",
@@ -209,10 +221,8 @@ function insightFieldsFor(level: InsightLevel): string {
     "cpm",
     "inline_link_clicks",
     "outbound_clicks",
-    "landing_page_views",
     "actions",
     "action_values",
-    "video_plays",
     "video_15_sec_watched_actions"
   ];
 
@@ -318,14 +328,17 @@ function normalizeInsightRow(
   const purchaseValue = actions.values.purchase_value;
   const roas = spend && purchaseValue !== null ? round(purchaseValue / spend, 6) : null;
 
+  const rawLandingPageViews = extractRawActionValue(rawActions, LANDING_PAGE_VIEW_ACTIONS);
+  const rawVideoViews = extractRawActionValue(rawActions, VIDEO_VIEW_ACTIONS);
+
   const baseMeta = {
     action_semantics_version: actions.semanticsVersion,
     action_aliases: actions.aliasMap,
     action_conflicts: actions.conflicts,
     attribution_setting_raw: row["attribution_setting"] ?? null,
     requested_attribution: REQUESTED_ATTR_LABEL,
-    raw_landing_page_views: parseInteger(row["landing_page_views"]),
-    raw_video_plays: parseInteger(row["video_plays"])
+    raw_landing_page_views: rawLandingPageViews,
+    raw_video_views: rawVideoViews
   };
 
   const accountId = asString(row["account_id"]) ?? context.accountContext.accountId;
@@ -709,6 +722,34 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function asString(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function extractRawActionValue(actions: MetaAction[], aliases: string[]): number | null {
+  for (const alias of aliases) {
+    const entry = actions.find((action) => action.action_type === alias);
+    const value = readActionNumericValue(entry);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function readActionNumericValue(action?: MetaAction): number | null {
+  if (!action) return null;
+  const candidates: Array<string | number | null | undefined> = [
+    action.value,
+    action.inline_value,
+    action.action_value,
+    action["7d_click"],
+    action["1d_view"]
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const numeric = typeof candidate === "number" ? candidate : Number(candidate);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
   return null;
 }
 
