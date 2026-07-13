@@ -12,6 +12,7 @@ BEGIN
 END
 $precheck$;
 
+-- BEGIN EMBEDDED MIGRATION: supabase/migrations/20260713_add_woo_semantic_rpc.sql
 -- 2026-07-13: Add exec_dashboard.get_woo_metrics_semantic for PASS 2B.1B shadow validation.
 -- This migration is additive. It does not modify existing Woo RPCs.
 --
@@ -118,7 +119,7 @@ BEGIN
       SUM(CASE WHEN currency_code <> 'UNSPECIFIED' THEN orders_with_known_total ELSE 0 END)::numeric AS specified_orders_with_known_total,
       SUM(CASE WHEN currency_code <> 'UNSPECIFIED' THEN order_count ELSE 0 END)::numeric AS specified_order_count,
       SUM(order_total_sum)::numeric AS combined_total_sum,
-      SUM(orders_with_known_total)::numeric AS combined_orders_with_total,
+      SUM(orders_with_known_total)::numeric AS combined_orders_with_known_total,
       SUM(order_count)::numeric AS combined_order_count,
       BOOL_OR(currency_code = 'UNSPECIFIED' AND order_count > 0) AS has_unspecified_currency
     FROM daily_currency
@@ -272,6 +273,7 @@ REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) F
 REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) FROM anon;
 REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) FROM authenticated;
 GRANT EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) TO service_role;
+-- END EMBEDDED MIGRATION: supabase/migrations/20260713_add_woo_semantic_rpc.sql
 
 DO $assert$
 DECLARE
@@ -350,12 +352,12 @@ DECLARE
   legacy_public text;
 BEGIN
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics(date,date)'::regprocedure) INTO legacy_exec;
-  IF encode(digest(legacy_exec::bytea, 'sha256'), 'hex') <> '38eee86208e71b0d31a94459ec76e156508c68229b2409280c8d6f62e70a6b76' THEN
+  IF encode(digest(legacy_exec::bytea, 'sha256'), 'hex') <> 'f8df94b2e39f1750c6c6620f1bef235c5f94909e77b17c5d6459067b3a54a459' THEN
     RAISE EXCEPTION 'Post-install: exec_dashboard.get_woo_metrics hash mismatch';
   END IF;
 
   SELECT pg_get_functiondef('public.get_woo_metrics(date,date)'::regprocedure) INTO legacy_public;
-  IF encode(digest(legacy_public::bytea, 'sha256'), 'hex') <> '5240b593063638795b1a02b66d4fe05ce5b22ef2d6b40c74b8034c3ce8b3f50e' THEN
+  IF encode(digest(legacy_public::bytea, 'sha256'), 'hex') <> '114423532467e6abea3e1167d7d7068df6fc8292951c1935712174f35f1c23e0' THEN
     RAISE EXCEPTION 'Post-install: public.get_woo_metrics hash mismatch';
   END IF;
 END
