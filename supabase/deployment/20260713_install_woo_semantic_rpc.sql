@@ -325,7 +325,7 @@ BEGIN
   SELECT has_function_privilege('service_role', fn_oid, 'EXECUTE') INTO granted_service_role;
   SELECT has_function_privilege('anon', fn_oid, 'EXECUTE') INTO granted_anon;
   SELECT has_function_privilege('authenticated', fn_oid, 'EXECUTE') INTO granted_authenticated;
-  SELECT has_function_privilege('PUBLIC', fn_oid, 'EXECUTE') INTO granted_public;
+  SELECT has_function_privilege('public', fn_oid, 'EXECUTE') INTO granted_public;
 
   IF NOT granted_service_role THEN
     RAISE EXCEPTION 'Post-install: service_role lacks EXECUTE';
@@ -337,7 +337,7 @@ BEGIN
     RAISE EXCEPTION 'Post-install: authenticated unexpectedly has EXECUTE';
   END IF;
   IF granted_public THEN
-    RAISE EXCEPTION 'Post-install: PUBLIC unexpectedly has EXECUTE';
+    RAISE EXCEPTION 'Post-install: public unexpectedly has EXECUTE';
   END IF;
 
   IF NOT has_schema_privilege('service_role', 'exec_dashboard', 'USAGE') THEN
