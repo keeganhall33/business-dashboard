@@ -219,6 +219,9 @@ expected_json AS (
                )
              )
            )
+           FROM order_summary
+           CROSS JOIN stats
+           CROSS JOIN daily_payload
          ) AS expected_json
   FROM params p
 ),
@@ -240,11 +243,69 @@ JOIN semantic_outputs s ON s.label = e.label
 ORDER BY e.label;
 
 -- Raw PT order IDs & simple totals for independent reconciliation
+WITH constants AS (
+  SELECT now() AS fixed_now,
+         timezone('America/Los_Angeles', now())::date AS pt_today,
+         timezone('America/Los_Angeles', now())::date - 1 AS last_completed_pt
+),
+ranges(label, start_date, end_date) AS (
+  VALUES
+    ('A', DATE '2026-07-03', DATE '2026-07-09'),
+    ('B', DATE '2026-07-13', DATE '2026-07-13'),
+    ('C', DATE '2026-06-01', DATE '2026-06-30'),
+    ('D', DATE '2026-07-08', DATE '2026-07-09'),
+    ('E', DATE '2026-06-28', DATE '2026-07-05'),
+    ('F', DATE '2026-06-26', DATE '2026-06-26')
+),
+params AS (
+  SELECT r.label,
+         r.start_date,
+         r.end_date,
+         (r.end_date - r.start_date + 1) AS requested_days,
+         c.pt_today,
+         c.last_completed_pt,
+         c.fixed_now AS generated_at_ts
+  FROM ranges r
+  CROSS JOIN constants c
+),
+raw_orders_pt AS (
+  SELECT p.label,
+         o.*,
+         (o.created_at AT TIME ZONE 'America/Los_Angeles')::date AS pt_date,
+         (o.created_at AT TIME ZONE 'America/Los_Angeles')       AS pt_timestamp
+  FROM params p
+  LEFT JOIN exec_dashboard.raw_woocommerce_orders o
+    ON COALESCE(o.status,'') NOT IN ('trash','refunded','cancelled','failed')
+   AND (o.created_at AT TIME ZONE 'America/Los_Angeles')::date BETWEEN p.start_date AND p.end_date
+),
+raw_id_stats AS (
+  SELECT label,
+         ARRAY_REMOVE(ARRAY_AGG(order_id ORDER BY order_id), NULL) AS order_ids,
+         COUNT(order_id) AS order_count,
+         SUM(total)::numeric AS order_total
+  FROM raw_orders_pt
+  GROUP BY label
+)
 SELECT label, order_ids, order_count, order_total
 FROM raw_id_stats
 ORDER BY label;
 
--- Legacy outputs for reference
+WITH ranges(label, start_date, end_date) AS (
+  VALUES
+    ('A', DATE '2026-07-03', DATE '2026-07-09'),
+    ('B', DATE '2026-07-13', DATE '2026-07-13'),
+    ('C', DATE '2026-06-01', DATE '2026-06-30'),
+    ('D', DATE '2026-07-08', DATE '2026-07-09'),
+    ('E', DATE '2026-06-28', DATE '2026-07-05'),
+    ('F', DATE '2026-06-26', DATE '2026-06-26')
+),
+semantic_outputs AS (
+  SELECT r.label,
+         exec_dashboard.get_woo_metrics_semantic(r.start_date, r.end_date) AS semantic_json,
+         exec_dashboard.get_woo_metrics(r.start_date, r.end_date) AS exec_json,
+         public.get_woo_metrics(r.start_date, r.end_date) AS public_json
+  FROM ranges r
+)
 SELECT label, exec_json, public_json
 FROM semantic_outputs
 ORDER BY label;
