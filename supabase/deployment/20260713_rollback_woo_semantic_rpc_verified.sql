@@ -12,6 +12,7 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT has_schema_privilege('service_role','exec_dashboard','USAGE') INTO legacy_usage;
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics_semantic(date,date)'::regprocedure)
     INTO semantic_definition;
   RAISE NOTICE 'semantic_definition:%', semantic_definition;
@@ -20,6 +21,12 @@ BEGIN
 
   IF to_regprocedure('exec_dashboard.get_woo_metrics_semantic(date,date)') IS NOT NULL THEN
     RAISE EXCEPTION 'Rollback failed: function still exists';
+  END IF;
+
+  IF legacy_usage THEN
+    EXECUTE 'GRANT USAGE ON SCHEMA exec_dashboard TO service_role';
+  ELSE
+    EXECUTE 'REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role';
   END IF;
 
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics(date,date)'::regprocedure)
