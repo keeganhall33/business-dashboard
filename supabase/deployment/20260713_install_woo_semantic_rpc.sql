@@ -37,6 +37,7 @@ DECLARE
   future_day_count integer;
   includes_partial_day boolean;
   freshness_threshold interval := interval '12 hours';
+  result_payload jsonb;
 BEGIN
   IF start_date IS NULL OR end_date IS NULL THEN
     RAISE EXCEPTION 'start_date and end_date are required'
@@ -59,7 +60,7 @@ BEGIN
   future_day_count := GREATEST(future_day_count, 0);
   requested_days := (end_date - start_date + 1);
 
-  RETURN WITH params AS (
+  WITH params AS (
     SELECT start_date,
            end_date,
            requested_days,
@@ -256,9 +257,12 @@ BEGIN
     ),
     'metadata', metadata.metadata_json
   )
+  INTO result_payload
   FROM summary_payload
   CROSS JOIN daily_payload
   CROSS JOIN metadata;
+
+  RETURN result_payload;
 END;
 $$;
 
