@@ -23,6 +23,7 @@ DECLARE
   future_day_count integer;
   includes_partial_day boolean;
   freshness_threshold interval := interval '12 hours';
+  result_payload jsonb;
 BEGIN
   IF start_date IS NULL OR end_date IS NULL THEN
     RAISE EXCEPTION 'start_date and end_date are required'
@@ -45,7 +46,7 @@ BEGIN
   future_day_count := GREATEST(future_day_count, 0);
   requested_days := (end_date - start_date + 1);
 
-  RETURN WITH params AS (
+  WITH params AS (
     SELECT start_date,
            end_date,
            requested_days,
@@ -103,7 +104,7 @@ BEGIN
       SUM(CASE WHEN currency_code <> 'UNSPECIFIED' THEN orders_with_known_total ELSE 0 END)::numeric AS specified_orders_with_known_total,
       SUM(CASE WHEN currency_code <> 'UNSPECIFIED' THEN order_count ELSE 0 END)::numeric AS specified_order_count,
       SUM(order_total_sum)::numeric AS combined_total_sum,
-      SUM(orders_with_known_total)::numeric AS combined_orders_with_total,
+      SUM(orders_with_known_total)::numeric AS combined_orders_with_known_total,
       SUM(order_count)::numeric AS combined_order_count,
       BOOL_OR(currency_code = 'UNSPECIFIED' AND order_count > 0) AS has_unspecified_currency
     FROM daily_currency
@@ -242,9 +243,12 @@ BEGIN
     ),
     'metadata', metadata.metadata_json
   )
+  INTO result_payload
   FROM summary_payload
   CROSS JOIN daily_payload
   CROSS JOIN metadata;
+
+  RETURN result_payload;
 END;
 $$;
 
