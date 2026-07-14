@@ -4,7 +4,6 @@
 DO $rollback$
 DECLARE
   semantic_definition text;
-  legacy_usage boolean;
   legacy_exec text;
   legacy_public text;
 BEGIN
@@ -24,11 +23,7 @@ BEGIN
     RAISE EXCEPTION 'Rollback failed: function still exists';
   END IF;
 
-  IF legacy_usage THEN
-    EXECUTE 'GRANT USAGE ON SCHEMA exec_dashboard TO service_role';
-  ELSE
-    EXECUTE 'REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role';
-  END IF;
+  EXECUTE 'REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role';
 
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics(date,date)'::regprocedure)
     INTO legacy_exec;
