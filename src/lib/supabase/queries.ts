@@ -410,12 +410,22 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
-function isSafeSingleCurrency(summary?: SemanticSummary | null): boolean {
+function sanitizeCurrencyTotals(totals?: SemanticCurrencyTotal[] | null) {
+  if (!Array.isArray(totals)) return [] as SemanticCurrencyTotal[];
+  return totals.filter((entry): entry is SemanticCurrencyTotal => {
+    if (!entry || typeof entry !== "object") return false;
+    if (typeof entry.currency !== "string") return false;
+    const code = entry.currency.trim().toUpperCase();
+    return Boolean(code) && code !== "UNSPECIFIED" && code !== "UNK" && code !== "UNS";
+  });
+}
+
+function isSafeSingleCurrency(summary?: SemanticSummary | SemanticDailyEntry | null): boolean {
   if (!summary) return false;
   if (summary.has_unspecified_currency) return false;
   if ((summary.unspecified_currency_orders ?? 0) > 0) return false;
-  const nonUnspecified = summary.non_unspecified_currency_count;
-  if (nonUnspecified == null || nonUnspecified !== 1) return false;
+  const currencyTotals = sanitizeCurrencyTotals(summary.currency_totals);
+  if (currencyTotals.length !== 1) return false;
   const revenue = toFiniteNumber(summary.order_total_single_currency);
   const orders = toFiniteNumber(summary.order_count_single_currency);
   if (revenue == null || orders == null) return false;
@@ -427,7 +437,8 @@ function deriveUnsupportedReason(summary: SemanticSummary | null): string | null
   if (summary.has_unspecified_currency || (summary.unspecified_currency_orders ?? 0) > 0) {
     return "unspecified_currency_present";
   }
-  if ((summary.non_unspecified_currency_count ?? 0) > 1) {
+  const currencyTotals = sanitizeCurrencyTotals(summary.currency_totals);
+  if (currencyTotals.length !== 1) {
     return "multiple_currencies";
   }
   if (

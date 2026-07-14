@@ -9,6 +9,23 @@ import {
 
 import type { CommerceTelemetry } from "../src/lib/types/dashboard.ts";
 type FetchClient = Parameters<typeof fetchWooMetricsWithMode>[0];
+type SemanticSummaryShape = {
+  currency_totals?: Array<{
+    currency?: string | null;
+    order_count?: number | null;
+    order_total?: number | null;
+    avg_order_value?: number | null;
+  }>;
+  has_unspecified_currency?: boolean | null;
+  unspecified_currency_orders?: number | null;
+  order_total_single_currency?: number | null;
+  order_count_single_currency?: number | null;
+  avg_order_value_single_currency?: number | null;
+};
+type SemanticDailyShape = SemanticSummaryShape & {
+  effective_business_date?: string | null;
+  has_orders?: boolean | null;
+};
 
 type RpcResult = { data: unknown; error: { message?: string } | null };
 
@@ -73,7 +90,15 @@ const USD_SEMANTIC_PAYLOAD = {
       has_unspecified_currency: false,
       order_total_single_currency: 1234,
       order_count_single_currency: 4,
-      avg_order_value_single_currency: 308.5
+      avg_order_value_single_currency: 308.5,
+      currency_totals: [
+        {
+          currency: "USD",
+          order_count: 4,
+          order_total: 1234,
+          avg_order_value: 308.5
+        }
+      ]
     },
     daily: [
       {
@@ -83,7 +108,10 @@ const USD_SEMANTIC_PAYLOAD = {
         has_unspecified_currency: false,
         order_total_single_currency: 400,
         order_count_single_currency: 1,
-        avg_order_value_single_currency: 400
+        avg_order_value_single_currency: 400,
+        currency_totals: [
+          { currency: "USD", order_count: 1, order_total: 400, avg_order_value: 400 }
+        ]
       },
       {
         effective_business_date: "2026-07-02",
@@ -92,7 +120,10 @@ const USD_SEMANTIC_PAYLOAD = {
         has_unspecified_currency: false,
         order_total_single_currency: 834,
         order_count_single_currency: 3,
-        avg_order_value_single_currency: 278
+        avg_order_value_single_currency: 278,
+        currency_totals: [
+          { currency: "USD", order_count: 3, order_total: 834, avg_order_value: 278 }
+        ]
       }
     ]
   },
@@ -122,6 +153,23 @@ test("semantic adapter maps USD-only payload", () => {
   assert.equal(result.telemetry?.timeseries.length, 2);
 });
 
+test("semantic adapter emits timeseries entries only when daily projections are safe", () => {
+  const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
+  const unsupportedDaily: SemanticDailyShape = {
+    effective_business_date: "2026-07-03",
+    has_unspecified_currency: true,
+    currency_totals: [],
+    order_total_single_currency: null,
+    order_count_single_currency: null,
+    unspecified_currency_orders: 1,
+    avg_order_value_single_currency: null
+  };
+  const daily = payload.metric_data.daily as SemanticDailyShape[] | undefined;
+  daily?.push(unsupportedDaily);
+  const result = mapSemanticWooToCommerceTelemetry(payload);
+  assert.equal(result.telemetry?.timeseries.length, 2);
+});
+
 test("semantic adapter handles empty payload", () => {
   const result = mapSemanticWooToCommerceTelemetry(null);
   assert.equal(result.summarySafe, false);
@@ -131,7 +179,12 @@ test("semantic adapter handles empty payload", () => {
 
 test("semantic adapter rejects multi-currency and preserves safe daily entries", () => {
   const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
-  payload.metric_data.summary.non_unspecified_currency_count = 2;
+  payload.metric_data.summary.currency_totals?.push({
+    currency: "EUR",
+    order_count: 1,
+    order_total: 50,
+    avg_order_value: 50
+  });
   const result = mapSemanticWooToCommerceTelemetry(payload);
   assert.equal(result.summarySafe, false);
   assert.equal(result.telemetry?.summary.orders, null);
@@ -141,11 +194,24 @@ test("semantic adapter rejects multi-currency and preserves safe daily entries",
 
 test("semantic adapter rejects unspecified currency ranges", () => {
   const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
-  payload.metric_data.summary.has_unspecified_currency = true;
-  payload.metric_data.summary.unspecified_currency_orders = 5;
+  const summary = payload.metric_data.summary as SemanticSummaryShape;
+  summary.has_unspecified_currency = true;
+  summary.unspecified_currency_orders = 5;
+  summary.currency_totals = [
+    { currency: "", order_count: 5, order_total: 500, avg_order_value: 100 }
+  ];
   const result = mapSemanticWooToCommerceTelemetry(payload);
   assert.equal(result.summarySafe, false);
   assert.equal(result.unsupportedReason, "unspecified_currency_present");
+});
+
+test("semantic adapter requires single-currency projections", () => {
+  const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
+  const summary = payload.metric_data.summary as SemanticSummaryShape;
+  summary.order_total_single_currency = null;
+  const result = mapSemanticWooToCommerceTelemetry(payload);
+  assert.equal(result.summarySafe, false);
+  assert.equal(result.unsupportedReason, "missing_single_currency_projection");
 });
 
 test("resolveWooMetricsMode defaults to legacy", () => {
@@ -186,17 +252,17 @@ test("shadow mode logs differences and still returns legacy payload", async () =
   process.env.WOO_METRICS_MODE = "shadow";
   const legacyPayload: CommerceTelemetry["woo"] = {
     summary: {
-      revenue: 400,
+      revenue: 1234,
       orders: 4,
-      avgOrderValue: 100,
+      avgOrderValue: 308.5,
       discountTotal: null,
       shippingTotal: null,
       taxTotal: null,
       items: null
     },
     timeseries: [
-      { date: "2026-07-01", revenue: 100, orders: 1 },
-      { date: "2026-07-02", revenue: 300, orders: 3 }
+      { date: "2026-07-01", revenue: 400, orders: 1 },
+      { date: "2026-07-02", revenue: 834, orders: 3 }
     ]
   };
   const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
@@ -210,9 +276,15 @@ test("shadow mode logs differences and still returns legacy payload", async () =
   const logEntry = logger.infoEntries[0] as unknown[];
   const logPayload = (logEntry?.[1] ?? {}) as Record<string, unknown>;
   const summary = logPayload.summary as Record<string, unknown> | undefined;
-  assert.equal((summary?.legacy as Record<string, unknown> | undefined)?.orders, 4);
+  const legacySummary = summary?.legacy as Record<string, unknown> | undefined;
+  assert.equal(legacySummary?.orders, 4);
   const semanticSummary = summary?.semantic as Record<string, unknown> | undefined;
   assert.equal(semanticSummary?.safeSingleCurrency, true);
+  assert.equal(semanticSummary?.orders, 4);
+  assert.equal(semanticSummary?.revenue, 1234);
+  const deltas = summary?.deltas as Record<string, unknown> | undefined;
+  assert.equal(deltas?.orders, 0);
+  assert.equal(deltas?.revenue, 0);
   const semanticCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
   const legacyCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics");
   assert.equal(semanticCalls.length, 1);
