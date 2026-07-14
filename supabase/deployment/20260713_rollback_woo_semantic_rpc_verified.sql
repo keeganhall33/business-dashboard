@@ -25,9 +25,6 @@ BEGIN
   END IF;
 
   EXECUTE 'REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role';
-  IF legacy_usage THEN
-    EXECUTE 'GRANT USAGE ON SCHEMA exec_dashboard TO service_role';
-  END IF;
 
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics(date,date)'::regprocedure)
     INTO legacy_exec;
