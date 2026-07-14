@@ -19,6 +19,11 @@ BEGIN;
 DROP SCHEMA IF EXISTS exec_dashboard CASCADE;
 CREATE SCHEMA exec_dashboard;
 
+REVOKE USAGE ON SCHEMA exec_dashboard FROM PUBLIC;
+REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role;
+GRANT USAGE ON SCHEMA exec_dashboard TO anon;
+GRANT USAGE ON SCHEMA exec_dashboard TO authenticated;
+
 CREATE TABLE exec_dashboard.raw_woocommerce_orders (
   order_id             bigint       NOT NULL,
   order_number         text         NOT NULL,
