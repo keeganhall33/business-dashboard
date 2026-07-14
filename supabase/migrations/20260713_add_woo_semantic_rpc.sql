@@ -258,3 +258,4 @@ REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) F
 REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) FROM anon;
 REVOKE EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) FROM authenticated;
 GRANT EXECUTE ON FUNCTION exec_dashboard.get_woo_metrics_semantic(date, date) TO service_role;
+GRANT USAGE ON SCHEMA exec_dashboard TO service_role;
