@@ -1,5 +1,13 @@
-import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+
+try {
+  require("server-only");
+} catch {
+  // "server-only" throws outside the Next.js server runtime; swallow during local tests.
+}
 
 export function getSupabaseServerClient() {
   const env = process.env;

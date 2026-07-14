@@ -1,5 +1,5 @@
-import { getSupabaseServerClient } from "./server";
-import { canTransitionTaskStatus } from "@/lib/domain/taskStatus";
+import { getSupabaseServerClient } from "./server.ts";
+import { canTransitionTaskStatus } from "../domain/taskStatus.ts";
 import type {
   AgentKey,
   OpportunityStatus,
@@ -7,7 +7,8 @@ import type {
   RunType,
   TaskPriority,
   TaskStatus
-} from "@/lib/types/requests";
+} from "../types/requests.ts";
+import type { CommerceTelemetry, WooSummary, WooTimeseriesPoint } from "../types/dashboard.ts";
 
 type DeliverableLinkInput = {
   label: string;
@@ -289,24 +290,403 @@ export async function getScoreboardMetricsForRange(range: { startDate: string; e
   });
 }
 
+type WooRange = { startDate: string; endDate: string };
+type SupabaseRpcFn = (
+  fn: string,
+  params: Record<string, unknown>
+) => Promise<{ data: unknown; error: PostgrestError | null }>;
+type SupabaseRpcClient = {
+  rpc: SupabaseRpcFn;
+  schema: (schema: string) => SupabaseRpcClient;
+};
+
+type WooMetricsMode = "legacy" | "shadow" | "semantic";
+type WooMetricsLogger = Pick<Console, "info" | "warn" | "error">;
+
+const WOO_METRICS_MODE_VALUES: ReadonlySet<WooMetricsMode> = new Set(["legacy", "shadow", "semantic"]);
+const WOO_METRICS_ENV_VAR = "WOO_METRICS_MODE";
+const LEGACY_WOO_RPC = "get_woo_metrics";
+const SEMANTIC_WOO_RPC = "get_woo_metrics_semantic";
+const SEMANTIC_SCHEMA = "exec_dashboard";
+
+type SemanticCurrencyTotal = {
+  currency?: string | null;
+  order_count?: number | null;
+  orders_with_known_total?: number | null;
+  order_total?: number | null;
+  avg_order_value?: number | null;
+};
+
+type SemanticSummary = {
+  currency_totals?: SemanticCurrencyTotal[] | null;
+  non_unspecified_currency_count?: number | null;
+  unspecified_currency_orders?: number | null;
+  has_unspecified_currency?: boolean | null;
+  order_total_single_currency?: number | null;
+  order_count_single_currency?: number | null;
+  avg_order_value_single_currency?: number | null;
+};
+
+type SemanticDailyEntry = SemanticSummary & {
+  effective_business_date?: string | null;
+  has_orders?: boolean | null;
+};
+
+type SemanticMetadata = {
+  semantic_version?: string | null;
+  generated_at?: string | null;
+  requested_start_date?: string | null;
+  requested_end_date?: string | null;
+  latest_completed_requested_business_date?: string | null;
+  includes_partial_day?: boolean | null;
+  includes_future_dates?: boolean | null;
+  future_day_count?: number | null;
+  matching_data_recency_status?: string | null;
+  coverage?: {
+    coverage_note?: string | null;
+    coverage_verifiable?: boolean | null;
+    requested_day_count?: number | null;
+    days_with_matching_orders?: number | null;
+  } | null;
+};
+
+type SemanticWooResponse = {
+  metric_data?: {
+    summary?: SemanticSummary | null;
+    daily?: SemanticDailyEntry[] | null;
+  } | null;
+  metadata?: SemanticMetadata | null;
+};
+
+type SemanticAdapterResult = {
+  telemetry: CommerceTelemetry["woo"];
+  metadata: SemanticMetadata | null;
+  summarySafe: boolean;
+  summary: SemanticSummary | null;
+  dailySafeCount: number;
+  unsupportedReason?: string | null;
+};
+
+type LegacySummarySnapshot = {
+  orders: number | null;
+  revenue: number | null;
+  avgOrderValue: number | null;
+};
+
+type DailySnapshot = {
+  date: string;
+  orders: number;
+  revenue: number;
+};
+
+const EMPTY_WOO_SUMMARY: WooSummary = {
+  revenue: null,
+  orders: null,
+  avgOrderValue: null,
+  discountTotal: null,
+  shippingTotal: null,
+  taxTotal: null,
+  items: null
+};
+
+export function resolveWooMetricsMode(rawValue: string | undefined): WooMetricsMode {
+  if (!rawValue) return "legacy";
+  const normalized = rawValue.trim().toLowerCase();
+  if (WOO_METRICS_MODE_VALUES.has(normalized as WooMetricsMode)) {
+    return normalized as WooMetricsMode;
+  }
+  return "legacy";
+}
+
+function getWooMetricsMode(): WooMetricsMode {
+  return resolveWooMetricsMode(process.env[WOO_METRICS_ENV_VAR]);
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function isSafeSingleCurrency(summary?: SemanticSummary | null): boolean {
+  if (!summary) return false;
+  if (summary.has_unspecified_currency) return false;
+  if ((summary.unspecified_currency_orders ?? 0) > 0) return false;
+  const nonUnspecified = summary.non_unspecified_currency_count;
+  if (nonUnspecified == null || nonUnspecified !== 1) return false;
+  const revenue = toFiniteNumber(summary.order_total_single_currency);
+  const orders = toFiniteNumber(summary.order_count_single_currency);
+  if (revenue == null || orders == null) return false;
+  return true;
+}
+
+function deriveUnsupportedReason(summary: SemanticSummary | null): string | null {
+  if (!summary) return "missing_summary";
+  if (summary.has_unspecified_currency || (summary.unspecified_currency_orders ?? 0) > 0) {
+    return "unspecified_currency_present";
+  }
+  if ((summary.non_unspecified_currency_count ?? 0) > 1) {
+    return "multiple_currencies";
+  }
+  if (
+    summary.order_total_single_currency == null ||
+    summary.order_count_single_currency == null ||
+    summary.avg_order_value_single_currency == null
+  ) {
+    return "missing_single_currency_projection";
+  }
+  return null;
+}
+
+export function mapSemanticWooToCommerceTelemetry(payload: SemanticWooResponse | null): SemanticAdapterResult {
+  const summary = (payload?.metric_data?.summary ?? null) as SemanticSummary | null;
+  const daily = Array.isArray(payload?.metric_data?.daily)
+    ? ((payload?.metric_data?.daily as SemanticDailyEntry[]) ?? [])
+    : [];
+  const metadata = payload?.metadata ?? null;
+
+  const summarySafe = isSafeSingleCurrency(summary);
+  const summaryTelemetry: WooSummary = {
+    ...EMPTY_WOO_SUMMARY,
+    revenue: summarySafe ? toFiniteNumber(summary?.order_total_single_currency) : null,
+    orders: summarySafe ? toFiniteNumber(summary?.order_count_single_currency) : null,
+    avgOrderValue: summarySafe ? toFiniteNumber(summary?.avg_order_value_single_currency) : null
+  };
+
+  const semanticTimeseries: WooTimeseriesPoint[] = daily
+    .filter((entry) => isSafeSingleCurrency(entry) && typeof entry.effective_business_date === "string")
+    .map((entry) => ({
+      date: entry.effective_business_date as string,
+      revenue: toFiniteNumber(entry.order_total_single_currency) ?? 0,
+      orders: toFiniteNumber(entry.order_count_single_currency) ?? 0
+    }));
+
+  return {
+    telemetry: {
+      summary: summaryTelemetry,
+      timeseries: semanticTimeseries
+    },
+    metadata,
+    summarySafe,
+    summary,
+    dailySafeCount: semanticTimeseries.length,
+    unsupportedReason: summarySafe ? null : deriveUnsupportedReason(summary)
+  };
+}
+
+function summarizeError(error: unknown) {
+  if (error instanceof Error) {
+    return { message: error.message, name: error.name };
+  }
+  return { message: String(error) };
+}
+
+function extractLegacySummary(data: CommerceTelemetry["woo"]): LegacySummarySnapshot {
+  const summary = data && typeof data === "object" ? (data as Record<string, unknown>).summary : null;
+  if (!summary || typeof summary !== "object") {
+    return { orders: null, revenue: null, avgOrderValue: null };
+  }
+  return {
+    orders: toFiniteNumber((summary as Record<string, unknown>).orders),
+    revenue: toFiniteNumber((summary as Record<string, unknown>).revenue),
+    avgOrderValue: toFiniteNumber((summary as Record<string, unknown>).avgOrderValue)
+  };
+}
+
+function extractLegacyTimeseries(data: CommerceTelemetry["woo"]): DailySnapshot[] {
+  const raw = data && typeof data === "object" ? (data as Record<string, unknown>).timeseries : null;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const date = typeof (entry as Record<string, unknown>).date === "string" ? (entry as Record<string, unknown>).date : null;
+      const revenue = toFiniteNumber((entry as Record<string, unknown>).revenue);
+      const orders = toFiniteNumber((entry as Record<string, unknown>).orders);
+      if (!date || revenue == null || orders == null) return null;
+      return { date, revenue, orders };
+    })
+    .filter((entry): entry is DailySnapshot => Boolean(entry));
+}
+
+function classifyDifferenceCause(metadata: SemanticMetadata | null | undefined): "timezone_partial_or_future" | "unexpected" {
+  return metadata?.includes_partial_day || metadata?.includes_future_dates ? "timezone_partial_or_future" : "unexpected";
+}
+
+function computeSeriesDifferences(
+  legacySeries: DailySnapshot[],
+  semanticSeries: WooTimeseriesPoint[],
+  cause: "timezone_partial_or_future" | "unexpected"
+) {
+  const legacyMap = new Map(legacySeries.map((point) => [point.date, point]));
+  const semanticMap = new Map(semanticSeries.map((point) => [point.date, point]));
+  const dates = new Set([...legacyMap.keys(), ...semanticMap.keys()]);
+  const differences: Array<{
+    date: string;
+    legacy?: DailySnapshot;
+    semantic?: WooTimeseriesPoint;
+    cause: "timezone_partial_or_future" | "unexpected";
+  }> = [];
+  for (const date of dates) {
+    const legacyPoint = legacyMap.get(date);
+    const semanticPoint = semanticMap.get(date);
+    const ordersEqual = legacyPoint && semanticPoint ? legacyPoint.orders === semanticPoint.orders : legacyPoint === semanticPoint;
+    const revenueEqual = legacyPoint && semanticPoint ? legacyPoint.revenue === semanticPoint.revenue : legacyPoint === semanticPoint;
+    if (!ordersEqual || !revenueEqual) {
+      differences.push({ date, legacy: legacyPoint, semantic: semanticPoint, cause });
+    }
+  }
+  return differences;
+}
+
+function summarizeMetadata(metadata: SemanticMetadata | null) {
+  if (!metadata) return null;
+  return {
+    requested_start_date: metadata.requested_start_date ?? null,
+    requested_end_date: metadata.requested_end_date ?? null,
+    includes_partial_day: Boolean(metadata.includes_partial_day),
+    includes_future_dates: Boolean(metadata.includes_future_dates),
+    future_day_count: metadata.future_day_count ?? 0,
+    latest_completed_requested_business_date: metadata.latest_completed_requested_business_date ?? null,
+    matching_data_recency_status: metadata.matching_data_recency_status ?? null,
+    generated_at: metadata.generated_at ?? null,
+    coverage: metadata.coverage
+      ? {
+          requested_day_count: metadata.coverage.requested_day_count ?? null,
+          days_with_matching_orders: metadata.coverage.days_with_matching_orders ?? null,
+          verifiable: Boolean(metadata.coverage.coverage_verifiable)
+        }
+      : null
+  };
+}
+
+function logWooComparison(params: {
+  mode: WooMetricsMode;
+  range: WooRange;
+  legacy: CommerceTelemetry["woo"];
+  semantic: SemanticAdapterResult;
+  logger: WooMetricsLogger;
+}) {
+  const { mode, range, legacy, semantic, logger } = params;
+  const legacySummary = extractLegacySummary(legacy);
+  const legacySeries = extractLegacyTimeseries(legacy);
+  const semanticSummary: LegacySummarySnapshot = {
+    orders: semantic.summarySafe ? toFiniteNumber(semantic.summary?.order_count_single_currency) : null,
+    revenue: semantic.summarySafe ? toFiniteNumber(semantic.summary?.order_total_single_currency) : null,
+    avgOrderValue: semantic.summarySafe ? toFiniteNumber(semantic.summary?.avg_order_value_single_currency) : null
+  };
+  const cause = classifyDifferenceCause(semantic.metadata ?? null);
+  const dailyDifferences = computeSeriesDifferences(legacySeries, semantic.telemetry?.timeseries ?? [], cause);
+
+  logger.info("[woo-metrics][shadow]", {
+    mode,
+    range,
+    summary: {
+      legacy: legacySummary,
+      semantic: {
+        ...semanticSummary,
+        safeSingleCurrency: semantic.summarySafe,
+        unsupportedReason: semantic.unsupportedReason ?? null
+      },
+      deltas: {
+        orders: legacySummary.orders != null && semanticSummary.orders != null ? semanticSummary.orders - legacySummary.orders : null,
+        revenue: legacySummary.revenue != null && semanticSummary.revenue != null ? semanticSummary.revenue - legacySummary.revenue : null,
+        avgOrderValue:
+          legacySummary.avgOrderValue != null && semanticSummary.avgOrderValue != null
+            ? semanticSummary.avgOrderValue - legacySummary.avgOrderValue
+            : null
+      }
+    },
+    daily: {
+      differences: dailyDifferences,
+      legacyCount: legacySeries.length,
+      semanticSafeCount: semantic.dailySafeCount
+    },
+    metadata: summarizeMetadata(semantic.metadata ?? null)
+  });
+}
+
+async function fetchLegacyWooMetrics(client: SupabaseRpcClient, range: WooRange) {
+  const { data, error } = await client.rpc(LEGACY_WOO_RPC, {
+    start_date: range.startDate,
+    end_date: range.endDate
+  });
+  if (error) throw error;
+  return (data ?? {}) as CommerceTelemetry["woo"];
+}
+
+async function fetchSemanticWooMetrics(client: SupabaseRpcClient, range: WooRange) {
+  const semanticClient = client.schema(SEMANTIC_SCHEMA);
+  const { data, error } = await semanticClient.rpc(SEMANTIC_WOO_RPC, {
+    start_date: range.startDate,
+    end_date: range.endDate
+  });
+  if (error) throw error;
+  return mapSemanticWooToCommerceTelemetry((data ?? null) as SemanticWooResponse);
+}
+
+export async function fetchWooMetricsWithMode(
+  client: SupabaseRpcClient,
+  range: WooRange,
+  options?: { modeOverride?: WooMetricsMode; logger?: WooMetricsLogger }
+): Promise<CommerceTelemetry["woo"]> {
+  const logger = options?.logger ?? console;
+  const mode = options?.modeOverride ?? getWooMetricsMode();
+  const fetchLegacy = () => fetchLegacyWooMetrics(client, range);
+
+  if (mode === "legacy") {
+    return fetchLegacy();
+  }
+
+  if (mode === "shadow") {
+    const [legacy, semantic] = await Promise.all([
+      fetchLegacy(),
+      fetchSemanticWooMetrics(client, range).catch((error) => {
+        logger.warn("[woo-metrics][shadow][semantic-error]", { range, error: summarizeError(error) });
+        return null;
+      })
+    ]);
+    if (semantic) {
+      logWooComparison({ mode, range, legacy, semantic, logger });
+    }
+    return legacy;
+  }
+
+  try {
+    const semantic = await fetchSemanticWooMetrics(client, range);
+    return semantic.telemetry;
+  } catch (error) {
+    logger.error("[woo-metrics][semantic][fallback]", { range, error: summarizeError(error) });
+    return fetchLegacy();
+  }
+}
+
 export async function getCommerceTelemetry(range: { startDate: string; endDate: string }) {
   const supabase = getSupabaseServerClient();
+  const wooPromise = fetchWooMetricsWithMode(supabase as unknown as SupabaseRpcClient, range);
+  const ga4Promise = supabase
+    .rpc("get_ga4_metrics", { start_date: range.startDate, end_date: range.endDate })
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data ?? {};
+    });
+  const funnelPromise = supabase
+    .rpc("get_funnelkit_metrics", { start_date: range.startDate, end_date: range.endDate })
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data ?? {};
+    });
 
-  const [woo, ga4, funnel] = await Promise.all([
-    supabase.rpc("get_woo_metrics", { start_date: range.startDate, end_date: range.endDate }),
-    supabase.rpc("get_ga4_metrics", { start_date: range.startDate, end_date: range.endDate }),
-    supabase.rpc("get_funnelkit_metrics", { start_date: range.startDate, end_date: range.endDate })
-  ]);
-
-  const error = woo.error ?? ga4.error ?? funnel.error;
-  if (error) throw error;
+  const [woo, ga4, funnel] = await Promise.all([wooPromise, ga4Promise, funnelPromise]);
 
   return {
     startDate: range.startDate,
     endDate: range.endDate,
-    woo: woo.data ?? {},
-    ga4: ga4.data ?? {},
-    funnel: funnel.data ?? {}
+    woo,
+    ga4,
+    funnel
   };
 }
 

@@ -1,4 +1,4 @@
-import { getSupabaseServerClient } from "./server";
+import { getSupabaseServerClient } from "./server.ts";
 import type { IndustryPulseDaySnapshot, IndustryPulseOpportunity, IndustryPulseContactStatus } from "@/lib/types/industryPulse";
 
 type PostgrestError = {
