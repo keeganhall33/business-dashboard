@@ -338,4 +338,39 @@ BEGIN
 END;
 $$;
 
+DO $wrapper_checks$
+DECLARE
+  wrapper_oid oid := 'public.get_woo_metrics_semantic_v1(date,date)'::regprocedure;
+  wrapper_payload jsonb;
+  semantic_payload jsonb;
+BEGIN
+  IF wrapper_oid IS NULL THEN
+    RAISE EXCEPTION 'Wrapper function missing';
+  END IF;
+
+  IF pg_get_userbyid((SELECT proowner FROM pg_proc WHERE oid = wrapper_oid)) <> 'postgres' THEN
+    RAISE EXCEPTION 'Wrapper owner mismatch';
+  END IF;
+
+  IF NOT has_function_privilege('service_role', wrapper_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'Wrapper: service_role missing EXECUTE';
+  END IF;
+  IF has_function_privilege('anon', wrapper_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'Wrapper: anon unexpectedly has EXECUTE';
+  END IF;
+  IF has_function_privilege('authenticated', wrapper_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'Wrapper: authenticated unexpectedly has EXECUTE';
+  END IF;
+  IF has_function_privilege('public', wrapper_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'Wrapper: PUBLIC unexpectedly has EXECUTE';
+  END IF;
+
+  SELECT public.get_woo_metrics_semantic_v1('2026-07-03','2026-07-09') INTO wrapper_payload;
+  SELECT exec_dashboard.get_woo_metrics_semantic('2026-07-03','2026-07-09') INTO semantic_payload;
+  IF wrapper_payload IS DISTINCT FROM semantic_payload THEN
+    RAISE EXCEPTION 'Wrapper payload mismatch';
+  END IF;
+END;
+$wrapper_checks$;
+
 ROLLBACK;

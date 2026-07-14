@@ -19,38 +19,24 @@ type StubConfig = {
 
 class StubSupabaseClient {
   #config: StubConfig;
+  calls: Array<{ fn: string; params: Record<string, unknown> }>; 
 
   constructor(config: StubConfig) {
     this.#config = config;
+    this.calls = [];
   }
 
-  async rpc(fn: string): Promise<RpcResult> {
-    if (fn !== "get_woo_metrics") {
-      throw new Error(`Unexpected rpc call: ${fn}`);
+  async rpc(fn: string, params: Record<string, unknown> = {}): Promise<RpcResult> {
+    this.calls.push({ fn, params });
+    if (fn === "get_woo_metrics") {
+      return typeof this.#config.legacy === "function" ? await this.#config.legacy() : this.#config.legacy ?? { data: {}, error: null };
     }
-    return typeof this.#config.legacy === "function" ? await this.#config.legacy() : this.#config.legacy ?? { data: {}, error: null };
-  }
-
-  schema(): StubSupabaseClient {
-    return new StubSemanticClient(this.#config);
-  }
-}
-
-class StubSemanticClient extends StubSupabaseClient {
-  #config: StubConfig;
-
-  constructor(config: StubConfig) {
-    super(config);
-    this.#config = config;
-  }
-
-  async rpc(fn: string): Promise<RpcResult> {
-    if (fn !== "get_woo_metrics_semantic") {
-      throw new Error(`Unexpected semantic rpc call: ${fn}`);
+    if (fn === "get_woo_metrics_semantic_v1") {
+      return typeof this.#config.semantic === "function"
+        ? await this.#config.semantic()
+        : this.#config.semantic ?? { data: null, error: null };
     }
-    return typeof this.#config.semantic === "function"
-      ? await this.#config.semantic()
-      : this.#config.semantic ?? { data: null, error: null };
+    throw new Error(`Unexpected rpc call: ${fn}`);
   }
 
   schema(): StubSupabaseClient {
@@ -183,15 +169,17 @@ test("semantic mode falls back to legacy when RPC errors", async () => {
     },
     timeseries: []
   };
-  const client = new StubSupabaseClient({
+  const stub = new StubSupabaseClient({
     legacy: { data: legacyPayload, error: null },
     semantic: { data: null, error: { message: "boom" } }
-  }) as unknown as FetchClient;
+  });
   const logger = new StubLogger();
-  const result = await fetchWooMetricsWithMode(client, RANGE, { logger });
+  const result = await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger });
   assert.ok(result, "legacy payload should be returned when semantic call fails");
   assert.equal(result.summary?.orders, 5);
   assert.equal(logger.errorEntries.length, 1);
+  const wrapperCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
+  assert.equal(wrapperCalls.length, 1);
 });
 
 test("shadow mode logs differences and still returns legacy payload", async () => {
@@ -213,9 +201,9 @@ test("shadow mode logs differences and still returns legacy payload", async () =
   };
   const payload = structuredClone(USD_SEMANTIC_PAYLOAD);
   payload.metadata.includes_partial_day = true;
-  const client = new StubSupabaseClient({ legacy: { data: legacyPayload, error: null }, semantic: { data: payload, error: null } }) as unknown as FetchClient;
+  const stub = new StubSupabaseClient({ legacy: { data: legacyPayload, error: null }, semantic: { data: payload, error: null } });
   const logger = new StubLogger();
-  const result = await fetchWooMetricsWithMode(client, RANGE, { logger });
+  const result = await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger });
   assert.ok(result, "legacy payload should be preserved in shadow mode");
   assert.equal(result.summary?.orders, 4);
   assert.equal(logger.infoEntries.length, 1);
@@ -225,4 +213,30 @@ test("shadow mode logs differences and still returns legacy payload", async () =
   assert.equal((summary?.legacy as Record<string, unknown> | undefined)?.orders, 4);
   const semanticSummary = summary?.semantic as Record<string, unknown> | undefined;
   assert.equal(semanticSummary?.safeSingleCurrency, true);
+  const semanticCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
+  const legacyCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics");
+  assert.equal(semanticCalls.length, 1);
+  assert.equal(legacyCalls.length, 1);
+});
+
+test("semantic mode uses public wrapper RPC", async () => {
+  process.env.WOO_METRICS_MODE = "semantic";
+  const stub = new StubSupabaseClient({
+    legacy: { data: { summary: null, timeseries: [] }, error: null },
+    semantic: { data: USD_SEMANTIC_PAYLOAD, error: null }
+  });
+  await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger: new StubLogger() });
+  const semanticCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
+  assert.equal(semanticCalls.length, 1);
+  assert.deepEqual(semanticCalls[0].params, { start_date: RANGE.startDate, end_date: RANGE.endDate });
+});
+
+test("legacy mode skips semantic wrapper RPC", async () => {
+  process.env.WOO_METRICS_MODE = "legacy";
+  const stub = new StubSupabaseClient({ legacy: { data: { summary: null, timeseries: [] }, error: null } });
+  await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger: new StubLogger() });
+  const semanticCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
+  assert.equal(semanticCalls.length, 0);
+  const legacyCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics");
+  assert.equal(legacyCalls.length, 1);
 });

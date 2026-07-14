@@ -306,8 +306,7 @@ type WooMetricsLogger = Pick<Console, "info" | "warn" | "error">;
 const WOO_METRICS_MODE_VALUES: ReadonlySet<WooMetricsMode> = new Set(["legacy", "shadow", "semantic"]);
 const WOO_METRICS_ENV_VAR = "WOO_METRICS_MODE";
 const LEGACY_WOO_RPC = "get_woo_metrics";
-const SEMANTIC_WOO_RPC = "get_woo_metrics_semantic";
-const SEMANTIC_SCHEMA = "exec_dashboard";
+const SEMANTIC_WRAPPER_RPC = "get_woo_metrics_semantic_v1";
 
 type SemanticCurrencyTotal = {
   currency?: string | null;
@@ -618,8 +617,7 @@ async function fetchLegacyWooMetrics(client: SupabaseRpcClient, range: WooRange)
 }
 
 async function fetchSemanticWooMetrics(client: SupabaseRpcClient, range: WooRange) {
-  const semanticClient = client.schema(SEMANTIC_SCHEMA);
-  const { data, error } = await semanticClient.rpc(SEMANTIC_WOO_RPC, {
+  const { data, error } = await client.rpc(SEMANTIC_WRAPPER_RPC, {
     start_date: range.startDate,
     end_date: range.endDate
   });
