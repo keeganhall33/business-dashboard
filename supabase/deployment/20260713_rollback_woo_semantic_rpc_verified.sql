@@ -4,6 +4,7 @@
 DO $rollback$
 DECLARE
   semantic_definition text;
+  legacy_usage boolean;
   legacy_exec text;
   legacy_public text;
 BEGIN
