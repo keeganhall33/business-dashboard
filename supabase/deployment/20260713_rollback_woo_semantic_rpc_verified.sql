@@ -6,6 +6,7 @@ DECLARE
   semantic_definition text;
   legacy_exec text;
   legacy_public text;
+  legacy_usage boolean := FALSE;
 BEGIN
   IF to_regprocedure('exec_dashboard.get_woo_metrics_semantic(date,date)') IS NULL THEN
     RAISE NOTICE 'Rollback skipped: exec_dashboard.get_woo_metrics_semantic(date,date) not found';
@@ -24,6 +25,9 @@ BEGIN
   END IF;
 
   EXECUTE 'REVOKE USAGE ON SCHEMA exec_dashboard FROM service_role';
+  IF legacy_usage THEN
+    EXECUTE 'GRANT USAGE ON SCHEMA exec_dashboard TO service_role';
+  END IF;
 
   SELECT pg_get_functiondef('exec_dashboard.get_woo_metrics(date,date)'::regprocedure)
     INTO legacy_exec;
