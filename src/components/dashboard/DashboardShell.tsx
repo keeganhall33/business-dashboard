@@ -3,6 +3,7 @@ import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { PanelWrapper } from "./ui/PanelWrapper";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { HeaderStatusBar } from "./HeaderStatusBar";
+import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { CloudflarePanel } from "./CloudflarePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
@@ -54,6 +55,14 @@ export function DashboardShell({ data }: Props) {
       <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
         <HeaderStatusBar metrics={data.headerMetrics} refreshedAtIso={refreshedAt} />
       </PanelWrapper>
+
+      {data.executiveInsights ? (
+        <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
+          <ExecutiveBriefPanel insights={data.executiveInsights} />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder title="Executive brief unavailable" detail="Executive insights require fresh telemetry across Woo, GA4, FunnelKit, and Meta." />
+      )}
 
       {survivalSnapshot?.configured ? (
         <PanelWrapper mode="SNAPSHOT" refreshedAtIso={survivalSnapshot.lastUpdatedAt ?? refreshedAt}>

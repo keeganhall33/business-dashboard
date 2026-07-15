@@ -242,13 +242,14 @@ test("semantic mode falls back to legacy when RPC errors", async () => {
   const logger = new StubLogger();
   const result = await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger });
   assert.ok(result, "legacy payload should be returned when semantic call fails");
-  assert.equal(result.summary?.orders, 5);
+  assert.ok(result.payload);
+  assert.equal(result.payload?.summary?.orders, 5);
   assert.equal(logger.errorEntries.length, 1);
   const wrapperCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
   assert.equal(wrapperCalls.length, 1);
 });
 
-test("shadow mode logs differences and still returns legacy payload", async () => {
+test("shadow mode fetches both sources but only warns on semantic errors", async () => {
   process.env.WOO_METRICS_MODE = "shadow";
   const legacyPayload: CommerceTelemetry["woo"] = {
     summary: {
@@ -271,20 +272,10 @@ test("shadow mode logs differences and still returns legacy payload", async () =
   const logger = new StubLogger();
   const result = await fetchWooMetricsWithMode(stub as unknown as FetchClient, RANGE, { logger });
   assert.ok(result, "legacy payload should be preserved in shadow mode");
-  assert.equal(result.summary?.orders, 4);
-  assert.equal(logger.infoEntries.length, 1);
-  const logEntry = logger.infoEntries[0] as unknown[];
-  const logPayload = (logEntry?.[1] ?? {}) as Record<string, unknown>;
-  const summary = logPayload.summary as Record<string, unknown> | undefined;
-  const legacySummary = summary?.legacy as Record<string, unknown> | undefined;
-  assert.equal(legacySummary?.orders, 4);
-  const semanticSummary = summary?.semantic as Record<string, unknown> | undefined;
-  assert.equal(semanticSummary?.safeSingleCurrency, true);
-  assert.equal(semanticSummary?.orders, 4);
-  assert.equal(semanticSummary?.revenue, 1234);
-  const deltas = summary?.deltas as Record<string, unknown> | undefined;
-  assert.equal(deltas?.orders, 0);
-  assert.equal(deltas?.revenue, 0);
+  assert.ok(result.payload);
+  assert.equal(result.payload?.summary?.orders, 4);
+  assert.equal(logger.warnEntries.length, 0, "no warning logs expected when semantic succeeds");
+  assert.equal(logger.errorEntries.length, 0, "no error logs expected when semantic succeeds");
   const semanticCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics_semantic_v1");
   const legacyCalls = stub.calls.filter((call) => call.fn === "get_woo_metrics");
   assert.equal(semanticCalls.length, 1);

@@ -27,11 +27,13 @@ import {
   getCeoQuestions,
   getRecentCeoQuestionComments,
   getDashboardSnapshots,
-  type DashboardSnapshotRecord
+  type DashboardSnapshotRecord,
+  type CommerceTelemetryResult
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
+import { buildDashboardTelemetryIntelligence } from "@/lib/telemetry/intelligence";
 import {
   RangePreset,
   type AgentHealth,
@@ -160,6 +162,24 @@ function mergeDeliverableLinks(existing: DeliverableLink[], incoming: Deliverabl
     if (combined.length >= limit) break;
   }
   return combined.slice(0, limit);
+}
+
+function getPreviousRange(range: { startDate: string; endDate: string }) {
+  const start = Date.parse(`${range.startDate}T00:00:00Z`);
+  const end = Date.parse(`${range.endDate}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
+    return {
+      startDate: range.startDate,
+      endDate: range.startDate
+    };
+  }
+  const days = Math.max(1, Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1);
+  const prevEnd = new Date(start - 24 * 60 * 60 * 1000);
+  const prevStart = new Date(prevEnd.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  return {
+    startDate: prevStart.toISOString().slice(0, 10),
+    endDate: prevEnd.toISOString().slice(0, 10)
+  };
 }
 
 function extractUrls(text: string) {
@@ -969,6 +989,7 @@ export async function GET(request: Request) {
     const startParam = url.searchParams.get("start");
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
+    const comparisonRange = getPreviousRange(range);
 
     const [
       metrics,
@@ -977,6 +998,7 @@ export async function GET(request: Request) {
       directive,
       agentHealth,
       commerceTelemetry,
+      previousCommerceTelemetry,
       operatingMode,
       schedulerControlState,
       schedulerStatusState,
@@ -1002,6 +1024,7 @@ export async function GET(request: Request) {
       getLatestAgentDirective(),
       getAgentHealth(),
       getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate }),
+      getCommerceTelemetry({ startDate: comparisonRange.startDate, endDate: comparisonRange.endDate }),
       getSystemState("operating_mode"),
       getSystemState("scheduler_control"),
       getSystemState("scheduler_status"),
@@ -1032,6 +1055,13 @@ export async function GET(request: Request) {
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
     const industryPulseSnapshot =
       (snapshotMap.get("industry_pulse")?.payload as IndustryPulseSnapshot | null) ?? localArtifacts.industrySnapshot;
+
+    const telemetryIntelligence = buildDashboardTelemetryIntelligence({
+      range,
+      currentCommerce: commerceTelemetry as CommerceTelemetryResult,
+      previousCommerce: previousCommerceTelemetry as CommerceTelemetryResult,
+      metaSnapshot
+    });
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1941,6 +1971,9 @@ export async function GET(request: Request) {
         }))
       },
       ceoQuestionDesk,
+      telemetryMetadata: telemetryIntelligence.metadata,
+      telemetryHealth: telemetryIntelligence.health,
+      executiveInsights: telemetryIntelligence.executiveInsights,
       industryPulse: industryPulseResult?.snapshot
         ? {
             day: industryPulseResult.snapshot.day,

@@ -449,6 +449,70 @@ export type CommerceTelemetry = {
   };
 };
 
+export type TelemetrySource = "woo" | "ga4" | "funnelkit" | "meta";
+
+export type TelemetryMetadata = {
+  source: TelemetrySource;
+  requestedStartDate: string;
+  requestedEndDate: string;
+  timezone: string;
+  generatedAt?: string | null;
+  freshnessStatus: "fresh" | "stale" | "no_data" | "unknown";
+  coverageStatus: "complete" | "partial" | "unknown";
+  includesPartialDay: boolean;
+  includesFutureDates: boolean;
+  latestCompletedBusinessDate?: string | null;
+  warningCodes: string[];
+};
+
+export type TelemetryHealthStatus = "healthy" | "warning" | "critical" | "unknown";
+
+export type TelemetryHealth = {
+  source: TelemetrySource;
+  status: TelemetryHealthStatus;
+  reasons: string[];
+  warningCodes: string[];
+};
+
+export type TrendDirection = "up" | "down" | "flat";
+export type TrendMagnitude = "minor" | "moderate" | "major";
+
+export type TrendComparison = {
+  id: string;
+  source: TelemetrySource;
+  metric: string;
+  label: string;
+  currentValue: number | null;
+  previousValue: number | null;
+  absoluteChange: number | null;
+  percentChange: number | null;
+  direction: TrendDirection;
+  magnitude: TrendMagnitude;
+  anomaly: boolean;
+  caveat?: string | null;
+};
+
+export type ExecutiveBrief = {
+  pacificWindow: {
+    startDate: string;
+    endDate: string;
+    includesPartialDay: boolean;
+  };
+  warnings: string[];
+  topChanges: TrendComparison[];
+  sourceFreshness: Array<{
+    source: TelemetrySource;
+    status: TelemetryHealthStatus;
+    summary: string;
+  }>;
+  attention: string | null;
+};
+
+export type ExecutiveInsightsPayload = {
+  brief: ExecutiveBrief | null;
+  trends: TrendComparison[];
+};
+
 export type WebsiteConversionSnapshot = {
   generatedAt: string;
   ga4?: {
@@ -923,4 +987,8 @@ export type DashboardOverviewResponse = {
       sourceUrl: string | null;
     }>;
   };
+
+  telemetryMetadata?: Partial<Record<TelemetrySource, TelemetryMetadata>>;
+  telemetryHealth?: Partial<Record<TelemetrySource, TelemetryHealth>>;
+  executiveInsights?: ExecutiveInsightsPayload | null;
 };
