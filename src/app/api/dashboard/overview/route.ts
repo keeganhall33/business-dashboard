@@ -38,6 +38,7 @@ import { buildDashboardTelemetryIntelligence } from "@/lib/telemetry/intelligenc
 import {
   RangePreset,
   type AgentHealth,
+  type Opportunity,
   type CollectorTelemetrySnapshot,
   type DeliverableLink,
   type ProofOfWorkEntry,
@@ -50,6 +51,13 @@ import {
   TelemetrySource
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
+import { getPreviousRange, formatRangeLabel } from "@/lib/date/range";
+import {
+  normalizeVerificationStatus,
+  summarizeOpportunityVerification,
+  mapOpportunityRowForResponse,
+  type OpportunityRecord
+} from "@/lib/pipeline/verification";
 
 export const runtime = "nodejs";
 
@@ -122,18 +130,7 @@ type TaskRow = {
   completed_at?: string | null;
 };
 
-type OpportunityRow = {
-  id: string;
-  name: string;
-  organization: string | null;
-  opportunity_type: string;
-  status: string;
-  value_estimate: number | null;
-  prestige_score: number | null;
-  probability_score: number | null;
-  owner_agent: string;
-  next_step: string | null;
-  next_step_due_at: string | null;
+type OpportunityRow = OpportunityRecord & {
   notes_md?: string | null;
   source?: string | null;
   deliverables?: unknown;
@@ -167,24 +164,6 @@ function mergeDeliverableLinks(existing: DeliverableLink[], incoming: Deliverabl
     if (combined.length >= limit) break;
   }
   return combined.slice(0, limit);
-}
-
-function getPreviousRange(range: { startDate: string; endDate: string }) {
-  const start = Date.parse(`${range.startDate}T00:00:00Z`);
-  const end = Date.parse(`${range.endDate}T00:00:00Z`);
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
-    return {
-      startDate: range.startDate,
-      endDate: range.startDate
-    };
-  }
-  const days = Math.max(1, Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1);
-  const prevEnd = new Date(start - 24 * 60 * 60 * 1000);
-  const prevStart = new Date(prevEnd.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
-  return {
-    startDate: prevStart.toISOString().slice(0, 10),
-    endDate: prevEnd.toISOString().slice(0, 10)
-  };
 }
 
 function extractUrls(text: string) {
@@ -554,25 +533,6 @@ function describeRevenueFastPath(metric: ScoreboardMetricRow) {
   };
 }
 
-function describeOpportunityMove(opportunity: OpportunityRow) {
-  const name = opportunity.name ?? "Untitled";
-  const org = opportunity.organization ? ` (${opportunity.organization})` : "";
-  const step = opportunity.next_step?.trim() || "Define next step";
-  const due = opportunity.next_step_due_at ? formatDueDate(opportunity.next_step_due_at) : "no due date";
-  return `${name}${org}: ${step} (${due})`;
-}
-
-function formatDueDate(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "no due date";
-  const diffDays = Math.round((date.getTime() - Date.now()) / 86400000);
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  if (Math.abs(diffDays) < 14) {
-    return formatter.format(diffDays, "day");
-  }
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 function getPriorityMetrics(
   preferredKeys: string[],
   metricByKey: Map<string, ScoreboardMetricRow>,
@@ -679,27 +639,56 @@ function isIsoDate(value: string | null): value is string {
 }
 
 function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
-  const presets: Record<string, { preset: RangePreset; days: number }> = {
-    "7d": { preset: "7d", days: 7 },
-    "30d": { preset: "30d", days: 30 },
-    "90d": { preset: "90d", days: 90 }
-  };
+  const normalized = (rangeParam ?? "").toLowerCase();
 
-  if (rangeParam === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
-    const startDate = startParam;
-    const endDate = endParam;
+  if (normalized === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
+    const startDate = startParam as string;
+    const endDate = endParam as string;
     if (startDate <= endDate) {
       return { preset: "custom" as RangePreset, startDate, endDate };
     }
   }
 
-  const fallback = presets[rangeParam ?? ""] ?? presets["30d"];
   const today = new Date();
-  const endDate = formatIsoDate(today);
+  const todayIso = formatIsoDate(today);
+
+  if (normalized === "today") {
+    return { preset: "today", startDate: todayIso, endDate: todayIso };
+  }
+
+  if (normalized === "yesterday") {
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const iso = formatIsoDate(yesterday);
+    return { preset: "yesterday", startDate: iso, endDate: iso };
+  }
+
+  if (normalized === "month_to_date") {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    return { preset: "month_to_date", startDate: formatIsoDate(start), endDate: todayIso };
+  }
+
+  if (normalized === "previous_month") {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    start.setUTCMonth(start.getUTCMonth() - 1);
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+    return { preset: "previous_month", startDate: formatIsoDate(start), endDate: formatIsoDate(end) };
+  }
+
+  if (normalized === "year_to_date") {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+    return { preset: "year_to_date", startDate: formatIsoDate(start), endDate: todayIso };
+  }
+
+  const fallbackPresets: Record<string, { preset: RangePreset; days: number }> = {
+    "7d": { preset: "7d", days: 7 },
+    "30d": { preset: "30d", days: 30 },
+    "90d": { preset: "90d", days: 90 }
+  };
+  const fallback = fallbackPresets[normalized] ?? fallbackPresets["30d"];
   const start = new Date(today);
   start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
-  const startDate = formatIsoDate(start);
-  return { preset: fallback.preset, startDate, endDate };
+  return { preset: fallback.preset, startDate: formatIsoDate(start), endDate: todayIso };
 }
 
 function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string }) {
@@ -1002,7 +991,8 @@ export async function GET(request: Request) {
     });
 
     const [
-      metrics,
+      scoreboardMetrics,
+      previousScoreboardMetrics,
       tasks,
       opportunities,
       directive,
@@ -1030,6 +1020,7 @@ export async function GET(request: Request) {
       telemetryEventRows
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
+      getScoreboardMetricsForRange(comparisonRange) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
       getActiveOpportunities(25) as Promise<OpportunityRow[]>,
       getLatestAgentDirective(),
@@ -1236,7 +1227,8 @@ export async function GET(request: Request) {
     ]);
     const warRoomMessages = await getAgentMessages(warRoomThread.id, 5);
 
-    const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
+    const metricByKey = new Map(scoreboardMetrics.map((m) => [m.metric_key, { ...m }]));
+    const previousMetricByKey = new Map(previousScoreboardMetrics.map((m) => [m.metric_key, { ...m }]));
     metricByKey.delete("active_brand_conversations");
 
     if (commerceTelemetry) {
@@ -1285,12 +1277,19 @@ export async function GET(request: Request) {
           status: "warning" as const,
           unit: card.fallbackUnit ?? null,
           ownerAgent: null,
-          measuredAt: null
+          measuredAt: null,
+          comparisonValue: null,
+          comparisonLabel: null,
+          targetLabel: null
         };
       }
 
       const currentValue = toNumber(metric.current_value) ?? 0;
       const targetValue = toNumber(metric.target_value) ?? 0;
+      const comparisonMetric = previousMetricByKey.get(metric.metric_key);
+      const comparisonValue = comparisonMetric ? toNumber(comparisonMetric.current_value) ?? null : null;
+      const comparisonLabel = comparisonValue != null ? formatRangeLabel(comparisonRange, { includeYear: true }) : null;
+      const targetLabel = targetValue ? formatMetricValue(targetValue, metric.unit ?? card.fallbackUnit ?? null) : null;
       return {
         metricKey: metric.metric_key,
         metricName: metric.metric_name ?? card.fallbackName,
@@ -1301,7 +1300,10 @@ export async function GET(request: Request) {
         status: statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)),
         unit: metric.unit ?? card.fallbackUnit ?? null,
         ownerAgent: metric.owner_agent ?? null,
-        measuredAt: metric.measured_at ?? null
+        measuredAt: metric.measured_at ?? null,
+        comparisonValue,
+        comparisonLabel,
+        targetLabel
       };
     });
 
@@ -1728,65 +1730,32 @@ export async function GET(request: Request) {
     const collectorTelemetry = buildCollectorTelemetry(collectorRows as CollectorRow[]);
 
     const normalizedOpportunities = dedupeOpportunityRows(opportunities as OpportunityRow[]);
+    const verificationSummary = summarizeOpportunityVerification(normalizedOpportunities);
+    const verifiedOpportunities = normalizedOpportunities.filter(
+      (row) => normalizeVerificationStatus(row) === "verified_active"
+    );
 
-    const pipelineDeals: {
-      id: string;
-      name: string;
-      organization: string | null;
-      opportunityType: string;
-      status: string;
-      valueEstimate: number | null;
-      prestigeScore: number | null;
-      probabilityScore: number | null;
-      ownerAgent: string;
-      nextStep: string | null;
-      nextStepDueAt: string | null;
-      supportingDocs: Array<{ label: string; url: string }> | null;
-    }[] = [];
+    const pipelineDeals: Opportunity[] = [];
     const seenPipelineDeals = new Set<string>();
-    for (const opportunity of normalizedOpportunities) {
+    for (const opportunity of verifiedOpportunities) {
       if (["won", "lost", "parked"].includes(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
       seenPipelineDeals.add(dedupeKey);
       const pipelineDocs = buildSupportingDocs(opportunity) ?? opportunityEvidenceById.get(opportunity.id) ?? null;
 
-      pipelineDeals.push({
-        id: opportunity.id,
-        name: opportunity.name,
-        organization: opportunity.organization,
-        opportunityType: opportunity.opportunity_type,
-        status: opportunity.status,
-        valueEstimate: opportunity.value_estimate,
-        prestigeScore: opportunity.prestige_score,
-        probabilityScore: opportunity.probability_score,
-        ownerAgent: opportunity.owner_agent,
-        nextStep: opportunity.next_step,
-        nextStepDueAt: opportunity.next_step_due_at,
-        supportingDocs: pipelineDocs ? pipelineDocs.slice(0, 4) : null
-      });
+      pipelineDeals.push(mapOpportunityRowForResponse(opportunity, pipelineDocs ? pipelineDocs.slice(0, 4) : null));
       if (pipelineDeals.length >= 6) break;
     }
 
-    const activeCount = normalizedOpportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
-    const readyForOutreachCount = normalizedOpportunities.filter((o) => o.status === "ready_for_outreach").length;
+    const activeCount = verifiedOpportunities.length;
+    const readyForOutreachCount = verifiedOpportunities.filter((o) => o.status === "ready_for_outreach").length;
 
-    const sortedOpportunities = normalizedOpportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const sortedOpportunities = verifiedOpportunities
+      .slice()
+      .sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
     const seenTopOpportunities = new Set<string>();
-    const topOpportunities: {
-      id: string;
-      name: string;
-      organization: string | null;
-      opportunityType: string;
-      status: string;
-      valueEstimate: number | null;
-      prestigeScore: number | null;
-      probabilityScore: number | null;
-      ownerAgent: string;
-      nextStep: string | null;
-      nextStepDueAt: string | null;
-      supportingDocs: Array<{ label: string; url: string }> | null;
-    }[] = [];
+    const topOpportunities: Opportunity[] = [];
 
     for (const opportunity of sortedOpportunities) {
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
@@ -1796,51 +1765,24 @@ export async function GET(request: Request) {
       const docsFromOpportunity = buildSupportingDocs(opportunity);
       const fallbackDocs = opportunityEvidenceById.get(opportunity.id);
 
-      topOpportunities.push({
-        id: opportunity.id,
-        name: opportunity.name,
-        organization: opportunity.organization,
-        opportunityType: opportunity.opportunity_type,
-        status: opportunity.status,
-        valueEstimate: opportunity.value_estimate,
-        prestigeScore: opportunity.prestige_score,
-        probabilityScore: opportunity.probability_score,
-        ownerAgent: opportunity.owner_agent,
-        nextStep: opportunity.next_step,
-        nextStepDueAt: opportunity.next_step_due_at,
-        supportingDocs: docsFromOpportunity ?? (fallbackDocs ? fallbackDocs.slice(0, 4) : null)
-      });
+      topOpportunities.push(
+        mapOpportunityRowForResponse(opportunity, docsFromOpportunity ?? (fallbackDocs ? fallbackDocs.slice(0, 4) : null))
+      );
 
       if (topOpportunities.length >= 5) break;
     }
-
-    const upcomingMoves = normalizedOpportunities
-      .filter((opportunity) => !["won", "lost", "parked"].includes(opportunity.status))
-      .map((opportunity) => ({
-        label: describeOpportunityMove(opportunity),
-        dueAt: opportunity.next_step_due_at ?? null
-      }))
-      .filter((item) => Boolean(item.label));
-
-    upcomingMoves.sort((a, b) => {
-      if (a.dueAt && b.dueAt) return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
-      if (a.dueAt) return -1;
-      if (b.dueAt) return 1;
-      return 0;
-    });
-
-    const nextFiveMoves = dedupeStrings(upcomingMoves.map((item) => item.label).filter(Boolean)).slice(0, 5);
 
     const opportunityRadar = {
       activeCount,
       readyForOutreachCount,
       topOpportunities,
-      nextFiveMoves
+      nextFiveMoves: [] as string[]
     };
 
     const pipelinePanel = {
       collectors: collectorSummaries,
-      deals: pipelineDeals
+      deals: pipelineDeals,
+      verificationSummary
     };
 
     const taskSummaries = allTaskRows.map(mapTaskRowToSummary);

@@ -1,4 +1,9 @@
-import type { DashboardOverviewResponse, HeaderMetric, CollectorRelationship } from "@/lib/types/dashboard";
+import type {
+  DashboardOverviewResponse,
+  HeaderMetric,
+  CollectorRelationship,
+  PipelineVerificationSummary
+} from "@/lib/types/dashboard";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -8,6 +13,7 @@ type DashboardSeedPartial = {
   headerMetrics?: HeaderMetric[];
   pipelinePanel?: {
     collectors?: CollectorRelationship[];
+    verificationSummary?: PipelineVerificationSummary;
   };
   collectorTelemetry?: DashboardOverviewResponse["collectorTelemetry"];
 };
@@ -29,7 +35,20 @@ function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
     revenueEngine: { metrics: [], moneyLeaks: [], fastestPathToIncreaseRevenue: [] },
     brandPower: { metrics: [], whatIsWorking: [], whatToDoNext: [] },
     opportunityRadar: { activeCount: 0, readyForOutreachCount: 0, topOpportunities: [], nextFiveMoves: [] },
-    pipelinePanel: { collectors: [], deals: [] },
+    pipelinePanel: {
+      collectors: [],
+      deals: [],
+      verificationSummary: {
+        total: 0,
+        verifiedActive: 0,
+        onHold: 0,
+        complete: 0,
+        declined: 0,
+        invalid: 0,
+        stale: 0,
+        unverified: 0
+      }
+    },
     survivalStrip: {
       configured: false,
       cashOnHand: null,
@@ -160,7 +179,9 @@ export async function loadDashboardOverviewFromSeed(options?: {
     headerMetrics: partial.headerMetrics ?? base.headerMetrics,
     pipelinePanel: {
       ...base.pipelinePanel,
-      collectors: partial.pipelinePanel?.collectors ?? base.pipelinePanel.collectors
+      collectors: partial.pipelinePanel?.collectors ?? base.pipelinePanel.collectors,
+      verificationSummary:
+        partial.pipelinePanel?.verificationSummary ?? base.pipelinePanel.verificationSummary
     },
     collectorTelemetry: partial.collectorTelemetry ?? base.collectorTelemetry
   };

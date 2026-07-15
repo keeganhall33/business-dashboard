@@ -183,18 +183,21 @@ function addTelemetryActions(rows: ExecutiveActionPlan[], data: DashboardOvervie
 
 function addMarketingActions(rows: ExecutiveActionPlan[], data: DashboardOverviewResponse) {
   const trends = data.executiveInsights?.trends ?? [];
-  const inefficient = trends.filter((trend) => trend.metric.toLowerCase().includes("roas") || trend.metric.toLowerCase().includes("conversion"));
+  const inefficient = trends.filter(
+    (trend) =>
+      trend.direction === "down" && (trend.metric.toLowerCase().includes("roas") || trend.metric.toLowerCase().includes("conversion"))
+  );
   inefficient.slice(0, 2).forEach((trend, idx) => {
     rows.push({
       id: `marketing-${trend.id}-${idx}`,
-      priority: trend.direction === "down" ? "P1" : "P2",
+      priority: "P1",
       title: `Correct ${trend.label}`,
       impact: describeChange(trend),
       confidence: trend.magnitude === "major" ? "High" : "Medium",
       owner: "Marketing",
       evidence: trend.caveat ?? `${trend.metric} trend`,
       due: "This week",
-      weight: trend.direction === "down" ? 80 : 60
+      weight: 80 - idx * 5
     });
   });
 }

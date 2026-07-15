@@ -1,6 +1,15 @@
 export type MetricStatus = "healthy" | "on_track" | "warning" | "critical";
 
-export type RangePreset = "7d" | "30d" | "90d" | "custom";
+export type RangePreset =
+  | "today"
+  | "yesterday"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "month_to_date"
+  | "previous_month"
+  | "year_to_date"
+  | "custom";
 
 export type HeaderMetric = {
   metricKey: string;
@@ -13,6 +22,9 @@ export type HeaderMetric = {
   unit: string | null;
   ownerAgent?: string | null;
   measuredAt?: string | null;
+  comparisonValue?: number | null;
+  comparisonLabel?: string | null;
+  targetLabel?: string | null;
 };
 
 export type ExecutiveCommand = {
@@ -55,6 +67,15 @@ export type BrandPower = {
   whatToDoNext: string[];
 };
 
+export type OpportunityVerificationStatus =
+  | "unverified"
+  | "verified_active"
+  | "verified_on_hold"
+  | "verified_complete"
+  | "verified_declined"
+  | "invalid"
+  | "stale";
+
 export type Opportunity = {
   id: string;
   name: string;
@@ -67,6 +88,13 @@ export type Opportunity = {
   ownerAgent: string | null;
   nextStep: string | null;
   nextStepDueAt: string | null;
+  verificationStatus: OpportunityVerificationStatus;
+  verificationSource?: string | null;
+  verificationNotes?: string | null;
+  lastVerifiedAt?: string | null;
+  lastVerifiedBy?: string | null;
+  valueBasis?: string | null;
+  confidence?: number | null;
   supportingDocs?: DeliverableLink[] | null;
 };
 
@@ -75,6 +103,17 @@ export type OpportunityRadar = {
   readyForOutreachCount: number;
   topOpportunities: Opportunity[];
   nextFiveMoves: string[];
+};
+
+export type PipelineVerificationSummary = {
+  total: number;
+  verifiedActive: number;
+  onHold: number;
+  complete: number;
+  declined: number;
+  invalid: number;
+  stale: number;
+  unverified: number;
 };
 
 export type CollectorRelationship = {
@@ -128,6 +167,7 @@ export type SurvivalStrip = {
 export type PipelinePanel = {
   collectors: CollectorRelationship[];
   deals: Opportunity[];
+  verificationSummary: PipelineVerificationSummary;
 };
 
 export type WarRoomEntry = {
