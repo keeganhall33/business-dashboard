@@ -30,16 +30,38 @@ export function IndustryPulsePanel({ snapshot }: { snapshot?: IndustryPulseSnaps
         <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-200">No high-confidence alerts captured.</div>
       ) : (
         <div className="space-y-3">
-          {alerts.slice(0, 6).map((alert, idx) => (
+          {alerts.map((alert, idx) => (
             <article key={`${alert.title}-${idx}`} className="rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-zinc-100">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-semibold">{alert.title}</div>
+                <div>
+                  <div className="font-semibold">{alert.title}</div>
+                  <p className="text-xs text-zinc-400">{new Date(alert.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                </div>
                 <StatusChip label={`${alert.category} • ${alert.urgency}`} tone={toneFromUrgency(alert.urgency)} />
               </div>
-              <div className="mt-1 text-xs text-zinc-400">{alert.whyItMatters}</div>
-              <div className="mt-2 text-xs text-zinc-300">Opportunity: {alert.opportunity}</div>
-              <div className="text-xs text-zinc-300">Action: {alert.recommendedAction}</div>
-              <div className="mt-1 flex flex-wrap gap-3 text-[11px] uppercase tracking-[0.3em] text-white/50">
+              <dl className="mt-3 space-y-1 text-xs text-zinc-300">
+                <div>
+                  <dt className="font-semibold text-zinc-400">Why it matters</dt>
+                  <dd>{alert.whyItMatters}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-400">Concept</dt>
+                  <dd>{alert.opportunity}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-400">Commercial route</dt>
+                  <dd>{alert.category}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-400">Recommended action</dt>
+                  <dd>{alert.recommendedAction}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-400">Licensing risk</dt>
+                  <dd>Confirm rights with {alert.source}. Status: {alert.status || "unknown"}.</dd>
+                </div>
+              </dl>
+              <div className="mt-2 flex flex-wrap gap-3 text-[11px] uppercase tracking-[0.3em] text-white/50">
                 <span>Confidence: {alert.confidence}</span>
                 {alert.owner ? <span>Owner: {alert.owner}</span> : null}
                 {alert.sourceUrl ? (

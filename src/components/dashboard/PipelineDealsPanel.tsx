@@ -23,7 +23,7 @@ export function PipelineDealsPanel({ deals }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Pipeline deals</div>
-          <p className="mt-1 text-sm text-zinc-400">Live opportunities from Supabase `opportunity_pipeline`.</p>
+          <p className="mt-1 text-sm text-zinc-400">Only verified-active opportunities are eligible for executive review.</p>
         </div>
         <StatusChip label={`${deals.length} active`} tone="sky" />
       </div>
@@ -41,6 +41,10 @@ export function PipelineDealsPanel({ deals }: Props) {
                 <div className="mt-1 text-[11px] uppercase tracking-[0.26em] text-zinc-500">{deal.opportunityType.replace(/_/g, " ")}</div>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <StatusChip
+                  label={deal.verificationStatus.replace(/_/g, " ")}
+                  tone={verificationTone(deal.verificationStatus)}
+                />
                 <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
                   {deal.status.replace(/_/g, " ")}
                 </span>
@@ -83,4 +87,11 @@ function formatDue(iso: string | null) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Date TBD";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+function verificationTone(status: string) {
+  if (status === "verified_active") return "emerald";
+  if (status === "verified_on_hold") return "sky";
+  if (status === "verified_complete") return "zinc";
+  return "rose";
 }

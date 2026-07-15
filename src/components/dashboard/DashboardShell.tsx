@@ -14,18 +14,13 @@ import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { PipelineDealsPanel } from "./PipelineDealsPanel";
-import { OpportunityRadarPanel } from "./OpportunityRadarPanel";
-import { AutomationPanel } from "./AutomationPanel";
 import { ActionQueuePanel } from "./ActionQueuePanel";
 import { SystemHealthPanel } from "./SystemHealthPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
-import { WarRoomPanel } from "./WarRoomPanel";
-import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
-import { TelemetryOperationsPanel } from "./TelemetryOperationsPanel";
-import { CloudflarePanel } from "./CloudflarePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
+import { SiteHealthSummary } from "./SiteHealthSummary";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -40,11 +35,19 @@ type Props = {
 export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
-  const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [] };
+  const defaultVerificationSummary = {
+    total: 0,
+    verifiedActive: 0,
+    onHold: 0,
+    complete: 0,
+    declined: 0,
+    invalid: 0,
+    stale: 0,
+    unverified: 0
+  };
+  const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [], verificationSummary: defaultVerificationSummary };
   const pipelineDeals = pipelinePanel.deals ?? [];
-  const collectorSnapshot = data.collectorTelemetry ?? null;
-  const warRoomState = data.warRoom;
-  const hasWarRoomEntries = Boolean(warRoomState && (warRoomState.entries?.length || warRoomState.reason));
+  const hasVerifiedPipeline = (pipelinePanel.verificationSummary?.verifiedActive ?? 0) > 0;
   const executiveActions = buildExecutiveActions(data, 5);
   const dataConfidence = buildDataConfidence(data.telemetryMetadata, data.telemetryHealth, data.executiveInsights?.brief ?? null);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
@@ -106,9 +109,14 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            {data.opportunityRadar ? <OpportunityRadarPanel data={data.opportunityRadar} /> : null}
-            {pipelineDeals.length ? <PipelineDealsPanel deals={pipelineDeals} /> : <PanelAuditPlaceholder title="No active deals" detail="Supabase opportunity list is empty for this range." />}
-            {collectorSnapshot ? <CollectorsStatusPanel snapshot={collectorSnapshot} /> : null}
+            {hasVerifiedPipeline && pipelineDeals.length ? (
+              <PipelineDealsPanel deals={pipelineDeals} />
+            ) : (
+              <PanelAuditPlaceholder
+                title="Pipeline intelligence disabled"
+                detail="Executive pipeline data requires verified opportunities. Complete verification to re-enable this section."
+              />
+            )}
           </div>
         </DashboardSection>
 
@@ -117,7 +125,6 @@ export function DashboardShell({ data }: Props) {
           subtitle="Automation cadence, system health, and approvals"
           storageKey="dashboard-section-operations"
           {...SECTION_PROPS}
-          context={data.schedulerJobs?.length ? <AutomationPanel jobs={data.schedulerJobs} summary={data.schedulerSummary} /> : null}
           meta={<SectionMeta summary={operationsSummary} />}
         >
           <div className="space-y-5">
@@ -128,7 +135,7 @@ export function DashboardShell({ data }: Props) {
             )}
             {data.systemHealth ? <SystemHealthPanel data={data.systemHealth} /> : null}
             {data.actionQueue ? <ActionQueuePanel data={data.actionQueue} /> : null}
-            <CloudflarePanel snapshot={data.cloudflare} />
+            <SiteHealthSummary snapshot={data.cloudflare} />
           </div>
         </DashboardSection>
 
@@ -141,7 +148,6 @@ export function DashboardShell({ data }: Props) {
         >
           <div className="space-y-5">
             {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
-            {hasWarRoomEntries ? <WarRoomPanel data={warRoomState} /> : null}
           </div>
         </DashboardSection>
 
@@ -150,11 +156,6 @@ export function DashboardShell({ data }: Props) {
           subtitle="Source freshness, coverage, and telemetry warnings"
           storageKey="dashboard-section-data-confidence"
           {...SECTION_PROPS}
-          context={
-            data.telemetryMetadata ? (
-              <TelemetryOperationsPanel metadata={data.telemetryMetadata} health={data.telemetryHealth} history={data.telemetryHealthHistory} />
-            ) : null
-          }
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
           <DataConfidencePanel
@@ -288,6 +289,20 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
 
 function buildPipelineSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
   const deals = data.pipelinePanel?.deals ?? [];
+  const summary = data.pipelinePanel?.verificationSummary;
+  const verifiedDeals = summary?.verifiedActive ?? 0;
+  if (!summary || verifiedDeals === 0) {
+    return {
+      status: "Verification required",
+      tone: "zinc",
+      metrics: [
+        `Verified deals ${verifiedDeals}`,
+        summary ? `Total logged ${summary.total}` : "No pipeline records"
+      ],
+      insight: "Only verified opportunities influence the executive pipeline.",
+      actions: 0
+    };
+  }
   const totalValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
   const overdue = deals.filter((deal) => deal.nextStepDueAt && new Date(deal.nextStepDueAt).getTime() < Date.now()).length;
   return {
