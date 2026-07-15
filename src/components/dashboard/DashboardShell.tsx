@@ -13,7 +13,6 @@ import { BrandPowerPanel } from "./BrandPowerPanel";
 import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
-import { PipelineDealsPanel } from "./PipelineDealsPanel";
 import { ActionQueuePanel } from "./ActionQueuePanel";
 import { SystemHealthPanel } from "./SystemHealthPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
@@ -21,6 +20,7 @@ import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { SiteHealthSummary } from "./SiteHealthSummary";
+import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -35,24 +35,10 @@ type Props = {
 export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
-  const defaultVerificationSummary = {
-    total: 0,
-    verifiedActive: 0,
-    onHold: 0,
-    complete: 0,
-    declined: 0,
-    invalid: 0,
-    stale: 0,
-    unverified: 0
-  };
-  const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [], verificationSummary: defaultVerificationSummary };
-  const pipelineDeals = pipelinePanel.deals ?? [];
-  const hasVerifiedPipeline = (pipelinePanel.verificationSummary?.verifiedActive ?? 0) > 0;
   const executiveActions = buildExecutiveActions(data, 5);
   const dataConfidence = buildDataConfidence(data.telemetryMetadata, data.telemetryHealth, data.executiveInsights?.brief ?? null);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
-  const pipelineSummary = buildPipelineSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
   const industrySummary = buildIndustrySummary(data);
   const dataConfidenceSummary = buildDataConfidenceSummary(dataConfidence, executiveActions);
@@ -62,6 +48,7 @@ export function DashboardShell({ data }: Props) {
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
         <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
+        <ExecutivePerspectivePanel data={data} actions={executiveActions} />
         {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} />
@@ -98,25 +85,6 @@ export function DashboardShell({ data }: Props) {
           <div className="space-y-5">
             <MarketingPerformancePanel telemetry={data.commerceTelemetry} />
             {metaSnapshot ? <MetaAdsPanel snapshot={metaSnapshot} /> : <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />}
-          </div>
-        </DashboardSection>
-
-        <DashboardSection
-          title="Pipeline"
-          subtitle="Opportunities, weighted value, and next steps"
-          storageKey="dashboard-section-pipeline"
-          meta={<SectionMeta summary={pipelineSummary} />}
-          {...SECTION_PROPS}
-        >
-          <div className="space-y-5">
-            {hasVerifiedPipeline && pipelineDeals.length ? (
-              <PipelineDealsPanel deals={pipelineDeals} />
-            ) : (
-              <PanelAuditPlaceholder
-                title="Pipeline intelligence disabled"
-                detail="Executive pipeline data requires verified opportunities. Complete verification to re-enable this section."
-              />
-            )}
           </div>
         </DashboardSection>
 
@@ -284,37 +252,6 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("marketing-")).length
-  };
-}
-
-function buildPipelineSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
-  const deals = data.pipelinePanel?.deals ?? [];
-  const summary = data.pipelinePanel?.verificationSummary;
-  const verifiedDeals = summary?.verifiedActive ?? 0;
-  if (!summary || verifiedDeals === 0) {
-    return {
-      status: "Verification required",
-      tone: "zinc",
-      metrics: [
-        `Verified deals ${verifiedDeals}`,
-        summary ? `Total logged ${summary.total}` : "No pipeline records"
-      ],
-      insight: "Only verified opportunities influence the executive pipeline.",
-      actions: 0
-    };
-  }
-  const totalValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
-  const overdue = deals.filter((deal) => deal.nextStepDueAt && new Date(deal.nextStepDueAt).getTime() < Date.now()).length;
-  return {
-    status: deals.length ? "Pipeline active" : "Pipeline idle",
-    tone: deals.length ? "emerald" : "amber",
-    metrics: [
-      `Deals ${formatCount(deals.length)}`,
-      `Value ${formatCurrencyShort(totalValue)}`,
-      overdue ? `Overdue ${overdue}` : null
-    ].filter(Boolean) as string[],
-    insight: overdue ? `${overdue} overdue milestone${overdue === 1 ? "" : "s"}` : null,
-    actions: actions.filter((action) => action.id.startsWith("pipeline-")).length
   };
 }
 
