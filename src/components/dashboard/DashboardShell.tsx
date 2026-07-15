@@ -4,6 +4,7 @@ import { PanelWrapper } from "./ui/PanelWrapper";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { HeaderStatusBar } from "./HeaderStatusBar";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
+import { TelemetryOperationsPanel } from "./TelemetryOperationsPanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
 import { CloudflarePanel } from "./CloudflarePanel";
 import { SurvivalStrip } from "./SurvivalStrip";
@@ -62,6 +63,21 @@ export function DashboardShell({ data }: Props) {
         </PanelWrapper>
       ) : (
         <PanelAuditPlaceholder title="Executive brief unavailable" detail="Executive insights require fresh telemetry across Woo, GA4, FunnelKit, and Meta." />
+      )}
+
+      {data.telemetryMetadata ? (
+        <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
+          <TelemetryOperationsPanel
+            metadata={data.telemetryMetadata}
+            health={data.telemetryHealth}
+            history={data.telemetryHealthHistory}
+          />
+        </PanelWrapper>
+      ) : (
+        <PanelAuditPlaceholder
+          title="Telemetry monitor unavailable"
+          detail="Scheduler needs to complete the telemetry health monitor at least once to populate this view."
+        />
       )}
 
       {survivalSnapshot?.configured ? (

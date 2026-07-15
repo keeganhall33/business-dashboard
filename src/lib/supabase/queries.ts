@@ -8,7 +8,13 @@ import type {
   TaskPriority,
   TaskStatus
 } from "../types/requests.ts";
-import type { CommerceTelemetry, WooSummary, WooTimeseriesPoint } from "../types/dashboard.ts";
+import type {
+  CommerceTelemetry,
+  WooSummary,
+  WooTimeseriesPoint,
+  TelemetrySource,
+  TelemetryHealthEvent
+} from "../types/dashboard.ts";
 
 type DeliverableLinkInput = {
   label: string;
@@ -371,6 +377,7 @@ export type WooMetricsResult = {
   summarySafe?: boolean;
   unsupportedReason?: string | null;
   fallbackToLegacy?: boolean;
+  latencyMs?: number | null;
 };
 
 const EMPTY_WOO_SUMMARY: WooSummary = {
@@ -488,6 +495,15 @@ function summarizeError(error: unknown) {
   return { message: String(error) };
 }
 
+function toErrorMessage(error: unknown) {
+  if (!error) return "unknown_error";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    const message = (error as Record<string, unknown>).message;
+    if (typeof message === "string" && message.length) return message;
+  }
+  return String(error);
+}
 
 async function fetchLegacyWooMetrics(client: SupabaseRpcClient, range: WooRange) {
   const { data, error } = await client.rpc(LEGACY_WOO_RPC, {
@@ -560,35 +576,76 @@ export type CommerceTelemetryResult = {
   endDate: string;
   woo?: CommerceTelemetry["woo"];
   wooDetails?: WooMetricsResult | null;
+  wooLatencyMs?: number | null;
   ga4?: CommerceTelemetry["ga4"];
+  ga4LatencyMs?: number | null;
   funnel?: CommerceTelemetry["funnel"];
+  funnelLatencyMs?: number | null;
+  errors?: Partial<Record<TelemetrySource, string>>;
 };
 
-export async function getCommerceTelemetry(range: { startDate: string; endDate: string }): Promise<CommerceTelemetryResult> {
+export async function getCommerceTelemetry(
+  range: { startDate: string; endDate: string },
+  options?: { tolerateErrors?: boolean }
+): Promise<CommerceTelemetryResult> {
   const supabase = getSupabaseServerClient();
-  const wooPromise = fetchWooMetricsWithMode(supabase as unknown as SupabaseRpcClient, range);
-  const ga4Promise = supabase
-    .rpc("get_ga4_metrics", { start_date: range.startDate, end_date: range.endDate })
-    .then(({ data, error }) => {
+  const wooPromise = (async () => {
+    const started = Date.now();
+    try {
+      const data = await fetchWooMetricsWithMode(supabase as unknown as SupabaseRpcClient, range);
+      return { data, latencyMs: Date.now() - started } as const;
+    } catch (error) {
+      if (!options?.tolerateErrors) throw error;
+      return { data: null, latencyMs: Date.now() - started, error } as const;
+    }
+  })();
+  const ga4Promise = (async () => {
+    const started = Date.now();
+    try {
+      const { data, error } = await supabase.rpc("get_ga4_metrics", {
+        start_date: range.startDate,
+        end_date: range.endDate
+      });
       if (error) throw error;
-      return data ?? {};
-    });
-  const funnelPromise = supabase
-    .rpc("get_funnelkit_metrics", { start_date: range.startDate, end_date: range.endDate })
-    .then(({ data, error }) => {
+      return { data: data ?? {}, latencyMs: Date.now() - started };
+    } catch (error) {
+      if (!options?.tolerateErrors) throw error;
+      return { data: null, latencyMs: Date.now() - started, error };
+    }
+  })();
+  const funnelPromise = (async () => {
+    const started = Date.now();
+    try {
+      const { data, error } = await supabase.rpc("get_funnelkit_metrics", {
+        start_date: range.startDate,
+        end_date: range.endDate
+      });
       if (error) throw error;
-      return data ?? {};
-    });
+      return { data: data ?? {}, latencyMs: Date.now() - started };
+    } catch (error) {
+      if (!options?.tolerateErrors) throw error;
+      return { data: null, latencyMs: Date.now() - started, error };
+    }
+  })();
 
-  const [woo, ga4, funnel] = await Promise.all([wooPromise, ga4Promise, funnelPromise]);
+  const [wooResult, ga4Result, funnelResult] = await Promise.all([wooPromise, ga4Promise, funnelPromise]);
+
+  const errors: Partial<Record<TelemetrySource, string>> = {};
+  if (!wooResult.data) errors.woo = toErrorMessage(wooResult.error);
+  if (!ga4Result.data) errors.ga4 = toErrorMessage(ga4Result.error);
+  if (!funnelResult.data) errors.funnelkit = toErrorMessage(funnelResult.error);
 
   return {
     startDate: range.startDate,
     endDate: range.endDate,
-    woo: woo.payload,
-    wooDetails: woo,
-    ga4,
-    funnel
+    woo: wooResult.data?.payload,
+    wooDetails: wooResult.data ?? null,
+    wooLatencyMs: wooResult.latencyMs,
+    ga4: ga4Result.data ?? undefined,
+    ga4LatencyMs: ga4Result.latencyMs,
+    funnel: funnelResult.data ?? undefined,
+    funnelLatencyMs: funnelResult.latencyMs,
+    errors: Object.keys(errors).length ? errors : undefined
   };
 }
 
@@ -1767,6 +1824,146 @@ export async function upsertSystemState(key: string, valueJson: Record<string, u
     .single();
   if (error) throw error;
   return data;
+}
+
+export async function deleteSystemState(key: string) {
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.from("system_state").delete().eq("key", key);
+  if (error) throw error;
+  return { ok: true } as const;
+}
+
+// -----------------------------
+// Telemetry health events
+// -----------------------------
+
+export type TelemetryHealthEventInput = {
+  source: TelemetrySource;
+  observedAt: string;
+  requestedStartDate: string;
+  requestedEndDate: string;
+  healthStatus: string;
+  freshnessStatus: string;
+  coverageStatus: string;
+  warningCodes: string[];
+  fallback: boolean;
+  latencyMs?: number | null;
+  deploymentVersion?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+type DbTelemetryHealthEventRow = {
+  id: string;
+  source: TelemetrySource;
+  observed_at: string;
+  requested_start_date: string;
+  requested_end_date: string;
+  health_status: string;
+  freshness_status: string;
+  coverage_status: string;
+  warning_codes: string[];
+  fallback: boolean;
+  latency_ms: number | null;
+  deployment_version: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+function mapTelemetryHealthEvent(row: DbTelemetryHealthEventRow): TelemetryHealthEvent {
+  return {
+    id: row.id,
+    source: row.source,
+    observedAt: row.observed_at,
+    requestedStartDate: row.requested_start_date,
+    requestedEndDate: row.requested_end_date,
+    healthStatus: row.health_status as TelemetryHealthEvent["healthStatus"],
+    freshnessStatus: row.freshness_status as TelemetryHealthEvent["freshnessStatus"],
+    coverageStatus: row.coverage_status as TelemetryHealthEvent["coverageStatus"],
+    warningCodes: row.warning_codes ?? [],
+    fallback: row.fallback,
+    latencyMs: row.latency_ms,
+    deploymentVersion: row.deployment_version ?? null
+  };
+}
+
+export async function insertTelemetryHealthEvents(events: TelemetryHealthEventInput[]) {
+  if (!events.length) return { inserted: 0 } as const;
+  const supabase = getSupabaseServerClient();
+  const payload = events.map((event) => ({
+    source: event.source,
+    observed_at: event.observedAt,
+    requested_start_date: event.requestedStartDate,
+    requested_end_date: event.requestedEndDate,
+    health_status: event.healthStatus,
+    freshness_status: event.freshnessStatus,
+    coverage_status: event.coverageStatus,
+    warning_codes: event.warningCodes,
+    fallback: event.fallback,
+    latency_ms: event.latencyMs ?? null,
+    deployment_version: event.deploymentVersion ?? null,
+    metadata: event.metadata ?? {}
+  }));
+  const { data, error } = await supabase
+    .from("telemetry_health_events")
+    .insert(payload)
+    .select("id");
+  if (error) {
+    if (handleMissingTelemetryHealthTable(error)) {
+      return { inserted: 0 } as const;
+    }
+    throw error;
+  }
+  return { inserted: data?.length ?? 0 } as const;
+}
+
+export async function deleteOldTelemetryHealthEvents(retentionDays: number) {
+  const supabase = getSupabaseServerClient();
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from("telemetry_health_events")
+    .delete()
+    .lt("observed_at", cutoff);
+  if (error) {
+    if (handleMissingTelemetryHealthTable(error)) {
+      return { ok: true } as const;
+    }
+    throw error;
+  }
+  return { ok: true } as const;
+}
+
+export async function listTelemetryHealthEvents(options?: {
+  limit?: number;
+  sources?: TelemetrySource[];
+}): Promise<TelemetryHealthEvent[]> {
+  const supabase = getSupabaseServerClient();
+  let query = supabase
+    .from("telemetry_health_events")
+    .select("*")
+    .order("observed_at", { ascending: false });
+  if (options?.sources && options.sources.length) {
+    query = query.in("source", options.sources);
+  }
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  } else {
+    query = query.limit(200);
+  }
+  const { data, error } = await query;
+  if (error) {
+    if (handleMissingTelemetryHealthTable(error)) {
+      return [];
+    }
+    throw error;
+  }
+  return (data ?? []).map((row) => mapTelemetryHealthEvent(row as DbTelemetryHealthEventRow));
+}
+
+function handleMissingTelemetryHealthTable(error: unknown) {
+  if (isMissingTableError(error, "telemetry_health_events")) {
+    console.warn("[telemetry-health] telemetry_health_events table missing; skipping persistence");
+    return true;
+  }
+  return false;
 }
 
 export async function getLatestAgentDirective() {

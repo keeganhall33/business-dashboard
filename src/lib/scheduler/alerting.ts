@@ -3,9 +3,9 @@ import {
   getOpenAlertByDedupeKey,
   incrementAlertEscalation,
   resolveSystemAlert
-} from "@/lib/supabase/queries";
+} from "../supabase/queries.ts";
 
-type AlertSeverity = "critical" | "high" | "medium" | "low";
+export type AlertSeverity = "critical" | "high" | "medium" | "low";
 
 export type AlertInput = {
   alertType: string;

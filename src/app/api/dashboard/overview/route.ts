@@ -27,6 +27,7 @@ import {
   getCeoQuestions,
   getRecentCeoQuestionComments,
   getDashboardSnapshots,
+  listTelemetryHealthEvents,
   type DashboardSnapshotRecord,
   type CommerceTelemetryResult
 } from "@/lib/supabase/queries";
@@ -44,7 +45,9 @@ import {
   type CloudflareTelemetrySnapshot,
   type MetaAdsSnapshot,
   type SocialIntelligenceSnapshot,
-  type IndustryPulseSnapshot
+  type IndustryPulseSnapshot,
+  type TelemetryHealthEvent,
+  TelemetrySource
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
@@ -95,6 +98,8 @@ const HEADER_CARD_CONFIG = [
   { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
   { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" }
 ] as const;
+
+const TELEMETRY_SOURCES: TelemetrySource[] = ["woo", "ga4", "funnelkit", "meta"];
 
 type TaskRow = {
   id: string;
@@ -991,6 +996,11 @@ export async function GET(request: Request) {
     const range = resolveRange(rangeParam, startParam, endParam);
     const comparisonRange = getPreviousRange(range);
 
+    const telemetryEventsPromise = listTelemetryHealthEvents({ sources: TELEMETRY_SOURCES, limit: 80 }).catch((error) => {
+      if (isMissingTableError(error, "telemetry_health_events")) return [];
+      throw error;
+    });
+
     const [
       metrics,
       tasks,
@@ -1016,7 +1026,8 @@ export async function GET(request: Request) {
       recentCeoComments,
       industryPulseResult,
       localArtifacts,
-      dashboardSnapshotRows
+      dashboardSnapshotRows,
+      telemetryEventRows
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -1042,7 +1053,8 @@ export async function GET(request: Request) {
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
       loadLocalDashboardArtifacts(),
-      getDashboardSnapshots(["website", "cloudflare", "meta", "social", "industry_pulse"])
+      getDashboardSnapshots(["website", "cloudflare", "meta", "social", "industry_pulse"]),
+      telemetryEventsPromise
     ]);
 
     const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
@@ -1062,6 +1074,16 @@ export async function GET(request: Request) {
       previousCommerce: previousCommerceTelemetry as CommerceTelemetryResult,
       metaSnapshot
     });
+
+    const telemetryHistoryMap = new Map<TelemetrySource, TelemetryHealthEvent>();
+    for (const event of telemetryEventRows as TelemetryHealthEvent[]) {
+      if (!telemetryHistoryMap.has(event.source)) {
+        telemetryHistoryMap.set(event.source, event);
+      }
+    }
+    const telemetryHealthHistory = TELEMETRY_SOURCES.map((source) => telemetryHistoryMap.get(source)).filter(
+      (value): value is TelemetryHealthEvent => Boolean(value)
+    );
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1974,6 +1996,7 @@ export async function GET(request: Request) {
       telemetryMetadata: telemetryIntelligence.metadata,
       telemetryHealth: telemetryIntelligence.health,
       executiveInsights: telemetryIntelligence.executiveInsights,
+      telemetryHealthHistory,
       industryPulse: industryPulseResult?.snapshot
         ? {
             day: industryPulseResult.snapshot.day,

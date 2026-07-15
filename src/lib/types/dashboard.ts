@@ -513,6 +513,21 @@ export type ExecutiveInsightsPayload = {
   trends: TrendComparison[];
 };
 
+export type TelemetryHealthEvent = {
+  id: string;
+  source: TelemetrySource;
+  observedAt: string;
+  requestedStartDate: string;
+  requestedEndDate: string;
+  healthStatus: TelemetryHealthStatus;
+  freshnessStatus: TelemetryMetadata["freshnessStatus"];
+  coverageStatus: TelemetryMetadata["coverageStatus"];
+  warningCodes: string[];
+  fallback: boolean;
+  latencyMs?: number | null;
+  deploymentVersion?: string | null;
+};
+
 export type WebsiteConversionSnapshot = {
   generatedAt: string;
   ga4?: {
@@ -991,4 +1006,5 @@ export type DashboardOverviewResponse = {
   telemetryMetadata?: Partial<Record<TelemetrySource, TelemetryMetadata>>;
   telemetryHealth?: Partial<Record<TelemetrySource, TelemetryHealth>>;
   executiveInsights?: ExecutiveInsightsPayload | null;
+  telemetryHealthHistory?: TelemetryHealthEvent[];
 };

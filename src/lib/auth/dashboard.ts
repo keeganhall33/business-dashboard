@@ -1,6 +1,6 @@
 import "server-only";
 
-import { unauthorized } from "@/lib/api/responses";
+import { unauthorized } from "../api/responses.ts";
 
 function requireAdminToken(): string {
   const token = process.env.DASHBOARD_ADMIN_TOKEN?.trim();
