@@ -14,7 +14,7 @@ export function IndustryPulsePanel({ snapshot }: { snapshot?: IndustryPulseSnaps
   }
 
   const updated = formatRelativeTimeFromNow(snapshot.generatedAt);
-  const alerts = snapshot.alerts ?? [];
+  const alerts = prioritizeAlerts(snapshot.alerts ?? []);
 
   return (
     <section className="ui-glass rounded-3xl p-5 space-y-4">
@@ -27,7 +27,7 @@ export function IndustryPulsePanel({ snapshot }: { snapshot?: IndustryPulseSnaps
       </div>
 
       {alerts.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-200">No alerts captured.</div>
+        <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-200">No high-confidence alerts captured.</div>
       ) : (
         <div className="space-y-3">
           {alerts.slice(0, 6).map((alert, idx) => (
@@ -60,4 +60,15 @@ function toneFromUrgency(urgency: string) {
   if (urgency === 'high') return 'emerald';
   if (urgency === 'medium') return 'sky';
   return 'zinc';
+}
+
+function prioritizeAlerts(alerts: IndustryPulseSnapshot["alerts"]) {
+  const scored = alerts
+    .filter((alert) => alert && alert.whyItMatters && alert.recommendedAction && alert.confidence !== "low")
+    .map((alert) => ({
+      alert,
+      score: (alert.confidence === "high" ? 2 : 1) + (alert.urgency === "high" ? 1 : 0)
+    }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 3).map((entry) => entry.alert);
 }

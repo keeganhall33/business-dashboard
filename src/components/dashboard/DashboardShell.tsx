@@ -1,19 +1,34 @@
-import { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import { buildExecutiveActions, buildDataConfidence, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import { DashboardOverviewResponse, SchedulerJobHealth, SchedulerSummary } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { PanelWrapper } from "./ui/PanelWrapper";
-import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
-import { HeaderStatusBar } from "./HeaderStatusBar";
-import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
-import { TelemetryOperationsPanel } from "./TelemetryOperationsPanel";
+import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
+import { ExecutiveKpiScorecard } from "./ExecutiveKpiScorecard";
+import { ExecutiveDriversPanel } from "./ExecutiveDriversPanel";
+import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
+import { DataConfidencePanel } from "./DataConfidencePanel";
+import { DashboardSection } from "./ui/DashboardSection";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
-import { CloudflarePanel } from "./CloudflarePanel";
-import { SurvivalStrip } from "./SurvivalStrip";
-import { AutomationPanel } from "./AutomationPanel";
+import { RevenueEnginePanel } from "./RevenueEnginePanel";
+import { BrandPowerPanel } from "./BrandPowerPanel";
+import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
+import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { PipelineDealsPanel } from "./PipelineDealsPanel";
+import { OpportunityRadarPanel } from "./OpportunityRadarPanel";
+import { AutomationPanel } from "./AutomationPanel";
+import { ActionQueuePanel } from "./ActionQueuePanel";
+import { SystemHealthPanel } from "./SystemHealthPanel";
+import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
-import { IndustryPulsePanel } from "./IndustryPulsePanel";
+import { TelemetryOperationsPanel } from "./TelemetryOperationsPanel";
+import { CloudflarePanel } from "./CloudflarePanel";
+import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
+
+const SECTION_PROPS = {
+  defaultOpen: false as const,
+  density: "compact" as const
+};
 
 type Props = {
   data: DashboardOverviewResponse;
@@ -21,179 +36,327 @@ type Props = {
 };
 
 export function DashboardShell({ data }: Props) {
-  const refreshedAt = data.timestamp;
   const websiteSnapshot = data.websiteConversion ?? null;
-  const websiteRefreshedAt = websiteSnapshot?.generatedAt ?? refreshedAt;
-  const survivalSnapshot = data.survivalStrip ?? null;
-  const schedulerJobs = data.schedulerJobs ?? [];
-  const schedulerSummary = data.schedulerSummary ?? null;
   const metaSnapshot = data.metaAds ?? null;
   const pipelinePanel = data.pipelinePanel ?? { collectors: [], deals: [] };
   const pipelineDeals = pipelinePanel.deals ?? [];
   const collectorSnapshot = data.collectorTelemetry ?? null;
-  const schedulerPanelMode = schedulerSummary?.status === "LIVE" ? "LIVE" : schedulerSummary?.status === "PARTIAL" ? "PARTIAL" : "BROKEN";
-  const metaPanelMode = metaSnapshot?.status === "LIVE" ? "LIVE" : metaSnapshot?.status === "PARTIAL" ? "PARTIAL" : "FALLBACK";
   const warRoomState = data.warRoom;
   const hasWarRoomEntries = Boolean(warRoomState && (warRoomState.entries?.length || warRoomState.reason));
+  const executiveActions = buildExecutiveActions(data);
+  const dataConfidence = buildDataConfidence(data.telemetryMetadata, data.telemetryHealth, data.executiveInsights?.brief ?? null);
+  const commerceSummary = buildCommerceSummary(data, executiveActions);
+  const marketingSummary = buildMarketingSummary(data, executiveActions);
+  const pipelineSummary = buildPipelineSummary(data, executiveActions);
+  const operationsSummary = buildOperationsSummary(data, executiveActions);
+  const industrySummary = buildIndustrySummary(data);
+  const dataConfidenceSummary = buildDataConfidenceSummary(dataConfidence, executiveActions);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
-      <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-6 text-sm text-amber-100">
-        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Command Center audit mode</div>
-        <p className="mt-2 text-base text-amber-50">
-          Website ingestion (GA4 + WooCommerce) and Cloudflare telemetry are the only systems proven LIVE right now. All other surfaces stay locked
-          until their data sources are verified. Cron remains OFF.
-        </p>
-        <ul className="mt-4 space-y-1 text-sm text-amber-100/90">
-          <li>• Command Center = RED while audit mode is active.</li>
-          <li>• Website + Cloudflare slices = GREEN/LIVE with artifact proof.</li>
-          <li>• Meta telemetry is live; Social, Pipeline, War Room, Executive remain locked.</li>
-          <li>• Scheduler automation claims stay disabled until Fix Wave 3 completes.</li>
-        </ul>
-        <div className="mt-4 text-xs uppercase tracking-[0.25em] text-amber-200/60">Audit containment build: e96bc28</div>
-      </section>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
+      <div className="space-y-6">
+        <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
+        <ExecutiveKpiScorecard metrics={data.headerMetrics} />
+        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} />
+        <ExecutiveActionsPanel data={data} actions={executiveActions} />
+      </div>
 
-      <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
-        <HeaderStatusBar metrics={data.headerMetrics} refreshedAtIso={refreshedAt} />
-      </PanelWrapper>
+      <div className="space-y-6">
+        <DashboardSection
+          title="Commerce"
+          subtitle="Sessions, conversion, orders, revenue, and product signals"
+          storageKey="dashboard-section-commerce"
+          meta={<SectionMeta summary={commerceSummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {websiteSnapshot ? (
+              <WebsiteConversionPanel snapshot={websiteSnapshot} />
+            ) : (
+              <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
+            )}
+            {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
+            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
+            {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : null}
+          </div>
+        </DashboardSection>
 
-      {data.executiveInsights ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
-          <ExecutiveBriefPanel insights={data.executiveInsights} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder title="Executive brief unavailable" detail="Executive insights require fresh telemetry across Woo, GA4, FunnelKit, and Meta." />
-      )}
+        <DashboardSection
+          title="Marketing"
+          subtitle="Spend, ROAS, campaigns, and creative"
+          storageKey="dashboard-section-marketing"
+          meta={<SectionMeta summary={marketingSummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            <MarketingPerformancePanel telemetry={data.commerceTelemetry} />
+            {metaSnapshot ? <MetaAdsPanel snapshot={metaSnapshot} /> : <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />}
+          </div>
+        </DashboardSection>
 
-      {data.telemetryMetadata ? (
-        <PanelWrapper mode="SNAPSHOT" refreshedAtIso={refreshedAt}>
-          <TelemetryOperationsPanel
+        <DashboardSection
+          title="Pipeline"
+          subtitle="Opportunities, weighted value, and next steps"
+          storageKey="dashboard-section-pipeline"
+          meta={<SectionMeta summary={pipelineSummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {data.opportunityRadar ? <OpportunityRadarPanel data={data.opportunityRadar} /> : null}
+            {pipelineDeals.length ? <PipelineDealsPanel deals={pipelineDeals} /> : <PanelAuditPlaceholder title="No active deals" detail="Supabase opportunity list is empty for this range." />}
+            {collectorSnapshot ? <CollectorsStatusPanel snapshot={collectorSnapshot} /> : null}
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          title="Operations"
+          subtitle="Automation cadence, system health, and approvals"
+          storageKey="dashboard-section-operations"
+          {...SECTION_PROPS}
+          context={data.schedulerJobs?.length ? <AutomationPanel jobs={data.schedulerJobs} summary={data.schedulerSummary} /> : null}
+          meta={<SectionMeta summary={operationsSummary} />}
+        >
+          <div className="space-y-5">
+            {data.schedulerJobs?.length ? (
+              <AutomationAttention jobs={data.schedulerJobs ?? []} summary={data.schedulerSummary} />
+            ) : (
+              <PanelAuditPlaceholder title="Scheduler telemetry missing" detail="No job metadata available." />
+            )}
+            {data.systemHealth ? <SystemHealthPanel data={data.systemHealth} /> : null}
+            {data.actionQueue ? <ActionQueuePanel data={data.actionQueue} /> : null}
+            <CloudflarePanel snapshot={data.cloudflare} />
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          title="Industry"
+          subtitle="External signals, War Room, and intelligence"
+          storageKey="dashboard-section-industry"
+          meta={<SectionMeta summary={industrySummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
+            {hasWarRoomEntries ? <WarRoomPanel data={warRoomState} /> : null}
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          title="Data Confidence"
+          subtitle="Source freshness, coverage, and telemetry warnings"
+          storageKey="dashboard-section-data-confidence"
+          {...SECTION_PROPS}
+          context={
+            data.telemetryMetadata ? (
+              <TelemetryOperationsPanel metadata={data.telemetryMetadata} health={data.telemetryHealth} history={data.telemetryHealthHistory} />
+            ) : null
+          }
+          meta={<SectionMeta summary={dataConfidenceSummary} />}
+        >
+          <DataConfidencePanel
             metadata={data.telemetryMetadata}
             health={data.telemetryHealth}
-            history={data.telemetryHealthHistory}
+            brief={data.executiveInsights?.brief ?? null}
+            summary={dataConfidence}
           />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Telemetry monitor unavailable"
-          detail="Scheduler needs to complete the telemetry health monitor at least once to populate this view."
-        />
-      )}
-
-      {survivalSnapshot?.configured ? (
-        <PanelWrapper mode="SNAPSHOT" refreshedAtIso={survivalSnapshot.lastUpdatedAt ?? refreshedAt}>
-          <SurvivalStrip data={survivalSnapshot} />
-        </PanelWrapper>
-      ) : null}
-
-      {websiteSnapshot ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={websiteRefreshedAt}>
-          <WebsiteConversionPanel snapshot={websiteSnapshot} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Website snapshot unavailable"
-          detail="The latest GA4 + WooCommerce snapshot could not be loaded. Re-run the website agent to regenerate dashboard/data/website/latest.json."
-        />
-      )}
-
-      {data.cloudflare ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={data.cloudflare.generatedAt}>
-          <CloudflarePanel snapshot={data.cloudflare} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder title="Cloudflare panel hidden" detail="Cloudflare GraphQL telemetry unavailable. Re-run the cloudflare job to repopulate." />
-      )}
-
-      {schedulerJobs.length ? (
-        <PanelWrapper mode={schedulerPanelMode} refreshedAtIso={schedulerSummary?.lastUpdatedAt ?? refreshedAt}>
-          <AutomationPanel jobs={schedulerJobs} summary={schedulerSummary} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Scheduler telemetry unavailable"
-          detail="No scheduler job metadata loaded. Run the scheduler status workflow to capture current telemetry before re-enabling cron."
-        />
-      )}
-
-      <PanelAuditPlaceholder
-        title="Revenue & forecasts hidden"
-        detail="Revenue engine, money-leak insights, and Fastest Path analysis stay OFF until upcoming Fix Wave 3 proves the inputs."
-      />
-
-      {metaSnapshot ? (
-        <PanelWrapper mode={metaPanelMode} refreshedAtIso={metaSnapshot.generatedAt}>
-          <MetaAdsPanel snapshot={metaSnapshot} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Meta panel hidden"
-          detail="Meta reporting not available. Run the meta agent to populate dashboard/data/meta/latest.json."
-        />
-      )}
-
-      <PanelAuditPlaceholder
-        title="Social telemetry pending"
-        detail="Social telemetry pending. Current source is fallback/manual only, so the Social panel remains hidden until a live feed is verified."
-      />
-
-      <PanelAuditPlaceholder
-        title="Action queue locked"
-        detail="Action queue automation is disabled during audit mode. Tasks will reappear after verification."
-      />
-
-      <PanelAuditPlaceholder
-        title="Executive summary hidden"
-        detail="Executive copy references cross-agent data (Meta, Cloudflare, scheduler). It stays offline until all data sources are verified."
-      />
-
-      {data.industryPulseSnapshot ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={data.industryPulseSnapshot.generatedAt}>
-          <IndustryPulsePanel snapshot={data.industryPulseSnapshot} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Industry pulse snapshot hidden"
-          detail="RSS sources are being reconciled with production feeds. We will restore this panel after verifying the external sources."
-        />
-      )}
-
-      {pipelineDeals.length ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={refreshedAt}>
-          <PipelineDealsPanel deals={pipelineDeals} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Pipeline deals hidden"
-          detail="No safe opportunity data was loaded. When Supabase opportunity_pipeline refreshes with live deals this panel will reappear."
-          mode="PARTIAL"
-        />
-      )}
-
-      {hasWarRoomEntries ? (
-        <PanelWrapper mode="LIVE" refreshedAtIso={warRoomState?.lastUpdated ?? refreshedAt}>
-          <WarRoomPanel data={warRoomState} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="War Room hidden"
-          detail="War Room state could not be loaded. Once the operating_mode state and thread history are verified this panel will return."
-          mode="PARTIAL"
-        />
-      )}
-
-      {collectorSnapshot ? (
-        <PanelWrapper mode="PARTIAL" refreshedAtIso={collectorSnapshot.lastImportedAt ?? refreshedAt}>
-          <CollectorsStatusPanel snapshot={collectorSnapshot} />
-        </PanelWrapper>
-      ) : (
-        <PanelAuditPlaceholder
-          title="Collectors hidden"
-          detail="Collectors hidden. Source is stale. Latest collector touch: May 18. Manual fallback table last changed Apr 30."
-          mode="BROKEN"
-        />
-      )}
-
+        </DashboardSection>
+      </div>
     </div>
   );
+}
+
+function AutomationAttention({ jobs, summary }: { jobs: SchedulerJobHealth[]; summary?: SchedulerSummary | null }) {
+  const attentionJobs = jobs
+    .filter((job) => job.lastStatus === "failed" || job.lastError || job.lastRunAt === null || job.isActive === false)
+    .slice(0, 3);
+
+  const statusLabel = summary?.status === "BROKEN" ? "Automation broken" : summary?.status === "PARTIAL" ? "Automation partial" : "Automation live";
+  const badgeTone = summary?.status === "BROKEN" ? "text-rose-300 border-rose-500/40" : summary?.status === "PARTIAL" ? "text-amber-200 border-amber-500/40" : "text-emerald-200 border-emerald-500/40";
+
+  return (
+    <section className="rounded-3xl border border-white/8 bg-black/30 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Automation health</div>
+          <p className="text-sm text-zinc-400">{summary?.failingCount ? `${summary.failingCount} job(s) need attention` : "All critical cadences reporting."}</p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${badgeTone}`}>{statusLabel}</span>
+      </div>
+
+      {attentionJobs.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-400">No failing jobs detected.</p>
+      ) : (
+        <ul className="mt-4 space-y-3 text-sm text-zinc-200">
+          {attentionJobs.map((job) => (
+            <li key={job.jobKey} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+              <div className="font-semibold text-white">{job.jobName}</div>
+              <div className="text-xs text-zinc-400">Last run {formatAutomationTimestamp(job.lastRunAt)}</div>
+              <div className="text-xs text-amber-200">{job.lastError ?? job.lastSummary ?? "No summary provided"}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function formatAutomationTimestamp(iso: string | null) {
+  if (!iso) return "unknown";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toLocaleString();
+}
+
+type SectionSummary = {
+  status: string;
+  tone: "emerald" | "amber" | "rose" | "zinc";
+  metrics: string[];
+  insight?: string | null;
+  actions: number;
+};
+
+function SectionMeta({ summary }: { summary: SectionSummary }) {
+  const metrics = summary.metrics.length ? summary.metrics.join(" • ") : "No metrics";
+  return (
+    <div className="text-right text-[11px] leading-relaxed text-zinc-400">
+      <div className={`font-semibold ${toneText(summary.tone)}`}>{summary.status}</div>
+      <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">{metrics}</div>
+      {summary.insight ? <div className="mt-1 text-[10px] text-zinc-500 line-clamp-1">{summary.insight}</div> : null}
+      <div className="text-[10px] text-zinc-500">Actions: {summary.actions}</div>
+    </div>
+  );
+}
+
+function toneText(tone: SectionSummary["tone"]) {
+  switch (tone) {
+    case "emerald":
+      return "text-emerald-300";
+    case "amber":
+      return "text-amber-300";
+    case "rose":
+      return "text-rose-300";
+    default:
+      return "text-zinc-300";
+  }
+}
+
+function buildCommerceSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const woo = data.websiteConversion?.wooCommerce;
+  const ga4 = data.websiteConversion?.ga4;
+  const revenue = woo?.grossOrderRevenue ?? woo?.netRevenue ?? null;
+  const orders = woo?.paidOrdersInWindow ?? null;
+  const conversion = ga4?.funnelRates?.sessionToPurchase ?? null;
+  const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
+  return {
+    status: woo ? "Live" : "Needs data",
+    tone: woo ? "emerald" : "amber",
+    metrics: [
+      revenue != null ? `Rev ${formatCurrencyShort(revenue)}` : null,
+      orders != null ? `Orders ${formatCount(orders)}` : null,
+      conversion != null ? `Conv ${(conversion * 100).toFixed(1)}%` : null
+    ].filter(Boolean) as string[],
+    insight,
+    actions: actions.filter((action) => action.id.startsWith("top-")).length
+  };
+}
+
+function buildMarketingSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const meta = data.metaAds;
+  const spend = meta?.summary?.spend ?? null;
+  const roas = meta?.summary?.roas ?? null;
+  const conversions = meta?.summary?.purchases ?? null;
+  const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
+  let tone: SectionSummary["tone"] = "zinc";
+  if (meta?.status === "LIVE") tone = "emerald";
+  else if (meta?.status === "PARTIAL") tone = "amber";
+  return {
+    status: meta?.status ? `Meta ${meta.status}` : "Meta pending",
+    tone,
+    metrics: [
+      spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
+      roas != null ? `ROAS ${(roas ?? 0).toFixed(1)}x` : null,
+      conversions != null ? `Conv ${formatCount(conversions)}` : null
+    ].filter(Boolean) as string[],
+    insight,
+    actions: actions.filter((action) => action.id.startsWith("marketing-")).length
+  };
+}
+
+function buildPipelineSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const deals = data.pipelinePanel?.deals ?? [];
+  const totalValue = deals.reduce((sum, deal) => sum + (deal.valueEstimate ?? 0), 0);
+  const overdue = deals.filter((deal) => deal.nextStepDueAt && new Date(deal.nextStepDueAt).getTime() < Date.now()).length;
+  return {
+    status: deals.length ? "Pipeline active" : "Pipeline idle",
+    tone: deals.length ? "emerald" : "amber",
+    metrics: [
+      `Deals ${formatCount(deals.length)}`,
+      `Value ${formatCurrencyShort(totalValue)}`,
+      overdue ? `Overdue ${overdue}` : null
+    ].filter(Boolean) as string[],
+    insight: overdue ? `${overdue} overdue milestone${overdue === 1 ? "" : "s"}` : null,
+    actions: actions.filter((action) => action.id.startsWith("pipeline-")).length
+  };
+}
+
+function buildOperationsSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const summary = data.schedulerSummary;
+  const failing = summary?.failingCount ?? 0;
+  const freshness = data.systemHealth?.dataFreshnessHours;
+  const tone: SectionSummary["tone"] = summary ? (summary.status === "BROKEN" ? "rose" : summary.status === "PARTIAL" ? "amber" : "emerald") : "zinc";
+  return {
+    status: summary?.status ? `Cron ${summary.status}` : "Cron unknown",
+    tone,
+    metrics: [
+      `Failing ${failing}`,
+      summary ? `Cron ${summary.cronEnabled ? "on" : "off"}` : null,
+      freshness != null ? `Fresh ${freshness}h` : null
+    ].filter(Boolean) as string[],
+    insight: failing ? `${failing} automation${failing === 1 ? "" : "s"} blocked` : null,
+    actions: actions.filter((action) => action.id === "scheduler" || action.id.startsWith("telemetry-")).length
+  };
+}
+
+function buildIndustrySummary(data: DashboardOverviewResponse): SectionSummary {
+  const alerts = data.industryPulseSnapshot?.alerts ?? [];
+  return {
+    status: alerts.length ? "Opportunities live" : "No live intel",
+    tone: alerts.length ? "emerald" : "zinc",
+    metrics: [
+      `Alerts ${formatCount(alerts.length)}`,
+      `Sources ${formatCount(data.industryPulseSnapshot?.sources?.length ?? 0)}`
+    ],
+    insight: alerts[0]?.whyItMatters ?? null,
+    actions: 0
+  };
+}
+
+function buildDataConfidenceSummary(summary: ReturnType<typeof buildDataConfidence>, actions: ExecutiveActionPlan[]): SectionSummary {
+  const healthy = summary.rows.filter((row) => row.status === "Healthy").length;
+  const warnings = summary.rows.length - healthy;
+  const warningRow = summary.rows.find((row) => row.warning);
+  const tone: SectionSummary["tone"] = summary.overall.tone.includes("emerald")
+    ? "emerald"
+    : summary.overall.tone.includes("amber")
+      ? "amber"
+      : "rose";
+  return {
+    status: summary.overall.label,
+    tone,
+    metrics: [`Healthy ${healthy}`, `Warnings ${warnings}`],
+    insight: warningRow?.warning ?? null,
+    actions: actions.filter((action) => action.id.startsWith("telemetry-")).length
+  };
+}
+
+function formatCurrencyShort(value: number | null | undefined) {
+  if (value == null) return "$0";
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+  return `$${Math.round(value)}`;
+}
+
+function formatCount(value: number | null | undefined) {
+  const num = Number(value ?? 0);
+  return Number.isFinite(num) ? num.toString() : "0";
 }
