@@ -42,7 +42,14 @@ function KpiCard({ metric }: { metric: HeaderMetric }) {
         <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${statusClass}`}>{metric.status.replace("_", " ")}</span>
       </div>
       <div className="mt-3 text-3xl font-semibold text-white">{formatMetricValue(metric.currentValue ?? 0, metric.unit)}</div>
-      <div className="mt-1 text-xs text-zinc-500">Target {formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
+      <div className="mt-1 text-xs text-zinc-500">
+        Target {metric.targetLabel ?? formatMetricValue(metric.targetValue ?? 0, metric.unit)}
+      </div>
+      {metric.comparisonValue != null ? (
+        <div className="mt-1 text-xs text-zinc-500">
+          Vs {metric.comparisonLabel ?? "previous"}: {formatMetricValue(metric.comparisonValue, metric.unit)}
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center justify-between text-sm">
         {delta != null ? (
           <span className={delta >= 0 ? "text-emerald-300" : "text-rose-300"}>{delta >= 0 ? "+" : ""}{delta.toFixed(1)}%</span>

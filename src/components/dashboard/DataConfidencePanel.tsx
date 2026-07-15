@@ -50,12 +50,6 @@ export function DataConfidencePanel({
           </tbody>
         </table>
       </div>
-
-      {summary.includesPartialDay ? (
-        <div className="mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
-          Latest day is partial; compare trends only after the full day closes.
-        </div>
-      ) : null}
     </section>
   );
 }

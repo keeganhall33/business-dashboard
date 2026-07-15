@@ -24,6 +24,8 @@ import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
 import { TelemetryOperationsPanel } from "./TelemetryOperationsPanel";
 import { CloudflarePanel } from "./CloudflarePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
+import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
+import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -43,7 +45,7 @@ export function DashboardShell({ data }: Props) {
   const collectorSnapshot = data.collectorTelemetry ?? null;
   const warRoomState = data.warRoom;
   const hasWarRoomEntries = Boolean(warRoomState && (warRoomState.entries?.length || warRoomState.reason));
-  const executiveActions = buildExecutiveActions(data);
+  const executiveActions = buildExecutiveActions(data, 5);
   const dataConfidence = buildDataConfidence(data.telemetryMetadata, data.telemetryHealth, data.executiveInsights?.brief ?? null);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
@@ -55,10 +57,13 @@ export function DashboardShell({ data }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
+        <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
         <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
+        {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} />
+        <ForwardStrategyPanel data={data} />
       </div>
 
       <div className="space-y-6">
@@ -75,7 +80,6 @@ export function DashboardShell({ data }: Props) {
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
             {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
             {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : null}
           </div>

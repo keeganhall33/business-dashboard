@@ -6,9 +6,14 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { DateRange, DayPicker } from "react-day-picker";
 
 const PRESETS: Array<{ label: string; value: RangePreset }> = [
+  { label: "Today", value: "today" },
+  { label: "Yesterday", value: "yesterday" },
   { label: "7D", value: "7d" },
   { label: "30D", value: "30d" },
-  { label: "3M", value: "90d" }
+  { label: "MTD", value: "month_to_date" },
+  { label: "Prev Mo", value: "previous_month" },
+  { label: "90D", value: "90d" },
+  { label: "YTD", value: "year_to_date" }
 ];
 
 type Props = {
@@ -82,9 +87,6 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
     startTransition(() => {
       router.replace(nextUrl, { scroll: false });
     });
-    if (typeof window !== "undefined") {
-      window.location.assign(nextUrl);
-    }
   };
 
   const handlePresetClick = (value: RangePreset) => {
@@ -120,7 +122,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Timeframe</div>
           <div className="mt-1 text-lg font-semibold text-zinc-100">{formatRangeLabel(startDate, endDate)}</div>
-          <p className="mt-1 text-sm text-zinc-400">Pick a preset or open the calendar to set a custom window. Data refreshes immediately.</p>
+          <p className="mt-1 text-sm text-zinc-400">Choose any preset or custom dates. Comparison data updates automatically.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
