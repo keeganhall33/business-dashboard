@@ -58,6 +58,16 @@ export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <ListCard title="Stale workflows" items={intel.staleWorkflows} empty="No workflows have missed their cadence.">
+          {(workflow) => (
+            <li key={workflow.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="text-sm font-semibold text-white">{workflow.label}</div>
+              <p className="mt-1 text-sm text-zinc-400">{workflow.reason}</p>
+              <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">Owner: {workflow.owner}</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Last run {relativeLabel(workflow.lastRunAt)}</p>
+            </li>
+          )}
+        </ListCard>
         <ListCard title="Latest automated deliverables" items={intel.deliverables} empty="No recent deliverables captured.">
           {(deliverable) => (
             <li key={deliverable.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
@@ -73,21 +83,20 @@ export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }
             </li>
           )}
         </ListCard>
-        <ListCard title="Operational actions" items={intel.actions} empty="No additional actions required.">
-          {(action) => (
-            <li key={action.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
-              <div className="flex items-center justify-between text-sm font-semibold text-white">
-                <span>{action.title}</span>
-                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] text-amber-200">{action.urgency}</span>
-              </div>
-              <p className="mt-1 text-sm text-zinc-400">{action.detail}</p>
-              <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">{action.owner}</p>
-            </li>
-          )}
-        </ListCard>
       </div>
 
-      <AutomationAuditList audits={intel.automationAudits} />
+      <ListCard title="Operational actions" items={intel.actions} empty="No additional actions required.">
+        {(action) => (
+          <li key={action.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+            <div className="flex items-center justify-between text-sm font-semibold text-white">
+              <span>{action.title}</span>
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] text-amber-200">{action.urgency}</span>
+            </div>
+            <p className="mt-1 text-sm text-zinc-400">{action.detail}</p>
+            <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">{action.owner}</p>
+          </li>
+        )}
+      </ListCard>
     </section>
   );
 }
@@ -162,60 +171,6 @@ function JobRow({ job, tone }: { job: OperationsIntel["failedJobs"][number]; ton
       <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-zinc-500">Last run {relativeLabel(job.lastRunAt)}</p>
     </li>
   );
-}
-
-function AutomationAuditList({ audits }: { audits: OperationsIntel["automationAudits"] }) {
-  if (!audits.length) {
-    return (
-      <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-        <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Automation audit</p>
-        <p className="mt-2 text-sm text-zinc-500">No automations meet the executive bar for visibility.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Automation audit</p>
-      <div className="mt-3 grid gap-3">
-        {audits.map((audit) => (
-          <div key={audit.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-white">{audit.label}</p>
-                <p className="text-xs text-zinc-500">Owner: {audit.owner}</p>
-              </div>
-              <ClassificationBadge classification={audit.classification} />
-            </div>
-            <p className="mt-2 text-sm text-zinc-300">{audit.reason}</p>
-            <p className="mt-1 text-xs text-zinc-500">Next run: {relativeLabel(audit.lastRunAt)}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ClassificationBadge({ classification }: { classification: string }) {
-  const tone = classificationTone(classification);
-  return <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] ${tone}`}>{classification.replace("_", " ")}</span>;
-}
-
-function classificationTone(classification: string) {
-  switch (classification) {
-    case "valuable":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
-    case "useful":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-200";
-    case "broken":
-      return "border-rose-500/40 bg-rose-500/10 text-rose-200";
-    case "low_value":
-      return "border-zinc-500/40 bg-zinc-500/10 text-zinc-200";
-    case "inactive":
-      return "border-zinc-600/40 bg-zinc-600/20 text-zinc-300";
-    default:
-      return "border-zinc-500/40 bg-zinc-500/10 text-zinc-200";
-  }
 }
 
 function relativeLabel(value: string | null) {

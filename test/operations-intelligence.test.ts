@@ -130,10 +130,9 @@ test("suppresses unsupported agents from automation audit", () => {
   });
 
   const intel = buildOperationsIntel(dashboard);
-  assert.ok(
-    !intel.automationAudits.some((audit) => audit.id === "noah"),
-    "Noah should be hidden when no outputs exist"
-  );
+  const audit = intel.automationAudits.find((entry) => entry.id === "noah");
+  assert.ok(audit, "Noah audit should exist for diagnostics");
+  assert.equal(audit?.shouldDisplay, false, "Noah should not be surfaced on the executive panel when no outputs exist");
 });
 
 test("filters action queue items without execution detail", () => {
@@ -171,6 +170,128 @@ test("reports latest deliverables", () => {
   const dashboard = withDashboard({ proofOfWork: deliverables });
   const intel = buildOperationsIntel(dashboard);
   assert.equal(intel.deliverables[0]?.title, "Ship collector update");
+});
+
+test("classifies overdue workflow as stale instead of low value", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-07-16T15:00:00.000Z");
+  const staleJob: SchedulerJobHealth = {
+    jobKey: "proof-enforcement",
+    jobName: "Proof enforcement",
+    cronExpression: "0 * * * *",
+    routePath: "/api/scheduler/proof-enforcement",
+    timezone: "America/Los_Angeles",
+    isActive: true,
+    lastRunAt: "2026-07-12T00:00:00.000Z",
+    lastStatus: "completed",
+    lastDurationSeconds: 12,
+    lastSummary: "ok",
+    lastError: null,
+    nextRunAt: "2026-07-13T00:00:00.000Z",
+    source: "supabase"
+  };
+
+  const dashboard = withDashboard({ schedulerJobs: [staleJob] });
+  const intel = buildOperationsIntel(dashboard);
+  Date.now = originalNow;
+  const audit = intel.automationAudits.find((entry) => entry.id === "proof-enforcement");
+  assert.equal(audit?.classification, "stale");
+  assert.ok(intel.staleWorkflows.some((workflow) => workflow.id === "proof-enforcement"));
+});
+
+test("recent run without evidence is low value", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-07-16T15:00:00.000Z");
+  const lowValueJob: SchedulerJobHealth = {
+    jobKey: "deliverable-harvest",
+    jobName: "Deliverable harvest",
+    cronExpression: "0 * * * *",
+    routePath: "/api/scheduler/deliverable-harvest",
+    timezone: "America/Los_Angeles",
+    isActive: true,
+    lastRunAt: "2026-07-16T11:00:00.000Z",
+    lastStatus: "completed",
+    lastDurationSeconds: 5,
+    lastSummary: "",
+    lastError: null,
+    nextRunAt: "2026-07-16T12:00:00.000Z",
+    source: "supabase"
+  };
+  const dashboard = withDashboard({ schedulerJobs: [lowValueJob] });
+  const intel = buildOperationsIntel(dashboard);
+  Date.now = originalNow;
+  const audit = intel.automationAudits.find((entry) => entry.id === "deliverable-harvest");
+  assert.equal(audit?.classification, "low_value");
+  assert.ok(intel.staleWorkflows.length === 0);
+});
+
+test("missing diagnostics yields telemetry unknown state", () => {
+  const dashboard = withDashboard({ schedulerJobs: [], schedulerSummary: undefined });
+  const intel = buildOperationsIntel(dashboard);
+  assert.equal(intel.telemetryStatus, "unknown");
+  assert.ok(intel.actions.some((action) => action.id === "verify-telemetry"));
+  assert.ok(!intel.actions.some((action) => action.id === "scheduler-action"));
+  assert.equal(intel.overall.label, "Operations visibility unknown");
+});
+
+test("affirmed scheduler failure still reports broken", () => {
+  const dashboard = withDashboard({
+    schedulerSummary: {
+      status: "BROKEN",
+      cronEnabled: false,
+      jobCount: 5,
+      failingCount: 2,
+      missingTelemetryCount: 0,
+      lastUpdatedAt: "2026-07-16T14:59:00.000Z"
+    },
+    schedulerJobs: [
+      {
+        jobKey: "proof-enforcement",
+        jobName: "Proof enforcement",
+        cronExpression: "0 * * * *",
+        routePath: "/api/scheduler/proof-enforcement",
+        timezone: "America/Los_Angeles",
+        isActive: true,
+        lastRunAt: "2026-07-16T14:30:00.000Z",
+        lastStatus: "failed",
+        lastDurationSeconds: 12,
+        lastSummary: "",
+        lastError: "missing supabase credentials",
+        nextRunAt: "2026-07-16T15:30:00.000Z",
+        source: "supabase"
+      }
+    ]
+  });
+  const intel = buildOperationsIntel(dashboard);
+  assert.equal(intel.telemetryStatus, "healthy");
+  assert.ok(intel.actions.some((action) => action.id === "scheduler-action"));
+});
+
+test("war room hides when entries lack directives", () => {
+  const dashboard = withDashboard({ warRoom: { mode: "war_room", reason: "incident", lastUpdated: "2026-07-15T10:00:00.000Z", entries: [] } });
+  const intel = buildOperationsIntel(dashboard);
+  assert.ok(!intel.incidents.some((incident) => incident.id === "war-room"));
+});
+
+test("war room surfaces only when directive present", () => {
+  const dashboard = withDashboard({
+    warRoom: {
+      mode: "war_room",
+      reason: "Major outage",
+      lastUpdated: "2026-07-16T10:00:00.000Z",
+      entries: [
+        {
+          id: "entry-1",
+          title: "Mitigation",
+          summary: "Switch to backup cluster",
+          detailMd: "Directive: fail over",
+          createdAt: "2026-07-16T09:45:00.000Z"
+        }
+      ]
+    }
+  });
+  const intel = buildOperationsIntel(dashboard);
+  assert.ok(intel.incidents.some((incident) => incident.id === "war-room"));
 });
 
 function withDashboard(overrides: Partial<DashboardOverviewResponse>): DashboardOverviewResponse {

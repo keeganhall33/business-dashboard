@@ -8,10 +8,12 @@ import type {
   ProofOfWorkEntry,
   SchedulerJobHealth
 } from "@/lib/types/dashboard";
+import { isExecutableApprovalItem } from "./approvals/execution-paths.ts";
 
 const MS_IN_HOUR = 60 * 60 * 1000;
 const MINUTES_GRACE = 15 * 60 * 1000;
 const MAX_EXEC_ACTIONS = 5;
+const DEFAULT_CADENCE_HOURS = 72;
 
 const EXECUTION_PATH_BY_TYPE: Record<ActionQueueItem["itemType"], string> = {
   task: "Approval notifies the assigned agent, starts execution, and logs future proof-of-work evidence.",
@@ -33,7 +35,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Keeps the prestige partnership pipeline full with researched targets and plans.",
     downstreamEffect: "Feeds opportunity drafts, research briefs, and approvals for outreach.",
     failureBehavior: "Pipeline stalls and partnership outreach loses momentum.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 24
   },
   {
     id: "lyra",
@@ -47,7 +50,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Diagnoses brand engagement and narrative strength, surfacing campaigns and directives.",
     downstreamEffect: "Creates marketing plans, messaging tasks, and KPI updates.",
     failureBehavior: "Brand positioning drifts and marketing backlog loses clear priorities.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: 24
   },
   {
     id: "sloan",
@@ -61,7 +65,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Audits conversion, AOV, and checkout leaks to keep the store reliable.",
     downstreamEffect: "Generates remediation tasks and approvals tied to revenue metrics.",
     failureBehavior: "Revenue regressions go unnoticed and checkout issues persist.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 24
   },
   {
     id: "avery",
@@ -75,7 +80,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Synthesises cross-agent signals into CEO directives, escalations, and war room notes.",
     downstreamEffect: "Populates the executive brief, war room log, and decision queues.",
     failureBehavior: "Executive actions drift and escalations go stale.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 24
   },
   {
     id: "war-room",
@@ -87,7 +93,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Escalates critical incidents into a dedicated war room stream.",
     downstreamEffect: "Publishes auditable war room entries and directives.",
     failureBehavior: "Incidents linger without a dedicated command focus.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: null
   },
   {
     id: "ceo-digest",
@@ -99,7 +106,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Summarises operations for the CEO and archives the decision log.",
     downstreamEffect: "Sends digest notes and updates the executive brief.",
     failureBehavior: "Executive visibility drops and approvals lack context.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: 168
   },
   {
     id: "weekly-command",
@@ -111,7 +119,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Compiles the weekly command cycle and action plan.",
     downstreamEffect: "Publishes the command summary and tasks for the week.",
     failureBehavior: "Weekly cadence slips and priorities go undocumented.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: 168
   },
   {
     id: "proof-enforcement",
@@ -123,7 +132,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Validates evidence for completed work before invoices go out.",
     downstreamEffect: "Flags missing proof-of-work and blocks releases until fixed.",
     failureBehavior: "Deliverables ship without evidence and finance exposure increases.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 24
   },
   {
     id: "deliverable-harvest",
@@ -135,7 +145,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Collects deliverables and supporting docs for billing and archives.",
     downstreamEffect: "Feeds invoices, proof-of-work, and customer handoffs.",
     failureBehavior: "Completed work never lands in finance or archives.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: 24
   },
   {
     id: "telemetry-health-monitor",
@@ -147,7 +158,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Checks data feeds, raises alerts, and resolves stale telemetry.",
     downstreamEffect: "Keeps data sources fresh for every dashboard slice.",
     failureBehavior: "Broken data sources stay undetected, eroding trust.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 1
   },
   {
     id: "task-approval-queue",
@@ -159,7 +171,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Ensures blocking tasks receive manual approval before execution.",
     downstreamEffect: "Releases critical work to agents once approved.",
     failureBehavior: "Critical work idles and deliverables miss deadlines.",
-    importance: "high"
+    importance: "high",
+    expectedCadenceHours: 0
   },
   {
     id: "plan-approval-queue",
@@ -171,7 +184,8 @@ const AUTOMATION_DEFINITIONS: AutomationDefinition[] = [
     businessPurpose: "Routes strategic plans for approval before resources spin up.",
     downstreamEffect: "Publishes plans into the weekly command cycle on approval.",
     failureBehavior: "Strategic work remains pending and automation never runs.",
-    importance: "medium"
+    importance: "medium",
+    expectedCadenceHours: 0
   }
 ];
 
@@ -189,6 +203,7 @@ type AutomationDefinition = {
   downstreamEffect: string;
   failureBehavior: string;
   importance: "high" | "medium" | "low";
+  expectedCadenceHours?: number | null;
 };
 
 export type OperationsIntel = {
@@ -201,6 +216,8 @@ export type OperationsIntel = {
   deliverables: OperationsDeliverable[];
   actions: OperationsAction[];
   automationAudits: AutomationAudit[];
+  staleWorkflows: StaleWorkflow[];
+  telemetryStatus: "healthy" | "unknown";
 };
 
 type OperationsStatusCard = {
@@ -281,9 +298,20 @@ type AutomationAudit = {
   evidenceLink: string | null;
   reason: string;
   shouldDisplay: boolean;
+  expectedCadenceHours?: number | null;
 };
 
-type AutomationClassification = "valuable" | "useful" | "low_value" | "inactive" | "broken" | "unknown";
+type AutomationClassification = "valuable" | "useful" | "stale" | "low_value" | "inactive" | "broken" | "unknown";
+
+type StaleWorkflow = {
+  id: string;
+  label: string;
+  owner: string;
+  reason: string;
+  lastRunAt: string | null;
+  expectedCadenceHours?: number | null;
+  importance: "high" | "medium" | "low";
+};
 
 type BuildContext = {
   now: number;
@@ -295,6 +323,7 @@ type BuildContext = {
   automationStatusPanel: AutomationStatusEntry[];
   warRoomMode: "normal" | "war_room";
   warRoomEntries: number;
+  warRoomEligible: boolean;
 };
 
 type AgentUpdate = {
@@ -320,11 +349,24 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
     proofOfWork: data.proofOfWork ?? [],
     automationStatusPanel: data.automationStatusPanel ?? [],
     warRoomMode: data.warRoom?.mode ?? "normal",
-    warRoomEntries: data.warRoom?.entries?.length ?? 0
+    warRoomEntries: data.warRoom?.entries?.length ?? 0,
+    warRoomEligible: isWarRoomEligible(data.warRoom ?? null)
   };
 
   const automationAudits = AUTOMATION_DEFINITIONS.map((definition) => auditAutomation(definition, context));
-  const visibleAutomationAudits = automationAudits.filter((audit) => audit.shouldDisplay);
+  const staleWorkflows = automationAudits
+    .filter((audit) => audit.classification === "stale")
+    .map((audit) => ({
+      id: audit.id,
+      label: audit.label,
+      owner: audit.owner,
+      reason: audit.reason,
+      lastRunAt: audit.lastRunAt,
+      expectedCadenceHours: audit.expectedCadenceHours,
+      importance: AUTOMATION_DEFINITIONS.find((def) => def.id === audit.id)?.importance ?? "medium"
+    } satisfies StaleWorkflow));
+
+  const telemetryUnknown = schedulerJobs.length === 0 && (data.schedulerSummary?.jobCount ?? 0) === 0;
 
   const site = buildSiteHealth(data.cloudflare);
   const incidents = buildIncidents({
@@ -334,7 +376,8 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
     site,
     systemHealth: data.systemHealth,
     warRoomMode: data.warRoom?.mode ?? "normal",
-    warRoomEntries: data.warRoom?.entries?.length ?? 0
+    warRoomEntries: data.warRoom?.entries?.length ?? 0,
+    telemetryUnknown
   });
   const failedJobs = schedulerJobs
     .filter((job) => (job.lastStatus ?? "").toLowerCase() === "failed")
@@ -347,10 +390,12 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
   const actions = buildOperationsActions({
     incidents,
     automationAudits,
+    staleWorkflows,
     humanIntervention,
     overdueJobs,
     schedulerSummary: data.schedulerSummary,
-    site
+    site,
+    telemetryUnknown
   });
   const overall = buildOverallStatus({
     incidents,
@@ -358,7 +403,8 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
     failedJobs,
     overdueJobs,
     site,
-    timestamp: data.timestamp
+    timestamp: data.timestamp,
+    telemetryUnknown
   });
 
   return {
@@ -370,7 +416,9 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
     humanIntervention,
     deliverables,
     actions: actions.slice(0, MAX_EXEC_ACTIONS),
-    automationAudits: visibleAutomationAudits
+    automationAudits,
+    staleWorkflows,
+    telemetryStatus: telemetryUnknown ? "unknown" : "healthy"
   };
 }
 
@@ -388,7 +436,9 @@ function auditAutomation(definition: AutomationDefinition, context: BuildContext
     agentUpdate,
     queue,
     warRoomMode: context.warRoomMode,
-    warRoomEntries: context.warRoomEntries
+    warRoomEntries: context.warRoomEntries,
+    warRoomEligible: context.warRoomEligible,
+    now: context.now
   });
 
   const businessPurpose = definition.businessPurpose;
@@ -415,7 +465,8 @@ function auditAutomation(definition: AutomationDefinition, context: BuildContext
     outputSummary,
     evidenceLink,
     reason,
-    shouldDisplay
+    shouldDisplay,
+    expectedCadenceHours: definition.expectedCadenceHours
   };
 }
 
@@ -427,45 +478,50 @@ type ClassificationInput = {
   queue?: ActionQueue["needsApprovalTasks"] | ActionQueue["pendingPlans"] | undefined;
   warRoomMode: "normal" | "war_room";
   warRoomEntries: number;
+  warRoomEligible: boolean;
+  now: number;
 };
 
 function classifyAutomation(input: ClassificationInput): { classification: AutomationClassification; reason: string; shouldDisplay: boolean } {
-  const { definition, job, agentStatus, agentUpdate, queue, warRoomMode, warRoomEntries } = input;
+  const { definition, job, agentStatus, agentUpdate, queue, warRoomMode, warRoomEntries, warRoomEligible } = input;
   const runStatus = (agentStatus?.runStatus ?? job?.lastStatus ?? "")?.toLowerCase();
-  const hoursSinceRun = hoursSince(agentStatus?.lastRunAt ?? job?.lastRunAt ?? null);
+  const lastRunAt = agentStatus?.lastRunAt ?? job?.lastRunAt ?? null;
+  const hoursSinceRun = hoursSince(lastRunAt);
+  const expectedCadence = normalizeCadence(definition.expectedCadenceHours);
+  const staleThreshold = expectedCadence * 1.5;
+  const inactiveThreshold = Math.max(expectedCadence * 5, 168);
 
   if (definition.type === "queue" && queue) {
     const hasItems = queue.items.length > 0;
-    const classification: AutomationClassification = hasItems ? "useful" : "low_value";
+    const classification: AutomationClassification = hasItems ? "valuable" : "low_value";
     const reason = hasItems
-      ? `${queue.items.length} item${queue.items.length === 1 ? " needs" : " need"} review.`
-      : "Queue is empty; hide from the executive surface until work appears.";
-    const shouldDisplay = hasItems;
-    return { classification, reason, shouldDisplay };
+      ? `${queue.items.length} approval${queue.items.length === 1 ? "" : "s"} waiting.`
+      : "Queue is empty or already processed.";
+    return { classification, reason, shouldDisplay: hasItems };
   }
 
   if (definition.type === "warroom") {
-    const isActive = warRoomMode === "war_room" && warRoomEntries > 0;
-    if (!isActive) {
+    if (!warRoomEligible || warRoomMode !== "war_room" || warRoomEntries === 0) {
       return {
         classification: "low_value",
-        reason: "No unique war room entries were produced; suppress on the executive dashboard.",
+        reason: "War room has no fresh directives; suppress the surface.",
         shouldDisplay: false
       };
     }
     return {
       classification: "useful",
-      reason: `War room contains ${warRoomEntries} entry${warRoomEntries === 1 ? "" : "ies"}.`,
+      reason: `War room active with ${warRoomEntries} directive${warRoomEntries === 1 ? "" : "s"}.`,
       shouldDisplay: true
     };
   }
 
+  const hasEvidence = Boolean(agentUpdate?.summary ?? job?.lastSummary ?? job?.lastStatus?.toLowerCase() === "succeeded");
+
   if (definition.type === "agent") {
-    const hasEvidence = Boolean(agentUpdate);
     if (!agentStatus?.lastRunAt && !hasEvidence) {
       return {
         classification: "unknown",
-        reason: "No verifiable runs or outputs were recorded recently.",
+        reason: "No verifiable agent telemetry available.",
         shouldDisplay: false
       };
     }
@@ -473,39 +529,38 @@ function classifyAutomation(input: ClassificationInput): { classification: Autom
     if (runStatus === "failed") {
       return {
         classification: "broken",
-        reason: "Most recent run failed; investigate agent logs.",
+        reason: "Most recent agent run failed.",
         shouldDisplay: true
       };
     }
 
-    if (hoursSinceRun == null) {
-      return {
-        classification: "unknown",
-        reason: "Run cadence unknown; confirm scheduler telemetry.",
-        shouldDisplay: hasEvidence
-      };
-    }
-
-    if (hoursSinceRun > 120) {
+    if (hoursSinceRun != null && hoursSinceRun > inactiveThreshold) {
       return {
         classification: "inactive",
-        reason: "No runs within five days; hide until the workflow restarts.",
+        reason: "Agent has been idle for multiple cadences.",
         shouldDisplay: false
       };
     }
 
-    if (hoursSinceRun > 72 || !hasEvidence) {
+    if (hoursSinceRun != null && hoursSinceRun > staleThreshold) {
+      return {
+        classification: "stale",
+        reason: `Expected within ${expectedCadence.toFixed(0)}h but last run ${Math.round(hoursSinceRun)}h ago.`,
+        shouldDisplay: true
+      };
+    }
+
+    if (!hasEvidence) {
       return {
         classification: "low_value",
-        reason: "Agent has not produced usable outputs in the last 72h.",
+        reason: "Agent ran but produced no verified outputs.",
         shouldDisplay: false
       };
     }
 
-    const classification: AutomationClassification = definition.importance === "high" ? "valuable" : "useful";
     return {
-      classification,
-      reason: hasEvidence ? `Latest output: ${agentUpdate?.summary ?? "Summary unavailable"}` : "Evidence recorded via scheduler run.",
+      classification: definition.importance === "high" ? "valuable" : "useful",
+      reason: agentUpdate?.summary ?? "Agent cadence on schedule.",
       shouldDisplay: true
     };
   }
@@ -534,42 +589,35 @@ function classifyAutomation(input: ClassificationInput): { classification: Autom
     };
   }
 
-  if (!job.lastRunAt) {
-    return {
-      classification: "unknown",
-      reason: "Job has never run successfully.",
-      shouldDisplay: false
-    };
-  }
-
-  const jobHoursSinceRun = hoursSince(job.lastRunAt);
-  if (jobHoursSinceRun == null) {
-    return {
-      classification: "unknown",
-      reason: "Unable to parse last run date.",
-      shouldDisplay: false
-    };
-  }
-
-  if (jobHoursSinceRun > 240) {
+  if (hoursSinceRun != null && hoursSinceRun > inactiveThreshold) {
     return {
       classification: "inactive",
-      reason: "No successful runs within ten days.",
+      reason: "Job has not reported a run in multiple cadences.",
       shouldDisplay: false
     };
   }
 
-  if (jobHoursSinceRun > 96) {
+  if (hoursSinceRun != null && hoursSinceRun > staleThreshold) {
+    return {
+      classification: "stale",
+      reason: `Expected every ${expectedCadence.toFixed(0)}h; last run ${Math.round(hoursSinceRun)}h ago.`,
+      shouldDisplay: true
+    };
+  }
+
+  if (!hasEvidence) {
     return {
       classification: "low_value",
-      reason: "Job is configured but has not produced outputs this week.",
+      reason: "Job ran but produced no consumable output.",
       shouldDisplay: false
     };
   }
 
-  const classification: AutomationClassification = jobHoursSinceRun <= 48 ? "valuable" : "useful";
-  const reason = job.lastSummary ?? `Last ran ${Math.round(jobHoursSinceRun)}h ago.`;
-  return { classification, reason, shouldDisplay: true };
+  return {
+    classification: definition.importance === "high" ? "valuable" : "useful",
+    reason: job.lastSummary ?? `Last run ${Math.round(hoursSinceRun ?? 0)}h ago.`,
+    shouldDisplay: true
+  };
 }
 
 function buildAgentUpdateMap(entries: DashboardOverviewResponse["agentUpdateFeed"]): Map<string, AgentUpdate> {
@@ -673,8 +721,19 @@ function buildIncidents(args: {
   systemHealth?: DashboardOverviewResponse["systemHealth"];
   warRoomMode: "normal" | "war_room";
   warRoomEntries: number;
+  telemetryUnknown: boolean;
 }): OperationsIncident[] {
   const incidents: OperationsIncident[] = [];
+
+  if (args.telemetryUnknown) {
+    incidents.push({
+      id: "ops-telemetry",
+      title: "Operations telemetry unavailable",
+      detail: "Scheduler diagnostics are unavailable. Verify observability before taking action.",
+      severity: "warning",
+      detectedAt: args.schedulerSummary?.lastUpdatedAt ?? null
+    });
+  }
 
   if (args.schedulerSummary?.status === "BROKEN") {
     incidents.push({
@@ -738,7 +797,8 @@ function buildIncidents(args: {
       });
     });
 
-  if (args.warRoomMode === "war_room" && args.warRoomEntries > 0) {
+  const warRoomAudit = args.automationAudits.find((audit) => audit.id === "war-room");
+  if (args.warRoomMode === "war_room" && args.warRoomEntries > 0 && warRoomAudit && warRoomAudit.classification !== "low_value") {
     incidents.push({
       id: "war-room",
       title: "War room active",
@@ -764,7 +824,7 @@ function buildHumanIntervention(actionQueue: ActionQueue): OperationsInterventio
   const entries: OperationsIntervention[] = [];
   sections.forEach((section) => {
     section.items.forEach((item) => {
-      if (!item.title || !item.summary || !item.actor) return;
+      if (!isExecutableApprovalItem(item)) return;
       const executionPath = EXECUTION_PATH_BY_TYPE[item.itemType];
       if (!executionPath) return;
       entries.push({
@@ -813,10 +873,12 @@ function buildDeliverables(entries: ProofOfWorkEntry[]): OperationsDeliverable[]
 function buildOperationsActions(args: {
   incidents: OperationsIncident[];
   automationAudits: AutomationAudit[];
+  staleWorkflows: StaleWorkflow[];
   humanIntervention: OperationsIntervention[];
   overdueJobs: OperationsJob[];
   schedulerSummary?: DashboardOverviewResponse["schedulerSummary"];
   site: OperationsSiteHealth;
+  telemetryUnknown: boolean;
 }): OperationsAction[] {
   const actions: OperationsAction[] = [];
 
@@ -831,6 +893,16 @@ function buildOperationsActions(args: {
         urgency: "today"
       });
     });
+
+  args.staleWorkflows.slice(0, 2).forEach((workflow) => {
+    actions.push({
+      id: `stale-${workflow.id}`,
+      title: `Resume ${workflow.label}`,
+      detail: workflow.reason,
+      owner: workflow.owner,
+      urgency: workflow.importance === "high" ? "today" : "this week"
+    });
+  });
 
   const staleQueue = args.humanIntervention.find((item) => {
     const created = parseDate(item.createdAt);
@@ -878,6 +950,16 @@ function buildOperationsActions(args: {
     });
   }
 
+  if (args.telemetryUnknown) {
+    actions.push({
+      id: "verify-telemetry",
+      title: "Verify operations telemetry",
+      detail: "Diagnostics are unavailable; ensure the scheduler data source is reachable before taking action.",
+      owner: "Ops",
+      urgency: "this week"
+    });
+  }
+
   return dedupeActions(actions);
 }
 
@@ -900,6 +982,7 @@ function buildOverallStatus(args: {
   overdueJobs: OperationsJob[];
   site: OperationsSiteHealth;
   timestamp?: string;
+  telemetryUnknown: boolean;
 }): OperationsStatusCard {
   const hasCriticalIncident = args.incidents.some((incident) => incident.severity === "critical");
   const hasWarningIncident = args.incidents.some((incident) => incident.severity === "warning");
@@ -915,10 +998,12 @@ function buildOverallStatus(args: {
     tone = "rose";
     label = "Operations incident";
     detail = args.incidents[0]?.detail ?? "Scheduler offline.";
-  } else if (failed || overdue || hasWarningIncident || args.site.status === "degraded") {
+  } else if (args.telemetryUnknown || failed || overdue || hasWarningIncident || args.site.status === "degraded") {
     tone = "amber";
-    label = "Operations at risk";
-    detail = args.incidents[0]?.detail ?? (failed ? "Automation failures detected." : "Attention required.");
+    label = args.telemetryUnknown ? "Operations visibility unknown" : "Operations at risk";
+    detail = args.telemetryUnknown
+      ? "Scheduler diagnostics unavailable; verify telemetry."
+      : args.incidents[0]?.detail ?? (failed ? "Automation failures detected." : "Attention required.");
   }
 
   return {
@@ -958,6 +1043,24 @@ function hoursSince(value: string | null | undefined): number | null {
   const date = Date.parse(value);
   if (Number.isNaN(date)) return null;
   return (Date.now() - date) / MS_IN_HOUR;
+}
+
+function normalizeCadence(value?: number | null) {
+  if (typeof value === "number" && value > 0) {
+    return value;
+  }
+  return DEFAULT_CADENCE_HOURS;
+}
+
+function isWarRoomEligible(warRoom: DashboardOverviewResponse["warRoom"] | null | undefined) {
+  if (!warRoom || warRoom.mode !== "war_room") return false;
+  if (!Array.isArray(warRoom.entries) || warRoom.entries.length === 0) return false;
+  const recentEntry = warRoom.entries.find((entry) => Boolean(entry.summary) && Boolean(entry.createdAt) && Boolean(entry.title));
+  if (!recentEntry) return false;
+  if (!warRoom.lastUpdated) return false;
+  const hours = hoursSince(warRoom.lastUpdated);
+  if (hours != null && hours > 48) return false;
+  return true;
 }
 
 function parseDate(value: string | null | undefined): Date | null {

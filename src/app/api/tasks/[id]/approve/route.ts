@@ -1,5 +1,7 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
 import { activateAgentTasks } from "@/lib/agents/automation";
+import type { MinimalTaskRecord } from "@/lib/approvals/execution-paths";
+import { shouldTriggerTaskAutomation } from "@/lib/approvals/execution-paths";
 import { runAgentByKey } from "@/lib/agents/runAgentByKey";
 import { getTaskById, updateTaskApproval } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
@@ -23,11 +25,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     let runResult: { runId: string; tasksActivated: number } | null = null;
     let automationError: string | null = null;
 
-    const shouldActivateAutomation =
-      parsed.data.approvedByUser &&
-      existing.requires_approval &&
-      !existing.approved_by_user &&
-      task.approved_by_user;
+    const shouldActivateAutomation = shouldTriggerTaskAutomation(
+      existing as MinimalTaskRecord,
+      { approved_by_user: task.approved_by_user },
+      parsed.data.approvedByUser
+    );
 
     if (shouldActivateAutomation) {
       try {
