@@ -1,17 +1,19 @@
 "use client";
 
-import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
+import type { CommerceTelemetry, WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { RevenueInsightSection } from "./RevenueInsightSection";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const decimalCurrency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 type Props = {
   snapshot?: WebsiteConversionSnapshot | null;
+  telemetry?: CommerceTelemetry;
 };
 
-export function WebsiteConversionPanel({ snapshot }: Props) {
+export function WebsiteConversionPanel({ snapshot, telemetry }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
@@ -43,6 +45,7 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
         </div>
       ) : null}
 
+      <RevenueInsightSection snapshot={snapshot} telemetry={telemetry} />
       {ga4 ? <Ga4Section data={ga4} /> : <EmptyState title="GA4 offline" detail="Website agent could not load GA4 metrics." />}
       {woo ? <WooSection data={woo} /> : <EmptyState title="WooCommerce offline" detail="Unable to load latest order data." />}
     </section>

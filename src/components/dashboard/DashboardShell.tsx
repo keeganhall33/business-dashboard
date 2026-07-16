@@ -66,7 +66,7 @@ export function DashboardShell({ data }: Props) {
         >
           <div className="space-y-5">
             {websiteSnapshot ? (
-              <WebsiteConversionPanel snapshot={websiteSnapshot} />
+              <WebsiteConversionPanel snapshot={websiteSnapshot} telemetry={data.commerceTelemetry} />
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
