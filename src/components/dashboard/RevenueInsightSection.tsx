@@ -1,116 +1,152 @@
 import { buildRevenueIntelligence } from "@/lib/revenue-intelligence";
-import type { RevenueAction } from "@/lib/revenue-intelligence";
+import type { RevenueAction, RevenueFact, ScenarioOutlook } from "@/lib/revenue-intelligence";
 import type { CommerceTelemetry, WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 
 export function RevenueInsightSection({ snapshot, telemetry }: { snapshot?: WebsiteConversionSnapshot | null; telemetry?: CommerceTelemetry }) {
   const intel = buildRevenueIntelligence({ snapshot, telemetry });
+
   return (
     <section className="space-y-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-      <div>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Revenue intelligence</div>
-        <p className="mt-1 text-sm text-zinc-200">{intel.headline}</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-zinc-400">
-          {intel.supportingEvidence.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </div>
-
-      {intel.metrics.length ? <MetricsGrid metrics={intel.metrics} /> : null}
-
-      {intel.drivers.length ? (
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Drivers</p>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-zinc-400">
-            {intel.drivers.map((driver) => (
-              <li key={driver}>{driver}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <InsightList title="Product insights" items={intel.productInsights} />
-        <InsightList title="Customer insights" items={intel.customerInsights} />
-      </div>
-
-      <RevenueActionTable actions={intel.actions} />
+      <Header fact={intel.headline} />
+      <Drivers drivers={intel.drivers} />
+      <Reconciliation entries={intel.reconciliation.entries} note={intel.reconciliation.note} />
+      <Actions actions={intel.actions} />
+      <Scenario scenario={intel.scenario} />
+      {intel.customerMessage ? <InsufficientMessage message={intel.customerMessage} /> : null}
     </section>
   );
 }
 
-function MetricsGrid({
-  metrics
-}: {
-  metrics: Array<{ label: string; value: string; delta?: string; explanation?: string }>;
-}) {
-  return (
-    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-      {metrics.map((metric) => (
-        <div key={metric.label} className="rounded-xl border border-white/10 bg-black/40 p-3">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{metric.label}</div>
-          <div className="mt-1 text-xl font-semibold text-white">{metric.value}</div>
-          {metric.delta ? <div className="text-xs text-zinc-400">Δ {metric.delta}</div> : null}
-          {metric.explanation ? <div className="text-[11px] text-zinc-500">{metric.explanation}</div> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function InsightList({ title, items }: { title: string; items: string[] }) {
-  if (!items.length) {
+function Header({ fact }: { fact: RevenueFact | null }) {
+  if (!fact) {
     return (
-      <div className="rounded-xl border border-white/10 bg-black/40 p-3 text-xs text-zinc-500">
-        <div className="font-semibold text-zinc-300">{title}</div>
-        <p>No signals available.</p>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Revenue intelligence</div>
+        <p className="mt-1 text-sm text-zinc-400">Insufficient evidence for a headline.</p>
       </div>
     );
   }
   return (
-    <div className="rounded-xl border border-white/10 bg-black/40 p-3">
-      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{title}</div>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-zinc-400">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Revenue intelligence</div>
+      <p className="mt-1 text-sm text-white">{fact.value}</p>
+      <ProvenanceDetails provenance={fact.provenance} />
+    </div>
+  );
+}
+
+function Drivers({ drivers }: { drivers: RevenueFact[] }) {
+  if (!drivers.length) return null;
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Drivers</div>
+      <ul className="mt-2 space-y-2">
+        {drivers.map((driver) => (
+          <li key={driver.id} className="rounded-xl border border-white/10 bg-black/40 p-3">
+            <div className="text-sm font-semibold text-white">{driver.label}</div>
+            <p className="text-xs text-zinc-300">{driver.value}</p>
+            <ProvenanceDetails provenance={driver.provenance} />
+          </li>
         ))}
       </ul>
     </div>
   );
 }
 
-function RevenueActionTable({ actions }: { actions: RevenueAction[] }) {
-  if (!actions.length) {
-    return <p className="text-sm text-zinc-400">No revenue actions surfaced for this range.</p>;
-  }
+function Reconciliation({ entries, note }: { entries: RevenueFact[]; note: string }) {
+  if (!entries.length) return null;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm text-zinc-200">
-        <thead className="bg-white/5 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-          <tr>
-            <th className="px-4 py-3">Urgency</th>
-            <th className="px-4 py-3">Decision</th>
-            <th className="px-4 py-3">Reason</th>
-            <th className="px-4 py-3">Impact</th>
-            <th className="px-4 py-3">Confidence</th>
-          </tr>
-        </thead>
-        <tbody>
-          {actions.map((action) => (
-            <tr key={action.id} className="border-t border-white/10">
-              <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{action.urgency}</td>
-              <td className="px-4 py-3 font-semibold text-white">{action.title}</td>
-              <td className="px-4 py-3 text-zinc-300">{action.reason}</td>
-              <td className="px-4 py-3 text-zinc-300">{action.expectedImpact}</td>
-              <td className="px-4 py-3 text-zinc-300">{`${action.confidenceLabel} ${formatPercent(action.confidence)}`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="rounded-xl border border-white/10 bg-black/40 p-3">
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Revenue reconciliation</div>
+      <ul className="mt-2 space-y-2">
+        {entries.map((entry) => (
+          <li key={entry.id}>
+            <div className="text-sm font-semibold text-white">{entry.label}</div>
+            <div className="text-xs text-zinc-300">{entry.value}</div>
+            <ProvenanceDetails provenance={entry.provenance} />
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[11px] text-zinc-500">{note}</p>
     </div>
   );
 }
 
-function formatPercent(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 0 }).format(value);
+function Actions({ actions }: { actions: RevenueAction[] }) {
+  if (!actions.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-white/10 bg-black/30 p-3 text-sm text-zinc-400">
+        No grounded revenue actions surfaced for this range.
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Grounded actions</div>
+      <ul className="mt-2 space-y-3">
+        {actions.map((action) => (
+          <li key={action.id} className="rounded-xl border border-white/10 bg-black/40 p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{action.urgency}</div>
+            <div className="mt-1 text-sm font-semibold text-white">{action.title}</div>
+            <p className="text-xs text-zinc-300">{action.recommendation}</p>
+            <p className="text-xs text-zinc-300">Expected impact: {action.expectedImpact}</p>
+            <ProvenanceDetails provenance={action.provenance} />
+            <RuleMetadata action={action} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Scenario({ scenario }: { scenario: ScenarioOutlook | null }) {
+  if (!scenario) return null;
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/40 p-3">
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{scenario.label}</div>
+      <p className="mt-1 text-sm text-white">{scenario.summary}</p>
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-zinc-400">
+        {scenario.assumptions.map((assumption) => (
+          <li key={assumption}>{assumption}</li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-zinc-500">Review by {scenario.reviewDate}</p>
+      <ProvenanceDetails provenance={scenario.provenance} />
+    </div>
+  );
+}
+
+function ProvenanceDetails({ provenance }: { provenance: RevenueFact["provenance"] }) {
+  return (
+    <div className="mt-2 rounded-lg border border-dashed border-white/10 bg-black/20 p-2 text-[10px] text-zinc-500">
+      <div>Source: {provenance.source}</div>
+      <div>Inference: {provenance.inferenceType}</div>
+      {provenance.measuredInputs.length ? <div>Inputs: {provenance.measuredInputs.join(", ")}</div> : null}
+      {provenance.calculation ? <div>Calculation: {provenance.calculation}</div> : null}
+      {provenance.dataWindow ? <div>Window: {provenance.dataWindow}</div> : null}
+      {provenance.confidence != null ? <div>Confidence: {(provenance.confidence * 100).toFixed(0)}%</div> : null}
+      {provenance.caveats?.length ? <div>Caveats: {provenance.caveats.join("; ")}</div> : null}
+    </div>
+  );
+}
+
+function RuleMetadata({ action }: { action: RevenueAction }) {
+  return (
+    <div className="mt-2 border-t border-white/10 pt-2 text-[10px] text-zinc-500">
+      <div>Trigger: {action.rule.trigger}</div>
+      <div>Minimum sample: {action.rule.minimumSample}</div>
+      <div>Evidence: {action.rule.evidence.join(", ")}</div>
+      <div>Suppression: {action.rule.suppression.join(", ")}</div>
+      <div>Confidence method: {action.rule.confidenceMethod}</div>
+      <div>Expected impact method: {action.rule.expectedImpactMethod}</div>
+    </div>
+  );
+}
+
+function InsufficientMessage({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-3 text-xs text-zinc-400">
+      {message}
+    </div>
+  );
 }
