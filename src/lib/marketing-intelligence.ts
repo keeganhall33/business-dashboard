@@ -6,7 +6,8 @@ export type MarketingAction = {
   recommendation: string;
   evidence: string;
   expectedImpact: string;
-  confidence: number; // 0-1
+  confidence: number; // 0-1 heuristic
+  confidenceLabel: string;
   urgency: "Today" | "This week" | "This month";
 };
 
@@ -33,15 +34,15 @@ export function buildMarketingInsights({
 
   const ga4 = commerceTelemetry?.ga4;
   const gaSeries = ga4?.timeseries ?? [];
-  const sessionsDelta = percentChange(gaSeries.map((point) => point.sessions));
-  const revenueDelta = percentChange(gaSeries.map((point) => point.revenue));
+  const sessionsTrend = computeTrend(gaSeries.map((point) => point.sessions));
+  const revenueTrend = computeTrend(gaSeries.map((point) => point.revenue));
 
   if (ga4?.summary) {
     evidenceSources.add("GA4");
   }
 
-  if (typeof sessionsDelta === "number" && sessionsDelta <= -0.15) {
-    const headline = `Sessions down ${formatPercent(sessionsDelta)} vs range start`;
+  if (sessionsTrend && sessionsTrend.delta <= -0.15 && meetsVolumeGuard(sessionsTrend, 500, 100)) {
+    const headline = `GA4 sessions down ${formatPercent(sessionsTrend.delta)} vs range start`;
     drivers.push(headline);
     actions.push({
       id: "ga4-sessions",
@@ -49,26 +50,30 @@ export function buildMarketingInsights({
       recommendation: "Audit paid + referral sources, shift spend to high-intent audiences, and refresh top landing pages.",
       evidence: headline,
       expectedImpact: "Restore top-of-funnel volume by ~15%",
-      confidence: Math.min(0.95, Math.abs(sessionsDelta) + 0.5),
+      confidence: Math.min(0.95, Math.abs(sessionsTrend.delta) + 0.5),
+      confidenceLabel: "Heuristic rule",
       urgency: "This week"
     });
   }
 
-  if (typeof revenueDelta === "number" && revenueDelta <= -0.1) {
-    const headline = `GA4 revenue down ${formatPercent(revenueDelta)} within the range`;
+  if (revenueTrend && revenueTrend.delta <= -0.1 && meetsVolumeGuard(revenueTrend, 5000, 1000)) {
+    const lostRevenue = Math.max(0, (revenueTrend.first ?? 0) - (revenueTrend.last ?? 0));
+    const headline = `GA4 web revenue down ${formatPercent(revenueTrend.delta)} during the range`;
     drivers.push(headline);
     actions.push({
       id: "ga4-revenue",
       title: "Protect conversion revenue",
       recommendation: "Add a limited-time offer to the highest converting funnel and retarget engaged visitors immediately.",
       evidence: headline,
-      expectedImpact: "Recover ~$" + Math.abs(Math.round((ga4?.summary?.revenue ?? 0) * revenueDelta)) + " in lost revenue",
-      confidence: Math.min(0.95, Math.abs(revenueDelta) + 0.55),
+      expectedImpact: `Potentially recover ~$${Math.round(lostRevenue)}`,
+      confidence: Math.min(0.95, Math.abs(revenueTrend.delta) + 0.55),
+      confidenceLabel: "Heuristic rule",
       urgency: "This week"
     });
   }
 
-  if (metaAds?.summary) {
+  const metaIsLive = metaAds?.summary && metaAds.status === "LIVE";
+  if (metaIsLive) {
     evidenceSources.add("Meta Ads");
     const spend = metaAds.summary.spend ?? 0;
     const roas = metaAds.summary.roas ?? null;
@@ -80,13 +85,14 @@ export function buildMarketingInsights({
       drivers.push(`Meta spend ${currency(spend)} with ROAS ${formatNumber(roas)}.`);
       actions.push({
         id: "meta-roas",
-        title: "Pause underperforming Meta creative",
+        title: "Reallocate underperforming Meta campaigns",
         recommendation: weakestCampaign
-          ? `Pause ${weakestCampaign.campaignName} and reallocate spend toward proven offers.`
-          : "Audit active campaigns and pause any ROAS < 1.5x until creative refresh completes.",
+          ? `Reduce spend on ${weakestCampaign.campaignName} and shift budget to campaigns with ROAS > 1.5x.`
+          : "Audit active campaigns and reallocate any ROAS < 1.5x until creative refresh completes.",
         evidence: campaignEvidence,
-        expectedImpact: "Save $" + Math.round(spend * (1 - (roas ?? 0) / 1.5)) + " in wasted spend",
+        expectedImpact: `Reduce wasted spend by ~$${Math.round(spend * (1 - (roas ?? 0) / 1.5))}`,
         confidence: 0.8,
+        confidenceLabel: "Heuristic rule",
         urgency: "Today"
       });
     }
@@ -95,11 +101,13 @@ export function buildMarketingInsights({
       drivers.push("Meta spend is not generating reported purchases.");
       actions.push({
         id: "meta-no-purchase",
-        title: "Fix Meta conversion tracking",
-        recommendation: "Verify pixel + Conversions API, then sync Shopify/Woo conversions for accurate ROAS reporting.",
+        title: "Investigate Meta conversion tracking/performance",
+        recommendation:
+          "Verify pixel + Conversions API, confirm attribution windows, and confirm campaigns have had enough time/volume to convert.",
         evidence: `Meta reported ${currency(spend)} spend with zero purchases in ${metaAds.range}d window`,
-        expectedImpact: "Restore confidence in paid efficiency decisions",
+        expectedImpact: "Restore trust in paid efficiency data and unlock optimization decisions",
         confidence: 0.7,
+        confidenceLabel: "Heuristic rule",
         urgency: "This week"
       });
     }
@@ -107,8 +115,8 @@ export function buildMarketingInsights({
 
   const metrics: Array<{ label: string; value: string; delta?: string }> = [];
   if (ga4?.summary) {
-    metrics.push({ label: "GA4 revenue", value: currency(ga4.summary.revenue ?? 0), delta: formatPercent(revenueDelta) });
-    metrics.push({ label: "GA4 sessions", value: formatNumber(ga4.summary.sessions), delta: formatPercent(sessionsDelta) });
+    metrics.push({ label: "GA4 web revenue", value: currency(ga4.summary.revenue ?? 0), delta: formatPercent(revenueTrend?.delta ?? null) });
+    metrics.push({ label: "GA4 sessions", value: formatNumber(ga4.summary.sessions), delta: formatPercent(sessionsTrend?.delta ?? null) });
   }
   if (metaAds?.summary) {
     metrics.push({ label: "Meta spend", value: currency(metaAds.summary.spend ?? 0) });
@@ -125,7 +133,7 @@ export function buildMarketingInsights({
   if (drivers.length === 0 && topAction) drivers.push(topAction.evidence);
 
   const outlook = topAction
-    ? `Expect ${topAction.expectedImpact.toLowerCase()} once this action completes.`
+    ? `If successful, this action could ${topAction.expectedImpact.toLowerCase()}.`
     : "Trajectory is stable; maintain current channel mix while monitoring acquisition cost.";
 
   return {
@@ -139,12 +147,17 @@ export function buildMarketingInsights({
   };
 }
 
-function percentChange(series: number[]) {
+function computeTrend(series: number[]) {
   if (!series || series.length < 2) return null;
   const first = series.find((value) => value != null && Number.isFinite(value));
   const last = [...series].reverse().find((value) => value != null && Number.isFinite(value));
-  if (!first || !last || first === 0) return null;
-  return (last - first) / first;
+  if (first == null || last == null || first === 0) return null;
+  return { first, last, delta: (last - first) / first };
+}
+
+function meetsVolumeGuard(trend: { first: number; last: number }, minBaseline: number, minAbsoluteChange: number) {
+  const absoluteChange = Math.abs(trend.last - trend.first);
+  return trend.first >= minBaseline && absoluteChange >= minAbsoluteChange;
 }
 
 function formatPercent(value: number | null) {

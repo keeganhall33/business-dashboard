@@ -88,7 +88,7 @@ function ActionTable({ actions }: { actions: ReturnType<typeof buildMarketingIns
               <td className="px-4 py-3 text-zinc-300">{action.recommendation}</td>
               <td className="px-4 py-3 text-zinc-400">{action.evidence}</td>
               <td className="px-4 py-3 text-zinc-300">{action.expectedImpact}</td>
-              <td className="px-4 py-3 text-zinc-300">{percentFormatter.format(action.confidence)}</td>
+              <td className="px-4 py-3 text-zinc-300">{`${action.confidenceLabel} ${percentFormatter.format(action.confidence)}`}</td>
             </tr>
           ))}
         </tbody>
