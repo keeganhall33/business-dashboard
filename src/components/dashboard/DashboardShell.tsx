@@ -1,5 +1,4 @@
-import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
-import { buildDataConfidenceModel } from "@/lib/data-confidence";
+import { buildExecutiveActions, buildDataConfidence, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
@@ -35,14 +34,13 @@ type Props = {
 export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
-  const dataConfidence = buildDataConfidenceModel(data);
-  const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
-  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
+  const executiveActions = buildExecutiveActions(data, 5);
+  const dataConfidence = buildDataConfidence(data.telemetryMetadata, data.telemetryHealth, data.executiveInsights?.brief ?? null);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
   const industrySummary = buildIndustrySummary(data);
-  const dataConfidenceSummary = buildConfidenceSectionSummary(dataConfidence);
+  const dataConfidenceSummary = buildDataConfidenceSummary(dataConfidence, executiveActions);
   const operationsIntel = buildOperationsIntel(data);
 
   return (
@@ -53,8 +51,8 @@ export function DashboardShell({ data }: Props) {
         <ExecutivePerspectivePanel data={data} actions={executiveActions} />
         {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
-        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
-        <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
+        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} />
+        <ExecutiveActionsPanel data={data} actions={executiveActions} />
         <ForwardStrategyPanel data={data} />
       </div>
 
@@ -119,7 +117,12 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
-          <DataConfidencePanel summary={dataConfidence} />
+          <DataConfidencePanel
+            metadata={data.telemetryMetadata}
+            health={data.telemetryHealth}
+            brief={data.executiveInsights?.brief ?? null}
+            summary={dataConfidence}
+          />
         </DashboardSection>
       </div>
     </div>
@@ -233,15 +236,21 @@ function buildIndustrySummary(data: DashboardOverviewResponse): SectionSummary {
   };
 }
 
-function buildConfidenceSectionSummary(summary: ReturnType<typeof buildDataConfidenceModel>): SectionSummary {
-  const tone = summary.overall.tone;
-  const watchCount = summary.caveatSources.length + summary.conflictingSources.length;
+function buildDataConfidenceSummary(summary: ReturnType<typeof buildDataConfidence>, actions: ExecutiveActionPlan[]): SectionSummary {
+  const healthy = summary.rows.filter((row) => row.status === "Healthy").length;
+  const warnings = summary.rows.length - healthy;
+  const warningRow = summary.rows.find((row) => row.warning);
+  const tone: SectionSummary["tone"] = summary.overall.tone.includes("emerald")
+    ? "emerald"
+    : summary.overall.tone.includes("amber")
+      ? "amber"
+      : "rose";
   return {
     status: summary.overall.label,
     tone,
-    metrics: [`Trusted ${summary.trustedSources.length}`, `Watch ${watchCount}`],
-    insight: summary.topRisk?.decisionImpact ?? summary.overall.rationale,
-    actions: summary.recommendedActions.length
+    metrics: [`Healthy ${healthy}`, `Warnings ${warnings}`],
+    insight: warningRow?.warning ?? null,
+    actions: actions.filter((action) => action.id.startsWith("telemetry-")).length
   };
 }
 
