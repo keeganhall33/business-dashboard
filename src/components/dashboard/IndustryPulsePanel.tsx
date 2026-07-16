@@ -1,5 +1,7 @@
 "use client";
 
+import type { IndustryPulseOpportunity } from "@/lib/industry-pulse";
+import { buildIndustryOpportunities } from "@/lib/industry-pulse";
 import type { IndustryPulseSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
@@ -13,84 +15,82 @@ export function IndustryPulsePanel({ snapshot }: { snapshot?: IndustryPulseSnaps
     );
   }
 
+  const opportunities = buildIndustryOpportunities(snapshot);
+
+  if (opportunities.length === 0) {
+    return (
+      <section className="ui-glass rounded-3xl border border-white/10 p-5 text-sm text-zinc-400">
+        No actionable opportunities surfaced in the current feed. Continue monitoring verified sources.
+      </section>
+    );
+  }
+
   const updated = formatRelativeTimeFromNow(snapshot.generatedAt);
-  const alerts = prioritizeAlerts(snapshot.alerts ?? []);
 
   return (
     <section className="ui-glass rounded-3xl p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Industry Pulse</div>
-          <div className="text-sm text-zinc-400">External opportunities from sports, music, sponsorship, and culture.</div>
+          <div className="text-sm text-zinc-400">Ranked opportunities across sports, culture, and licensing that fit Keegan’s brand.</div>
         </div>
         <StatusChip label={`Updated ${updated}`} tone="zinc" />
       </div>
 
-      {alerts.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-200">No high-confidence alerts captured.</div>
-      ) : (
-        <div className="space-y-3">
-          {alerts.map((alert, idx) => (
-            <article key={`${alert.title}-${idx}`} className="rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-zinc-100">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="font-semibold">{alert.title}</div>
-                  <p className="text-xs text-zinc-400">{new Date(alert.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
-                </div>
-                <StatusChip label={`${alert.category} • ${alert.urgency}`} tone={toneFromUrgency(alert.urgency)} />
-              </div>
-              <dl className="mt-3 space-y-1 text-xs text-zinc-300">
-                <div>
-                  <dt className="font-semibold text-zinc-400">Why it matters</dt>
-                  <dd>{alert.whyItMatters}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-400">Concept</dt>
-                  <dd>{alert.opportunity}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-400">Commercial route</dt>
-                  <dd>{alert.category}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-400">Recommended action</dt>
-                  <dd>{alert.recommendedAction}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-400">Licensing risk</dt>
-                  <dd>Confirm rights with {alert.source}. Status: {alert.status || "unknown"}.</dd>
-                </div>
-              </dl>
-              <div className="mt-2 flex flex-wrap gap-3 text-[11px] uppercase tracking-[0.3em] text-white/50">
-                <span>Confidence: {alert.confidence}</span>
-                {alert.owner ? <span>Owner: {alert.owner}</span> : null}
-                {alert.sourceUrl ? (
-                  <a href={alert.sourceUrl} className="text-sky-300 hover:text-sky-200" target="_blank" rel="noreferrer">
-                    Source
-                  </a>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+      <div className="space-y-3">
+        {opportunities.map((item) => (
+          <OpportunityCard key={item.id} opportunity={item} />
+        ))}
+      </div>
     </section>
   );
 }
 
-function toneFromUrgency(urgency: string) {
-  if (urgency === 'high') return 'emerald';
-  if (urgency === 'medium') return 'sky';
-  return 'zinc';
+function OpportunityCard({ opportunity }: { opportunity: IndustryPulseOpportunity }) {
+  return (
+    <article className="rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-zinc-100">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-semibold">{opportunity.headline}</div>
+          <p className="text-xs text-zinc-400">{opportunity.publishedLabel}</p>
+        </div>
+        <StatusChip label={`${opportunity.category} • ${opportunity.urgency}`} tone={toneFromUrgency(opportunity.urgency)} />
+      </div>
+
+      <dl className="mt-3 grid gap-2 text-xs text-zinc-300 md:grid-cols-2">
+        <DetailRow label="Why it matters" value={opportunity.whyItMatters} />
+        <DetailRow label="Proposed concept" value={opportunity.concept} />
+        <DetailRow label="Commercial route" value={opportunity.commercialRoute} />
+        <DetailRow label="Expected impact" value={opportunity.expectedImpact} />
+        <DetailRow label="Licensing / rights" value={opportunity.licensingRisk} />
+        <DetailRow label="Recommended next action" value={opportunity.nextAction} />
+        <DetailRow label="Contact status" value={opportunity.contactStatus} />
+        <DetailRow label="Evidence" value={opportunity.provenance} />
+      </dl>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.3em] text-white/50">
+        <span>Confidence: {opportunity.confidence}</span>
+        {opportunity.sourceUrl ? (
+          <a href={opportunity.sourceUrl} className="text-sky-300 hover:text-sky-100" target="_blank" rel="noreferrer">
+            Source
+          </a>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
-function prioritizeAlerts(alerts: IndustryPulseSnapshot["alerts"]) {
-  const scored = alerts
-    .filter((alert) => alert && alert.whyItMatters && alert.recommendedAction && alert.confidence !== "low")
-    .map((alert) => ({
-      alert,
-      score: (alert.confidence === "high" ? 2 : 1) + (alert.urgency === "high" ? 1 : 0)
-    }));
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, 3).map((entry) => entry.alert);
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="font-semibold text-zinc-500">{label}</dt>
+      <dd className="text-zinc-200">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function toneFromUrgency(urgency: IndustryPulseOpportunity["urgency"]) {
+  if (urgency.toLowerCase() === "high") return "emerald";
+  if (urgency.toLowerCase() === "medium") return "sky";
+  return "zinc";
 }

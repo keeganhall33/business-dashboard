@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildForwardActions, describeTrend } from "../src/lib/forward-strategy.ts";
+import { buildForwardActions, describeTrend } from "../src/lib/forward-strategy";
 import type { DashboardOverviewResponse, ExecutiveInsightsPayload } from "../src/lib/types/dashboard";
 
 const BASE_DASHBOARD: DashboardOverviewResponse = {
@@ -31,7 +31,11 @@ const BASE_DASHBOARD: DashboardOverviewResponse = {
   systemHealth: { dataFreshnessHours: null, agentTaskCompletionRate: null, agents: [] },
   agentUpdateFeed: [],
   commerceTelemetry: undefined,
-  websiteConversion: { wooCommerce: { grossOrderRevenue: 10000, paidOrdersInWindow: 200, avgOrderValue: null, discountTotal: null, shippingTotal: null, taxTotal: null, items: null }, ga4: null },
+  websiteConversion: {
+    generatedAt: new Date().toISOString(),
+    wooCommerce: { grossOrderRevenue: 10000, paidOrdersInWindow: 200 },
+    ga4: undefined
+  },
   metaAds: null,
   executiveSummary: null,
   socialIntelligence: null,

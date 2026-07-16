@@ -1,6 +1,6 @@
-import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import type { DashboardOverviewResponse, ExecutiveInsightsPayload } from "@/lib/types/dashboard";
 import { countRangeDays, elapsedRangeDays } from "@/lib/date/range";
-import { buildForwardActions, describeTrend } from "@/lib/forward-strategy";
+import { buildForwardActions } from "@/lib/forward-strategy";
 
 export function ForwardStrategyPanel({
   data
