@@ -14,35 +14,7 @@ export function ForwardStrategyPanel({
   const totalDays = countRangeDays(range);
   const elapsedDays = elapsedRangeDays(range);
 
-  const revenueMetric = findMetric(
-    data.headerMetrics,
-    (metric) => metric.metricKey.toLowerCase().includes("revenue") || metric.metricName.toLowerCase().includes("revenue")
-  );
-  const ordersMetric = findMetric(
-    data.headerMetrics,
-    (metric) => metric.metricKey.toLowerCase().includes("order") || metric.metricName.toLowerCase().includes("order")
-  );
-
-  const currentRevenue = revenueMetric?.currentValue ?? data.websiteConversion?.wooCommerce?.grossOrderRevenue ?? 0;
-  const revenueTarget = revenueMetric?.targetValue ?? null;
-  const paceRevenue = elapsedDays > 0 ? (currentRevenue / elapsedDays) * totalDays : currentRevenue;
-  const revenueGap = revenueTarget != null ? revenueTarget - paceRevenue : null;
-  const remainingDays = Math.max(0, totalDays - elapsedDays);
-  const requiredDaily = remainingDays > 0 && revenueGap != null ? Math.max(0, revenueGap) / remainingDays : null;
-
-  const currentOrders = ordersMetric?.currentValue ?? data.websiteConversion?.wooCommerce?.paidOrdersInWindow ?? null;
-  const orderTarget = ordersMetric?.targetValue ?? null;
-  const ordersGap = orderTarget != null && currentOrders != null ? orderTarget - currentOrders : null;
-
-  const telemetryWarnings = Object.values(data.telemetryHealth ?? {})
-    .filter((entry) => entry && entry.status !== "healthy")
-    .slice(0, 3)
-    .map((entry) => `${entry?.source.toUpperCase()}: ${entry?.reasons?.[0] ?? "Needs attention"}`);
-
-  const topOpportunity = summarizeTopOpportunity(data.executiveInsights);
-
-  const forecastBadge = revenueGap != null ? (revenueGap > 0 ? "Behind target" : "Ahead of target") : "Forecast";
-  const forecastTone = revenueGap != null ? (revenueGap > 0 ? "text-amber-300" : "text-emerald-300") : "text-zinc-300";
+  const forwardActions = buildForwardActions(data, totalDays, elapsedDays);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-950/60 via-zinc-950 to-zinc-950 p-6">
@@ -54,42 +26,36 @@ export function ForwardStrategyPanel({
         <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${forecastTone}`}>{forecastBadge}</span>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-3">
-        <MetricTile
-          label="Revenue pace"
-          value={`$${Math.round(paceRevenue ?? 0).toLocaleString()}`}
-          detail={
-            revenueTarget != null
-              ? `Target $${Math.round(revenueTarget).toLocaleString()} • Gap ${formatDelta(revenueGap ?? 0)}`
-              : "No revenue target on file"
-          }
-        />
-        <MetricTile
-          label="Daily needed"
-          value={requiredDaily != null ? `$${Math.round(requiredDaily).toLocaleString()}` : "—"}
-          detail={remainingDays > 0 ? `${remainingDays} day window remaining` : "Range complete"}
-        />
-        <MetricTile
-          label="Orders gap"
-          value={ordersGap != null ? formatDelta(ordersGap) : "—"}
-          detail={orderTarget != null ? `Target ${orderTarget.toLocaleString()} orders` : "No order target on file"}
-        />
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <ListTile
-          title="Top risks"
-          items={
-            telemetryWarnings.length
-              ? telemetryWarnings
-              : ["No telemetry risks surfaced. Continue monitoring core sources."]
-          }
-        />
-        <ListTile
-          title="Next growth move"
-          items={topOpportunity ?? ["No material positive driver detected. Focus on defending core KPIs."]}
-        />
-      </div>
+      <ol className="mt-6 space-y-4">
+        {forwardActions.map((action) => (
+          <li key={action.id} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">{action.category}</p>
+                <h3 className="mt-1 text-lg font-semibold text-white">{action.title}</h3>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${toneFromConfidence(action.confidence)}`}>
+                {action.confidence}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-zinc-300">{action.reason}</p>
+            <div className="mt-3 grid gap-3 text-xs text-zinc-400 md:grid-cols-3">
+              <div>
+                <div className="font-semibold text-zinc-500">Expected impact</div>
+                <div className="text-zinc-200">{action.expectedImpact}</div>
+              </div>
+              <div>
+                <div className="font-semibold text-zinc-500">Evidence</div>
+                <div>{action.evidence}</div>
+              </div>
+              <div>
+                <div className="font-semibold text-zinc-500">Urgency</div>
+                <div>{action.urgency}</div>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -119,17 +85,92 @@ function MetricTile({ label, value, detail }: { label: string; value: string; de
   );
 }
 
-function ListTile({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
-      <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">{title}</p>
-      <ul className="mt-3 space-y-2 text-sm text-zinc-200">
-        {items.map((item) => (
-          <li key={item} className="leading-relaxed">
-            {item}
-          </li>
-        ))}
-      </ul>
-    </div>
+function buildForwardActions(
+  data: DashboardOverviewResponse,
+  totalDays: number,
+  elapsedDays: number
+): Array<{
+  id: string;
+  category: string;
+  title: string;
+  reason: string;
+  expectedImpact: string;
+  evidence: string;
+  urgency: string;
+  confidence: "high" | "medium" | "low";
+}> {
+  const actions: Array<{
+    id: string;
+    category: string;
+    title: string;
+    reason: string;
+    expectedImpact: string;
+    evidence: string;
+    urgency: string;
+    confidence: "high" | "medium" | "low";
+  }> = [];
+
+  const revenueMetric = findMetric(
+    data.headerMetrics,
+    (metric) => metric.metricKey.toLowerCase().includes("revenue") || metric.metricName.toLowerCase().includes("revenue")
   );
+  const ordersMetric = findMetric(
+    data.headerMetrics,
+    (metric) => metric.metricKey.toLowerCase().includes("order") || metric.metricName.toLowerCase().includes("order")
+  );
+  const currentRevenue = revenueMetric?.currentValue ?? data.websiteConversion?.wooCommerce?.grossOrderRevenue ?? 0;
+  const revenueTarget = revenueMetric?.targetValue ?? null;
+  const paceRevenue = elapsedDays > 0 ? (currentRevenue / Math.max(elapsedDays, 1)) * totalDays : currentRevenue;
+  if (revenueTarget != null) {
+    const gap = revenueTarget - paceRevenue;
+    if (gap > 0) {
+      actions.push({
+        id: "forward-revenue",
+        category: "Revenue",
+        title: "Close the revenue gap",
+        reason: `Pace is tracking $${Math.round(gap).toLocaleString()} behind target for this window`,
+        expectedImpact: `+$${Math.round(gap).toLocaleString()} if closed`,
+        evidence: revenueMetric ? `${revenueMetric.metricName}` : "Woo revenue pace",
+        urgency: "This week",
+        confidence: "high"
+      });
+    }
+  }
+
+  const telemetryIssues = Object.values(data.telemetryHealth ?? {}).filter((entry) => entry && entry.status !== "healthy");
+  telemetryIssues.slice(0, 1).forEach((issue) => {
+    if (!issue) return;
+    actions.push({
+      id: `forward-telemetry-${issue.source}`,
+      category: "Data",
+      title: `Fix ${issue.source.toUpperCase()} telemetry`,
+      reason: issue.reasons?.[0] ?? "Data coverage risk",
+      expectedImpact: "Protect decision accuracy",
+      evidence: issue.warningCodes?.join(", ") ?? issue.source,
+      urgency: "Today",
+      confidence: issue.status === "critical" ? "high" : "medium"
+    });
+  });
+
+  const actionableInsight = data.executiveInsights?.trends?.find((trend) => trend.direction === "down" && trend.magnitude !== "minor");
+  if (actionableInsight) {
+    actions.push({
+      id: `forward-insight-${actionableInsight.id}`,
+      category: actionableInsight.source.toUpperCase(),
+      title: `Stabilize ${actionableInsight.label}`,
+      reason: describeTrend(actionableInsight),
+      expectedImpact: "Recover funnel health",
+      evidence: actionableInsight.metric,
+      urgency: "This week",
+      confidence: actionableInsight.magnitude === "major" ? "high" : "medium"
+    });
+  }
+
+  return actions.slice(0, 3);
+}
+
+function toneFromConfidence(confidence: "high" | "medium" | "low") {
+  if (confidence === "high") return "text-emerald-300 border-emerald-500/40";
+  if (confidence === "medium") return "text-amber-300 border-amber-500/40";
+  return "text-zinc-300 border-zinc-500/40";
 }
