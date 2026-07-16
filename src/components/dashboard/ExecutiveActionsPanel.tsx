@@ -1,5 +1,6 @@
 import { buildExecutiveActions, ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import { rankActions, formatConfidence } from "@/lib/executive-actions";
 
 export function ExecutiveActionsPanel({ data, actions: provided }: { data: DashboardOverviewResponse; actions?: ExecutiveActionPlan[] }) {
   const actions = provided ?? buildExecutiveActions(data);
@@ -48,28 +49,4 @@ function ActionRow({ action }: { action: ExecutiveActionPlan }) {
       <td className="px-4 py-3 text-zinc-300">{action.due ?? "—"}</td>
     </tr>
   );
-}
-
-function rankActions(actions: ExecutiveActionPlan[]) {
-  return actions
-    .slice()
-    .sort((a, b) => (priorityScore(b) - priorityScore(a)) || (confidenceScore(b.confidence) - confidenceScore(a.confidence)));
-}
-
-function priorityScore(action: ExecutiveActionPlan) {
-  if (action.priority === "P1") return 3;
-  if (action.priority === "P2") return 2;
-  return 1;
-}
-
-function confidenceScore(value: string) {
-  if (value?.toLowerCase().includes("high")) return 3;
-  if (value?.toLowerCase().includes("medium")) return 2;
-  return 1;
-}
-
-function formatConfidence(value: string) {
-  if (!value) return "—";
-  const label = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-  return label;
 }
