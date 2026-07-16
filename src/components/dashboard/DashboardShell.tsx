@@ -1,5 +1,5 @@
 import { buildExecutiveActions, buildDataConfidence, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
-import { DashboardOverviewResponse, SchedulerJobHealth, SchedulerSummary } from "@/lib/types/dashboard";
+import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
 import { ExecutiveKpiScorecard } from "./ExecutiveKpiScorecard";
@@ -13,14 +13,13 @@ import { BrandPowerPanel } from "./BrandPowerPanel";
 import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
-import { ActionQueuePanel } from "./ActionQueuePanel";
-import { SystemHealthPanel } from "./SystemHealthPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
-import { SiteHealthSummary } from "./SiteHealthSummary";
 import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
+import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
+import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -42,6 +41,7 @@ export function DashboardShell({ data }: Props) {
   const operationsSummary = buildOperationsSummary(data, executiveActions);
   const industrySummary = buildIndustrySummary(data);
   const dataConfidenceSummary = buildDataConfidenceSummary(dataConfidence, executiveActions);
+  const operationsIntel = buildOperationsIntel(data);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
@@ -95,16 +95,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
           meta={<SectionMeta summary={operationsSummary} />}
         >
-          <div className="space-y-5">
-            {data.schedulerJobs?.length ? (
-              <AutomationAttention jobs={data.schedulerJobs ?? []} summary={data.schedulerSummary} />
-            ) : (
-              <PanelAuditPlaceholder title="Scheduler telemetry missing" detail="No job metadata available." />
-            )}
-            {data.systemHealth ? <SystemHealthPanel data={data.systemHealth} /> : null}
-            {data.actionQueue ? <ActionQueuePanel data={data.actionQueue} /> : null}
-            <SiteHealthSummary snapshot={data.cloudflare} />
-          </div>
+          <OperationsReliabilityPanel intel={operationsIntel} />
         </DashboardSection>
 
         <DashboardSection
@@ -136,48 +127,6 @@ export function DashboardShell({ data }: Props) {
       </div>
     </div>
   );
-}
-
-function AutomationAttention({ jobs, summary }: { jobs: SchedulerJobHealth[]; summary?: SchedulerSummary | null }) {
-  const attentionJobs = jobs
-    .filter((job) => job.lastStatus === "failed" || job.lastError || job.lastRunAt === null || job.isActive === false)
-    .slice(0, 3);
-
-  const statusLabel = summary?.status === "BROKEN" ? "Automation broken" : summary?.status === "PARTIAL" ? "Automation partial" : "Automation live";
-  const badgeTone = summary?.status === "BROKEN" ? "text-rose-300 border-rose-500/40" : summary?.status === "PARTIAL" ? "text-amber-200 border-amber-500/40" : "text-emerald-200 border-emerald-500/40";
-
-  return (
-    <section className="rounded-3xl border border-white/8 bg-black/30 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Automation health</div>
-          <p className="text-sm text-zinc-400">{summary?.failingCount ? `${summary.failingCount} job(s) need attention` : "All critical cadences reporting."}</p>
-        </div>
-        <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${badgeTone}`}>{statusLabel}</span>
-      </div>
-
-      {attentionJobs.length === 0 ? (
-        <p className="mt-3 text-sm text-zinc-400">No failing jobs detected.</p>
-      ) : (
-        <ul className="mt-4 space-y-3 text-sm text-zinc-200">
-          {attentionJobs.map((job) => (
-            <li key={job.jobKey} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-              <div className="font-semibold text-white">{job.jobName}</div>
-              <div className="text-xs text-zinc-400">Last run {formatAutomationTimestamp(job.lastRunAt)}</div>
-              <div className="text-xs text-amber-200">{job.lastError ?? job.lastSummary ?? "No summary provided"}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function formatAutomationTimestamp(iso: string | null) {
-  if (!iso) return "unknown";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "unknown";
-  return date.toLocaleString();
 }
 
 type SectionSummary = {
