@@ -35,7 +35,7 @@ test("buildIndustryOpportunities filters stale items", () => {
   };
   const opportunities = buildIndustryOpportunities(snapshot);
   assert.equal(opportunities.length, 1);
-  assert.equal(opportunities[0].headline, BASE_ALERT.title);
+  assert.equal(opportunities[0].concept, BASE_ALERT.opportunity);
 });
 
 test("buildIndustryOpportunities caps at five items", () => {
@@ -70,6 +70,6 @@ test("buildIndustryOpportunities includes provenance and contact status", () => 
   const snapshot: IndustryPulseSnapshot = { generatedAt: new Date().toISOString(), sources: [], alerts: [BASE_ALERT] };
   const opportunities = buildIndustryOpportunities(snapshot);
   const opportunity = opportunities[0];
-  assert.equal(opportunity.provenance, BASE_ALERT.source);
-  assert.match(opportunity.contactStatus, /Contact/);
+  assert.match(opportunity.provenance, /ESPN/i);
+  assert.equal(opportunity.contactStatus, "Not researched");
 });

@@ -51,10 +51,13 @@ function OpportunityCard({ opportunity }: { opportunity: IndustryPulseOpportunit
     <article className="rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-zinc-100">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="font-semibold">{opportunity.headline}</div>
-          <p className="text-xs text-zinc-400">{opportunity.publishedLabel}</p>
+          <div className="font-semibold text-white">{opportunity.concept}</div>
+          <p className="text-xs text-zinc-400">{opportunity.sourceHeadline}</p>
         </div>
-        <StatusChip label={`${opportunity.category} • ${opportunity.urgency}`} tone={toneFromUrgency(opportunity.urgency)} />
+        <div className="flex flex-wrap gap-2">
+          <StatusChip label={`Score ${opportunity.opportunityScore}`} tone="emerald" />
+          <StatusChip label={`${opportunity.urgency} • ${opportunity.confidence}`} tone={toneFromUrgency(opportunity.urgency)} />
+        </div>
       </div>
 
       <dl className="mt-3 grid gap-2 text-xs text-zinc-300 md:grid-cols-2">
@@ -72,7 +75,7 @@ function OpportunityCard({ opportunity }: { opportunity: IndustryPulseOpportunit
         <span>Confidence: {opportunity.confidence}</span>
         {opportunity.sourceUrl ? (
           <a href={opportunity.sourceUrl} className="text-sky-300 hover:text-sky-100" target="_blank" rel="noreferrer">
-            Source
+            Evidence
           </a>
         ) : null}
       </div>

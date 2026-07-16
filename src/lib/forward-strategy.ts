@@ -1,4 +1,5 @@
 import type { DashboardOverviewResponse, ExecutiveInsightsPayload, HeaderMetric } from "@/lib/types/dashboard";
+import type { IndustryPulseOpportunity } from "@/lib/industry-pulse";
 
 function findMetric(metrics: HeaderMetric[], predicate: (metric: HeaderMetric) => boolean) {
   return metrics.find(predicate);
@@ -7,7 +8,8 @@ function findMetric(metrics: HeaderMetric[], predicate: (metric: HeaderMetric) =
 export function buildForwardActions(
   data: DashboardOverviewResponse,
   totalDays: number,
-  elapsedDays: number
+  elapsedDays: number,
+  opportunities: IndustryPulseOpportunity[] = []
 ): Array<{
   id: string;
   category: string;
@@ -80,6 +82,25 @@ export function buildForwardActions(
       confidence: actionableInsight.magnitude === "major" ? "high" : "medium"
     });
   }
+
+  const opportunityActions = opportunities
+    .filter((opportunity) => opportunity.opportunityScore >= 70)
+    .slice(0, 1)
+    .map((opportunity) => {
+      const confidence: "high" | "medium" | "low" = opportunity.confidenceScore >= 80 ? "high" : "medium";
+      return {
+        id: `forward-opportunity-${opportunity.id}`,
+        category: "Opportunity",
+        title: opportunity.concept,
+        reason: opportunity.whyItMatters,
+        expectedImpact: opportunity.expectedImpact,
+        evidence: opportunity.provenance,
+        urgency: opportunity.urgency === "high" ? "Today" : "This week",
+        confidence
+      };
+    });
+
+  actions.push(...opportunityActions);
 
   return actions.slice(0, 3);
 }

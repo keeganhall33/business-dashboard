@@ -1,6 +1,7 @@
-import type { DashboardOverviewResponse, ExecutiveInsightsPayload } from "@/lib/types/dashboard";
+import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import { countRangeDays, elapsedRangeDays } from "@/lib/date/range";
 import { buildForwardActions } from "@/lib/forward-strategy";
+import { buildIndustryOpportunities } from "@/lib/industry-pulse";
 
 export function ForwardStrategyPanel({
   data
@@ -10,8 +11,9 @@ export function ForwardStrategyPanel({
   const range = data.range;
   const totalDays = countRangeDays(range);
   const elapsedDays = elapsedRangeDays(range);
+  const industryOpportunities = data.industryPulseSnapshot ? buildIndustryOpportunities(data.industryPulseSnapshot) : [];
 
-  const forwardActions = buildForwardActions(data, totalDays, elapsedDays);
+  const forwardActions = buildForwardActions(data, totalDays, elapsedDays, industryOpportunities);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-950/60 via-zinc-950 to-zinc-950 p-6">
@@ -57,11 +59,4 @@ export function toneFromConfidence(confidence: "high" | "medium" | "low") {
   if (confidence === "high") return "text-emerald-300 border-emerald-500/40";
   if (confidence === "medium") return "text-amber-300 border-amber-500/40";
   return "text-zinc-300 border-zinc-500/40";
-}
-
-export function describeTrend(trend: NonNullable<ExecutiveInsightsPayload>["trends"][number]) {
-  const percent = typeof trend.percentChange === "number" ? `${trend.percentChange.toFixed(1)}%` : null;
-  const direction = trend.direction === "down" ? "declined" : trend.direction === "up" ? "grew" : "held steady";
-  const parts = [percent, direction].filter(Boolean).join(" ");
-  return parts ? `${trend.label} ${parts}` : trend.label;
 }

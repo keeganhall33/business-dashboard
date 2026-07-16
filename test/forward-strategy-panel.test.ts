@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildForwardActions, describeTrend } from "../src/lib/forward-strategy";
+import { buildForwardActions, describeTrend } from "../src/lib/forward-strategy.ts";
 import type { DashboardOverviewResponse, ExecutiveInsightsPayload } from "../src/lib/types/dashboard";
 
 const BASE_DASHBOARD: DashboardOverviewResponse = {
