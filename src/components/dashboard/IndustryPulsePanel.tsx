@@ -68,6 +68,7 @@ function OpportunityCard({ opportunity }: { opportunity: IndustryPulseOpportunit
         <DetailRow label="Licensing / rights" value={opportunity.licensingRisk} />
         <DetailRow label="Recommended next action" value={opportunity.nextAction} />
         <DetailRow label="Contact status" value={opportunity.contactStatus} />
+        <DetailRow label="Outreach stage" value={opportunity.outreachStage} />
         <DetailRow label="Evidence" value={opportunity.provenance} />
       </dl>
 
@@ -78,6 +79,10 @@ function OpportunityCard({ opportunity }: { opportunity: IndustryPulseOpportunit
             Evidence
           </a>
         ) : null}
+      </div>
+
+      <div className="mt-2 text-[11px] text-zinc-500">
+        Score breakdown: {opportunity.scoreBreakdown.map((piece) => `${piece.label} ${Math.round(piece.score)} (${piece.rationale})`).join(" • ")}
       </div>
     </article>
   );

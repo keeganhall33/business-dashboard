@@ -83,7 +83,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            <MarketingPerformancePanel telemetry={data.commerceTelemetry} />
+            <MarketingPerformancePanel telemetry={data.commerceTelemetry} meta={data.metaAds} />
             {metaSnapshot ? <MetaAdsPanel snapshot={metaSnapshot} /> : <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />}
           </div>
         </DashboardSection>

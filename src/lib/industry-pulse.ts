@@ -20,6 +20,8 @@ export type IndustryPulseOpportunity = {
   urgencyScore: number;
   freshnessDays: number;
   opportunityScore: number;
+  scoreBreakdown: Array<{ label: string; score: number; rationale: string }>;
+  outreachStage: string;
   provenance: string;
   supportingEvidence: string;
 };
@@ -51,13 +53,15 @@ function toOpportunity(alert: IndustryPulseSnapshot["alerts"][number]): Industry
   const { label: licensingRisk, score: licensingScore } = licensingAssessment(alert.status);
   const { label: expectedImpact, score: impactScore } = impactAssessment(alert);
   const confidenceScore = confidenceToScore(alert.confidence);
-  const opportunityScore = Math.round(
-    urgencyScore * 20 +
-      impactScore * 25 +
-      confidenceScore * 20 +
-      licensingScore * 15 +
-      freshnessScore * 20
-  );
+  const scoreBreakdown = [
+    { label: "Urgency", score: urgencyScore * 0.2, rationale: `Based on ${alert.urgency ?? "unknown"} timeline.` },
+    { label: "Impact", score: impactScore * 0.25, rationale: expectedImpact },
+    { label: "Confidence", score: confidenceScore * 0.2, rationale: `${confidenceScore}% source confidence.` },
+    { label: "Licensing", score: licensingScore * 0.15, rationale: licensingRisk },
+    { label: "Freshness", score: freshnessScore * 0.2, rationale: `${Math.round(freshnessDays)} days old.` }
+  ];
+  const opportunityScore = Math.round(scoreBreakdown.reduce((sum, piece) => sum + piece.score, 0));
+  const outreachStage = resolveOutreachStage(alert, licensingRisk);
 
   return {
     id: alert.title ?? crypto.randomUUID(),
@@ -79,6 +83,8 @@ function toOpportunity(alert: IndustryPulseSnapshot["alerts"][number]): Industry
     urgencyScore,
     freshnessDays,
     opportunityScore,
+    scoreBreakdown,
+    outreachStage,
     provenance: buildProvenance(alert, published),
     supportingEvidence: alert.summary ?? `${alert.related?.length ?? 0} supporting references`
   };
@@ -183,4 +189,17 @@ function buildProvenance(alert: IndustryPulseSnapshot["alerts"][number], publish
 function normalize(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value)) * 100;
+}
+
+function resolveOutreachStage(alert: IndustryPulseSnapshot["alerts"][number], licensingRisk: string) {
+  const normalized = alert.status?.toLowerCase() ?? "";
+  if (normalized.includes("conversation") || normalized.includes("active")) return "Active conversation";
+  if (normalized.includes("waiting")) return "Waiting on response";
+  if (normalized.includes("outreach_sent")) return "Outreach sent";
+  if (normalized.includes("outreach_ready")) return "Outreach ready";
+  if (normalized.includes("contact_identified") || alert.owner) return "Contact identified";
+  if (normalized.includes("research")) return "Research in progress";
+  if (normalized.includes("closed")) return "Closed";
+  if (licensingRisk.toLowerCase().includes("rights blocked")) return "Rights blocked";
+  return "Opportunity found";
 }

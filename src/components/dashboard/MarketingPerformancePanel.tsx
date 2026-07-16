@@ -1,104 +1,108 @@
-import type { CommerceTelemetry } from "@/lib/types/dashboard";
+import type { CommerceTelemetry, MetaAdsSnapshot } from "@/lib/types/dashboard";
+import { buildMarketingInsights } from "@/lib/marketing-intelligence";
 import { StatusChip } from "./ui/StatusChip";
-import { TrendCard } from "./ui/TrendCard";
 
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0
-});
+const percentFormatter = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 0 });
 
 type Props = {
   telemetry?: CommerceTelemetry;
+  meta?: MetaAdsSnapshot | null;
 };
 
-export function MarketingPerformancePanel({ telemetry }: Props) {
-  const ga4 = telemetry?.ga4;
-  const summary = ga4?.summary;
-  const series = ga4?.timeseries ?? [];
-
-  const sessionsSeries = series.map((point) => Number(point.sessions ?? 0));
-  const engagedSeries = series.map((point) => Number(point.engagedSessions ?? 0));
-  const revenueSeries = series.map((point) => Number(point.revenue ?? 0));
+export function MarketingPerformancePanel({ telemetry, meta }: Props) {
+  const insights = buildMarketingInsights({ commerceTelemetry: telemetry, metaAds: meta });
+  const attentionAction = insights.actions[0];
 
   return (
-    <section className="ui-glass ui-glass-hover rounded-3xl p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className="ui-glass rounded-3xl p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Marketing performance</div>
-          <div className="mt-1 text-sm text-zinc-400">GA4 sessions, engagement, and revenue trend for the selected range.</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Marketing intelligence</div>
+          <p className="mt-1 text-sm text-zinc-400">Answers what deserves attention, why it happened, and what to do next.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusChip label="GA4" tone="sky" />
+          {insights.evidenceSources.map((source) => (
+            <StatusChip key={source} label={source} tone="zinc" />
+          ))}
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <TrendCard label="Sessions" value={formatInt(summary?.sessions)} series={sessionsSeries} tone="sky" />
-        <TrendCard label="Engaged sessions" value={formatInt(summary?.engagedSessions)} series={engagedSeries} tone="emerald" />
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <InsightCard title="What deserves attention" headline={insights.attentionHeadline} bullets={insights.attentionEvidence} />
+        <InsightCard title="Why it happened" headline={attentionAction ? attentionAction.title : "Stable"} bullets={insights.drivers} />
+        <InsightCard title="What happens next" headline={insights.outlook} />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Kpi label="Revenue" value={currency.format(Number(summary?.revenue ?? 0))} series={revenueSeries} tone="sky" />
-        <Kpi label="Events" value={formatInt(summary?.eventCount)} />
-        <Kpi label="Avg engagement" value={formatSeconds(summary?.avgEngagementSeconds)} />
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/20">
+        <ActionTable actions={insights.actions} />
       </div>
 
-      {!summary ? (
-        <div className="mt-5 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/50 p-4 text-sm text-zinc-400">
-          GA4 summary not available in this range.
-        </div>
-      ) : null}
-
-      <div className="mt-5 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Evidence</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <StatusChip label="GA4 API" tone="zinc" />
-        </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {insights.metrics.map((metric) => (
+          <MetricChip key={metric.label} label={metric.label} value={metric.value} delta={metric.delta} />
+        ))}
       </div>
     </section>
   );
 }
 
-function Kpi({
-  label,
-  value,
-  tone,
-  series
-}: {
-  label: string;
-  value: string;
-  tone?: "zinc" | "emerald" | "amber" | "sky" | "rose";
-  series?: number[];
-}) {
+function InsightCard({ title, headline, bullets = [] }: { title: string; headline: string; bullets?: string[] }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-white">{value}</div>
-      {tone ? (
-        <div className="mt-2">
-          <StatusChip label={tone === "amber" ? "needs hook" : "signal"} tone={tone} />
-        </div>
+    <article className="rounded-2xl border border-white/10 bg-black/30 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{title}</div>
+      <p className="mt-2 text-sm text-zinc-100">{headline}</p>
+      {bullets?.length ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-zinc-400">
+          {bullets.slice(0, 3).map((bullet) => (
+            <li key={bullet}>{bullet}</li>
+          ))}
+        </ul>
       ) : null}
-      {series && series.length >= 2 ? (
-        <div className="mt-3 opacity-80">
-          <div className="h-1 w-full rounded-full bg-black/30 ring-1 ring-white/5">
-            <div className="h-1 w-[55%] rounded-full bg-gradient-to-r from-[var(--ui-accent)] to-[var(--ui-accent-2)] opacity-70" />
-          </div>
-        </div>
-      ) : null}
+    </article>
+  );
+}
+
+function ActionTable({ actions }: { actions: ReturnType<typeof buildMarketingInsights>["actions"] }) {
+  if (!actions.length) {
+    return <p className="p-4 text-sm text-zinc-400">No marketing actions were surfaced for this range.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm text-zinc-200">
+        <thead className="bg-white/5 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+          <tr>
+            <th className="px-4 py-3">Priority</th>
+            <th className="px-4 py-3">Decision</th>
+            <th className="px-4 py-3">Recommendation</th>
+            <th className="px-4 py-3">Evidence</th>
+            <th className="px-4 py-3">Impact</th>
+            <th className="px-4 py-3">Confidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {actions.map((action) => (
+            <tr key={action.id} className="border-t border-white/10">
+              <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{action.urgency}</td>
+              <td className="px-4 py-3 font-semibold text-white">{action.title}</td>
+              <td className="px-4 py-3 text-zinc-300">{action.recommendation}</td>
+              <td className="px-4 py-3 text-zinc-400">{action.evidence}</td>
+              <td className="px-4 py-3 text-zinc-300">{action.expectedImpact}</td>
+              <td className="px-4 py-3 text-zinc-300">{percentFormatter.format(action.confidence)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function formatInt(value: number | null | undefined) {
-  const num = Number(value ?? 0);
-  return Number.isFinite(num) ? num.toLocaleString() : "0";
-}
-
-function formatSeconds(value: number | null | undefined) {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num) || num <= 0) return "0s";
-  if (num < 60) return `${Math.round(num)}s`;
-  return `${Math.round(num / 60)}m`;
+function MetricChip({ label, value, delta }: { label: string; value: string; delta?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+      <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-white">{value}</div>
+      {delta ? <div className="text-xs text-zinc-400">Δ {delta}</div> : null}
+    </div>
+  );
 }
