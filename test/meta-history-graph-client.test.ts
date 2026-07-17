@@ -1,7 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Response, Headers } from "node-fetch";
-
 import { GraphClient } from "../src/lib/meta-intel/graph-client.ts";
 
 function createFetchSequence(sequence: Array<{ status: number; statusText?: string; headers?: Record<string, string>; body: unknown }>) {

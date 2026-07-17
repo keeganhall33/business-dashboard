@@ -1,4 +1,3 @@
-import fetch, { Response } from "node-fetch";
 import type { GraphRequestCounters, GraphUsageSnapshot } from "./types.ts";
 
 const GRAPH_BASE = "https://graph.facebook.com";
@@ -6,13 +5,15 @@ const DEFAULT_VERSION = "v25.0";
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const RETRYABLE_ERROR_CODES = new Set([4, 17, 32, 613, 80004, 80007]);
 
+type FetchImplementation = typeof fetch;
+
 type GraphClientOptions = {
   accessToken: string;
   apiVersion?: string;
   maxRetries?: number;
   maxPages?: number;
   logger?: (message: string) => void;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchImplementation;
 };
 
 type RequestConfig = {
@@ -29,7 +30,7 @@ export class GraphClient {
   private readonly usage: GraphUsageSnapshot = { throttleEvents: [] };
   private versionWarnings = new Set<string>();
   private lastReportedVersion: string | null = null;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: FetchImplementation;
 
   constructor(options: GraphClientOptions) {
     this.accessToken = options.accessToken;
@@ -37,7 +38,16 @@ export class GraphClient {
     this.maxRetries = Math.max(0, options.maxRetries ?? 3);
     this.maxPages = Math.max(1, options.maxPages ?? 25);
     this.logger = options.logger;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    const builtinFetch = getGlobalFetch();
+    if (options.fetchImpl) {
+      this.fetchImpl = options.fetchImpl;
+    } else if (builtinFetch) {
+      this.fetchImpl = builtinFetch;
+    } else {
+      throw new Error(
+        "Fetch API is unavailable in this runtime. Provide a fetchImpl when constructing GraphClient."
+      );
+    }
   }
 
   getUsageSnapshot(): GraphUsageSnapshot {
@@ -219,6 +229,13 @@ function safeParseHeader(value: string): Record<string, unknown> | null {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getGlobalFetch(): FetchImplementation | null {
+  if (typeof globalThis.fetch === "function") {
+    return globalThis.fetch.bind(globalThis);
+  }
+  return null;
 }
 
 function extractDataArray(payload: unknown): unknown[] {
