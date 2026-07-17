@@ -1,6 +1,6 @@
 import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
-import { sanitizeDashboardData, sanitizeExecutiveInsights, ensureRevenuePerVisitorMetric, filterActionNoise } from "@/lib/dashboard/sanitizers";
+import { sanitizeDashboardData, sanitizeExecutiveInsights, filterActionNoise } from "@/lib/dashboard/sanitizers";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
@@ -18,7 +18,6 @@ import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
-import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
@@ -38,7 +37,7 @@ export function DashboardShell({ data }: Props) {
   const metaSnapshot = sanitizedData.metaAds ?? null;
   const dataConfidence = buildDataConfidenceModel(sanitizedData);
   const { insights: executiveInsights, partialDayNotice } = sanitizeExecutiveInsights(sanitizedData.executiveInsights);
-  const headerMetrics = ensureRevenuePerVisitorMetric(sanitizedData);
+  const headerMetrics = (sanitizedData.headerMetrics ?? []).filter((metric) => metric.metricKey !== "revenue_per_visitor");
   const executiveActions = buildExecutiveActions(sanitizedData, 5, dataConfidence).filter(filterActionNoise);
   const executiveDrivers = buildExecutiveDrivers(executiveInsights?.trends ?? [], 3, dataConfidence);
   const commerceSummary = buildCommerceSummary(sanitizedData, executiveActions);
@@ -54,15 +53,14 @@ export function DashboardShell({ data }: Props) {
         <ExecutiveRangeHeader range={sanitizedData.range} insights={executiveInsights} />
         <ExecutiveStatusPanel insights={executiveInsights} fallbackRange={sanitizedData.range} />
         {executiveInsights ? <ExecutiveBriefPanel insights={executiveInsights} partialDayNotice={partialDayNotice} /> : null}
-        <ExecutiveKpiScorecard metrics={headerMetrics} />
+        <ExecutiveKpiScorecard metrics={headerMetrics} suppressStatus={Boolean(partialDayNotice)} />
         <ExecutiveDriversPanel
           trends={executiveInsights?.trends ?? []}
           drivers={executiveDrivers}
           confidence={dataConfidence}
           partialDayNotice={partialDayNotice}
         />
-        <ExecutiveActionsPanel data={sanitizedData} actions={executiveActions} confidence={dataConfidence} partialDayNotice={partialDayNotice} />
-        <ForwardStrategyPanel data={sanitizedData} />
+        <ExecutiveActionsPanel data={sanitizedData} actions={executiveActions} confidence={dataConfidence} />
       </div>
 
       <div className="space-y-6">

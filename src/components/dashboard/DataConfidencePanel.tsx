@@ -1,9 +1,9 @@
 import type { ConfidenceSummary } from "@/lib/data-confidence";
-import { buildCoverageIssues } from "@/lib/data-confidence/coverage";
 
 export function DataConfidencePanel({ summary, partialDayNotice }: { summary: ConfidenceSummary; partialDayNotice?: string | null }) {
   const executive = buildExecutiveSummary(summary, partialDayNotice);
-  const coverageIssues = buildCoverageIssues(summary);
+  const badgeLabel = partialDayNotice ? "Preliminary" : summary.overall.label;
+  const badgeTone = partialDayNotice ? "amber" : summary.overall.tone;
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
@@ -13,8 +13,8 @@ export function DataConfidencePanel({ summary, partialDayNotice }: { summary: Co
             <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive confidence</div>
             <div className="text-lg font-semibold text-white">{executive.label}</div>
           </div>
-          <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.25em] ${toneBadge(summary.overall.tone)}`}>
-            {summary.overall.label}
+          <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.25em] ${toneBadge(badgeTone)}`}>
+            {badgeLabel}
           </span>
         </div>
         <p className="mt-3 text-sm text-zinc-300">{executive.reason}</p>
@@ -39,19 +39,6 @@ export function DataConfidencePanel({ summary, partialDayNotice }: { summary: Co
         ) : null}
       </div>
 
-      {coverageIssues.length ? (
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Coverage watch</div>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-200">
-            {coverageIssues.map((issue) => (
-              <li key={issue.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="font-semibold text-white">{issue.label}</div>
-                <p className="text-xs text-zinc-400">{issue.detail}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </section>
   );
 }

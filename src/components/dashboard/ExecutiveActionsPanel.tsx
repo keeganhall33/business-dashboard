@@ -7,23 +7,19 @@ import { RecommendationList, type RecommendationListItem } from "./ui/Recommenda
 export function ExecutiveActionsPanel({
   data,
   actions: provided,
-  confidence,
-  partialDayNotice
+  confidence
 }: {
   data: DashboardOverviewResponse;
   actions?: ExecutiveActionPlan[];
   confidence?: ConfidenceSummary;
-  partialDayNotice?: string | null;
 }) {
   const actions = provided ?? buildExecutiveActions(data, 7, confidence);
-  const ranked = rankActions(actions);
+  const ranked = rankActions(actions).filter(isActionExecutable);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive Actions</div>
-      {partialDayNotice ? (
-        <p className="mt-3 text-sm text-amber-200">{partialDayNotice}</p>
-      ) : ranked.length === 0 ? (
+      {ranked.length === 0 ? (
         <p className="mt-3 text-sm text-zinc-400">No high-priority actions surfaced for this window.</p>
       ) : (
         <div className="mt-4">
@@ -32,6 +28,20 @@ export function ExecutiveActionsPanel({
       )}
     </section>
   );
+}
+
+function isActionExecutable(action: ExecutiveActionPlan) {
+  const title = action.title?.trim().toLowerCase() ?? "";
+  const prohibitedTitles = [
+    "close the revenue gap",
+    "increase monthly revenue",
+    "increase aov",
+    "increase conversion rate"
+  ];
+  if (prohibitedTitles.includes(title)) return false;
+  if (!action.nextStep || !action.nextStep.trim()) return false;
+  if (!action.evidence || !action.evidence.trim()) return false;
+  return true;
 }
 
 function mapExecutiveAction(action: ExecutiveActionPlan): RecommendationListItem {

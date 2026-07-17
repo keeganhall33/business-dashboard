@@ -1,3 +1,4 @@
+import { formatRangeLabel } from "@/lib/date/range";
 import { ExecutiveInsightsPayload, TrendComparison, TelemetryHealthStatus } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 
@@ -19,7 +20,7 @@ export function ExecutiveBriefPanel({ insights, partialDayNotice }: Props) {
     return <div className="text-sm text-zinc-400">Executive intelligence is not available for this range.</div>;
   }
 
-  const windowText = `${brief.pacificWindow.startDate} → ${brief.pacificWindow.endDate} PT`;
+  const windowText = brief.pacificWindow ? `${formatRangeLabel(brief.pacificWindow, { includeYear: true })} PT` : "Window unavailable";
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

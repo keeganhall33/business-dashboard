@@ -380,9 +380,11 @@ export function buildOperationsIntel(data: DashboardOverviewResponse): Operation
   });
   const failedJobs = schedulerJobs
     .filter((job) => (job.lastStatus ?? "").toLowerCase() === "failed")
+    .filter((job) => isRecentJobRun(job.lastRunAt, 21))
     .map((job) => mapJob(job));
   const overdueJobs = schedulerJobs
     .filter((job) => isJobOverdue(job, now))
+    .filter((job) => isRecentJobRun(job.lastRunAt, 21))
     .map((job) => mapJob(job));
   const humanIntervention = buildHumanIntervention(data.actionQueue);
   const deliverables = buildDeliverables(data.proofOfWork ?? []);
@@ -746,11 +748,12 @@ function buildIncidents(args: {
 
   args.schedulerJobs
     .filter((job) => (job.lastStatus ?? "").toLowerCase() === "failed")
+    .filter((job) => isRecentJobRun(job.lastRunAt, 21))
     .forEach((job) => {
       incidents.push({
         id: `job-${job.jobKey}`,
         title: `${job.jobName} failed`,
-        detail: job.lastError ?? "Scheduler reported a failure.",
+        detail: sanitizeJobDetail(job.lastError ?? "Scheduler reported a failure."),
         severity: "critical",
         detectedAt: job.lastRunAt ?? null
       });
@@ -807,7 +810,7 @@ function buildIncidents(args: {
     });
   }
 
-  return incidents.slice(0, 6);
+  return incidents.filter((incident) => !incident.detectedAt || isRecentJobRun(incident.detectedAt, 21)).slice(0, 6);
 }
 
 function buildHumanIntervention(actionQueue: ActionQueue): OperationsIntervention[] {
@@ -1025,7 +1028,7 @@ function mapJob(job: SchedulerJobHealth): OperationsJob {
   return {
     id: job.jobKey,
     title: job.jobName,
-    detail: job.lastSummary ?? job.lastError ?? "Awaiting next scheduled run.",
+    detail: sanitizeJobDetail(job.lastSummary ?? job.lastError ?? "Awaiting next scheduled run."),
     owner: friendlyOwner(job.source),
     lastRunAt: job.lastRunAt ?? null,
     nextRunAt: job.nextRunAt ?? null
@@ -1075,6 +1078,22 @@ function isWarRoomEligible(warRoom: DashboardOverviewResponse["warRoom"] | null 
   const hours = hoursSince(warRoom.lastUpdated);
   if (hours != null && hours > 48) return false;
   return true;
+}
+
+function isRecentJobRun(value: string | null | undefined, maxAgeDays: number) {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return false;
+  return (Date.now() - timestamp) / 86400000 <= maxAgeDays;
+}
+
+function sanitizeJobDetail(detail: string) {
+  const normalized = detail.trim();
+  if (!normalized) return "Awaiting next scheduled run.";
+  if (/GET\s+\//i.test(normalized) || /POST\s+\//i.test(normalized)) {
+    return "Scheduler endpoint error — verify automation logs.";
+  }
+  return normalized;
 }
 
 function parseDate(value: string | null | undefined): Date | null {

@@ -8,7 +8,7 @@ const STATUS_BADGES: Record<HeaderMetric["status"], string> = {
   critical: "text-rose-300 border-rose-500/40"
 };
 
-export function ExecutiveKpiScorecard({ metrics }: { metrics: HeaderMetric[] }) {
+export function ExecutiveKpiScorecard({ metrics, suppressStatus }: { metrics: HeaderMetric[]; suppressStatus?: boolean }) {
   const selected = metrics.slice(0, 8);
 
   if (!selected.length) {
@@ -24,27 +24,26 @@ export function ExecutiveKpiScorecard({ metrics }: { metrics: HeaderMetric[] }) 
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive KPI Scorecard</div>
       <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {selected.map((metric) => (
-          <KpiCard key={metric.metricKey} metric={metric} />
+          <KpiCard key={metric.metricKey} metric={metric} suppressStatus={suppressStatus} />
         ))}
       </div>
     </section>
   );
 }
 
-function KpiCard({ metric }: { metric: HeaderMetric }) {
+function KpiCard({ metric, suppressStatus }: { metric: HeaderMetric; suppressStatus?: boolean }) {
   const delta = typeof metric.deltaPercent === "number" ? metric.deltaPercent : null;
-  const statusClass = STATUS_BADGES[metric.status] ?? STATUS_BADGES.healthy;
+  const statusClass = suppressStatus ? "text-amber-200 border-amber-500/30" : STATUS_BADGES[metric.status] ?? STATUS_BADGES.healthy;
+  const statusLabel = suppressStatus ? "Preliminary" : metric.status.replace("_", " ");
 
   return (
     <article className="flex flex-col rounded-2xl border border-white/5 bg-black/30 p-4 shadow-inner shadow-black/40">
       <div className="flex items-center justify-between gap-3">
         <div className="truncate text-[11px] uppercase tracking-[0.3em] text-zinc-500">{metric.metricName}</div>
-        <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${statusClass}`}>{metric.status.replace("_", " ")}</span>
+        <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${statusClass}`}>{statusLabel}</span>
       </div>
       <div className="mt-3 text-3xl font-semibold text-white">{formatMetricValue(metric.currentValue ?? 0, metric.unit)}</div>
-      <div className="mt-1 text-xs text-zinc-500">
-        Target {metric.targetLabel ?? formatMetricValue(metric.targetValue ?? 0, metric.unit)}
-      </div>
+      <div className="mt-1 text-xs text-zinc-500">Target {metric.targetLabel ?? formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
       {metric.comparisonValue != null ? (
         <div className="mt-1 text-xs text-zinc-500">
           Vs {metric.comparisonLabel ?? "previous"}: {formatMetricValue(metric.comparisonValue, metric.unit)}
@@ -52,7 +51,10 @@ function KpiCard({ metric }: { metric: HeaderMetric }) {
       ) : null}
       <div className="mt-3 flex items-center justify-between text-sm">
         {delta != null ? (
-          <span className={delta >= 0 ? "text-emerald-300" : "text-rose-300"}>{delta >= 0 ? "+" : ""}{delta.toFixed(1)}%</span>
+          <span className={suppressStatus ? "text-zinc-400" : delta >= 0 ? "text-emerald-300" : "text-rose-300"}>
+            {delta >= 0 ? "+" : ""}
+            {delta.toFixed(1)}%
+          </span>
         ) : (
           <span className="text-zinc-500">No change</span>
         )}

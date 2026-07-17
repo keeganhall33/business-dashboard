@@ -1,18 +1,23 @@
 import { computeRevenuePerVisitor } from "../metrics/revenue.ts";
 import { isActivePipelineStatus } from "../pipeline/status.ts";
 import { formatRangeLabel } from "../date/range.ts";
-import type { DashboardOverviewResponse, HeaderMetric } from "../types/dashboard";
+import type { ActionQueue, ActionQueueItem, ActionQueueSection, DashboardOverviewResponse, HeaderMetric } from "../types/dashboard";
+
+const MAX_QUEUE_ITEM_AGE_DAYS = 21;
+const WAR_ROOM_MAX_AGE_DAYS = 7;
 
 export function sanitizeDashboardData(data: DashboardOverviewResponse): DashboardOverviewResponse {
   const pipelineDeals = data.pipelinePanel?.deals ?? [];
   const sanitizedPipelineDeals = pipelineDeals.filter((deal) => isActivePipelineStatus(deal.status));
   const topOpportunities = data.opportunityRadar?.topOpportunities ?? [];
   const sanitizedTopOpps = topOpportunities.filter((deal) => isActivePipelineStatus(deal.status));
-  const warRoomEntries = (data.warRoom?.entries ?? []).filter((entry) => isRecent(entry.createdAt, 14)).slice(0, 5);
+  const warRoomEntries = (data.warRoom?.entries ?? []).filter((entry) => isRecent(entry.createdAt, WAR_ROOM_MAX_AGE_DAYS)).slice(0, 5);
   const proofOfWork = (data.proofOfWork ?? []).filter((entry) => isRecent(entry.completedAt, 21));
+  const sanitizedQueue = data.actionQueue ? sanitizeActionQueue(data.actionQueue) : data.actionQueue;
 
   return {
     ...data,
+    actionQueue: sanitizedQueue,
     pipelinePanel: data.pipelinePanel
       ? {
           ...data.pipelinePanel,
@@ -106,10 +111,20 @@ export function ensureRevenuePerVisitorMetric(data: DashboardOverviewResponse): 
 
 export function filterActionNoise(action: { title?: string | null; nextStep?: string | null }) {
   const normalized = action.title?.trim().toLowerCase() ?? "";
-  if (normalized === "close the revenue gap" || normalized === "increase monthly revenue") {
+  const genericTitles = [
+    "close the revenue gap",
+    "increase monthly revenue",
+    "increase aov",
+    "increase conversion rate"
+  ];
+  if (genericTitles.includes(normalized)) {
     return false;
   }
   if (!action.nextStep || !action.nextStep.trim()) {
+    return false;
+  }
+  const evidence = (action as { evidence?: string | null }).evidence;
+  if (!evidence || !evidence.trim()) {
     return false;
   }
   return true;
@@ -130,4 +145,31 @@ function isRecent(iso: string | null | undefined, days: number) {
   if (Number.isNaN(parsed)) return false;
   const ageDays = (Date.now() - parsed) / 86400000;
   return ageDays <= days;
+}
+
+function sanitizeActionQueue(queue: ActionQueue): ActionQueue {
+  const sanitizeSection = (section: ActionQueueSection): ActionQueueSection => {
+    const items = (section.items ?? []).filter(isExecutableQueueItem);
+    return { ...section, items };
+  };
+
+  return {
+    ...queue,
+    needsApprovalTasks: sanitizeSection(queue.needsApprovalTasks),
+    pendingPlans: sanitizeSection(queue.pendingPlans),
+    decisionsDue: sanitizeSection(queue.decisionsDue),
+    invoicesToSend: sanitizeSection(queue.invoicesToSend)
+  };
+}
+
+function isExecutableQueueItem(item: ActionQueueItem) {
+  if (!item) return false;
+  const created = item.createdAt ?? (item as { submittedAt?: string | null }).submittedAt ?? null;
+  if (!created || !isRecent(created, MAX_QUEUE_ITEM_AGE_DAYS)) return false;
+  if (!item.title || !item.summary) return false;
+  const status = ((item as { status?: string | null }).status ?? item.priority ?? "").toString().toLowerCase();
+  if (["on_hold", "completed", "invalid"].includes(status)) return false;
+  const title = item.title.toLowerCase();
+  if (title.includes("upper deck") || title.includes("topps")) return false;
+  return true;
 }
