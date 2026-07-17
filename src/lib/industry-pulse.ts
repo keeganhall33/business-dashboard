@@ -27,11 +27,27 @@ export type IndustryPulseOpportunity = {
 };
 
 export function buildIndustryOpportunities(snapshot: IndustryPulseSnapshot): IndustryPulseOpportunity[] {
-  return (snapshot.alerts ?? [])
+  const scored = (snapshot.alerts ?? [])
     .filter((alert) => alert && isValidOpportunity(alert))
     .map((alert) => toOpportunity(alert))
-    .sort((a, b) => b.opportunityScore - a.opportunityScore)
-    .slice(0, 5);
+    .sort((a, b) => b.opportunityScore - a.opportunityScore);
+
+  const unique: IndustryPulseOpportunity[] = [];
+  const seen = new Set<string>();
+  for (const opportunity of scored) {
+    const key = dedupeKey(opportunity);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(opportunity);
+    if (unique.length >= 5) break;
+  }
+  return unique;
+}
+
+function dedupeKey(opportunity: IndustryPulseOpportunity) {
+  const concept = opportunity.concept?.trim().toLowerCase() ?? "";
+  const source = opportunity.sourceUrl?.trim().toLowerCase() ?? opportunity.sourceHeadline?.trim().toLowerCase() ?? "";
+  return `${concept}|${source}`;
 }
 
 function isValidOpportunity(alert: IndustryPulseSnapshot["alerts"][number]) {

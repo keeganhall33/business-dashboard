@@ -42,6 +42,7 @@ test("buildIndustryOpportunities caps at five items", () => {
   const alerts = Array.from({ length: 10 }, (_, i) => ({
     ...BASE_ALERT,
     title: `Story ${i}`,
+    opportunity: `${BASE_ALERT.opportunity} ${i}`,
     date: new Date(Date.now() - i * 86400000).toISOString()
   }));
   const snapshot: IndustryPulseSnapshot = { generatedAt: new Date().toISOString(), sources: [], alerts };
@@ -72,4 +73,22 @@ test("buildIndustryOpportunities includes provenance and contact status", () => 
   const opportunity = opportunities[0];
   assert.match(opportunity.provenance, /ESPN/i);
   assert.equal(opportunity.contactStatus, "Not researched");
+});
+
+test("buildIndustryOpportunities deduplicates repeated concepts", () => {
+  const duplicate = {
+    ...BASE_ALERT,
+    title: "Duplicate",
+    source: BASE_ALERT.source,
+    sourceUrl: BASE_ALERT.sourceUrl,
+    urgency: "medium"
+  } as IndustryPulseSnapshot["alerts"][number];
+  const snapshot: IndustryPulseSnapshot = {
+    generatedAt: new Date().toISOString(),
+    sources: [],
+    alerts: [BASE_ALERT, duplicate]
+  };
+  const opportunities = buildIndustryOpportunities(snapshot);
+  assert.equal(opportunities.length, 1);
+  assert.equal(opportunities[0].concept, BASE_ALERT.opportunity);
 });
