@@ -1,9 +1,10 @@
 import { buildExecutiveActions, ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import type { ConfidenceSummary } from "@/lib/data-confidence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import { rankActions, formatConfidence } from "@/lib/executive-actions";
 
-export function ExecutiveActionsPanel({ data, actions: provided }: { data: DashboardOverviewResponse; actions?: ExecutiveActionPlan[] }) {
-  const actions = provided ?? buildExecutiveActions(data);
+export function ExecutiveActionsPanel({ data, actions: provided, confidence }: { data: DashboardOverviewResponse; actions?: ExecutiveActionPlan[]; confidence?: ConfidenceSummary }) {
+  const actions = provided ?? buildExecutiveActions(data, 7, confidence);
   const ranked = rankActions(actions);
 
   return (
@@ -43,9 +44,14 @@ function ActionRow({ action }: { action: ExecutiveActionPlan }) {
       <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">{action.priority}</td>
       <td className="px-4 py-3 font-semibold text-white">{action.title}</td>
       <td className="px-4 py-3 text-zinc-300">{action.impact}</td>
-      <td className="px-4 py-3 text-zinc-300">{formatConfidence(action.confidence)}</td>
+      <td className="px-4 py-3 text-zinc-300">
+        {formatConfidence(action.confidence)}
+        {action.confidenceDetail ? <p className="text-[10px] text-zinc-500">{action.confidenceDetail}</p> : null}
+      </td>
       <td className="px-4 py-3 text-zinc-300">{action.owner ?? "—"}</td>
-      <td className="px-4 py-3 text-zinc-400">{action.evidence}</td>
+      <td className="px-4 py-3 text-zinc-400">
+        <div>{action.evidence}</div>
+      </td>
       <td className="px-4 py-3 text-zinc-300">{action.due ?? "—"}</td>
     </tr>
   );

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildExecutiveActions, buildExecutiveDrivers, buildDataConfidence, summarizeExecutiveStatus } from "../src/lib/dashboard/executive-layout.ts";
+import { buildExecutiveActions, buildExecutiveDrivers, summarizeExecutiveStatus } from "../src/lib/dashboard/executive-layout.ts";
+import { buildDataConfidenceModel } from "../src/lib/data-confidence.ts";
 import type { DashboardOverviewResponse, TelemetryMetadata, TrendComparison, ExecutiveInsightsPayload, TelemetrySource } from "../src/lib/types/dashboard";
 
 const BASE_DASHBOARD: DashboardOverviewResponse = {
@@ -135,7 +136,8 @@ test("buildExecutiveDrivers clusters related metrics", () => {
 });
 
 test("buildDataConfidence collapses partial-day warnings", () => {
-  const metadata: Partial<Record<TelemetrySource, TelemetryMetadata>> = {
+  const dashboard = structuredClone(BASE_DASHBOARD);
+  dashboard.telemetryMetadata = {
     woo: {
       source: "woo",
       requestedStartDate: "2026-07-09",
@@ -146,17 +148,33 @@ test("buildDataConfidence collapses partial-day warnings", () => {
       includesPartialDay: true,
       includesFutureDates: false,
       warningCodes: ["partial_day"],
-      generatedAt: "2026-07-15T12:00:00Z",
-      latestCompletedBusinessDate: "2026-07-14"
+      generatedAt: "2026-07-15T10:00:00Z",
+      latestCompletedBusinessDate: "2026-07-15"
     }
-  };
+  } satisfies Partial<Record<TelemetrySource, TelemetryMetadata>>;
+  dashboard.executiveInsights = {
+    brief: {
+      pacificWindow: { startDate: "2026-07-09", endDate: "2026-07-15", includesPartialDay: true },
+      warnings: [],
+      topChanges: [],
+      sourceFreshness: [],
+      attention: null
+    },
+    trends: []
+  } satisfies ExecutiveInsightsPayload;
+  dashboard.websiteConversion = {
+    generatedAt: "2026-07-15T10:00:00Z",
+    wooCommerce: { netRevenue: 1000, paidOrdersInWindow: 20, topProducts: [], recentOrders: [] }
+  } as DashboardOverviewResponse["websiteConversion"];
+  dashboard.commerceTelemetry = {
+    range: dashboard.range,
+    woo: { summary: { revenue: 1000, orders: 20, avgOrderValue: 50, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0 }, timeseries: [] }
+  } as DashboardOverviewResponse["commerceTelemetry"];
 
-  const summary = buildDataConfidence(metadata, {
-    woo: { source: "woo", status: "warning", reasons: ["stale"], warningCodes: ["partial_day"] }
-  });
-
-  assert.equal(summary.rows[0].warning, "stale");
-  assert.equal(summary.includesPartialDay, true, "partial-day rolls up globally");
+  const summary = buildDataConfidenceModel(dashboard);
+  const woo = summary.entries.find((entry) => entry.id === "woo");
+  assert.equal(summary.partialDay, true, "partial-day rolls up globally");
+  assert.equal(woo?.state, "trusted", "Woo confidence stays trusted despite partial day");
   assert.equal(summary.overall.label.length > 0, true);
 });
 

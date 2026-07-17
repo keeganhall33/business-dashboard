@@ -1,8 +1,9 @@
 import { buildExecutiveDrivers, ExecutiveDriver } from "@/lib/dashboard/executive-layout";
+import type { ConfidenceSummary } from "@/lib/data-confidence";
 import { TrendComparison } from "@/lib/types/dashboard";
 
-export function ExecutiveDriversPanel({ trends }: { trends: TrendComparison[] }) {
-  const drivers = buildExecutiveDrivers(trends);
+export function ExecutiveDriversPanel({ trends, drivers: provided, confidence }: { trends: TrendComparison[]; drivers?: ExecutiveDriver[]; confidence?: ConfidenceSummary }) {
+  const drivers = provided ?? buildExecutiveDrivers(trends, 3, confidence);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
