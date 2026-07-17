@@ -1,14 +1,13 @@
-import clsx from "clsx";
 import { AutoLinkText } from "./AutoLinkText";
 
 export type RecommendationListItem = {
   id: string;
   title: string;
-  whyNow: string;
-  impact: string;
-  evidence: string;
-  confidence: string;
-  nextStep: string;
+  whyNow?: string | null;
+  impact?: string | null;
+  evidence?: string | null;
+  confidence?: string | null;
+  nextStep?: string | null;
   owner?: string | null;
   badges?: string[];
 };
@@ -51,12 +50,34 @@ export function RecommendationList({ items, empty }: { items: RecommendationList
   );
 }
 
-function RecommendationField({ label, value }: { label: string; value: string }) {
+function RecommendationField({ label, value }: { label: string; value?: string | null }) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return (
+      <div>
+        <dt className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</dt>
+        <dd className="mt-1 text-sm text-zinc-500">—</dd>
+      </div>
+    );
+  }
+
+  const isUrl = /^https?:\/\//i.test(trimmed);
   return (
     <div>
       <dt className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</dt>
-      <dd className={clsx("mt-1 text-sm", !value?.trim() && "text-zinc-500")}>
-        <AutoLinkText value={value} />
+      <dd className="mt-1 text-sm">
+        {isUrl ? (
+          <a
+            href={trimmed}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-300 underline decoration-dotted underline-offset-4"
+          >
+            {trimmed}
+          </a>
+        ) : (
+          <AutoLinkText value={trimmed} />
+        )}
       </dd>
     </div>
   );

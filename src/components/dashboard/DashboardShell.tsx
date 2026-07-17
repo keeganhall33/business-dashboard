@@ -1,5 +1,6 @@
 import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
+import { sanitizeDashboardData, sanitizeExecutiveInsights, ensureRevenuePerVisitorMetric, filterActionNoise } from "@/lib/dashboard/sanitizers";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
@@ -32,28 +33,36 @@ type Props = {
 };
 
 export function DashboardShell({ data }: Props) {
-  const websiteSnapshot = data.websiteConversion ?? null;
-  const metaSnapshot = data.metaAds ?? null;
-  const dataConfidence = buildDataConfidenceModel(data);
-  const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
-  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
-  const commerceSummary = buildCommerceSummary(data, executiveActions);
-  const marketingSummary = buildMarketingSummary(data, executiveActions);
-  const operationsSummary = buildOperationsSummary(data, executiveActions);
-  const industrySummary = buildIndustrySummary(data);
+  const sanitizedData = sanitizeDashboardData(data);
+  const websiteSnapshot = sanitizedData.websiteConversion ?? null;
+  const metaSnapshot = sanitizedData.metaAds ?? null;
+  const dataConfidence = buildDataConfidenceModel(sanitizedData);
+  const { insights: executiveInsights, partialDayNotice } = sanitizeExecutiveInsights(sanitizedData.executiveInsights);
+  const headerMetrics = ensureRevenuePerVisitorMetric(sanitizedData);
+  const executiveActions = buildExecutiveActions(sanitizedData, 5, dataConfidence).filter(filterActionNoise);
+  const executiveDrivers = buildExecutiveDrivers(executiveInsights?.trends ?? [], 3, dataConfidence);
+  const commerceSummary = buildCommerceSummary(sanitizedData, executiveActions);
+  const marketingSummary = buildMarketingSummary(sanitizedData, executiveActions);
+  const operationsSummary = buildOperationsSummary(sanitizedData, executiveActions);
+  const industrySummary = buildIndustrySummary(sanitizedData);
   const dataConfidenceSummary = buildConfidenceSectionSummary(dataConfidence);
-  const operationsIntel = buildOperationsIntel(data);
+  const operationsIntel = buildOperationsIntel(sanitizedData);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
-        <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
-        {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
-        <ExecutiveKpiScorecard metrics={data.headerMetrics} />
-        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
-        <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
-        <ForwardStrategyPanel data={data} />
+        <ExecutiveRangeHeader range={sanitizedData.range} insights={executiveInsights} />
+        <ExecutiveStatusPanel insights={executiveInsights} fallbackRange={sanitizedData.range} />
+        {executiveInsights ? <ExecutiveBriefPanel insights={executiveInsights} partialDayNotice={partialDayNotice} /> : null}
+        <ExecutiveKpiScorecard metrics={headerMetrics} />
+        <ExecutiveDriversPanel
+          trends={executiveInsights?.trends ?? []}
+          drivers={executiveDrivers}
+          confidence={dataConfidence}
+          partialDayNotice={partialDayNotice}
+        />
+        <ExecutiveActionsPanel data={sanitizedData} actions={executiveActions} confidence={dataConfidence} partialDayNotice={partialDayNotice} />
+        <ForwardStrategyPanel data={sanitizedData} />
       </div>
 
       <div className="space-y-6">
@@ -83,7 +92,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            <MarketingPerformancePanel telemetry={data.commerceTelemetry} meta={data.metaAds} />
+            <MarketingPerformancePanel telemetry={sanitizedData.commerceTelemetry} meta={sanitizedData.metaAds} />
             {metaSnapshot ? <MetaAdsPanel snapshot={metaSnapshot} /> : <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />}
           </div>
         </DashboardSection>
@@ -106,7 +115,11 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
+            {sanitizedData.industryPulseSnapshot ? (
+              <IndustryPulsePanel snapshot={sanitizedData.industryPulseSnapshot} />
+            ) : (
+              <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />
+            )}
           </div>
         </DashboardSection>
 
@@ -117,7 +130,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
-          <DataConfidencePanel summary={dataConfidence} />
+          <DataConfidencePanel summary={dataConfidence} partialDayNotice={partialDayNotice} />
         </DashboardSection>
       </div>
     </div>

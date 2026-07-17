@@ -2,13 +2,25 @@ import { buildExecutiveDrivers, ExecutiveDriver } from "@/lib/dashboard/executiv
 import type { ConfidenceSummary } from "@/lib/data-confidence";
 import { TrendComparison } from "@/lib/types/dashboard";
 
-export function ExecutiveDriversPanel({ trends, drivers: provided, confidence }: { trends: TrendComparison[]; drivers?: ExecutiveDriver[]; confidence?: ConfidenceSummary }) {
+export function ExecutiveDriversPanel({
+  trends,
+  drivers: provided,
+  confidence,
+  partialDayNotice
+}: {
+  trends: TrendComparison[];
+  drivers?: ExecutiveDriver[];
+  confidence?: ConfidenceSummary;
+  partialDayNotice?: string | null;
+}) {
   const drivers = provided ?? buildExecutiveDrivers(trends, 3, confidence);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Top Drivers</div>
-      {drivers.length === 0 ? (
+      {partialDayNotice ? (
+        <p className="mt-3 text-sm text-amber-200">{partialDayNotice}</p>
+      ) : drivers.length === 0 ? (
         <p className="mt-3 text-sm text-zinc-400">No material changes detected in the current window.</p>
       ) : (
         <div className="mt-4 space-y-4">

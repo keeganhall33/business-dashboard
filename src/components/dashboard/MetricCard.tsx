@@ -1,4 +1,5 @@
 import { HeaderMetric, RevenueMetric } from "@/lib/types/dashboard";
+import { deriveMetricSeverity } from "@/lib/metrics/severity";
 import { formatMetricValue } from "@/lib/utils/format";
 import { statusClasses } from "@/lib/utils/status";
 import { Sparkline } from "@/components/charts/Sparkline";
@@ -32,12 +33,18 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
 
   const historyValues = (history ?? []).map((h) => h.value);
   const changePercent = stats?.changePercent ?? null;
+  const severity = deriveMetricSeverity(
+    typeof metric.currentValue === "number" ? metric.currentValue : Number(metric.currentValue ?? null),
+    typeof metric.targetValue === "number" ? metric.targetValue : Number(metric.targetValue ?? null),
+    changePercent
+  );
+  const displayStatus = severity.status ?? metric.status;
   const changeLabel =
     typeof changePercent === "number" && Number.isFinite(changePercent)
       ? `${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(1)}%`
       : null;
 
-  const tone = statusToTone(metric.status);
+  const tone = statusToTone(displayStatus);
   const title = "metricName" in metric ? metric.metricName : metric.metricKey.replaceAll("_", " ");
 
   return (
@@ -45,7 +52,7 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
       className={cn(
         "ui-glass ui-glass-hover ui-accent-ring rounded-2xl",
         resolvedDensity === "compact" ? "p-4" : "p-5",
-        statusClasses(metric.status)
+        statusClasses(displayStatus)
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -63,9 +70,9 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
         {formatMetricValue(metric.currentValue ?? 0, metric.unit)}
       </div>
       <div className="mt-1 text-xs text-zinc-500">Target {formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
-      {severityLabel ? (
+      {severityLabel || severity.severityLabel ? (
         <div className="mt-1 text-xs uppercase tracking-[0.2em] text-zinc-500">
-          {severityLabel}
+          {severity.severityLabel ?? severityLabel}
           {trendLabel ? ` • ${trendLabel}` : ""}
         </div>
       ) : null}

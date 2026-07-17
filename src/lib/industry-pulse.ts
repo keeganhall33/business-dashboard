@@ -27,27 +27,28 @@ export type IndustryPulseOpportunity = {
 };
 
 export function buildIndustryOpportunities(snapshot: IndustryPulseSnapshot): IndustryPulseOpportunity[] {
-  const scored = (snapshot.alerts ?? [])
-    .filter((alert) => alert && isValidOpportunity(alert))
-    .map((alert) => toOpportunity(alert))
-    .sort((a, b) => b.opportunityScore - a.opportunityScore);
-
-  const unique: IndustryPulseOpportunity[] = [];
+  const deduped: IndustryPulseOpportunity[] = [];
   const seen = new Set<string>();
-  for (const opportunity of scored) {
-    const key = dedupeKey(opportunity);
+
+  for (const alert of snapshot.alerts ?? []) {
+    if (!alert || !isValidOpportunity(alert)) continue;
+    const key = dedupeKey(alert);
     if (seen.has(key)) continue;
+    const opportunity = toOpportunity(alert);
+    if (!opportunity.sourceUrl) continue;
     seen.add(key);
-    unique.push(opportunity);
-    if (unique.length >= 5) break;
+    deduped.push(opportunity);
+    if (deduped.length >= 5) break;
   }
-  return unique;
+
+  return deduped.sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
 
-function dedupeKey(opportunity: IndustryPulseOpportunity) {
-  const concept = opportunity.concept?.trim().toLowerCase() ?? "";
-  const source = opportunity.sourceUrl?.trim().toLowerCase() ?? opportunity.sourceHeadline?.trim().toLowerCase() ?? "";
-  return `${concept}|${source}`;
+function dedupeKey(alert: IndustryPulseSnapshot["alerts"][number]) {
+  const normalize = (value?: string | null) => (value ? value.replace(/[^a-z0-9]+/gi, " ").trim().toLowerCase() : "");
+  const concept = normalize(alert.opportunity);
+  const day = alert.date ? new Date(alert.date).toISOString().slice(0, 10) : "";
+  return `${concept}|${day}`;
 }
 
 function isValidOpportunity(alert: IndustryPulseSnapshot["alerts"][number]) {
@@ -57,6 +58,8 @@ function isValidOpportunity(alert: IndustryPulseSnapshot["alerts"][number]) {
   const ageDays = getAgeInDays(alert.date);
   const freshnessLimit = categoryFreshnessLimit(alert.category, alert.opportunity);
   if (ageDays > freshnessLimit) return false;
+  const hasEvidence = Boolean(alert.sourceUrl) || Boolean(alert.related && alert.related.length > 0);
+  if (!hasEvidence) return false;
   return true;
 }
 
@@ -83,7 +86,7 @@ function toOpportunity(alert: IndustryPulseSnapshot["alerts"][number]): Industry
     id: alert.title ?? crypto.randomUUID(),
     concept: alert.opportunity,
     sourceHeadline: alert.title ?? alert.source ?? "Untitled source",
-    sourceUrl: alert.sourceUrl ?? null,
+    sourceUrl: alert.sourceUrl ?? alert.related?.find((link) => typeof link === "string" && link.startsWith("http")) ?? null,
     publishedLabel: published.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     whyItMatters: alert.whyItMatters,
     commercialRoute: resolveCommercialRoute(alert),

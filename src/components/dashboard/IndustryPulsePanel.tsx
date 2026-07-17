@@ -50,7 +50,7 @@ function toRecommendationItem(opportunity: IndustryPulseOpportunity) {
     title: opportunity.concept,
     whyNow: opportunity.whyItMatters,
     impact: opportunity.expectedImpact,
-    evidence: opportunity.provenance,
+    evidence: opportunity.sourceUrl ?? opportunity.provenance,
     confidence: `${opportunity.confidence} • Score ${opportunity.opportunityScore}`,
     nextStep: opportunity.nextAction,
     owner: opportunity.contactStatus,

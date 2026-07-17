@@ -4,14 +4,26 @@ import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import { rankActions, formatConfidence } from "@/lib/executive-actions";
 import { RecommendationList, type RecommendationListItem } from "./ui/RecommendationList";
 
-export function ExecutiveActionsPanel({ data, actions: provided, confidence }: { data: DashboardOverviewResponse; actions?: ExecutiveActionPlan[]; confidence?: ConfidenceSummary }) {
+export function ExecutiveActionsPanel({
+  data,
+  actions: provided,
+  confidence,
+  partialDayNotice
+}: {
+  data: DashboardOverviewResponse;
+  actions?: ExecutiveActionPlan[];
+  confidence?: ConfidenceSummary;
+  partialDayNotice?: string | null;
+}) {
   const actions = provided ?? buildExecutiveActions(data, 7, confidence);
   const ranked = rankActions(actions);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive Actions</div>
-      {ranked.length === 0 ? (
+      {partialDayNotice ? (
+        <p className="mt-3 text-sm text-amber-200">{partialDayNotice}</p>
+      ) : ranked.length === 0 ? (
         <p className="mt-3 text-sm text-zinc-400">No high-priority actions surfaced for this window.</p>
       ) : (
         <div className="mt-4">

@@ -10,9 +10,10 @@ const STATUS_LABEL: Record<TelemetryHealthStatus, string> = {
 
 type Props = {
   insights?: ExecutiveInsightsPayload | null;
+  partialDayNotice?: string | null;
 };
 
-export function ExecutiveBriefPanel({ insights }: Props) {
+export function ExecutiveBriefPanel({ insights, partialDayNotice }: Props) {
   const brief = insights?.brief;
   if (!brief) {
     return <div className="text-sm text-zinc-400">Executive intelligence is not available for this range.</div>;
@@ -33,13 +34,17 @@ export function ExecutiveBriefPanel({ insights }: Props) {
         </div>
       </header>
 
+      {partialDayNotice ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{partialDayNotice}</div>
+      ) : null}
+
       {brief.attention ? (
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-sm text-rose-100">
           <span className="font-semibold text-rose-50">Needs attention:</span> {brief.attention}
         </div>
       ) : null}
 
-      {brief.warnings.length ? (
+      {brief.warnings.length && !partialDayNotice ? (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-100">
           <div className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-200">Data health</div>
           <ul className="mt-2 space-y-1">
@@ -50,7 +55,7 @@ export function ExecutiveBriefPanel({ insights }: Props) {
         </div>
       ) : null}
 
-      <TopChanges trends={brief.topChanges} />
+      {partialDayNotice ? null : <TopChanges trends={brief.topChanges} />}
       <SourceHealth sources={brief.sourceFreshness} />
     </div>
   );
@@ -151,7 +156,9 @@ function formatWarning(value: string) {
     future_dates_present: "Range includes future dates",
     metadata_unavailable: "Metadata unavailable",
     coverage_partial: "Coverage is incomplete",
-    freshness_unknown: "Freshness unknown"
+    freshness_unknown: "Freshness unknown",
+    partial_day: "Current day is still in progress",
+    semantic_summary_unsafe: "Source summary needs verification"
   };
   return map[value] ?? value.replace(/_/g, " ");
 }

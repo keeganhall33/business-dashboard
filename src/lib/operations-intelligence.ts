@@ -857,6 +857,7 @@ function dedupeItems(items: ActionQueueItem[]): ActionQueueItem[] {
 function buildDeliverables(entries: ProofOfWorkEntry[]): OperationsDeliverable[] {
   return (entries ?? [])
     .filter((entry) => entry.summary || (entry.deliverableLinks?.length ?? 0) > 0)
+    .filter((entry) => isRecentlyCompleted(entry.completedAt))
     .sort((a, b) => dateDesc(a.completedAt ?? a.taskId, b.completedAt ?? b.taskId))
     .slice(0, 4)
     .map((entry) => ({
@@ -866,6 +867,14 @@ function buildDeliverables(entries: ProofOfWorkEntry[]): OperationsDeliverable[]
       summary: entry.summary ?? "Deliverable attached.",
       completedAt: entry.completedAt ?? null
     }));
+}
+
+function isRecentlyCompleted(completedAt?: string | null) {
+  if (!completedAt) return false;
+  const parsed = Date.parse(completedAt);
+  if (Number.isNaN(parsed)) return false;
+  const days = (Date.now() - parsed) / 86400000;
+  return days <= 21;
 }
 
 function buildOperationsActions(args: {
@@ -1016,11 +1025,18 @@ function mapJob(job: SchedulerJobHealth): OperationsJob {
   return {
     id: job.jobKey,
     title: job.jobName,
-    detail: job.lastSummary ?? job.lastError ?? job.routePath ?? "",
-    owner: job.source ?? "Scheduler",
+    detail: job.lastSummary ?? job.lastError ?? "Awaiting next scheduled run.",
+    owner: friendlyOwner(job.source),
     lastRunAt: job.lastRunAt ?? null,
     nextRunAt: job.nextRunAt ?? null
   };
+}
+
+function friendlyOwner(source?: string | null) {
+  if (!source) return "Scheduler";
+  const cleaned = source.includes("/") ? source.split("/").pop() ?? source : source;
+  if (cleaned.startsWith("GET") || cleaned.startsWith("POST")) return "Scheduler";
+  return cleaned.replace(/[-_]/g, " ");
 }
 
 function isJobOverdue(job: SchedulerJobHealth, now: number) {
