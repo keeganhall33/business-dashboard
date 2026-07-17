@@ -1,4 +1,4 @@
-import type { ConfidenceSummary, ConfidenceDomain, ConfidenceState } from "../data-confidence.ts";
+import type { ConfidenceSummary, ConfidenceDomain, ConfidenceState, ConfidenceEntry } from "../data-confidence.ts";
 import { getDomainConfidence, mapStateToConfidenceLabel } from "../data-confidence.ts";
 import type {
   DashboardActionItem,
@@ -61,7 +61,7 @@ export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3, conf
 
     const sourceDomain = mapSourceToDomain(primary.source);
     const confidenceEntry = sourceDomain ? getDomainConfidence(confidence, sourceDomain) : undefined;
-    if (confidenceEntry && (confidenceEntry.state === "insufficient_evidence" || confidenceEntry.state === "unavailable")) {
+    if (shouldBlockConfidenceEntry(confidenceEntry)) {
       continue;
     }
     const confidenceLabel = confidenceEntry ? mapStateToConfidenceLabel(confidenceEntry.state) : trendConfidence(primary);
@@ -220,11 +220,12 @@ function applyActionConfidence(action: ExecutiveActionPlan, summary?: Confidence
   if (!summary || !action.sourceDomain) return action;
   let entryState: ConfidenceState | "mixed" | undefined;
   let decisionDetail: string | null | undefined;
+  let domainEntry: ConfidenceEntry | undefined;
   if (action.sourceDomain === "overall") {
     entryState = summary.overall.state;
     decisionDetail = summary.overall.rationale;
   } else {
-    const domainEntry = getDomainConfidence(summary, action.sourceDomain);
+    domainEntry = getDomainConfidence(summary, action.sourceDomain);
     if (!domainEntry) return action;
     entryState = domainEntry.state;
     decisionDetail = domainEntry.decisionImpact;
@@ -232,10 +233,15 @@ function applyActionConfidence(action: ExecutiveActionPlan, summary?: Confidence
 
   if (!entryState) return action;
   const normalizedState: ConfidenceState = entryState === "mixed" ? "usable_with_caveats" : entryState;
-  const label = mapStateToConfidenceLabel(normalizedState);
-  if (label === "Blocked") {
+  const shouldBlock =
+    action.sourceDomain === "overall"
+      ? shouldBlockConfidenceEntry(undefined, normalizedState)
+      : shouldBlockConfidenceEntry(domainEntry, normalizedState);
+  if (shouldBlock) {
     return null;
   }
+
+  const label = mapStateToConfidenceLabel(normalizedState);
 
   const copy: ExecutiveActionPlan = {
     ...action,
@@ -253,6 +259,24 @@ function applyActionConfidence(action: ExecutiveActionPlan, summary?: Confidence
   }
 
   return copy;
+}
+
+function shouldBlockConfidenceEntry(entry?: ConfidenceEntry, overrideState?: ConfidenceState) {
+  const state = overrideState ?? entry?.state;
+  if (!state) return false;
+  if (isBlockedConfidenceState(state)) return true;
+  if (entry && state === "usable_with_caveats" && hasRangeMismatchWarning(entry)) {
+    return true;
+  }
+  return false;
+}
+
+function isBlockedConfidenceState(state: ConfidenceState) {
+  return state === "insufficient_evidence" || state === "unavailable" || state === "stale" || state === "conflicting";
+}
+
+function hasRangeMismatchWarning(entry: ConfidenceEntry) {
+  return entry.warningCodes.some((code) => code.toLowerCase().includes("range mismatch"));
 }
 
 function buildDriverCaveat(existing: string | null | undefined, entry?: ReturnType<typeof getDomainConfidence>) {
