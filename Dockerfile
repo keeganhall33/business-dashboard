@@ -20,8 +20,10 @@ ENV PORT=3000
 
 # Copy the standalone build output
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./standalone
+COPY --from=builder /app/.next/static ./standalone/.next/static
+
+WORKDIR /app
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "SERVER_FILE=$(find /app/standalone -maxdepth 2 -name server.js -print -quit) && if [ -z \"$SERVER_FILE\" ]; then echo 'server.js not found in standalone output' >&2; exit 1; fi; node \"$SERVER_FILE\""]
