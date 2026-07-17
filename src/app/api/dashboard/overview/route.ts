@@ -52,6 +52,7 @@ import {
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { getPreviousRange, formatRangeLabel } from "@/lib/date/range";
+import { computeRevenuePerVisitor } from "@/lib/metrics/revenue";
 import {
   normalizeVerificationStatus,
   summarizeOpportunityVerification,
@@ -1239,18 +1240,22 @@ export async function GET(request: Request) {
       const wooRevenue = toNumber(wooSummaryData.revenue);
       const wooOrders = toNumber(wooSummaryData.orders);
       const wooAov = toNumber(wooSummaryData.avgOrderValue);
-      const gaSessions = toNumber(gaSummaryData.sessions);
+      const gaSessions = toNumber(gaSummaryData.sessions) ?? toNumber(websiteSnapshot?.ga4?.sessions);
 
       const conversionRate =
         wooOrders != null && gaSessions != null && gaSessions > 0 ? (wooOrders / gaSessions) * 100 : null;
-      const revenuePerVisitor =
-        wooRevenue != null && gaSessions != null && gaSessions > 0 ? wooRevenue / gaSessions : null;
+      const revenuePerVisitor = computeRevenuePerVisitor(wooRevenue, [
+        toNumber(gaSummaryData.totalUsers),
+        toNumber(gaSummaryData.sessions),
+        toNumber(websiteSnapshot?.ga4?.totalUsers),
+        toNumber(websiteSnapshot?.ga4?.sessions)
+      ]);
 
       const overrides: Array<{ key: string; value: number | null; unit: string }> = [
         { key: "monthly_revenue", value: wooRevenue, unit: "usd" },
         { key: "aov", value: wooAov, unit: "usd" },
         { key: "conversion_rate", value: conversionRate, unit: "percent" },
-        { key: "revenue_per_visitor", value: revenuePerVisitor, unit: "usd" }
+        { key: "revenue_per_visitor", value: revenuePerVisitor, unit: "usd_precise" }
       ];
 
       overrides.forEach(({ key, value, unit }) => {

@@ -1,4 +1,13 @@
 export function formatMetricValue(value: number, unit: string | null | undefined): string {
+  if (unit === "usd_precise") {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value ?? 0);
+  }
+
   if (unit === "usd" || unit === "$" || unit === "currency") {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
