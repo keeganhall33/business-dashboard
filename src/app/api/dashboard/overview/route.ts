@@ -53,6 +53,7 @@ import {
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { getPreviousRange, formatRangeLabel } from "@/lib/date/range";
 import { computeRevenuePerVisitor } from "@/lib/metrics/revenue";
+import { deriveMetricSeverity, percentChange } from "@/lib/metrics/severity";
 import { isActivePipelineStatus } from "@/lib/pipeline/status";
 import {
   normalizeVerificationStatus,
@@ -384,13 +385,6 @@ function toNumber(value: unknown) {
   return null;
 }
 
-function statusFromGap(current: number | null, target: number | null) {
-  if (current == null || target == null || target === 0) return "warning" as const;
-  const ratio = current / target;
-  if (ratio < 0.6) return "critical" as const;
-  if (ratio < 0.9) return "warning" as const;
-  return "healthy" as const;
-}
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -455,23 +449,22 @@ function describePriority(metric: ScoreboardMetricRow) {
     formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
   const target =
     formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
-  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
-  const statusLabel = status === "critical" ? "critical" : status === "warning" ? "off track" : "healthy";
-  if (status === "healthy") {
-    return `${name}: ${statusLabel}. Maintain ${current} (target ${target}).`;
+  const severity = deriveMetricSeverity(toNumber(metric.current_value), toNumber(metric.target_value), metric.stats?.changePercent ?? null);
+  if (severity.status === "healthy") {
+    return `${name}: ${severity.severityLabel}. Maintain ${current} (target ${target}).`;
   }
-  return `${name}: ${statusLabel}. Move from ${current} toward ${target}.`;
+  return `${name}: ${severity.severityLabel}. Move from ${current} toward ${target}.`;
 }
 
 function describeBottleneck(metric: ScoreboardMetricRow) {
-  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
-  if (status === "healthy") return null;
+  const severity = deriveMetricSeverity(toNumber(metric.current_value), toNumber(metric.target_value), metric.stats?.changePercent ?? null);
+  if (severity.status === "healthy") return null;
   const name = metric.metric_name ?? metric.metric_key;
   const current =
     formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
   const target =
     formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
-  return `${name} is ${status === "critical" ? "far below" : "below"} target (${current} vs ${target}).`;
+  return `${name}: ${severity.severityLabel}. ${current} vs ${target}.`;
 }
 
 function dedupeStrings(values: string[]) {
@@ -486,8 +479,8 @@ function dedupeStrings(values: string[]) {
 }
 
 function isMetricOffTrack(metric: ScoreboardMetricRow) {
-  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
-  return status === "critical" || status === "warning";
+  const severity = deriveMetricSeverity(toNumber(metric.current_value), toNumber(metric.target_value), metric.stats?.changePercent ?? null);
+  return severity.status !== "healthy";
 }
 
 function dedupeOpportunityRows(opportunities: OpportunityRow[]) {
@@ -512,15 +505,14 @@ function describeBrandWin(metric: ScoreboardMetricRow) {
 }
 
 function describeRevenueLeak(metric: ScoreboardMetricRow) {
-  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
-  if (status === "healthy") return null;
+  const severity = deriveMetricSeverity(toNumber(metric.current_value), toNumber(metric.target_value), metric.stats?.changePercent ?? null);
+  if (severity.status === "healthy") return null;
   const name = metric.metric_name ?? metric.metric_key;
   const current =
     formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
   const target =
     formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
-  const descriptor = status === "critical" ? "far below" : "below";
-  return `${name} is ${descriptor} target (${current} vs ${target}).`;
+  return `${name} is ${severity.severityLabel.toLowerCase()} (${current} vs ${target}).`;
 }
 
 function describeRevenueFastPath(metric: ScoreboardMetricRow) {
@@ -1296,20 +1288,24 @@ export async function GET(request: Request) {
       const comparisonValue = comparisonMetric ? toNumber(comparisonMetric.current_value) ?? null : null;
       const comparisonLabel = comparisonValue != null ? formatRangeLabel(comparisonRange, { includeYear: true }) : null;
       const targetLabel = targetValue ? formatMetricValue(targetValue, metric.unit ?? card.fallbackUnit ?? null) : null;
+      const changePercent = metric.stats?.changePercent ?? percentChange(currentValue, comparisonValue);
+      const severity = deriveMetricSeverity(currentValue, targetValue, changePercent);
       return {
         metricKey: metric.metric_key,
         metricName: metric.metric_name ?? card.fallbackName,
         category: metric.category ?? "general",
         currentValue,
         targetValue,
-        deltaPercent: metric.stats?.changePercent ?? null,
-        status: statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)),
+        deltaPercent: changePercent,
+        status: severity.status,
         unit: metric.unit ?? card.fallbackUnit ?? null,
         ownerAgent: metric.owner_agent ?? null,
         measuredAt: metric.measured_at ?? null,
         comparisonValue,
         comparisonLabel,
-        targetLabel
+        targetLabel,
+        severityLabel: severity.severityLabel,
+        trendLabel: severity.trendLabel
       };
     });
 
@@ -1362,24 +1358,32 @@ export async function GET(request: Request) {
     ]
       .map((key) => metricByKey.get(key))
       .filter(isScoreboardMetricRow)
-      .map((m) => ({
-        metricKey: m.metric_key,
-        currentValue: toNumber(m.current_value) ?? 0,
-        targetValue: toNumber(m.target_value) ?? 0,
-        status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-        unit: m.unit ?? null,
-        history: (m.history ?? null)
-          ? (m.history ?? []).map((h) => ({ measuredAt: h.measured_at, value: h.value }))
-          : null,
-        stats: (m.stats ?? null)
-          ? {
-              average: m.stats?.average ?? null,
-              min: m.stats?.min ?? null,
-              max: m.stats?.max ?? null,
-              changePercent: m.stats?.changePercent ?? null
-            }
-          : null
-      }));
+      .map((m) => {
+        const currentValue = toNumber(m.current_value) ?? 0;
+        const targetValue = toNumber(m.target_value) ?? 0;
+        const changePercent = m.stats?.changePercent ?? null;
+        const severity = deriveMetricSeverity(currentValue, targetValue, changePercent);
+        return {
+          metricKey: m.metric_key,
+          currentValue,
+          targetValue,
+          status: severity.status,
+          unit: m.unit ?? null,
+          history: (m.history ?? null)
+            ? (m.history ?? []).map((h) => ({ measuredAt: h.measured_at, value: h.value }))
+            : null,
+          stats: (m.stats ?? null)
+            ? {
+                average: m.stats?.average ?? null,
+                min: m.stats?.min ?? null,
+                max: m.stats?.max ?? null,
+                changePercent
+              }
+            : null,
+          severityLabel: severity.severityLabel,
+          trendLabel: severity.trendLabel
+        };
+      });
 
     const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
     const revenueLeaks = dedupeStrings(
@@ -1403,17 +1407,22 @@ export async function GET(request: Request) {
       .map((key) => metricByKey.get(key))
       .filter(isScoreboardMetricRow);
 
-    const brandPowerMetrics = brandPowerMetricRows.map((m) => ({
-      metricKey: m.metric_key,
-      currentValue: toNumber(m.current_value) ?? 0,
-      targetValue: toNumber(m.target_value) ?? 0,
-      status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-      unit: m.unit ?? null
-    }));
+    const brandPowerMetrics = brandPowerMetricRows.map((m) => {
+      const severity = deriveMetricSeverity(toNumber(m.current_value), toNumber(m.target_value), m.stats?.changePercent ?? null);
+      return {
+        metricKey: m.metric_key,
+        currentValue: toNumber(m.current_value) ?? 0,
+        targetValue: toNumber(m.target_value) ?? 0,
+        status: severity.status,
+        unit: m.unit ?? null,
+        severityLabel: severity.severityLabel,
+        trendLabel: severity.trendLabel
+      };
+    });
 
     const brandWins = dedupeStrings(
       brandPowerMetricRows
-        .filter((metric) => statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value)) === "healthy")
+        .filter((metric) => deriveMetricSeverity(toNumber(metric.current_value), toNumber(metric.target_value), metric.stats?.changePercent ?? null).status === "healthy")
         .map((metric) => describeBrandWin(metric))
     ).slice(0, 3);
 

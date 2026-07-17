@@ -20,6 +20,8 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
   const ownerAgent = (metric as { ownerAgent?: string | null }).ownerAgent;
   const tactics = (metric as { tactics?: string[] | null }).tactics;
   const evidence = (metric as { evidence?: Array<{ label: string; url: string }> | null }).evidence;
+  const severityLabel = (metric as { severityLabel?: string | null }).severityLabel;
+  const trendLabel = (metric as { trendLabel?: string | null }).trendLabel;
   const history = (metric as { history?: Array<{ measuredAt: string; value: number | null }> | null }).history;
   const stats = (metric as { stats?: { changePercent: number | null; min: number | null; max: number | null } | null }).stats;
   const definition =
@@ -61,6 +63,12 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
         {formatMetricValue(metric.currentValue ?? 0, metric.unit)}
       </div>
       <div className="mt-1 text-xs text-zinc-500">Target {formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
+      {severityLabel ? (
+        <div className="mt-1 text-xs uppercase tracking-[0.2em] text-zinc-500">
+          {severityLabel}
+          {trendLabel ? ` • ${trendLabel}` : ""}
+        </div>
+      ) : null}
 
       {!hideSupportingDetails && (
         <>

@@ -25,6 +25,8 @@ export type HeaderMetric = {
   comparisonValue?: number | null;
   comparisonLabel?: string | null;
   targetLabel?: string | null;
+  severityLabel?: string | null;
+  trendLabel?: string | null;
 };
 
 export type ExecutiveCommand = {
@@ -43,6 +45,8 @@ export type RevenueMetric = {
   ownerAgent?: string | null;
   tactics?: string[] | null;
   evidence?: DeliverableLink[] | null;
+  severityLabel?: string | null;
+  trendLabel?: string | null;
 
   // Optional history for premium visuals (sparkline, range context)
   history?: Array<{ measuredAt: string; value: number | null }> | null;
