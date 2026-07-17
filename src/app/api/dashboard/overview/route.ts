@@ -1454,14 +1454,26 @@ export async function GET(request: Request) {
     }
     dedupedEntries.reverse();
 
+    const warRoomMode = (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal";
+    const nowMs = Date.now();
+    const WAR_ROOM_ENTRY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    const filteredEntries =
+      warRoomMode === "war_room"
+        ? dedupedEntries
+        : dedupedEntries.filter((entry) => {
+            const createdMs = new Date(entry.createdAt).getTime();
+            if (!Number.isFinite(createdMs)) return false;
+            return nowMs - createdMs <= WAR_ROOM_ENTRY_TTL_MS;
+          });
+
     const triggerReason = typeof warRoomStateJson.reason === "string" ? warRoomStateJson.reason : null;
     const triggerTimestamp =
       typeof warRoomStateJson.activatedAt === "string" ? warRoomStateJson.activatedAt : warRoomMessages[0]?.created_at ?? null;
     const reasonAlreadyLogged = triggerReason
-      ? dedupedEntries.some((entry) => entry.summary.trim() === triggerReason.trim())
+      ? filteredEntries.some((entry) => entry.summary.trim() === triggerReason.trim())
       : true;
     if (triggerReason && !reasonAlreadyLogged) {
-      dedupedEntries.unshift({
+      filteredEntries.unshift({
         id: `war-room-reason-${triggerTimestamp ?? Date.now().toString()}`,
         title: "War room trigger",
         summary: triggerReason,
@@ -1471,10 +1483,10 @@ export async function GET(request: Request) {
     }
 
     const warRoom = {
-      mode: (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal",
+      mode: warRoomMode,
       reason: (warRoomStateJson.reason as string | null) ?? null,
       lastUpdated: (warRoomStateJson.activatedAt as string | null) ?? null,
-      entries: dedupedEntries
+      entries: filteredEntries
     };
 
     const agentUpdateFeed = agentUpdateBuckets
