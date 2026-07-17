@@ -70,7 +70,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   const [, startRefreshTransition] = useTransition();
   const appliedRangeRef = useRef<AppliedRangeSnapshot | null>(null);
   const inFlightRef = useRef<RangeRequestState | null>(null);
-  if (!appliedRangeRef.current) {
+  if (appliedRangeRef.current == null) {
     appliedRangeRef.current = createAppliedRangeSnapshot(currentKey, paramsKey);
   }
 
