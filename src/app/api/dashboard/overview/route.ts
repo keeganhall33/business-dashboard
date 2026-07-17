@@ -53,6 +53,7 @@ import {
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { getPreviousRange, formatRangeLabel } from "@/lib/date/range";
 import { computeRevenuePerVisitor } from "@/lib/metrics/revenue";
+import { isActivePipelineStatus } from "@/lib/pipeline/status";
 import {
   normalizeVerificationStatus,
   summarizeOpportunityVerification,
@@ -1743,7 +1744,7 @@ export async function GET(request: Request) {
     const pipelineDeals: Opportunity[] = [];
     const seenPipelineDeals = new Set<string>();
     for (const opportunity of verifiedOpportunities) {
-      if (["won", "lost", "parked"].includes(opportunity.status)) continue;
+      if (!isActivePipelineStatus(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
       seenPipelineDeals.add(dedupeKey);
@@ -1763,6 +1764,7 @@ export async function GET(request: Request) {
     const topOpportunities: Opportunity[] = [];
 
     for (const opportunity of sortedOpportunities) {
+      if (!isActivePipelineStatus(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenTopOpportunities.has(dedupeKey)) continue;
       seenTopOpportunities.add(dedupeKey);
