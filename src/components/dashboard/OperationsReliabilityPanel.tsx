@@ -81,9 +81,6 @@ export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }
                 <span>{deliverable.owner}</span>
                 <span>{relativeLabel(deliverable.completedAt)}</span>
               </div>
-              {deliverable.links ? (
-                <p className="mt-1 text-xs text-zinc-500">{deliverable.links} attachment{deliverable.links === 1 ? "" : "s"}</p>
-              ) : null}
             </li>
           )}
         </ListCard>

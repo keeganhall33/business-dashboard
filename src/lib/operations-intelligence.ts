@@ -271,7 +271,6 @@ type OperationsDeliverable = {
   owner: string;
   summary: string;
   completedAt: string | null;
-  links: number;
 };
 
 type OperationsAction = {
@@ -865,8 +864,7 @@ function buildDeliverables(entries: ProofOfWorkEntry[]): OperationsDeliverable[]
       title: entry.taskTitle,
       owner: entry.agentKey ?? "Unassigned",
       summary: entry.summary ?? "Deliverable attached.",
-      completedAt: entry.completedAt ?? null,
-      links: entry.deliverableLinks?.length ?? 0
+      completedAt: entry.completedAt ?? null
     }));
 }
 
