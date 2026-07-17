@@ -1,6 +1,7 @@
 import type { CommerceTelemetry, MetaAdsSnapshot } from "@/lib/types/dashboard";
 import { buildMarketingInsights } from "@/lib/marketing-intelligence";
 import { StatusChip } from "./ui/StatusChip";
+import { RecommendationList } from "./ui/RecommendationList";
 
 const percentFormatter = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 0 });
 
@@ -33,8 +34,8 @@ export function MarketingPerformancePanel({ telemetry, meta }: Props) {
         <InsightCard title="What happens next" headline={insights.outlook} />
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-black/20">
-        <ActionTable actions={insights.actions} />
+      <div className="mt-4">
+        <RecommendationList items={insights.actions.map(mapMarketingAction)} empty="No marketing actions were surfaced for this range." />
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -62,39 +63,17 @@ function InsightCard({ title, headline, bullets = [] }: { title: string; headlin
   );
 }
 
-function ActionTable({ actions }: { actions: ReturnType<typeof buildMarketingInsights>["actions"] }) {
-  if (!actions.length) {
-    return <p className="p-4 text-sm text-zinc-400">No marketing actions were surfaced for this range.</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm text-zinc-200">
-        <thead className="bg-white/5 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-          <tr>
-            <th className="px-4 py-3">Priority</th>
-            <th className="px-4 py-3">Decision</th>
-            <th className="px-4 py-3">Recommendation</th>
-            <th className="px-4 py-3">Evidence</th>
-            <th className="px-4 py-3">Impact</th>
-            <th className="px-4 py-3">Confidence</th>
-          </tr>
-        </thead>
-        <tbody>
-          {actions.map((action) => (
-            <tr key={action.id} className="border-t border-white/10">
-              <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{action.urgency}</td>
-              <td className="px-4 py-3 font-semibold text-white">{action.title}</td>
-              <td className="px-4 py-3 text-zinc-300">{action.recommendation}</td>
-              <td className="px-4 py-3 text-zinc-400">{action.evidence}</td>
-              <td className="px-4 py-3 text-zinc-300">{action.expectedImpact}</td>
-              <td className="px-4 py-3 text-zinc-300">{`${action.confidenceLabel} ${percentFormatter.format(action.confidence)}`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+function mapMarketingAction(action: ReturnType<typeof buildMarketingInsights>["actions"][number]) {
+  return {
+    id: action.id,
+    title: action.title,
+    whyNow: action.evidence,
+    impact: action.expectedImpact,
+    evidence: action.evidence,
+    confidence: `${action.confidenceLabel} ${percentFormatter.format(action.confidence)}`,
+    nextStep: action.recommendation,
+    badges: [action.urgency]
+  };
 }
 
 function MetricChip({ label, value, delta }: { label: string; value: string; delta?: string }) {

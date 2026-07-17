@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { buildExecutiveActions, buildExecutiveDrivers, summarizeExecutiveStatus } from "../src/lib/dashboard/executive-layout.ts";
 import { buildDataConfidenceModel } from "../src/lib/data-confidence.ts";
 import type { DashboardOverviewResponse, TelemetryMetadata, TrendComparison, ExecutiveInsightsPayload, TelemetrySource } from "../src/lib/types/dashboard";
+import { buildForwardActions } from "../src/lib/forward-strategy.ts";
 
 const BASE_DASHBOARD: DashboardOverviewResponse = {
   ok: true,
@@ -196,6 +197,32 @@ test("buildExecutiveActions honors limit and skips positive marketing trends", (
   const actions = buildExecutiveActions(dashboard, 5);
   assert(actions.length <= 5, "caps results to at most five");
   assert.equal(actions.some((action) => action.id.startsWith("marketing-")), false, "positive trend does not create correction action");
+});
+
+test("executive actions expose why now and next steps", () => {
+  const dashboard: DashboardOverviewResponse = structuredClone(BASE_DASHBOARD);
+  dashboard.topActions = [{ title: "Audit spend", detail: "Shift to ROAS", owner: "Marketing", status: "urgent", dueAt: "2026-07-18", tone: "warning" }];
+  const actions = buildExecutiveActions(dashboard, 3);
+  assert.ok(actions.every((action) => Boolean(action.whyNow) && Boolean(action.nextStep)), "actions include why now and next step fields");
+});
+
+test("forward strategy reacts to pacing window", () => {
+  const dashboard: DashboardOverviewResponse = structuredClone(BASE_DASHBOARD);
+  dashboard.headerMetrics = [
+    {
+      metricKey: "revenue",
+      metricName: "Revenue",
+      category: "Finance",
+      currentValue: 40000,
+      targetValue: 100000,
+      deltaPercent: null,
+      status: "warning",
+      unit: "usd"
+    }
+  ];
+  const shortWindow = buildForwardActions(dashboard, 7, 7, []);
+  const longWindow = buildForwardActions(dashboard, 14, 7, []);
+  assert.notEqual(shortWindow[0]?.reason, longWindow[0]?.reason, "pace adjusts when window length changes");
 });
 
 function buildTrend(overrides: Partial<TrendComparison>): TrendComparison {

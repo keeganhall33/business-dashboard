@@ -33,6 +33,9 @@ export type ExecutiveActionPlan = {
   weight: number;
   sourceDomain?: ConfidenceDomain | "overall";
   confidenceDetail?: string | null;
+  whyNow: string;
+  nextStep: string;
+  badges?: string[];
 };
 
 export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3, confidence?: ConfidenceSummary): ExecutiveDriver[] {
@@ -83,17 +86,21 @@ export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7
   const rows: ExecutiveActionPlan[] = [];
 
   (data.topActions ?? []).forEach((item, idx) => {
+    const priority = derivePriority(item);
     rows.push({
       id: `top-${idx}`,
-      priority: derivePriority(item),
+      priority,
       title: item.title,
       impact: item.detail ?? "Clarify expected impact",
       confidence: toneToConfidence(item.tone),
       owner: item.owner ?? null,
       evidence: item.status ?? "Top action",
       due: formatDue(item.dueAt),
-      weight: priorityWeight(derivePriority(item)) + 2,
-      sourceDomain: "overall"
+      weight: priorityWeight(priority) + 2,
+      sourceDomain: "overall",
+      whyNow: item.status ?? "Flagged by executive automation",
+      nextStep: item.owner ? `Coordinate with ${item.owner}` : "Assign accountable owner",
+      badges: [priority]
     });
   });
 
@@ -122,6 +129,8 @@ export function summarizeExecutiveStatus(brief: ExecutiveBrief | null | undefine
 function addPipelineActions(rows: ExecutiveActionPlan[], deals: Opportunity[]) {
   const overdue = deals.filter((deal) => deal.nextStepDueAt && new Date(deal.nextStepDueAt).getTime() < Date.now());
   overdue.slice(0, 2).forEach((deal, idx) => {
+    const overdueLabel = formatDue(deal.nextStepDueAt) ?? "submission";
+    const nextInstruction = deal.nextStep ? `Execute: ${deal.nextStep}` : "Define and schedule the next collector move";
     rows.push({
       id: `pipeline-${deal.id}-${idx}`,
       priority: "P1",
@@ -129,10 +138,12 @@ function addPipelineActions(rows: ExecutiveActionPlan[], deals: Opportunity[]) {
       impact: `Unlock ${formatCurrency(deal.valueEstimate)} in pipeline value`,
       confidence: "High",
       owner: deal.ownerAgent ?? "Pipeline",
-      evidence: `Next step overdue since ${formatDue(deal.nextStepDueAt) ?? "—"}`,
+      evidence: `Next step overdue since ${overdueLabel}`,
       due: "Now",
       weight: 90 - idx * 5,
-      sourceDomain: "pipeline"
+      sourceDomain: "pipeline",
+      whyNow: `Deal stalled since ${overdueLabel}`,
+      nextStep: nextInstruction
     });
   });
 }
@@ -151,7 +162,9 @@ function addSchedulerAction(rows: ExecutiveActionPlan[], data: DashboardOverview
     evidence: summary.source ?? "Scheduler telemetry",
     due: summary.status === "BROKEN" ? "Today" : "This week",
     weight: summary.status === "BROKEN" ? 95 : 70,
-    sourceDomain: "operations"
+    sourceDomain: "operations",
+    whyNow: summary.status === "BROKEN" ? "Scheduler flagged BROKEN" : `${summary.failingCount} automation jobs need repair`,
+    nextStep: summary.cronEnabled ? "Investigate failing jobs and rerun critical cadences" : "Re-enable cron and confirm heartbeat"
   });
 }
 
@@ -171,7 +184,9 @@ function addTelemetryActions(rows: ExecutiveActionPlan[], data: DashboardOvervie
       evidence: entry.warningCodes?.join(", ") || "Health monitor",
       due: entry.status === "critical" ? "Now" : "24h",
       weight: entry.status === "critical" ? 92 : 75,
-      sourceDomain: "operations"
+      sourceDomain: "operations",
+      whyNow: entry.reasons?.[0] ?? "Telemetry degraded",
+      nextStep: entry.status === "critical" ? "Page telemetry owner immediately" : "Schedule telemetry review within 24h"
     });
   });
 }
@@ -194,7 +209,9 @@ function addMarketingActions(rows: ExecutiveActionPlan[], data: DashboardOvervie
       evidence: trend.caveat ?? `${trend.metric} trend`,
       due: "This week",
       weight: 80 - idx * 5,
-      sourceDomain
+      sourceDomain,
+      whyNow: describeChange(trend),
+      nextStep: `Marketing to stabilize ${trend.label} within this window`
     });
   });
 }

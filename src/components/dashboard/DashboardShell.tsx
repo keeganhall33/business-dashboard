@@ -18,7 +18,6 @@ import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
-import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
@@ -50,7 +49,6 @@ export function DashboardShell({ data }: Props) {
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
         <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
-        <ExecutivePerspectivePanel data={data} actions={executiveActions} />
         {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />

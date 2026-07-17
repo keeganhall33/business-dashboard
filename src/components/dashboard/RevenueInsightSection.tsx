@@ -1,6 +1,7 @@
 import { buildRevenueIntelligence } from "@/lib/revenue-intelligence";
 import type { RevenueAction, RevenueFact, ScenarioOutlook } from "@/lib/revenue-intelligence";
 import type { CommerceTelemetry, WebsiteConversionSnapshot } from "@/lib/types/dashboard";
+import { RecommendationList } from "./ui/RecommendationList";
 
 export function RevenueInsightSection({ snapshot, telemetry }: { snapshot?: WebsiteConversionSnapshot | null; telemetry?: CommerceTelemetry }) {
   const intel = buildRevenueIntelligence({ snapshot, telemetry });
@@ -73,30 +74,39 @@ function Reconciliation({ entries, note }: { entries: RevenueFact[]; note: strin
 }
 
 function Actions({ actions }: { actions: RevenueAction[] }) {
-  if (!actions.length) {
-    return (
-      <div className="rounded-xl border border-dashed border-white/10 bg-black/30 p-3 text-sm text-zinc-400">
-        No grounded revenue actions surfaced for this range.
-      </div>
-    );
-  }
   return (
     <div>
       <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Grounded actions</div>
-      <ul className="mt-2 space-y-3">
-        {actions.map((action) => (
-          <li key={action.id} className="rounded-xl border border-white/10 bg-black/40 p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">{action.urgency}</div>
-            <div className="mt-1 text-sm font-semibold text-white">{action.title}</div>
-            <p className="text-xs text-zinc-300">{action.recommendation}</p>
-            <p className="text-xs text-zinc-300">Expected impact: {action.expectedImpact}</p>
-            <ProvenanceDetails provenance={action.provenance} />
-            <RuleMetadata action={action} />
-          </li>
-        ))}
-      </ul>
+      <div className="mt-2">
+        <RecommendationList items={actions.map(mapRevenueAction)} empty="No grounded revenue actions surfaced for this range." />
+      </div>
+      {actions.length ? <div className="mt-3 text-[11px] uppercase tracking-[0.3em] text-zinc-500">Rule details</div> : null}
+      {actions.length ? (
+        <ul className="mt-2 space-y-3">
+          {actions.map((action) => (
+            <li key={`${action.id}-rules`} className="rounded-xl border border-white/10 bg-black/40 p-3">
+              <RuleMetadata action={action} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
+}
+
+function mapRevenueAction(action: RevenueAction) {
+  const confidencePercent = action.provenance.confidence != null ? `${Math.round(action.provenance.confidence * 100)}%` : "Heuristic";
+  const evidenceInputs = action.provenance.measuredInputs.length ? action.provenance.measuredInputs.join(", ") : action.provenance.source;
+  return {
+    id: action.id,
+    title: action.title,
+    whyNow: action.provenance.calculation ?? action.provenance.source,
+    impact: action.expectedImpact,
+    evidence: evidenceInputs,
+    confidence: `${action.provenance.inferenceType} • ${confidencePercent}`,
+    nextStep: action.recommendation,
+    owner: action.provenance.source
+  };
 }
 
 function Scenario({ scenario }: { scenario: ScenarioOutlook | null }) {

@@ -1,5 +1,6 @@
 import type { OperationsIntel } from "@/lib/operations-intelligence";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { RecommendationList } from "./ui/RecommendationList";
 
 export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }) {
   return (
@@ -85,18 +86,25 @@ export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }
         </ListCard>
       </div>
 
-      <ListCard title="Operational actions" items={intel.actions} empty="No additional actions required.">
-        {(action) => (
-          <li key={action.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
-            <div className="flex items-center justify-between text-sm font-semibold text-white">
-              <span>{action.title}</span>
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] text-amber-200">{action.urgency}</span>
-            </div>
-            <p className="mt-1 text-sm text-zinc-400">{action.detail}</p>
-            <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">{action.owner}</p>
-          </li>
-        )}
-      </ListCard>
+      <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+        <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Operational actions</p>
+        <div className="mt-3">
+          <RecommendationList
+            items={intel.actions.map((action) => ({
+              id: action.id,
+              title: action.title,
+              whyNow: action.detail,
+              impact: action.detail,
+              evidence: action.detail,
+              confidence: "Operational",
+              nextStep: action.owner ? `Coordinate with ${action.owner}` : "Assign owner",
+              owner: action.owner,
+              badges: [action.urgency]
+            }))}
+            empty="No additional actions required."
+          />
+        </div>
+      </div>
     </section>
   );
 }
