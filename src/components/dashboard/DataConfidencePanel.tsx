@@ -1,7 +1,9 @@
 import type { ConfidenceSummary } from "@/lib/data-confidence";
+import { buildCoverageIssues } from "@/lib/data-confidence/coverage";
 
 export function DataConfidencePanel({ summary }: { summary: ConfidenceSummary }) {
   const caveats = [...summary.caveatSources, ...summary.conflictingSources];
+  const coverageIssues = buildCoverageIssues(summary);
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
@@ -27,6 +29,22 @@ export function DataConfidencePanel({ summary }: { summary: ConfidenceSummary })
         <ConfidenceGroup title="Trusted" items={summary.trustedSources} placeholder="No trusted sources" tone="emerald" />
         <ConfidenceGroup title="Watch" items={caveats} placeholder="No caveats" tone="amber" />
         <ConfidenceGroup title="Unavailable" items={summary.insufficientSources} placeholder="All sources reporting" tone="rose" />
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
+        <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Coverage watch</div>
+        {coverageIssues.length ? (
+          <ul className="mt-3 space-y-2 text-sm text-zinc-200">
+            {coverageIssues.map((issue) => (
+              <li key={issue.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="font-semibold text-white">{issue.label}</div>
+                <p className="text-xs text-zinc-400">{issue.detail}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-zinc-500">No coverage gaps detected.</p>
+        )}
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -133,3 +151,5 @@ function formatRelative(iso: string) {
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+
+export 
