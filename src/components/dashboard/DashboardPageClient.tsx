@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { DashboardShell } from "./DashboardShell";
 import { DASHBOARD_REFRESH_EVENT } from "@/lib/dashboard/events";
 import { DashboardToastHost } from "./ui/DashboardToastHost";
+import {
+  applyRangeSnapshot,
+  createAppliedRangeSnapshot,
+  createRangeRequestState,
+  isCurrentRangeRequest,
+  shouldStartRangeRequest,
+  type AppliedRangeSnapshot,
+  type RangeRequestState
+} from "@/lib/dashboard/range-refresh";
 
 function normalizeRange(data: DashboardOverviewResponse) {
   if (data.range.preset === "custom") {
@@ -29,6 +38,8 @@ type Props = {
 
 export function DashboardPageClient({ initialData, agents }: Props) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [overview, setOverview] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +68,11 @@ export function DashboardPageClient({ initialData, agents }: Props) {
 
   const currentKey = normalizeRange(overview);
   const [, startRefreshTransition] = useTransition();
-  const lastAppliedRef = useRef({ key: currentKey, signal: 0 });
+  const appliedRangeRef = useRef<AppliedRangeSnapshot | null>(null);
+  const inFlightRef = useRef<RangeRequestState | null>(null);
+  if (!appliedRangeRef.current) {
+    appliedRangeRef.current = createAppliedRangeSnapshot(currentKey, paramsKey);
+  }
 
   useEffect(() => {
     function handleManualRefresh() {
@@ -69,14 +84,17 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   }, []);
 
   useEffect(() => {
-    const shouldRefresh =
-      targetConfig.key !== lastAppliedRef.current.key || refreshSignal !== lastAppliedRef.current.signal;
+    const appliedRange = appliedRangeRef.current!;
+    const needsRefresh = shouldStartRangeRequest(appliedRange, inFlightRef.current, targetConfig.key, refreshSignal);
 
-    if (!shouldRefresh) {
+    if (!needsRefresh) {
       return undefined;
     }
 
     const controller = new AbortController();
+    const requestState = createRangeRequestState(targetConfig.key, refreshSignal);
+    inFlightRef.current = requestState;
+
     startRefreshTransition(() => {
       setIsRefreshing(true);
       setError(null);
@@ -94,25 +112,42 @@ export function DashboardPageClient({ initialData, agents }: Props) {
         return response.json();
       })
       .then((payload: DashboardOverviewResponse) => {
+        if (!isCurrentRangeRequest(inFlightRef.current, requestState.token)) {
+          return;
+        }
+        applyRangeSnapshot(appliedRangeRef.current!, targetConfig.key, refreshSignal, paramsKey);
+        inFlightRef.current = null;
         setOverview(payload);
         setError(null);
+        startRefreshTransition(() => {
+          setIsRefreshing(false);
+        });
       })
       .catch((err) => {
         if (err.name === "AbortError") return;
+        if (!isCurrentRangeRequest(inFlightRef.current, requestState.token)) {
+          return;
+        }
+        inFlightRef.current = null;
         console.error("Failed to refresh dashboard data", err);
         setError("Could not refresh the dashboard with the selected date range.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          lastAppliedRef.current = { key: targetConfig.key, signal: refreshSignal };
-          startRefreshTransition(() => {
-            setIsRefreshing(false);
-          });
+        const appliedQuery = appliedRangeRef.current?.queryString ?? "";
+        if (appliedQuery !== paramsKey) {
+          const target = appliedQuery ? `${pathname}?${appliedQuery}` : pathname;
+          router.replace(target, { scroll: false });
         }
+        startRefreshTransition(() => {
+          setIsRefreshing(false);
+        });
       });
 
-    return () => controller.abort();
-  }, [refreshSignal, startRefreshTransition, targetConfig.key, targetConfig.queryString]);
+    return () => {
+      controller.abort();
+      if (isCurrentRangeRequest(inFlightRef.current, requestState.token)) {
+        inFlightRef.current = null;
+      }
+    };
+  }, [paramsKey, pathname, refreshSignal, router, startRefreshTransition, targetConfig.key, targetConfig.queryString]);
 
   return (
     <>
