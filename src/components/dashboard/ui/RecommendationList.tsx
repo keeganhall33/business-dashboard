@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { AutoLinkText } from "./AutoLinkText";
 
 export type RecommendationListItem = {
   id: string;
@@ -54,7 +55,9 @@ function RecommendationField({ label, value }: { label: string; value: string })
   return (
     <div>
       <dt className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</dt>
-      <dd className={clsx("mt-1 text-sm", !value?.trim() && "text-zinc-500")}>{value || "—"}</dd>
+      <dd className={clsx("mt-1 text-sm", !value?.trim() && "text-zinc-500")}>
+        <AutoLinkText value={value} />
+      </dd>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { OperationsIntel } from "@/lib/operations-intelligence";
 import { formatRelativeTimeFromNow } from "@/lib/date";
 import { RecommendationList } from "./ui/RecommendationList";
+import { AutoLinkText } from "./ui/AutoLinkText";
 
 export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }) {
   return (
@@ -73,7 +74,9 @@ export function OperationsReliabilityPanel({ intel }: { intel: OperationsIntel }
           {(deliverable) => (
             <li key={deliverable.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
               <div className="text-sm font-semibold text-white">{deliverable.title}</div>
-              <p className="mt-1 text-sm text-zinc-400">{deliverable.summary}</p>
+              <p className="mt-1 text-sm text-zinc-400">
+                <AutoLinkText value={deliverable.summary ?? ""} />
+              </p>
               <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-zinc-500">
                 <span>{deliverable.owner}</span>
                 <span>{relativeLabel(deliverable.completedAt)}</span>

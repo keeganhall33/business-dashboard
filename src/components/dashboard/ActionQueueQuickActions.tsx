@@ -7,6 +7,7 @@ import { requestDashboardRefresh } from "@/lib/dashboard/events";
 import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { ensureOk, extractResponseError } from "@/lib/dashboard/http";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { AutoLinkText } from "./ui/AutoLinkText";
 
 type Props = {
   items: QuickActionItem[];
@@ -103,7 +104,11 @@ function QuickActionRow({ item }: RowProps) {
             {isTask ? "Task approval" : "Plan approval"}
           </div>
           <div className="text-sm font-semibold text-zinc-100">{item.title}</div>
-          {item.summary ? <div className="mt-1 text-sm text-zinc-400">{item.summary}</div> : null}
+          {item.summary ? (
+            <div className="mt-1 text-sm text-zinc-400">
+              <AutoLinkText value={item.summary} />
+            </div>
+          ) : null}
         </div>
         <div className="text-right text-xs text-zinc-500">
           {item.actor && <div className="font-semibold text-zinc-200">{item.actor}</div>}
