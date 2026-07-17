@@ -183,5 +183,17 @@ function JobRow({ job, tone }: { job: OperationsIntel["failedJobs"][number]; ton
 
 function relativeLabel(value: string | null) {
   if (!value) return "unknown";
-  return formatRelativeTimeFromNow(value);
+  const relative = formatRelativeTimeFromNow(value);
+  const absolute = new Date(value);
+  if (Number.isNaN(absolute.getTime())) {
+    return relative ?? "unknown";
+  }
+  const absoluteLabel = absolute.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Los_Angeles"
+  });
+  return relative ? `${relative} · ${absoluteLabel}` : absoluteLabel;
 }
