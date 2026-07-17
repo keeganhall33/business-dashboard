@@ -86,7 +86,7 @@ function makeDashboardResponse(overrides: Partial<DashboardOverviewResponse>): D
     survivalStrip: {
       configured: false,
       cashOnHand: null,
-      survivalFloor: null,
+      survivalFloor: 0,
       monthlyBurn: null,
       projected30dRevenue: null,
       runwayDays: null,

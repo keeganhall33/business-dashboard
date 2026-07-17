@@ -1464,7 +1464,7 @@ export async function GET(request: Request) {
     dedupedEntries.reverse();
 
     const warRoomMode = (warRoomStateJson.mode as "normal" | "war_room" | undefined) ?? "normal";
-    const nowMs = Date.now();
+    const warRoomNowMs = Date.now();
     const WAR_ROOM_ENTRY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     const filteredEntries =
       warRoomMode === "war_room"
@@ -1472,7 +1472,7 @@ export async function GET(request: Request) {
         : dedupedEntries.filter((entry) => {
             const createdMs = new Date(entry.createdAt).getTime();
             if (!Number.isFinite(createdMs)) return false;
-            return nowMs - createdMs <= WAR_ROOM_ENTRY_TTL_MS;
+            return warRoomNowMs - createdMs <= WAR_ROOM_ENTRY_TTL_MS;
           });
 
     const triggerReason = typeof warRoomStateJson.reason === "string" ? warRoomStateJson.reason : null;
