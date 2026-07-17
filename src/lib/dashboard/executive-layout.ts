@@ -1,16 +1,14 @@
+import type { ConfidenceSummary, ConfidenceDomain, ConfidenceState } from "../data-confidence.ts";
+import { getDomainConfidence, mapStateToConfidenceLabel } from "../data-confidence.ts";
 import type {
   DashboardActionItem,
   DashboardOverviewResponse,
   ExecutiveBrief,
   Opportunity,
-  TelemetryHealth,
-  TelemetryMetadata,
-  TelemetrySource,
   TrendComparison,
-  TelemetryHealthStatus
+  TelemetryHealthStatus,
+  TelemetrySource
 } from "@/lib/types/dashboard";
-
-const SOURCES: TelemetrySource[] = ["woo", "ga4", "funnelkit", "meta"];
 
 export type ExecutiveDriver = {
   id: string;
@@ -19,6 +17,7 @@ export type ExecutiveDriver = {
   supporting: string[];
   confidence: string;
   tone: string;
+  sourceDomain?: ConfidenceDomain;
   caveat?: string | null;
 };
 
@@ -32,25 +31,11 @@ export type ExecutiveActionPlan = {
   evidence: string;
   due: string | null;
   weight: number;
+  sourceDomain?: ConfidenceDomain | "overall";
+  confidenceDetail?: string | null;
 };
 
-export type DataConfidenceRow = {
-  source: TelemetrySource;
-  status: string;
-  freshness: string;
-  coverage: string;
-  lastSuccess: string | null;
-  warning: string | null;
-  includesPartialDay: boolean;
-};
-
-export type DataConfidenceSummary = {
-  rows: DataConfidenceRow[];
-  overall: { label: string; tone: string };
-  includesPartialDay: boolean;
-};
-
-export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3): ExecutiveDriver[] {
+export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3, confidence?: ConfidenceSummary): ExecutiveDriver[] {
   if (!trends?.length) return [];
   const sorted = [...trends].sort((a, b) => scoreTrend(b) - scoreTrend(a));
   const claimed = new Set<string>();
@@ -71,21 +56,30 @@ export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3): Exe
       supporting.push(`${extra.label} ${describeChange(extra)}`);
     }
 
+    const sourceDomain = mapSourceToDomain(primary.source);
+    const confidenceEntry = sourceDomain ? getDomainConfidence(confidence, sourceDomain) : undefined;
+    if (confidenceEntry && (confidenceEntry.state === "insufficient_evidence" || confidenceEntry.state === "unavailable")) {
+      continue;
+    }
+    const confidenceLabel = confidenceEntry ? mapStateToConfidenceLabel(confidenceEntry.state) : trendConfidence(primary);
+    const caveat = buildDriverCaveat(primary.caveat, confidenceEntry);
+
     drivers.push({
       id: primary.id,
       title: `${primary.label} ${primary.direction === "down" ? "decline" : primary.direction === "up" ? "growth" : "steady"}`,
       summary: describeChange(primary),
       supporting,
-      confidence: trendConfidence(primary),
+      confidence: confidenceLabel,
       tone: toneClass(primary),
-      caveat: primary.caveat ?? null
+      sourceDomain,
+      caveat
     });
   }
 
   return drivers;
 }
 
-export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7): ExecutiveActionPlan[] {
+export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7, confidence?: ConfidenceSummary): ExecutiveActionPlan[] {
   const rows: ExecutiveActionPlan[] = [];
 
   (data.topActions ?? []).forEach((item, idx) => {
@@ -98,7 +92,8 @@ export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7
       owner: item.owner ?? null,
       evidence: item.status ?? "Top action",
       due: formatDue(item.dueAt),
-      weight: priorityWeight(derivePriority(item)) + 2
+      weight: priorityWeight(derivePriority(item)) + 2,
+      sourceDomain: "overall"
     });
   });
 
@@ -107,15 +102,12 @@ export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7
   addTelemetryActions(rows, data);
   addMarketingActions(rows, data);
 
-  rows.sort((a, b) => b.weight - a.weight);
-  return rows.slice(0, limit);
-}
+  const scored = rows
+    .map((action) => applyActionConfidence(action, confidence))
+    .filter((action): action is ExecutiveActionPlan => Boolean(action));
 
-export function buildDataConfidence(metadata?: Partial<Record<TelemetrySource, TelemetryMetadata>> | null, health?: Partial<Record<TelemetrySource, TelemetryHealth>> | null, brief?: ExecutiveBrief | null): DataConfidenceSummary {
-  const rows = SOURCES.map((source) => buildConfidenceRow(source, metadata?.[source], health?.[source]));
-  const includesPartialDay = brief?.pacificWindow?.includesPartialDay ?? rows.some((row) => row.includesPartialDay);
-  const overall = deriveOverallConfidence(rows);
-  return { rows, includesPartialDay, overall };
+  scored.sort((a, b) => b.weight - a.weight);
+  return scored.slice(0, limit);
 }
 
 export function summarizeExecutiveStatus(brief: ExecutiveBrief | null | undefined, fallbackRange: { startDate: string; endDate: string }) {
@@ -139,7 +131,8 @@ function addPipelineActions(rows: ExecutiveActionPlan[], deals: Opportunity[]) {
       owner: deal.ownerAgent ?? "Pipeline",
       evidence: `Next step overdue since ${formatDue(deal.nextStepDueAt) ?? "—"}`,
       due: "Now",
-      weight: 90 - idx * 5
+      weight: 90 - idx * 5,
+      sourceDomain: "pipeline"
     });
   });
 }
@@ -157,7 +150,8 @@ function addSchedulerAction(rows: ExecutiveActionPlan[], data: DashboardOverview
     owner: "Operations",
     evidence: summary.source ?? "Scheduler telemetry",
     due: summary.status === "BROKEN" ? "Today" : "This week",
-    weight: summary.status === "BROKEN" ? 95 : 70
+    weight: summary.status === "BROKEN" ? 95 : 70,
+    sourceDomain: "operations"
   });
 }
 
@@ -176,27 +170,81 @@ function addTelemetryActions(rows: ExecutiveActionPlan[], data: DashboardOvervie
       owner: "Telemetry",
       evidence: entry.warningCodes?.join(", ") || "Health monitor",
       due: entry.status === "critical" ? "Now" : "24h",
-      weight: entry.status === "critical" ? 92 : 75
+      weight: entry.status === "critical" ? 92 : 75,
+      sourceDomain: "operations"
     });
   });
 }
 
 function addMarketingActions(rows: ExecutiveActionPlan[], data: DashboardOverviewResponse) {
   const trends = data.executiveInsights?.trends ?? [];
-  const inefficient = trends.filter((trend) => trend.metric.toLowerCase().includes("roas") || trend.metric.toLowerCase().includes("conversion"));
+  const inefficient = trends.filter(
+    (trend) =>
+      trend.direction === "down" && (trend.metric.toLowerCase().includes("roas") || trend.metric.toLowerCase().includes("conversion"))
+  );
   inefficient.slice(0, 2).forEach((trend, idx) => {
+    const sourceDomain = mapSourceToDomain(trend.source) ?? "overall";
     rows.push({
       id: `marketing-${trend.id}-${idx}`,
-      priority: trend.direction === "down" ? "P1" : "P2",
+      priority: "P1",
       title: `Correct ${trend.label}`,
       impact: describeChange(trend),
       confidence: trend.magnitude === "major" ? "High" : "Medium",
       owner: "Marketing",
       evidence: trend.caveat ?? `${trend.metric} trend`,
       due: "This week",
-      weight: trend.direction === "down" ? 80 : 60
+      weight: 80 - idx * 5,
+      sourceDomain
     });
   });
+}
+
+function applyActionConfidence(action: ExecutiveActionPlan, summary?: ConfidenceSummary) {
+  if (!summary || !action.sourceDomain) return action;
+  let entryState: ConfidenceState | "mixed" | undefined;
+  let decisionDetail: string | null | undefined;
+  if (action.sourceDomain === "overall") {
+    entryState = summary.overall.state;
+    decisionDetail = summary.overall.rationale;
+  } else {
+    const domainEntry = getDomainConfidence(summary, action.sourceDomain);
+    if (!domainEntry) return action;
+    entryState = domainEntry.state;
+    decisionDetail = domainEntry.decisionImpact;
+  }
+
+  if (!entryState) return action;
+  const normalizedState: ConfidenceState = entryState === "mixed" ? "usable_with_caveats" : entryState;
+  const label = mapStateToConfidenceLabel(normalizedState);
+  if (label === "Blocked") {
+    return null;
+  }
+
+  const copy: ExecutiveActionPlan = {
+    ...action,
+    confidence: label,
+    confidenceDetail: decisionDetail ?? null
+  };
+
+  if (normalizedState !== "trusted") {
+    copy.evidence = `${action.evidence} • ${confidenceStateLabel(normalizedState)}`;
+  }
+
+  if (label === "Low" && action.priority === "P1") {
+    copy.priority = "P2";
+    copy.weight = Math.max(0, action.weight - 10);
+  }
+
+  return copy;
+}
+
+function buildDriverCaveat(existing: string | null | undefined, entry?: ReturnType<typeof getDomainConfidence>) {
+  const caveats: string[] = [];
+  if (existing) caveats.push(existing);
+  if (entry && entry.state !== "trusted") {
+    caveats.push(`${entry.label} data ${confidenceStateLabel(entry.state)}`);
+  }
+  return caveats.length ? caveats.join(" • ") : null;
 }
 
 function derivePriority(action: DashboardActionItem) {
@@ -247,6 +295,19 @@ function trendConfidence(trend: TrendComparison) {
   return "Low";
 }
 
+function confidenceStateLabel(state: ConfidenceState) {
+  return state.replace(/_/g, " ");
+}
+
+function mapSourceToDomain(source?: TelemetrySource | null): ConfidenceDomain | undefined {
+  if (!source) return undefined;
+  if (source === "woo") return "woo";
+  if (source === "ga4") return "ga4";
+  if (source === "meta") return "meta";
+  if (source === "funnelkit") return "funnelkit";
+  return undefined;
+}
+
 function toneClass(trend: TrendComparison) {
   if (trend.direction === "down") return "border-rose-500/40 text-rose-200";
   if (trend.direction === "up") return "border-emerald-500/40 text-emerald-200";
@@ -267,76 +328,6 @@ function normalizeMetric(metric: string) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
-}
-
-function buildConfidenceRow(source: TelemetrySource, metadata?: TelemetryMetadata, health?: TelemetryHealth): DataConfidenceRow {
-  return {
-    source,
-    status: describeStatus(health),
-    freshness: describeFreshness(metadata?.freshnessStatus),
-    coverage: describeCoverage(metadata?.coverageStatus),
-    lastSuccess: metadata?.generatedAt ? formatTimestamp(metadata.generatedAt) : null,
-    warning: deriveWarning(metadata, health),
-    includesPartialDay: Boolean(metadata?.includesPartialDay)
-  };
-}
-
-function describeStatus(health?: TelemetryHealth | null) {
-  if (!health) return "Unknown";
-  if (health.status === "healthy") return "Healthy";
-  if (health.status === "warning") return "Warning";
-  if (health.status === "critical") return "Critical";
-  return "Unknown";
-}
-
-function describeFreshness(status?: TelemetryMetadata["freshnessStatus"]) {
-  switch (status) {
-    case "fresh":
-      return "Fresh";
-    case "stale":
-      return "Stale";
-    case "no_data":
-      return "No data";
-    default:
-      return "Unknown";
-  }
-}
-
-function describeCoverage(status?: TelemetryMetadata["coverageStatus"]) {
-  switch (status) {
-    case "complete":
-      return "Complete";
-    case "partial":
-      return "Partial";
-    default:
-      return "Unknown";
-  }
-}
-
-function formatTimestamp(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-function deriveWarning(metadata?: TelemetryMetadata, health?: TelemetryHealth | null) {
-  if (health?.reasons?.length) return health.reasons[0];
-  if (metadata?.warningCodes?.length) return metadata.warningCodes[0];
-  return null;
-}
-
-function deriveOverallConfidence(rows: DataConfidenceRow[]) {
-  const score = rows.reduce((sum, row) => {
-    if (row.status === "Critical") return sum + 0;
-    if (row.status === "Warning") return sum + 1;
-    if (row.status === "Healthy") return sum + 2;
-    return sum + 1;
-  }, 0);
-  const maxScore = rows.length * 2;
-  const ratio = maxScore === 0 ? 0 : score / maxScore;
-  if (ratio >= 0.75) return { label: "High confidence", tone: "border-emerald-500/40 text-emerald-200" };
-  if (ratio >= 0.45) return { label: "Moderate confidence", tone: "border-amber-500/40 text-amber-200" };
-  return { label: "Low confidence", tone: "border-rose-500/40 text-rose-200" };
 }
 
 function buildStatusSentence(brief: ExecutiveBrief | null | undefined) {

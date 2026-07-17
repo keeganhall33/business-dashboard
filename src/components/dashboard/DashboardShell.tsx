@@ -1,71 +1,30 @@
-import { buildExecutiveActions, buildExecutiveDrivers } from "@/lib/dashboard/executive-layout";
+import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
-import { buildOperationsIntel, type OperationsIntel } from "@/lib/operations-intelligence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
-import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { ExecutiveKpiScorecard } from "./ExecutiveKpiScorecard";
 import { ExecutiveDriversPanel } from "./ExecutiveDriversPanel";
 import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
-import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
-import { SurvivalStrip } from "./SurvivalStrip";
-import { ActionQueuePanel } from "./ActionQueuePanel";
-import { TaskBoard } from "./TaskBoard";
-import { AutomationStatusPanel } from "./AutomationStatusPanel";
-import { AgentStatusPanel } from "./AgentStatusPanel";
 import { DataConfidencePanel } from "./DataConfidencePanel";
-import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { DashboardSection } from "./ui/DashboardSection";
-import { AgentKpiStrip } from "./AgentKpiStrip";
-import { AgentAreaBoard } from "./AgentAreaBoard";
-import { AgentUpdateFeed } from "./AgentUpdateFeed";
-import { ExecutiveCommandPanel } from "./ExecutiveCommandPanel";
 import { WebsiteConversionPanel } from "./WebsiteConversionPanel";
-import { CommerceVisualsPanel } from "./CommerceVisualsPanel";
 import { RevenueEnginePanel } from "./RevenueEnginePanel";
 import { BrandPowerPanel } from "./BrandPowerPanel";
 import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
-import { SocialIntelligencePanel } from "./SocialIntelligencePanel";
-import { CloudflarePanel } from "./CloudflarePanel";
-import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
-import { OpportunityRadarPanel } from "./OpportunityRadarPanel";
-import { CollectorPipelinePanel } from "./CollectorPipelinePanel";
-import { CollectorsStatusPanel } from "./CollectorsStatusPanel";
-import { CeoQuestionDeskPanel } from "./CeoQuestionDeskPanel";
-import { WarRoomPanel } from "./WarRoomPanel";
-import { IdeaBoardPanel } from "./IdeaBoardPanel";
-import { ProofOfWorkPanel } from "./ProofOfWorkPanel";
+import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
+import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
+import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
+import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
+import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
+import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
+import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
-const DEFAULT_SECTION_PROPS = {
-  density: "comfortable" as const
-};
-
-const COMMAND_SECTION_PROPS = {
-  ...DEFAULT_SECTION_PROPS,
-  storageKey: "dashboard-section-command-center",
-  defaultOpen: true
-};
-
-const AGENT_SECTION_PROPS = {
-  ...DEFAULT_SECTION_PROPS,
-  storageKey: "dashboard-section-agent-domains",
-  defaultOpen: false
-};
-
-const REVENUE_SECTION_PROPS = {
-  ...DEFAULT_SECTION_PROPS,
-  storageKey: "dashboard-section-revenue-brand",
-  defaultOpen: true
-};
-
-const PIPELINE_SECTION_PROPS = {
-  ...DEFAULT_SECTION_PROPS,
-  storageKey: "dashboard-section-pipeline",
-  defaultOpen: false
+const SECTION_PROPS = {
+  defaultOpen: false as const,
+  density: "compact" as const
 };
 
 type Props = {
@@ -73,108 +32,96 @@ type Props = {
   agents: AgentDashboardResponse[];
 };
 
-export function DashboardShell({ data, agents }: Props) {
-  const dataConfidence = buildDataConfidenceModel(data);
-  const operationsIntel = buildOperationsIntel(data);
-  const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
-  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
-  const commandSummary = buildCommandSummary(data, operationsIntel);
-  const agentSummary = buildAgentSummary(data, agents);
-  const revenueSummary = buildRevenueBrandSummary(data);
-  const pipelineSummary = buildPipelineSummary(data);
+export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
+  const dataConfidence = buildDataConfidenceModel(data);
+  const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
+  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
+  const commerceSummary = buildCommerceSummary(data, executiveActions);
+  const marketingSummary = buildMarketingSummary(data, executiveActions);
+  const operationsSummary = buildOperationsSummary(data, executiveActions);
+  const industrySummary = buildIndustrySummary(data);
+  const dataConfidenceSummary = buildConfidenceSectionSummary(dataConfidence);
+  const operationsIntel = buildOperationsIntel(data);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-8 sm:px-6">
-      <DashboardSection title="Command Center" subtitle="Range controls, approvals, automation, and reliability" meta={<SectionMeta summary={commandSummary} />} {...COMMAND_SECTION_PROPS}>
-        <div className="space-y-6">
-          {data.survivalStrip ? <SurvivalStrip data={data.survivalStrip} /> : null}
-          <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-          <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
-          {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
-          <ExecutiveKpiScorecard metrics={data.headerMetrics} />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
-            <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
-          </div>
-          <ForwardStrategyPanel data={data} />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ActionQueuePanel data={data.actionQueue} />
-            <TaskBoard
-              tasks={data.tasks}
-              schedulerJobs={data.schedulerJobs}
-              agentSla={data.agentSla}
-              approvalBottlenecks={data.approvalBottlenecks}
-            />
-          </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <AutomationStatusPanel entries={data.automationStatusPanel} />
-            <AgentStatusPanel entries={data.agentStatusPanel} />
-          </div>
-          <DataConfidencePanel summary={dataConfidence} />
-          <OperationsReliabilityPanel intel={operationsIntel} />
-        </div>
-      </DashboardSection>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
+      <div className="space-y-6">
+        <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
+        <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
+        <ExecutivePerspectivePanel data={data} actions={executiveActions} />
+        {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
+        <ExecutiveKpiScorecard metrics={data.headerMetrics} />
+        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
+        <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
+        <ForwardStrategyPanel data={data} />
+      </div>
 
-      <DashboardSection title="Agent Domains" subtitle="CEO, Product & Ecommerce, Brand Strategy, Research" meta={<SectionMeta summary={agentSummary} />} {...AGENT_SECTION_PROPS}>
-        <div className="space-y-6">
-          <AgentKpiStrip items={data.agentKpis} dense />
-          <AgentAreaBoard agents={agents} agentSla={data.agentSla} />
-          <AgentUpdateFeed items={data.agentUpdateFeed ?? []} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection title="Revenue & Brand Systems" subtitle="Executive command, commerce telemetry, and channel performance" meta={<SectionMeta summary={revenueSummary} />} {...REVENUE_SECTION_PROPS}>
-        <div className="space-y-6">
-          <ExecutiveCommandPanel data={data.executiveCommand} />
-          <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-6">
+        <DashboardSection
+          title="Commerce"
+          subtitle="Sessions, conversion, orders, revenue, and product signals"
+          storageKey="dashboard-section-commerce"
+          meta={<SectionMeta summary={commerceSummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
             {websiteSnapshot ? (
               <WebsiteConversionPanel snapshot={websiteSnapshot} telemetry={data.commerceTelemetry} />
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            <CommerceVisualsPanel telemetry={data.commerceTelemetry} />
+            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
+            {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : null}
           </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : <PanelAuditPlaceholder title="Revenue engine offline" detail="No revenue diagnostics for this range." />}
-            {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : <PanelAuditPlaceholder title="Brand KPIs offline" detail="Waiting on brand snapshot." />}
-          </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <MarketingPerformancePanel telemetry={data.commerceTelemetry} meta={data.metaAds} />
-            {metaSnapshot ? (
-              <MetaAdsPanel snapshot={metaSnapshot} />
-            ) : (
-              <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />
-            )}
-          </div>
-          <SocialIntelligencePanel snapshot={data.socialIntelligence} />
-          <CloudflarePanel snapshot={data.cloudflare} />
-        </div>
-      </DashboardSection>
+        </DashboardSection>
 
-      <DashboardSection title="Pipeline & Partnerships" subtitle="Opportunities, collectors, CEO desk, and idea output" meta={<SectionMeta summary={pipelineSummary} />} {...PIPELINE_SECTION_PROPS}>
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <OpportunityRadarPanel data={data.opportunityRadar} />
-            <CollectorPipelinePanel data={data.pipelinePanel} />
-          </div>
-          {data.collectorTelemetry ? <CollectorsStatusPanel snapshot={data.collectorTelemetry} /> : null}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <CeoQuestionDeskPanel desk={data.ceoQuestionDesk} />
-            <WarRoomPanel data={data.warRoom} />
-          </div>
-          <IdeaBoardPanel board={data.ideaBoard} />
-          <ProofOfWorkPanel items={data.proofOfWork ?? []} />
+        <DashboardSection
+          title="Marketing"
+          subtitle="Spend, ROAS, campaigns, and creative"
+          storageKey="dashboard-section-marketing"
+          meta={<SectionMeta summary={marketingSummary} />}
+          {...SECTION_PROPS}
+        >
           <div className="space-y-5">
-            {data.industryPulseSnapshot ? (
-              <IndustryPulsePanel snapshot={data.industryPulseSnapshot} />
-            ) : (
-              <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />
-            )}
+            <MarketingPerformancePanel telemetry={data.commerceTelemetry} meta={data.metaAds} />
+            {metaSnapshot ? <MetaAdsPanel snapshot={metaSnapshot} /> : <PanelAuditPlaceholder title="Meta data unavailable" detail="Meta agent has not produced a snapshot for this window." />}
           </div>
-        </div>
-      </DashboardSection>
+        </DashboardSection>
+
+        <DashboardSection
+          title="Operations"
+          subtitle="Automation cadence, system health, and approvals"
+          storageKey="dashboard-section-operations"
+          {...SECTION_PROPS}
+          meta={<SectionMeta summary={operationsSummary} />}
+        >
+          <OperationsReliabilityPanel intel={operationsIntel} />
+        </DashboardSection>
+
+        <DashboardSection
+          title="Industry"
+          subtitle="External signals, War Room, and intelligence"
+          storageKey="dashboard-section-industry"
+          meta={<SectionMeta summary={industrySummary} />}
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          title="Data Confidence"
+          subtitle="Source freshness, coverage, and telemetry warnings"
+          storageKey="dashboard-section-data-confidence"
+          {...SECTION_PROPS}
+          meta={<SectionMeta summary={dataConfidenceSummary} />}
+        >
+          <DataConfidencePanel summary={dataConfidence} />
+        </DashboardSection>
+      </div>
     </div>
   );
 }
@@ -212,87 +159,96 @@ function toneText(tone: SectionSummary["tone"]) {
   }
 }
 
-function buildCommandSummary(data: DashboardOverviewResponse, intel: OperationsIntel): SectionSummary {
-  const approvals = data.actionQueue?.needsApprovalTasks?.count ?? 0;
-  const decisions = data.actionQueue?.decisionsDue?.count ?? 0;
-  const pendingTasks = (data.tasks ?? []).filter((task) => task.status !== "completed").length;
-  const cronStatus = data.schedulerSummary?.status ?? "UNKNOWN";
-  const warRoomActive = data.warRoom?.mode === "war_room";
-  return {
-    status: warRoomActive ? "War Room" : intel.overall.label,
-    tone: warRoomActive ? "rose" : intel.overall.tone,
-    metrics: [
-      `Queue ${approvals + decisions}`,
-      `Tasks ${pendingTasks}`,
-      data.schedulerSummary ? `Cron ${cronStatus}` : null
-    ].filter(Boolean) as string[],
-    insight: warRoomActive ? data.warRoom.reason ?? intel.overall.detail : intel.overall.detail,
-    actions: approvals + decisions + intel.actions.length
-  };
-}
-
-function buildAgentSummary(data: DashboardOverviewResponse, agents: AgentDashboardResponse[]): SectionSummary {
-  const totalAgents = agents.length;
-  const agentRuns = data.agentSla ?? [];
-  const paused = agentRuns.filter((snapshot) => (snapshot.minutesSinceRun ?? 0) > 240).length;
-  const updates = data.agentUpdateFeed?.length ?? 0;
-  const activeAgents = totalAgents - paused;
-  const tone: SectionSummary["tone"] = paused === 0 ? "emerald" : paused < totalAgents ? "amber" : "rose";
-  return {
-    status: `${activeAgents}/${totalAgents} agents active`,
-    tone,
-    metrics: [
-      `KPIs ${formatCount(data.agentKpis.length)}`,
-      `Updates ${formatCount(updates)}`
-    ],
-    insight: paused ? `${paused} agent${paused === 1 ? "" : "s"} paused` : "All agents reporting",
-    actions: paused
-  };
-}
-
-function buildRevenueBrandSummary(data: DashboardOverviewResponse): SectionSummary {
+function buildCommerceSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
   const woo = data.websiteConversion?.wooCommerce;
-  const meta = data.metaAds;
+  const ga4 = data.websiteConversion?.ga4;
   const revenue = woo?.grossOrderRevenue ?? woo?.netRevenue ?? null;
-  const spend = meta?.summary?.spend ?? null;
-  const roas = meta?.summary?.roas ?? null;
-  let tone: SectionSummary["tone"] = revenue ? "emerald" : "amber";
-  if (!revenue && !meta?.status) tone = "zinc";
+  const orders = woo?.paidOrdersInWindow ?? null;
+  const conversion = ga4?.funnelRates?.sessionToPurchase ?? null;
+  const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
   return {
-    status: revenue ? "Revenue live" : "Need commerce data",
-    tone,
+    status: woo ? "Live" : "Needs data",
+    tone: woo ? "emerald" : "amber",
     metrics: [
       revenue != null ? `Rev ${formatCurrencyShort(revenue)}` : null,
-      spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
-      roas != null ? `ROAS ${(roas ?? 0).toFixed(1)}x` : null
+      orders != null ? `Orders ${formatCount(orders)}` : null,
+      conversion != null ? `Conv ${(conversion * 100).toFixed(1)}%` : null
     ].filter(Boolean) as string[],
-    insight: meta?.status ? `Meta ${meta.status}` : null,
-    actions: data.executiveCommand.topPriorities.length
+    insight,
+    actions: actions.filter((action) => action.id.startsWith("top-")).length
   };
 }
 
-function buildPipelineSummary(data: DashboardOverviewResponse): SectionSummary {
-  const active = data.opportunityRadar?.activeCount ?? 0;
-  const ready = data.opportunityRadar?.readyForOutreachCount ?? 0;
-  const collectors = data.pipelinePanel?.collectors?.length ?? 0;
-  const tone: SectionSummary["tone"] = active + ready > 0 ? "emerald" : collectors > 0 ? "amber" : "zinc";
+function buildMarketingSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const meta = data.metaAds;
+  const spend = meta?.summary?.spend ?? null;
+  const roas = meta?.summary?.roas ?? null;
+  const conversions = meta?.summary?.purchases ?? null;
+  const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
+  let tone: SectionSummary["tone"] = "zinc";
+  if (meta?.status === "LIVE") tone = "emerald";
+  else if (meta?.status === "PARTIAL") tone = "amber";
   return {
-    status: active + ready > 0 ? "Pipeline active" : "Pipeline idle",
+    status: meta?.status ? `Meta ${meta.status}` : "Meta pending",
     tone,
     metrics: [
-      `Active ${formatCount(active)}`,
-      `Ready ${formatCount(ready)}`,
-      `Collectors ${formatCount(collectors)}`
+      spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
+      roas != null ? `ROAS ${(roas ?? 0).toFixed(1)}x` : null,
+      conversions != null ? `Conv ${formatCount(conversions)}` : null
+    ].filter(Boolean) as string[],
+    insight,
+    actions: actions.filter((action) => action.id.startsWith("marketing-")).length
+  };
+}
+
+function buildOperationsSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
+  const summary = data.schedulerSummary;
+  const failing = summary?.failingCount ?? 0;
+  const freshness = data.systemHealth?.dataFreshnessHours;
+  const tone: SectionSummary["tone"] = summary ? (summary.status === "BROKEN" ? "rose" : summary.status === "PARTIAL" ? "amber" : "emerald") : "zinc";
+  return {
+    status: summary?.status ? `Cron ${summary.status}` : "Cron unknown",
+    tone,
+    metrics: [
+      `Failing ${failing}`,
+      summary ? `Cron ${summary.cronEnabled ? "on" : "off"}` : null,
+      freshness != null ? `Fresh ${freshness}h` : null
+    ].filter(Boolean) as string[],
+    insight: failing ? `${failing} automation${failing === 1 ? "" : "s"} blocked` : null,
+    actions: actions.filter((action) => action.id === "scheduler" || action.id.startsWith("telemetry-")).length
+  };
+}
+
+function buildIndustrySummary(data: DashboardOverviewResponse): SectionSummary {
+  const alerts = data.industryPulseSnapshot?.alerts ?? [];
+  return {
+    status: alerts.length ? "Opportunities live" : "No live intel",
+    tone: alerts.length ? "emerald" : "zinc",
+    metrics: [
+      `Alerts ${formatCount(alerts.length)}`,
+      `Sources ${formatCount(data.industryPulseSnapshot?.sources?.length ?? 0)}`
     ],
-    insight: data.warRoom?.reason ?? null,
-    actions: data.proofOfWork?.length ?? 0
+    insight: alerts[0]?.whyItMatters ?? null,
+    actions: 0
+  };
+}
+
+function buildConfidenceSectionSummary(summary: ReturnType<typeof buildDataConfidenceModel>): SectionSummary {
+  const tone = summary.overall.tone;
+  const watchCount = summary.caveatSources.length + summary.conflictingSources.length;
+  return {
+    status: summary.overall.label,
+    tone,
+    metrics: [`Trusted ${summary.trustedSources.length}`, `Watch ${watchCount}`],
+    insight: summary.topRisk?.decisionImpact ?? summary.overall.rationale,
+    actions: summary.recommendedActions.length
   };
 }
 
 function formatCurrencyShort(value: number | null | undefined) {
   if (value == null) return "$0";
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
   return `$${Math.round(value)}`;
 }
 
