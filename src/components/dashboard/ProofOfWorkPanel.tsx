@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import type { ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
