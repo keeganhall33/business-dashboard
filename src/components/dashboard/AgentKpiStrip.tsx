@@ -36,7 +36,7 @@ export function AgentKpiStrip({ items, dense = false }: Props) {
   }
 
   return (
-    <section className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-5">
+    <section className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-5" data-variant={dense ? "dense" : "default"}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Agent KPIs</div>
@@ -74,7 +74,7 @@ export function AgentKpiStrip({ items, dense = false }: Props) {
           return (
             <div
               key={agent.agentKey}
-              className={`${dense ? "min-w-[240px] max-w-[280px]" : "min-w-[320px] max-w-[360px]"} flex-1 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4`}
+              className={`${dense ? "min-w-[220px] max-w-[260px]" : "min-w-[320px] max-w-[360px]"} flex-1 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -82,7 +82,9 @@ export function AgentKpiStrip({ items, dense = false }: Props) {
                   <div className="text-lg font-semibold text-zinc-50">{agent.agentName}</div>
                   {!dense ? (
                     <p className="mt-1 line-clamp-2 text-sm text-zinc-400">Top KPI snapshot</p>
-                  ) : null}
+                  ) : (
+                    <p className="mt-1 text-sm text-zinc-400">Last update at a glance</p>
+                  )}
                   {updatedLabel ? (
                     <div className="mt-2">
                       <StatusChip label={updatedLabel} tone="zinc" />
@@ -95,52 +97,70 @@ export function AgentKpiStrip({ items, dense = false }: Props) {
                 </div>
               </div>
 
-              <div className="mt-3 text-sm text-zinc-200">{agent.agentName}</div>
+              {!dense ? (
+                <div className="mt-4 space-y-3">
+                  {top.map((kpi) => {
+                    const value = kpi.latestReading?.value ?? null;
+                    const prior = kpi.priorReading?.value ?? null;
+                    const target = kpi.targetValue ?? null;
+                    const pct = value != null && target != null && target > 0 ? (value / target) * 100 : 0;
+                    const kpiTone = pct >= 100 ? ("emerald" as const) : pct >= 70 ? ("amber" as const) : ("rose" as const);
 
-              <div className="mt-4 space-y-3">
-                {top.map((kpi) => {
-                  const value = kpi.latestReading?.value ?? null;
-                  const prior = kpi.priorReading?.value ?? null;
-                  const target = kpi.targetValue ?? null;
-                  const pct = value != null && target != null && target > 0 ? (value / target) * 100 : 0;
-                  const kpiTone = pct >= 100 ? ("emerald" as const) : pct >= 70 ? ("amber" as const) : ("rose" as const);
-
-                  const delta = value != null && prior != null ? value - prior : null;
-                  const deltaPct = delta != null && prior != null && prior !== 0 ? (delta / prior) * 100 : null;
-                  const deltaTone = delta == null ? null : delta > 0 ? ("emerald" as const) : delta < 0 ? ("rose" as const) : ("zinc" as const);
-                  return (
-                    <div key={`${agent.agentKey}-${kpi.kpiKey}`} className="rounded-xl border border-zinc-900 bg-zinc-950 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
-                            {kpi.kpiName}
-                          </div>
-                          <div className="mt-1 text-sm text-zinc-100">
-                            <span className="font-semibold">{value == null ? "—" : formatMetric(value, kpi.unit, kpi.kpiKey)}</span>
-                            <span className="text-zinc-500">
-                              {kpi.targetValue == null ? "" : ` / ${formatMetric(kpi.targetValue, kpi.unit, kpi.kpiKey)}`}
-                            </span>
-                          </div>
-                          {delta != null ? (
-                            <div className="mt-1 text-xs text-zinc-500">
-                              <span className={deltaTone === "emerald" ? "text-emerald-400" : deltaTone === "rose" ? "text-rose-400" : "text-zinc-400"}>
-                                {delta > 0 ? "+" : delta < 0 ? "−" : ""}
-                                {formatMetric(Math.abs(delta), kpi.unit, kpi.kpiKey)}
-                              </span>
-                              {deltaPct != null ? <span className="text-zinc-600"> {`(${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(1)}%)`}</span> : null}
-                              <span className="text-zinc-600"> vs prior</span>
+                    const delta = value != null && prior != null ? value - prior : null;
+                    const deltaPct = delta != null && prior != null && prior !== 0 ? (delta / prior) * 100 : null;
+                    const deltaTone = delta == null ? null : delta > 0 ? ("emerald" as const) : delta < 0 ? ("rose" as const) : ("zinc" as const);
+                    return (
+                      <div key={`${agent.agentKey}-${kpi.kpiKey}`} className="rounded-xl border border-zinc-900 bg-zinc-950 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              {kpi.kpiName}
                             </div>
-                          ) : null}
+                            <div className="mt-1 text-sm text-zinc-100">
+                              <span className="font-semibold">{value == null ? "—" : formatMetric(value, kpi.unit, kpi.kpiKey)}</span>
+                              <span className="text-zinc-500">
+                                {kpi.targetValue == null ? "" : ` / ${formatMetric(kpi.targetValue, kpi.unit, kpi.kpiKey)}`}
+                              </span>
+                            </div>
+                            {delta != null ? (
+                              <div className="mt-1 text-xs text-zinc-500">
+                                <span className={deltaTone === "emerald" ? "text-emerald-400" : deltaTone === "rose" ? "text-rose-400" : "text-zinc-400"}>
+                                  {delta > 0 ? "+" : delta < 0 ? "−" : ""}
+                                  {formatMetric(Math.abs(delta), kpi.unit, kpi.kpiKey)}
+                                </span>
+                                {deltaPct != null ? <span className="text-zinc-600"> {`(${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(1)}%)`}</span> : null}
+                                <span className="text-zinc-600"> vs prior</span>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="text-right text-xs text-zinc-500">{kpi.frequency ?? ""}</div>
                         </div>
-                        <div className="text-right text-xs text-zinc-500">{kpi.frequency ?? ""}</div>
+                        <div className="mt-2">
+                          <ProgressBar value={Math.min(130, Math.max(0, pct))} tone={kpiTone} />
+                        </div>
                       </div>
-                      <div className="mt-2">
-                        <ProgressBar value={Math.min(130, Math.max(0, pct))} tone={kpiTone} />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 space-y-2" data-testid="agent-kpi-dense-group">
+                  {top.map((kpi) => (
+                    <div
+                      key={`${agent.agentKey}-${kpi.kpiKey}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                      data-testid="agent-kpi-dense-metric"
+                    >
+                      <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">{kpi.kpiName}</div>
+                      <div className="text-sm font-semibold text-zinc-100">
+                        {formatMetric(kpi.latestReading?.value ?? null, kpi.unit, kpi.kpiKey)}
+                        {kpi.targetValue != null ? (
+                          <span className="text-xs font-normal text-zinc-500"> / {formatMetric(kpi.targetValue, kpi.unit, kpi.kpiKey)}</span>
+                        ) : null}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

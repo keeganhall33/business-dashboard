@@ -119,7 +119,7 @@ export function DashboardShell({ data, agents }: Props) {
 
       <DashboardSection title="Agent Domains" subtitle="CEO, Product & Ecommerce, Brand Strategy, Research" meta={<SectionMeta summary={agentSummary} />} {...AGENT_SECTION_PROPS}>
         <div className="space-y-6">
-          <AgentKpiStrip items={data.agentKpis} />
+          <AgentKpiStrip items={data.agentKpis} dense />
           <AgentAreaBoard agents={agents} agentSla={data.agentSla} />
           <AgentUpdateFeed items={data.agentUpdateFeed ?? []} />
         </div>
