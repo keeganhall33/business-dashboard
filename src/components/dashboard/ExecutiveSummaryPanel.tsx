@@ -114,8 +114,9 @@ function SummaryList({ title, items, empty, tone }: { title?: string; items: str
       <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">{empty}</div>
     );
   }
+  const toneClass = tone === "warning" ? "text-amber-200" : tone === "amber" ? "text-amber-100" : "text-zinc-100";
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100">
+    <div className={`rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm ${toneClass}`}>
       {title ? <div className="text-xs uppercase tracking-[0.25em] text-white/50">{title}</div> : null}
       <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-zinc-300">
         {items.map((entry, idx) => (

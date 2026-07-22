@@ -21,7 +21,6 @@ type ProcessedSection = {
 };
 
 type GroupedQueueItem = Extract<ActionQueueDisplayItem, { kind: "group" }>;
-type SingleQueueItem = Extract<ActionQueueDisplayItem, { kind: "single" }>;
 
 export function ActionQueuePanel({ data, suppressQuickActions = false }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -117,6 +116,8 @@ function ActionQueueGroupCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const listId = `${item.id}-items`;
+
   return (
     <div className="rounded-xl border border-[var(--ui-border)] bg-black/30 p-3" data-testid="action-queue-group">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -142,21 +143,16 @@ function ActionQueueGroupCard({
       <div className="mt-3">
         <button
           type="button"
-          className="rounded-full border border-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-200 hover:border-white/40"
+          className="rounded-full border border-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-200 hover:border-white/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
           onClick={onToggle}
-          onKeyDown={(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.preventDefault();
-              onToggle();
-            }
-          }}
           aria-expanded={expanded}
+          aria-controls={listId}
           data-testid="action-queue-group-toggle"
         >
           {expanded ? "Hide underlying signals" : "Show underlying signals"}
         </button>
         {expanded ? (
-          <ul className="mt-3 space-y-2" data-testid="action-queue-group-items">
+          <ul id={listId} className="mt-3 space-y-2" data-testid="action-queue-group-items">
             {item.items.map((entry) => (
               <li key={entry.original.id} className="rounded-xl border border-white/10 bg-black/40 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
@@ -177,8 +173,6 @@ function ActionQueueGroupCard({
     </div>
   );
 }
-
-
 
 
 

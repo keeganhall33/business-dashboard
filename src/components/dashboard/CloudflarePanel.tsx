@@ -3,7 +3,6 @@
 import type { CloudflareTelemetrySnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
-import { PanelWrapper } from "./ui/PanelWrapper";
 
 export function CloudflarePanel({ snapshot }: { snapshot?: CloudflareTelemetrySnapshot | null }) {
   if (!snapshot) {
