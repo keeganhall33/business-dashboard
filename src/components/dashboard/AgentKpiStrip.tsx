@@ -182,7 +182,7 @@ function formatTimeAgo(iso: string) {
   return `${days}d ago`;
 }
 
-function formatMetric(value: number, unit?: string | null, metricKey?: string) {
+function formatMetric(value: number | null | undefined, unit?: string | null, metricKey?: string) {
   if (value == null || Number.isNaN(value)) return "—";
   const normalizedUnit = unit?.toLowerCase() ?? "";
   if (normalizedUnit === "usd" || normalizedUnit === "dollars") {

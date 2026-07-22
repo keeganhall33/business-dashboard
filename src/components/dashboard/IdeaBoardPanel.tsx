@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { IdeaBoard, IdeaCard } from "@/lib/types/dashboard";
+import type { IdeaBoard, IdeaCard, IdeaComment } from "@/lib/types/dashboard";
 import { EmptyState } from "./ui/EmptyState";
 import { StatusChip } from "./ui/StatusChip";
 import { ViewWorkModal } from "./ViewWorkModal";
@@ -14,7 +14,7 @@ type Props = {
 type IdeaFilters = {
   agentKey: string;
   ideaType: string;
-  approval: "all" | "needs" | "approved" | "none";
+  approval: "all" | "needs" | "approved" | "none" | "unknown";
   search: string;
 };
 
@@ -32,14 +32,15 @@ export function IdeaBoardPanel({ board }: Props) {
   const [filters, setFilters] = useState<IdeaFilters>(DEFAULT_FILTERS);
   const [taskLinks, setTaskLinks] = useState<Record<string, string>>({});
   const [syncingIdeaId, setSyncingIdeaId] = useState<string | null>(null);
+  const [showAllComments, setShowAllComments] = useState(false);
 
   const linkedTasks = board?.linkedTasks ?? {};
 
-  const rawColumns = normalizeColumns(board).filter((column) => column.ideas.length > 0);
-
+  const normalizedColumns = useMemo(() => normalizeColumns(board), [board]);
+  const columnsWithIdeas = useMemo(() => normalizedColumns.filter((column) => column.ideas.length > 0), [normalizedColumns]);
   const allIdeas = useMemo<IdeaWithStatus[]>(
-    () => rawColumns.flatMap((col) => col.ideas.map((idea) => ({ ...idea, statusKey: col.key }))),
-    [rawColumns]
+    () => normalizedColumns.flatMap((col) => col.ideas.map((idea) => ({ ...idea, statusKey: col.key }))),
+    [normalizedColumns]
   );
   const commentCountByIdeaId = useMemo(() => {
     const map = new Map<string, number>();
@@ -51,7 +52,11 @@ export function IdeaBoardPanel({ board }: Props) {
 
   const agentOptions = useMemo(() => {
     const entries = new Map<string, string>();
-    allIdeas.forEach((idea) => entries.set(idea.agentKey, idea.agentName));
+    allIdeas.forEach((idea) => {
+      const key = idea.agentKey || "unknown";
+      const label = idea.agentName?.trim() || "Unknown agent";
+      entries.set(key, label);
+    });
     return Array.from(entries.entries())
       .map(([agentKey, agentName]) => ({ agentKey, agentName }))
       .sort((a, b) => a.agentName.localeCompare(b.agentName));
@@ -66,18 +71,18 @@ export function IdeaBoardPanel({ board }: Props) {
   const filteredColumns = useMemo(() => {
     const search = filters.search.trim().toLowerCase();
 
-    const filtered = rawColumns
+    const filtered = columnsWithIdeas
       .map((column) => {
         const ideas = column.ideas.filter((idea) => {
-          if (filters.agentKey !== "all" && idea.agentKey !== filters.agentKey) return false;
+          const agentKey = idea.agentKey || "unknown";
+          if (filters.agentKey !== "all" && agentKey !== filters.agentKey) return false;
           if (filters.ideaType !== "all" && String(idea.ideaType) !== filters.ideaType) return false;
 
-          if (filters.approval === "needs" && !(idea.requiresCeoApproval && !idea.approvedAt)) return false;
-          if (filters.approval === "approved" && !(idea.requiresCeoApproval && Boolean(idea.approvedAt))) return false;
-          if (filters.approval === "none" && idea.requiresCeoApproval) return false;
+          const approvalState = deriveApprovalState(idea);
+          if (filters.approval !== "all" && approvalState !== filters.approval) return false;
 
           if (search) {
-            const haystack = `${idea.title} ${idea.summary ?? ""} ${idea.agentName} ${idea.agentKey}`.toLowerCase();
+            const haystack = `${idea.title} ${idea.summary ?? ""} ${idea.agentName ?? ""} ${idea.agentKey ?? ""}`.toLowerCase();
             if (!haystack.includes(search)) return false;
           }
 
@@ -89,12 +94,19 @@ export function IdeaBoardPanel({ board }: Props) {
       .filter((column) => column.ideas.length > 0);
 
     return sortColumns(filtered);
-  }, [filters, rawColumns]);
+  }, [filters, columnsWithIdeas]);
 
   const overviewStats = useMemo(() => buildOverviewStats(allIdeas), [allIdeas]);
   const agentStats = useMemo(() => buildAgentStatsByIdeaList(allIdeas), [allIdeas]);
 
-  if (!rawColumns.length) {
+  const allIdeaIdSet = useMemo(() => new Set(allIdeas.map((idea) => idea.id)), [allIdeas]);
+  const filteredIdeaIdSet = useMemo(() => new Set(filteredColumns.flatMap((column) => column.ideas.map((idea) => idea.id))), [filteredColumns]);
+  const recentComments = useMemo(() => {
+    const items = [...(board?.recentComments ?? [])].sort((a, b) => (safeMs(b.createdAt) ?? 0) - (safeMs(a.createdAt) ?? 0));
+    return items;
+  }, [board?.recentComments]);
+
+  if (!columnsWithIdeas.length) {
     return (
       <section className="ui-glass ui-glass-hover rounded-3xl p-6">
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Idea board</div>
@@ -145,7 +157,8 @@ export function IdeaBoardPanel({ board }: Props) {
             { label: "All", value: "all" },
             { label: "Needs CEO approval", value: "needs" },
             { label: "Approved", value: "approved" },
-            { label: "No approval required", value: "none" }
+            { label: "No approval required", value: "none" },
+            { label: "Unknown", value: "unknown" }
           ]}
         />
         <FilterInput
@@ -197,7 +210,7 @@ export function IdeaBoardPanel({ board }: Props) {
                 className="ui-snap-item w-[86vw] min-w-[300px] max-w-[520px] shrink-0 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:w-auto md:min-w-0 md:max-w-none"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{column.title}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{formatStatusTitle(column.key, column.title)}</div>
                   <StatusChip label={String(column.ideas.length)} tone={columnTone(column.key)} />
                 </div>
 
@@ -254,30 +267,66 @@ export function IdeaBoardPanel({ board }: Props) {
         </div>
       )}
 
-      {board?.recentComments?.length ? (
+      {recentComments.length ? (
         <div className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Recent comments</div>
-            <StatusChip label={String(board.recentComments.length)} tone="zinc" />
+            <StatusChip label={String(recentComments.length)} tone="zinc" />
           </div>
           <div className="mt-4 space-y-3">
-            {board.recentComments.slice(0, 8).map((comment) => (
-              <div key={comment.id} className="rounded-2xl border border-zinc-900 bg-zinc-950 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
-                  <div>
-                    <span className="font-semibold text-zinc-200">{comment.commenter}</span>
-                    <span className="text-zinc-600"> · </span>
-                    <span className="text-zinc-500">Idea {comment.ideaId.slice(0, 8)}</span>
-                  </div>
-                  <div className="text-zinc-600">{formatRelativeDate(comment.createdAt)}</div>
-                </div>
-                <div className="mt-2 text-sm text-zinc-300">{comment.comment}</div>
-              </div>
+            {(showAllComments ? recentComments : recentComments.slice(0, 5)).map((comment) => (
+              <CommentRow
+                key={comment.id}
+                comment={comment}
+                ideaState={deriveCommentIdeaState(comment, allIdeaIdSet, filteredIdeaIdSet)}
+              />
             ))}
           </div>
+          {recentComments.length > 5 ? (
+            <div className="mt-4 text-right">
+              <button
+                type="button"
+                className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-300 hover:text-zinc-50"
+                onClick={() => setShowAllComments((value) => !value)}
+              >
+                {showAllComments ? "Show less" : `Show ${recentComments.length - 5} more`}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+function CommentRow({
+  comment,
+  ideaState
+}: {
+  comment: IdeaComment;
+  ideaState: "visible" | "hidden" | "missing" | "unlinked";
+}) {
+  const author = comment.commenter?.trim() || "Unknown commenter";
+  const timestamp = safeRelativeText(comment.createdAt) ?? "Comment time unavailable";
+  let ideaLabel = "Unlinked comment";
+  if (comment.ideaId) {
+    if (ideaState === "missing") ideaLabel = "Idea unavailable";
+    else if (ideaState === "hidden") ideaLabel = "Idea hidden by current filters";
+    else ideaLabel = `Idea ${comment.ideaId.slice(0, 8)}`;
+  }
+
+  return (
+    <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+        <div>
+          <span className="font-semibold text-zinc-200">{author}</span>
+          <span className="text-zinc-600"> · </span>
+          <span className="text-zinc-500">{ideaLabel}</span>
+        </div>
+        <div className="text-zinc-600">{timestamp}</div>
+      </div>
+      <div className="mt-2 text-sm text-zinc-300">{comment.comment || "(No comment body)"}</div>
+    </div>
   );
 }
 
@@ -310,8 +359,16 @@ function IdeaCardView({
   syncing: boolean;
   onEnsureReviewTask: (ideaId: string) => Promise<void>;
 }) {
-  const hasApproval = Boolean(idea.requiresCeoApproval);
-  const approvalLabel = hasApproval ? (idea.approvedAt ? "approved" : "needs approval") : "no approval";
+  const approvalState = deriveApprovalState(idea);
+  const hasApproval = approvalState === "needs" || approvalState === "approved";
+  const approvalLabel =
+    approvalState === "needs"
+      ? "needs approval"
+      : approvalState === "approved"
+      ? "approved"
+      : approvalState === "none"
+      ? "no approval"
+      : "approval unknown";
   const linkedTaskId = linkedTaskIdOverride ?? idea.linkedTaskId;
   const needsReviewTask = hasApproval && !idea.approvedAt && !linkedTaskId;
   const showImplementation = Boolean(idea.approvedAt);
@@ -336,7 +393,7 @@ function IdeaCardView({
     state: needsReviewTask ? "action_needed" : showImplementation ? "supported" : "pending",
     ownerLabel: idea.agentName,
     confidenceLabel: "supabase record",
-    updatedAtLabel: idea.updatedAt ? `Touched ${formatRelativeDate(idea.updatedAt)}` : null,
+    updatedAtLabel: safeRelativeText(idea.updatedAt) ? `Touched ${safeRelativeText(idea.updatedAt)}` : null,
     definition:
       "Ideas move through statuses with an explicit claim (the proposed move), evidence (links + work), and an action (approve, implement, ship).",
     evidence: [
@@ -360,10 +417,10 @@ function IdeaCardView({
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip label={idea.agentName} />
             <StatusChip label={String(idea.ideaType)} tone="sky" />
-            <StatusChip label={statusKey.replace(/_/g, " ")} tone={columnTone(statusKey)} />
+            <StatusChip label={formatStatusTitle(statusKey, statusKey)} tone={columnTone(statusKey)} />
             <StatusChip
               label={approvalLabel}
-              tone={!hasApproval ? "zinc" : idea.approvedAt ? "emerald" : "amber"}
+              tone={approvalState === "needs" ? "amber" : approvalState === "approved" ? "emerald" : approvalState === "unknown" ? "sky" : "zinc"}
             />
             {commentCount > 0 ? <StatusChip label={`${commentCount} comments`} tone="zinc" /> : null}
           </div>
@@ -391,7 +448,11 @@ function IdeaCardView({
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
         {linkedTaskId ? <span className="rounded-full border border-zinc-800 px-2 py-0.5">Task {linkedTaskId}</span> : null}
         {idea.approver ? <span>Approver: {idea.approver}</span> : null}
-        {idea.updatedAt ? <span>Updated {formatRelativeDate(idea.updatedAt)}</span> : null}
+        {safeRelativeText(idea.updatedAt) ? (
+          <span>Updated {safeRelativeText(idea.updatedAt)}</span>
+        ) : (
+          <span>Update time unavailable</span>
+        )}
       </div>
 
       {nextLinks.length ? (
@@ -430,7 +491,7 @@ function IdeaCardView({
         open={openWork}
         onClose={() => setOpenWork(false)}
         title={idea.title}
-        subtitle={`${idea.agentName} • ${statusKey.replace(/_/g, " ")}`}
+        subtitle={`${idea.agentName} • ${formatStatusTitle(statusKey, statusKey)}`}
         body={linkedTask?.description ?? idea.summary ?? null}
         attachments={linkedTask?.deliverableLinks ?? null}
         metaChips={[
@@ -488,6 +549,31 @@ function IdeaCardView({
   );
 }
 
+function deriveCommentIdeaState(
+  comment: IdeaComment,
+  allIdeaIds: Set<string>,
+  filteredIdeaIds: Set<string>
+): "visible" | "hidden" | "missing" | "unlinked" {
+  if (!comment.ideaId) return "unlinked";
+  if (!allIdeaIds.has(comment.ideaId)) return "missing";
+  if (!filteredIdeaIds.has(comment.ideaId)) return "hidden";
+  return "visible";
+}
+
+function deriveApprovalState(idea: IdeaCard): IdeaFilters["approval"] {
+  if (typeof idea.requiresCeoApproval === "boolean") {
+    if (!idea.requiresCeoApproval) return "none";
+    return idea.approvedAt ? "approved" : "needs";
+  }
+  return "unknown";
+}
+
+function safeRelativeText(iso?: string | null) {
+  const ms = safeMs(iso ?? null);
+  if (ms == null) return null;
+  return formatRelativeDate(new Date(ms).toISOString());
+}
+
 function safeMs(iso?: string | null) {
   if (!iso) return null;
   const ms = new Date(iso).getTime();
@@ -516,26 +602,43 @@ function formatDueShort(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+const STATUS_ORDER = ["proposed", "in review", "approved", "in progress", "shipped"];
+
 function columnTone(status: string) {
-  const normalized = status.toLowerCase();
-  if (normalized.includes("live")) return "emerald" as const;
+  const normalized = normalizeStatusKey(status);
+  if (normalized.includes("ship") || normalized.includes("live")) return "emerald" as const;
   if (normalized.includes("approved")) return "sky" as const;
-  if (normalized.includes("review")) return "amber" as const;
+  if (normalized.includes("review") || normalized.includes("progress")) return "amber" as const;
   return "zinc" as const;
 }
 
 function sortColumns(columns: Array<{ key: string; title: string; ideas: IdeaCard[] }>) {
-  const order = ["proposed", "in_review", "approved", "rejected", "in_progress", "shipped", "archived"];
   return columns
     .slice()
     .sort((a, b) => {
-      const aIndex = order.indexOf(a.key);
-      const bIndex = order.indexOf(b.key);
-      if (aIndex === -1 && bIndex === -1) return a.key.localeCompare(b.key);
+      const aIndex = STATUS_ORDER.indexOf(normalizeStatusKey(a.key));
+      const bIndex = STATUS_ORDER.indexOf(normalizeStatusKey(b.key));
+      if (aIndex === -1 && bIndex === -1) {
+        return formatStatusTitle(a.key, a.key).localeCompare(formatStatusTitle(b.key, b.key));
+      }
       if (aIndex === -1) return 1;
       if (bIndex === -1) return -1;
       return aIndex - bIndex;
     });
+}
+
+function normalizeStatusKey(value: string) {
+  return value.replace(/[_-]/g, " ").trim().toLowerCase();
+}
+
+function formatStatusTitle(key: string, fallback: string) {
+  const normalized = normalizeStatusKey(key || fallback || "status");
+  if (!normalized) return fallback || "Status";
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0]?.toUpperCase().concat(word.slice(1)))
+    .join(" ");
 }
 
 function buildOverviewStats(ideas: IdeaWithStatus[]) {
@@ -551,26 +654,21 @@ function buildOverviewStats(ideas: IdeaWithStatus[]) {
 function buildAgentStatsByIdeaList(ideas: IdeaWithStatus[]) {
   const map = new Map<string, { agentKey: string; agentName: string; shipped7d: number; needsApproval: number }>();
   ideas.forEach((idea) => {
-    if (!map.has(idea.agentKey)) {
-      map.set(idea.agentKey, {
-        agentKey: idea.agentKey,
-        agentName: idea.agentName,
+    const key = idea.agentKey || "unknown";
+    if (!map.has(key)) {
+      map.set(key, {
+        agentKey: key,
+        agentName: idea.agentName?.trim() || (key === "unknown" ? "Unknown agent" : key),
         shipped7d: 0,
         needsApproval: 0
       });
     }
-    const bucket = map.get(idea.agentKey)!;
+    const bucket = map.get(key)!;
     if (isShippedInLastDays(idea, 7)) bucket.shipped7d += 1;
     if (idea.requiresCeoApproval && !idea.approvedAt) bucket.needsApproval += 1;
   });
 
-  return Array.from(map.values()).sort((a, b) => {
-    const shippedDelta = b.shipped7d - a.shipped7d;
-    if (shippedDelta !== 0) return shippedDelta;
-    const approvalDelta = b.needsApproval - a.needsApproval;
-    if (approvalDelta !== 0) return approvalDelta;
-    return a.agentName.localeCompare(b.agentName);
-  });
+  return Array.from(map.values()).sort((a, b) => a.agentName.localeCompare(b.agentName));
 }
 
 function isShippedInLastDays(idea: IdeaWithStatus, days: number) {
