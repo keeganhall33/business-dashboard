@@ -1,5 +1,5 @@
-import type { ConfidenceSummary, ConfidenceDomain, ConfidenceState } from "../data-confidence.ts";
-import { getDomainConfidence, mapStateToConfidenceLabel } from "../data-confidence.ts";
+import type { ConfidenceSummary, ConfidenceDomain, ConfidenceState } from "../data-confidence";
+import { getDomainConfidence, mapStateToConfidenceLabel } from "../data-confidence";
 import type {
   DashboardActionItem,
   DashboardOverviewResponse,
