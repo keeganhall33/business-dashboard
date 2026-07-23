@@ -1,6 +1,6 @@
 export type MetricStatus = "healthy" | "on_track" | "warning" | "critical";
 
-export type RangePreset = "7d" | "30d" | "90d" | "custom";
+export type RangePreset = "today" | "yesterday" | "7d" | "30d" | "month_to_date" | "previous_month" | "90d" | "year_to_date" | "custom";
 
 export type HeaderMetric = {
   metricKey: string;
@@ -8,8 +8,11 @@ export type HeaderMetric = {
   category: string;
   currentValue: number;
   targetValue: number;
+  targetLabel?: string | null;
   deltaPercent: number | null;
   status: MetricStatus;
+  comparisonValue?: number | null;
+  comparisonLabel?: string | null;
   unit: string | null;
   ownerAgent?: string | null;
   measuredAt?: string | null;
@@ -26,7 +29,10 @@ export type RevenueMetric = {
   metricKey: string;
   currentValue: number;
   targetValue: number;
+  targetLabel?: string | null;
   status: MetricStatus;
+  comparisonValue?: number | null;
+  comparisonLabel?: string | null;
   unit: string | null;
   ownerAgent?: string | null;
   tactics?: string[] | null;
@@ -67,6 +73,7 @@ export type Opportunity = {
   ownerAgent: string | null;
   nextStep: string | null;
   nextStepDueAt: string | null;
+  lastVerifiedAt?: string | null;
   supportingDocs?: DeliverableLink[] | null;
 };
 
@@ -128,6 +135,11 @@ export type SurvivalStrip = {
 export type PipelinePanel = {
   collectors: CollectorRelationship[];
   deals: Opportunity[];
+
+  verificationSummary?: {
+    total?: number | null;
+    verifiedActive?: number | null;
+  } | null;
 };
 
 export type WarRoomEntry = {
@@ -449,6 +461,70 @@ export type CommerceTelemetry = {
   };
 };
 
+
+export type TelemetrySource = "woo" | "ga4" | "funnelkit" | "meta";
+
+export type TelemetryMetadata = {
+  source: TelemetrySource;
+  requestedStartDate: string;
+  requestedEndDate: string;
+  timezone: string;
+  generatedAt?: string | null;
+  freshnessStatus: "fresh" | "stale" | "no_data" | "unknown";
+  coverageStatus: "complete" | "partial" | "unknown";
+  includesPartialDay: boolean;
+  includesFutureDates: boolean;
+  latestCompletedBusinessDate?: string | null;
+  warningCodes: string[];
+};
+
+export type TelemetryHealthStatus = "healthy" | "warning" | "critical" | "unknown";
+
+export type TelemetryHealth = {
+  source: TelemetrySource;
+  status: TelemetryHealthStatus;
+  reasons: string[];
+  warningCodes: string[];
+};
+
+export type TrendDirection = "up" | "down" | "flat";
+export type TrendMagnitude = "minor" | "moderate" | "major";
+
+export type TrendComparison = {
+  id: string;
+  source: TelemetrySource;
+  metric: string;
+  label: string;
+  currentValue: number | null;
+  previousValue: number | null;
+  absoluteChange: number | null;
+  percentChange: number | null;
+  direction: TrendDirection;
+  magnitude: TrendMagnitude;
+  anomaly: boolean;
+  caveat?: string | null;
+};
+
+export type ExecutiveBrief = {
+  pacificWindow: {
+    startDate: string;
+    endDate: string;
+    includesPartialDay: boolean;
+  };
+  warnings: string[];
+  topChanges: TrendComparison[];
+  sourceFreshness: Array<{
+    source: TelemetrySource;
+    status: TelemetryHealthStatus;
+    summary: string;
+  }>;
+  attention: string | null;
+};
+
+export type ExecutiveInsightsPayload = {
+  brief: ExecutiveBrief | null;
+  trends: TrendComparison[];
+};
 export type WebsiteConversionSnapshot = {
   generatedAt: string;
   ga4?: {
@@ -462,13 +538,46 @@ export type WebsiteConversionSnapshot = {
     deviceBreakdown?: Array<{ label: string; sessions: number }>;
     channelBreakdown?: Array<{ label: string; sessions: number }>;
     warnings?: string[];
+
+    funnelRates?: {
+      sessionToPurchase?: number | null;
+      addToCartToPurchase?: number | null;
+    };
   };
   wooCommerce?: {
-    totalRevenue?: number;
-    orderCount?: number;
-    averageOrderValue?: number;
+    paidOrdersInWindow?: number | null;
+    grossOrderRevenue?: number | null;
+    totalRevenue?: number | null;
+    orderCount?: number | null;
+    averageOrderValue?: number | null;
+    merchandiseRevenue?: number | null;
+    shippingRevenue?: number | null;
+    taxCollected?: number | null;
+    discountTotal?: number | null;
+    netRevenue?: number | null;
+    grossAov?: number | null;
+    netAov?: number | null;
+    refundTotal?: number | null;
+    refundCount?: number | null;
+    refundDefinition?: string | null;
+    refundDataComplete?: boolean | null;
+    refundWindow?: {
+      windowStart?: string | null;
+      windowEndExclusive?: string | null;
+      timezone?: string | null;
+    } | null;
+    observedRefundRange?: {
+      firstRefund?: string | null;
+      lastRefund?: string | null;
+    } | null;
+    observedPaidRange?: {
+      earliestPaid?: string | null;
+      latestPaid?: string | null;
+    } | null;
+    refundRate?: number | null;
+    discountRate?: number | null;
     topProducts?: Array<{ name: string; units: number; revenue: number }>;
-    recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
+    recentOrders?: Array<{ id: number | string | null; status: string | null; total: number | null; currency: string | null; date_paid?: string | null; date_paid_gmt?: string | null; customer?: string | null; date?: string | null }>;
   };
 };
 
@@ -855,6 +964,8 @@ export type DashboardOverviewResponse = {
   metaAds?: MetaAdsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
+  industryPulseSnapshot?: IndustryPulseSnapshot | null;
+
   cloudflare?: CloudflareTelemetrySnapshot | null;
   collectorTelemetry?: CollectorTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
@@ -889,4 +1000,7 @@ export type DashboardOverviewResponse = {
       sourceUrl: string | null;
     }>;
   };
+  telemetryMetadata?: Partial<Record<TelemetrySource, TelemetryMetadata>>;
+  telemetryHealth?: Partial<Record<TelemetrySource, TelemetryHealth>>;
+  executiveInsights?: ExecutiveInsightsPayload | null;
 };
