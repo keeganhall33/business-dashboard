@@ -1,6 +1,7 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
+import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -704,21 +705,23 @@ export async function GET(request: Request) {
       const { loadDashboardOverviewFromSeed } = await import("@/lib/dashboard/seed");
       const seeded = await loadDashboardOverviewFromSeed();
       const artifacts = await loadLocalDashboardArtifacts();
-      return ok({
-        ...seeded,
-        websiteConversion: artifacts.websiteSnapshot,
-        metaAds: artifacts.metaSnapshot,
-        executiveSummary: artifacts.executiveSummary,
-        industryPulse: artifacts.industrySnapshot,
-        socialIntelligence: artifacts.socialSnapshot,
-        cloudflare: artifacts.cloudflareSnapshot,
-        leadIntelligence: artifacts.leadSnapshot,
-        agentStatusPanel: artifacts.agentStatus,
-        automationStatusPanel: artifacts.automationStatus,
-        dataSourceAccess: artifacts.dataSourceMatrix,
-        topActions: artifacts.topActions,
-        blockedItems: artifacts.blockedItems
-      });
+      return ok(
+        sanitizeDashboardPayloadForHtml({
+          ...seeded,
+          websiteConversion: artifacts.websiteSnapshot,
+          metaAds: artifacts.metaSnapshot,
+          executiveSummary: artifacts.executiveSummary,
+          industryPulse: artifacts.industrySnapshot,
+          socialIntelligence: artifacts.socialSnapshot,
+          cloudflare: artifacts.cloudflareSnapshot,
+          leadIntelligence: artifacts.leadSnapshot,
+          agentStatusPanel: artifacts.agentStatus,
+          automationStatusPanel: artifacts.automationStatus,
+          dataSourceAccess: artifacts.dataSourceMatrix,
+          topActions: artifacts.topActions,
+          blockedItems: artifacts.blockedItems
+        })
+      );
     }
 
     // E2E test harness: allow Playwright/Cypress to run without Supabase env + network.
@@ -733,11 +736,12 @@ export async function GET(request: Request) {
         return d.toISOString();
       };
 
-      return ok({
-        ok: true,
-        timestamp: now.toISOString(),
-        range: responseRange,
-        headerMetrics: [
+      return ok(
+        sanitizeDashboardPayloadForHtml({
+          ok: true,
+          timestamp: now.toISOString(),
+          range: responseRange,
+          headerMetrics: [
           {
             metricKey: "kpi_mrr",
             metricName: "MRR",
@@ -960,7 +964,7 @@ export async function GET(request: Request) {
           ]
         },
         ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] }
-      });
+      }));
     }
 
     const url = new URL(request.url);
