@@ -121,7 +121,7 @@ function WooSection({
                   <span className="text-zinc-400">{decimalCurrency.format(order.total ?? 0)}</span>
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {new Date(order.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {order.status}
+                  {order.date ? new Date(order.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Unknown"} · {order.status}
                 </div>
               </li>
             ))}

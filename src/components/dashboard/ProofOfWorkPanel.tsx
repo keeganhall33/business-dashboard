@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { ProofOfWorkEntry } from "@/lib/types/dashboard";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 import { EmptyState } from "./ui/EmptyState";
@@ -13,6 +16,7 @@ type Props = {
 };
 
 export function ProofOfWorkPanel({ items }: Props) {
+  const [referenceNow] = useState(() => Date.now());
   const topEntries = items.slice(0, 4);
   const hasEntries = topEntries.length > 0;
   const latestCompletedAt = topEntries.reduce<Date | null>((latest, entry) => {
@@ -24,7 +28,7 @@ export function ProofOfWorkPanel({ items }: Props) {
   }, null);
   const isStale = (() => {
     if (!latestCompletedAt) return true;
-    const diffDays = Math.round((Date.now() - latestCompletedAt.getTime()) / 86400000);
+    const diffDays = Math.round((referenceNow - latestCompletedAt.getTime()) / 86400000);
     return diffDays > 14;
   })();
 
@@ -42,7 +46,7 @@ export function ProofOfWorkPanel({ items }: Props) {
 
       {hasEntries && isStale ? (
         <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
-          Last proof was logged {formatRelative(latestCompletedAt?.toISOString() ?? null)}. New deliverables have not been captured in over two weeks.
+          Last proof was logged {formatRelative(latestCompletedAt?.toISOString() ?? null, referenceNow)}. New deliverables have not been captured in over two weeks.
         </div>
       ) : null}
 
@@ -52,7 +56,7 @@ export function ProofOfWorkPanel({ items }: Props) {
             <div key={entry.taskId} className="rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-zinc-500">
                 <span>{entry.agentKey ?? "agent"}</span>
-                <span>{formatRelative(entry.completedAt)}</span>
+                <span>{formatRelative(entry.completedAt, referenceNow)}</span>
               </div>
               <div className="mt-2 text-sm font-semibold text-zinc-50">{entry.taskTitle}</div>
               {entry.summary ? <p className="mt-2 text-sm text-zinc-300">{entry.summary}</p> : null}
@@ -72,11 +76,11 @@ export function ProofOfWorkPanel({ items }: Props) {
   );
 }
 
-function formatRelative(iso: string | null) {
+function formatRelative(iso: string | null, referenceNow: number) {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  const diffDays = Math.round((date.getTime() - Date.now()) / 86400000);
+  const diffDays = Math.round((date.getTime() - referenceNow) / 86400000);
   if (Math.abs(diffDays) <= 14) {
     return relativeFormatter.format(diffDays, "day");
   }

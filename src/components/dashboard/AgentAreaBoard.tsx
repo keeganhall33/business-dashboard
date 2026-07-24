@@ -1,7 +1,7 @@
 "use client";
 
 import { Children, useEffect, useMemo, useState, useTransition } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentKey } from "@/lib/types/requests";
@@ -9,6 +9,8 @@ import type { AgentSlaSnapshot } from "@/lib/types/dashboard";
 import { formatRelativeTimeFromNow } from "@/lib/date";
 import { DeliverableAttachmentList } from "./DeliverableAttachmentList";
 import { InsightCard, type InsightObject } from "./ui/InsightCard";
+import { StatusChip } from "./ui/StatusChip";
+type StatusTone = "emerald" | "amber" | "rose" | "sky" | "zinc";
 import { requestDashboardRefresh } from "@/lib/dashboard/events";
 import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { extractResponseError } from "@/lib/dashboard/http";
@@ -52,12 +54,17 @@ type AgentAreaDefinition = {
   kpiMetricKeys?: string[];
 };
 
+type RouterLike = {
+  refresh?: () => void;
+};
+
 type Props = {
   agents: AgentDashboardResponse[];
   agentSla?: AgentSlaSnapshot[];
+  router?: RouterLike;
 };
 
-export function AgentAreaBoard({ agents, agentSla = [] }: Props) {
+export function AgentAreaBoard({ agents, agentSla = [], router: injectedRouter }: Props) {
   const agentMap = useMemo(() => new Map(agents.map((agent) => [agent.agent.agentKey, agent])), [agents]);
   const slaMap = useMemo(() => new Map(agentSla.map((snapshot) => [snapshot.agentKey, snapshot])), [agentSla]);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
@@ -90,6 +97,7 @@ export function AgentAreaBoard({ agents, agentSla = [] }: Props) {
                   agent={agent}
                   expanded={expandedAgent === agent.agent.agentKey}
                   sla={slaMap.get(agent.agent.agentKey)}
+                  router={injectedRouter}
                   onToggle={() =>
                     setExpandedAgent((current) => (current === agent.agent.agentKey ? null : agent.agent.agentKey))
                   }
@@ -107,11 +115,13 @@ type AgentCardProps = {
   agent: AgentDashboardResponse;
   expanded: boolean;
   sla?: AgentSlaSnapshot;
+  router?: RouterLike;
   onToggle: () => void;
 };
 
-function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
-  const router = useRouter();
+function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggle }: AgentCardProps) {
+  const safeRouter = useSafeRouter();
+  const router = injectedRouter ?? safeRouter;
   const [isPending, startTransition] = useTransition();
   const [decisionStatus, setDecisionStatus] = useState<{ state: "idle" | "success" | "error"; message?: string }>({
     state: "idle"
@@ -165,6 +175,17 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
     : sla?.lastRunAt
       ? `Active · refreshed ${formatRelativeTimeFromNow(sla.lastRunAt)}`
       : null;
+  const stale = !paused && minutesSinceRun != null && minutesSinceRun > 120;
+  const blockerSummary = buildBlockerSummary(blockedTaskList, liveTaskList, queuedTaskList, agent.recentUpdates);
+  const severity = determineAgentSeverity({
+    paused,
+    stale,
+    pendingPlan: Boolean(pendingPlan),
+    blocked: blockedTaskList.length > 0,
+    hasActivity: liveTaskList.length + queuedTaskList.length > 0
+  });
+  const planPreview = buildPlanPreview(pendingPlan, lastPlan, autoPlan);
+  const slaLabel = pausedLabel ?? "Run cadence unknown";
 
   useEffect(() => {
     setDecisionStatus({ state: "idle" });
@@ -192,7 +213,7 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
           state: "success",
           message: decision === "approve" ? "Plan approved" : "Changes requested"
         });
-        router.refresh();
+        router?.refresh?.();
         requestDashboardRefresh({ reason: "agent-area" });
         publishDashboardToast({
           tone: decision === "approve" ? "success" : "warning",
@@ -216,6 +237,7 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">{agent.agent.mandate}</p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
+          <StatusChip label={severity.label} tone={severity.tone} />
           <PlanStatusBadge label={planStatusLabel} />
           {pausedLabel ? (
             <div
@@ -236,19 +258,23 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
 
       {!expanded && (
         <CollapsedSummary
-          pendingPlan={pendingPlan}
-          lastPlan={lastPlan}
-          autoPlan={autoPlan}
-          liveCount={liveTaskList.length}
-          queuedCount={queuedTaskList.length}
-          blockedCount={blockedTaskList.length}
-          priorityCount={prioritySignals.length}
-          latestDirective={latestDirective}
+          summary={{
+            severity,
+            planLabel: planPreview.title,
+            planDetail: planPreview.detail,
+            tasks: { live: liveTaskList.length, blocked: blockedTaskList.length, queued: queuedTaskList.length },
+            blocker: blockerSummary,
+            priorityCount: prioritySignals.length,
+            directiveTitle: latestDirective?.title ?? null
+          }}
+          approvalsLabel={pendingPlan ? "Approval required" : null}
+          slaLabel={slaLabel}
+          onToggle={onToggle}
         />
       )}
 
       {expanded && (
-        <>
+        <div data-testid="agent-card-details">
           <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2 text-sm text-zinc-200">
@@ -422,13 +448,19 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
               </p>
             )}
           </section>
-        </>
+        </div>
       )}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-200 hover:border-zinc-500"
           onClick={onToggle}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+              event.preventDefault();
+              onToggle();
+            }
+          }}
         >
           {expanded ? "Collapse domain detail" : "Expand domain detail"}
         </button>
@@ -446,37 +478,67 @@ function AgentDetailCard({ agent, expanded, sla, onToggle }: AgentCardProps) {
   );
 }
 
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
 type CollapsedSummaryProps = {
-  pendingPlan: AgentDashboardResponse["planQueue"]["pending"] | null;
-  lastPlan: AgentDashboardResponse["planQueue"]["recent"][number] | null;
-  autoPlan: string[] | null;
-  liveCount: number;
-  queuedCount: number;
-  blockedCount: number;
-  priorityCount: number;
-  latestDirective: AgentDashboardResponse["recentUpdates"][number] | null;
+  summary: {
+    severity: { label: string; tone: StatusTone };
+    planLabel: string;
+    planDetail?: string | null;
+    tasks: { live: number; blocked: number; queued: number };
+    blocker: { label: string; tone: StatusTone };
+    priorityCount: number;
+    directiveTitle: string | null;
+  };
+  approvalsLabel: string | null;
+  slaLabel: string;
+  onToggle: () => void;
 };
 
-function CollapsedSummary({ pendingPlan, lastPlan, autoPlan, liveCount, queuedCount, blockedCount, priorityCount, latestDirective }: CollapsedSummaryProps) {
-  const preview = buildPlanPreview(pendingPlan, lastPlan, autoPlan);
+function CollapsedSummary({ summary, approvalsLabel, slaLabel, onToggle }: CollapsedSummaryProps) {
+  function handleToggleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+      event.preventDefault();
+      onToggle();
+    }
+  }
+
   return (
-    <section className="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950/70 p-5">
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Plan snapshot</div>
-        <div className="mt-1 text-lg font-semibold text-zinc-50">{preview.title}</div>
-        {preview.detail ? <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{preview.detail}</p> : null}
+    <section className="mt-5 rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4" data-testid="agent-card-summary">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip label={summary.severity.label} tone={summary.severity.tone} />
+        {approvalsLabel ? <StatusChip label={approvalsLabel} tone="amber" /> : null}
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <CollapsedStat label="Live tasks" value={liveCount} />
-        <CollapsedStat label="Queued" value={queuedCount} />
-        <CollapsedStat label="Blocked" value={blockedCount} tone={blockedCount ? "warning" : undefined} />
-        <CollapsedStat label="Priority alerts" value={priorityCount} tone={priorityCount ? "warning" : undefined} />
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryStat label="Plan" value={summary.planLabel} detail={summary.planDetail ?? undefined} />
+        <SummaryStat label="Live" value={`${summary.tasks.live}`} detail={`${summary.tasks.queued} queued`} />
+        <SummaryStat label="Blocked" value={`${summary.tasks.blocked}`} tone={summary.blocker.tone} detail={summary.blocker.label} />
+        <SummaryStat label="Priority alerts" value={`${summary.priorityCount}`} tone={summary.priorityCount ? "amber" : "zinc"} />
       </div>
-      {latestDirective && (
-        <p className="mt-4 text-xs text-zinc-500">
-          Latest directive: <span className="text-zinc-300">{latestDirective.title}</span>
+      {summary.directiveTitle ? (
+        <p className="mt-3 text-xs text-zinc-500">
+          Latest directive: <span className="text-zinc-300">{summary.directiveTitle}</span>
         </p>
-      )}
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+        <span>{slaLabel}</span>
+        <button
+          type="button"
+          onClick={onToggle}
+          onKeyDown={handleToggleKeyDown}
+          data-testid="agent-card-toggle"
+          aria-expanded={false}
+          className="rounded-full border border-white/15 px-4 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-200 hover:border-white/40"
+        >
+          Expand thread
+        </button>
+      </div>
     </section>
   );
 }
@@ -507,12 +569,13 @@ function buildPlanPreview(
   return { title: "No plan submitted", detail: "Awaiting direction" };
 }
 
-function CollapsedStat({ label, value, tone }: { label: string; value: number; tone?: "warning" }) {
-  const toneClasses = tone === "warning" ? "border-amber-500/40 text-amber-100" : "border-zinc-800 text-zinc-200";
+function SummaryStat({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: StatusTone }) {
+  const toneClasses = tone === "rose" ? "text-rose-200" : tone === "amber" ? "text-amber-200" : tone === "emerald" ? "text-emerald-200" : "text-zinc-200";
   return (
-    <div className={`rounded-2xl border ${toneClasses} bg-zinc-950/60 p-4`}>
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
       <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      <div className={`mt-1 text-xl font-semibold ${toneClasses}`}>{value}</div>
+      {detail ? <div className="text-xs text-zinc-500">{detail}</div> : null}
     </div>
   );
 }
@@ -525,6 +588,31 @@ function PlanStatusBadge({ label }: { label: string }) {
       {label}
     </span>
   );
+}
+
+function determineAgentSeverity({ paused, stale, pendingPlan, blocked, hasActivity }: { paused: boolean; stale: boolean; pendingPlan: boolean; blocked: boolean; hasActivity: boolean }) {
+  if (paused) return { label: "Paused", tone: "rose" as StatusTone };
+  if (stale) return { label: "Stale", tone: "amber" as StatusTone };
+  if (pendingPlan) return { label: "Approval required", tone: "amber" as StatusTone };
+  if (blocked) return { label: "Blocked", tone: "rose" as StatusTone };
+  if (hasActivity) return { label: "On track", tone: "emerald" as StatusTone };
+  return { label: "Status unknown", tone: "zinc" as StatusTone };
+}
+
+function buildBlockerSummary(
+  blocked: AgentDashboardResponse["openTasks"],
+  live: AgentDashboardResponse["openTasks"],
+  queued: AgentDashboardResponse["openTasks"],
+  updates: AgentDashboardResponse["recentUpdates"]
+) {
+  if (blocked.length > 0) {
+    return { label: blocked[0].title ?? "Blocked task", tone: "rose" as StatusTone };
+  }
+  const hasSignals = live.length + queued.length + updates.length > 0;
+  if (hasSignals) {
+    return { label: "No active blockers reported", tone: "emerald" as StatusTone };
+  }
+  return { label: "Blocker status unavailable", tone: "zinc" as StatusTone };
 }
 
 type TaskSummaryCardProps = {
