@@ -18,6 +18,7 @@ import {
   getDecisionsRequiringReview,
   getLatestFinanceSnapshot,
   getCollectorRelationships,
+  getPreparedActionsForDashboard,
   getRecentTasks,
   listAgentKpis,
   listLatestAgentKpiReadingsByKpiKeys,
@@ -27,25 +28,51 @@ import {
   getCeoQuestions,
   getRecentCeoQuestionComments,
   getDashboardSnapshots,
+  getDashboardSnapshotHistoryForKey,
   type DashboardSnapshotRecord
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
+import { getAlertPolicy } from "@/lib/scheduler/alertPolicy";
+import { loadProductConversionPrototype } from "@/lib/dashboard/product-conversion-prototype";
+import { buildChangeInsights } from "@/lib/dashboard/change-insights";
 import {
   RangePreset,
   type AgentHealth,
   type CollectorTelemetrySnapshot,
   type DeliverableLink,
+  type PerformanceBaseline,
   type ProofOfWorkEntry,
   type WebsiteConversionSnapshot,
   type CloudflareTelemetrySnapshot,
   type MetaAdsSnapshot,
-  type SocialIntelligenceSnapshot
+  type SocialContentSnapshot,
+  type PartnershipOpportunitySnapshot,
+  type MarketingCommandSnapshot,
+  type ProductConversionIntelligence,
+  type PreparedAction
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 
 export const runtime = "nodejs";
+
+const SNAPSHOT_JOB_KEYS = ["ceo-digest", "deliverable-harvest", "industry-news-pulse", "scoreboard-refresh", "weekly-summary"];
+
+const STEP3_JOB_KEYS = ["agent-idea-pulse", "daily-agent-cycle", "midweek-opportunity-pulse", "weekly-command-cycle"];
+
+type PilotSummaryRecord = {
+  generatedAt?: string;
+  mode?: string;
+  alertCap?: number;
+  cooldownHours?: number;
+  createdCount?: number;
+  skippedByReason?: Record<string, number>;
+};
+
+type ObserveReportRecord = {
+  generatedAt?: string;
+};
 
 type PostgrestError = {
   code?: string;
@@ -135,6 +162,49 @@ type OpportunityRow = {
 const opportunityIdRegex = /opportunity id:\s*([a-z0-9_-]+)/gi;
 const opportunityDedupeKey = (name: string | null | undefined, organization: string | null | undefined) =>
   `${(name ?? "").trim().toLowerCase()}|${(organization ?? "").trim().toLowerCase()}`;
+
+function logSnapshotDebug(message: string, data?: Record<string, unknown> | string) {
+  const debugFlag = process.env["DASHBOARD_DEBUG_SNAPSHOTS"];
+  if (debugFlag !== "1") return;
+  if (!data) {
+    console.log(`[snapshot-debug] ${message}`);
+    return;
+  }
+  if (typeof data === "string") {
+    console.log(`[snapshot-debug] ${message} ${data}`);
+    return;
+  }
+  const parts = Object.entries(data).map(([key, value]) => {
+    try {
+      return `${key}=${JSON.stringify(value)}`;
+    } catch {
+      return `${key}=${String(value)}`;
+    }
+  });
+  console.log(`[snapshot-debug] ${message} ${parts.join(" ")}`);
+}
+
+function extractPreviousSnapshot<T>(rows: DashboardSnapshotRecord[] | undefined, currentGeneratedAt?: string | null): T | null {
+  if (!rows?.length) return null;
+  let skippedCurrent = Boolean(!currentGeneratedAt);
+  for (const row of rows) {
+    const payload = row.payload as T | null;
+    if (!payload) continue;
+    const payloadGeneratedAt = (payload as { generatedAt?: string | null }).generatedAt ?? row.generated_at;
+    if (currentGeneratedAt) {
+      if (payloadGeneratedAt === currentGeneratedAt) {
+        continue;
+      }
+      return payload;
+    }
+    if (!skippedCurrent) {
+      skippedCurrent = true;
+      continue;
+    }
+    return payload;
+  }
+  return null;
+}
 
 function extractOpportunityIdsFromText(...texts: Array<string | null | undefined>) {
   const joined = texts
@@ -364,6 +434,8 @@ type CeoQuestionCommentRow = {
   created_at: string;
 };
 
+type CommerceTelemetrySnapshot = Awaited<ReturnType<typeof getCommerceTelemetry>>;
+
 function isScoreboardMetricRow(value: ScoreboardMetricRow | undefined | null): value is ScoreboardMetricRow {
   return Boolean(value);
 }
@@ -398,6 +470,85 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 const numberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0
 });
+
+function computePreviousDateRange(range: { startDate: string; endDate: string }) {
+  if (!range?.startDate || !range?.endDate) return null;
+  const start = new Date(`${range.startDate}T00:00:00.000Z`);
+  const end = new Date(`${range.endDate}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const diffDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  const prevEnd = new Date(start);
+  prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+  const prevStart = new Date(prevEnd);
+  prevStart.setUTCDate(prevStart.getUTCDate() - (diffDays - 1));
+  const format = (date: Date) => date.toISOString().slice(0, 10);
+  return {
+    startDate: format(prevStart),
+    endDate: format(prevEnd)
+  };
+}
+
+function pullMetric(summary: Record<string, unknown> | null | undefined, keys: string[]) {
+  if (!summary) return null;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(summary, key)) {
+      const value = summary[key];
+      const num = toNumber(value);
+      if (num != null) return num;
+    }
+  }
+  return null;
+}
+
+function buildPerformanceBaseline(
+  current: CommerceTelemetrySnapshot | null,
+  previous: CommerceTelemetrySnapshot | null
+): PerformanceBaseline {
+  const currentWoo = (current?.woo as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+  const previousWoo = (previous?.woo as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+  const currentGa = (current?.ga4 as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+  const previousGa = (previous?.ga4 as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+  const currentFunnel = (current?.funnel as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+  const previousFunnel = (previous?.funnel as { summary?: Record<string, unknown> } | undefined)?.summary ?? null;
+
+  const revenue = {
+    current: pullMetric(currentWoo, ["revenue", "totalRevenue"]),
+    previous: pullMetric(previousWoo, ["revenue", "totalRevenue"])
+  };
+  const orders = {
+    current: pullMetric(currentWoo, ["orders", "orderCount"]),
+    previous: pullMetric(previousWoo, ["orders", "orderCount"])
+  };
+  const aov = {
+    current: pullMetric(currentWoo, ["avgOrderValue", "averageOrderValue"]),
+    previous: pullMetric(previousWoo, ["avgOrderValue", "averageOrderValue"])
+  };
+  const sessions = {
+    current: pullMetric(currentGa, ["sessions", "totalUsers"]),
+    previous: pullMetric(previousGa, ["sessions", "totalUsers"])
+  };
+  const conversion = {
+    current:
+      pullMetric(currentFunnel, ["conversionRate"]) ??
+      computeConversionRate(pullMetric(currentFunnel, ["entries"]), pullMetric(currentFunnel, ["completions"])),
+    previous:
+      pullMetric(previousFunnel, ["conversionRate"]) ??
+      computeConversionRate(pullMetric(previousFunnel, ["entries"]), pullMetric(previousFunnel, ["completions"]))
+  };
+
+  return {
+    revenue,
+    orders,
+    aov,
+    conversion,
+    sessions
+  };
+}
+
+function computeConversionRate(entries: number | null, completions: number | null) {
+  if (entries == null || entries === 0 || completions == null) return null;
+  return (completions / entries) * 100;
+}
 
 const DEFAULT_EXECUTIVE_DIRECTIVE =
   "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.";
@@ -653,27 +804,38 @@ function isIsoDate(value: string | null): value is string {
 }
 
 function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
-  const presets: Record<string, { preset: RangePreset; days: number }> = {
-    "7d": { preset: "7d", days: 7 },
-    "30d": { preset: "30d", days: 30 },
-    "90d": { preset: "90d", days: 90 }
-  };
+  const presetKey = (rangeParam ?? "").toLowerCase();
+  const today = new Date();
 
-  if (rangeParam === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
-    const startDate = startParam;
-    const endDate = endParam;
-    if (startDate <= endDate) {
-      return { preset: "custom" as RangePreset, startDate, endDate };
-    }
+  if (presetKey === "custom" && isIsoDate(startParam) && isIsoDate(endParam) && startParam <= endParam) {
+    return { preset: "custom" as RangePreset, startDate: startParam, endDate: endParam };
   }
 
-  const fallback = presets[rangeParam ?? ""] ?? presets["30d"];
-  const today = new Date();
-  const endDate = formatIsoDate(today);
-  const start = new Date(today);
-  start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
-  const startDate = formatIsoDate(start);
-  return { preset: fallback.preset, startDate, endDate };
+  const presetConfig: Record<string, { preset: RangePreset; compute: () => { startDate: string; endDate: string } }> = {
+    "7d": { preset: "7d", compute: () => computeRollingRange(today, 7) },
+    "30d": { preset: "30d", compute: () => computeRollingRange(today, 30) },
+    "90d": { preset: "90d", compute: () => computeRollingRange(today, 90) },
+    "180d": { preset: "180d", compute: () => computeRollingRange(today, 180) },
+    "365d": { preset: "365d", compute: () => computeRollingRange(today, 365) },
+    ytd: {
+      preset: "ytd",
+      compute: () => {
+        const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+        return { startDate: formatIsoDate(yearStart), endDate: formatIsoDate(today) };
+      }
+    }
+  };
+
+  const config = presetConfig[presetKey] ?? presetConfig["30d"];
+  const { startDate, endDate } = config.compute();
+  return { preset: config.preset, startDate, endDate };
+}
+
+function computeRollingRange(reference: Date, totalDays: number) {
+  const endDate = formatIsoDate(reference);
+  const start = new Date(reference);
+  start.setUTCDate(start.getUTCDate() - (Math.max(totalDays, 1) - 1));
+  return { startDate: formatIsoDate(start), endDate };
 }
 
 function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string }) {
@@ -696,6 +858,22 @@ export async function GET(request: Request) {
   if (authResponse) return authResponse;
 
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? null;
+    let supabaseHost: string | null = null;
+    if (supabaseUrl) {
+      try {
+        supabaseHost = new URL(supabaseUrl).host;
+      } catch {
+        supabaseHost = "invalid-url";
+      }
+    }
+    logSnapshotDebug(
+      "env",
+      `dataSource=${process.env.DASHBOARD_DATA_SOURCE ?? "null"} hasSupabaseUrl=${Boolean(supabaseUrl)} hasServiceRoleKey=${Boolean(
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      )} supabaseHost=${supabaseHost ?? "null"}`
+    );
+
     // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This is intentionally temporary so the UI can render without env/network.
     if ((process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed") {
@@ -710,7 +888,8 @@ export async function GET(request: Request) {
         metaAds: artifacts.metaSnapshot,
         executiveSummary: artifacts.executiveSummary,
         industryPulse: artifacts.industrySnapshot,
-        socialIntelligence: artifacts.socialSnapshot,
+        socialContent: artifacts.socialContentSnapshot,
+        partnershipFeed: artifacts.partnershipSnapshot,
         cloudflare: artifacts.cloudflareSnapshot,
         leadIntelligence: artifacts.leadSnapshot,
         agentStatusPanel: artifacts.agentStatus,
@@ -968,6 +1147,9 @@ export async function GET(request: Request) {
     const startParam = url.searchParams.get("start");
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
+    const previousRange = computePreviousDateRange(range);
+
+    const snapshotKeys = ["website", "cloudflare", "meta", "social_content", "partnership_feed", "marketing_command", "product_conversion"] as const;
 
     const [
       metrics,
@@ -979,6 +1161,10 @@ export async function GET(request: Request) {
       operatingMode,
       schedulerControlState,
       schedulerStatusState,
+      schedulerPilotDailyState,
+      schedulerObserveDailyState,
+      schedulerObserveEveningState,
+      schedulerEnforcementState,
       schedulerJobsRaw,
       tasksAwaitingApproval,
       pendingPlans,
@@ -993,7 +1179,14 @@ export async function GET(request: Request) {
       recentCeoComments,
       industryPulseResult,
       localArtifacts,
-      dashboardSnapshotRows
+      dashboardSnapshotRows,
+      alertPolicy,
+      initialPreparedActions,
+      websiteHistoryRows,
+      marketingHistoryRows,
+      metaHistoryRows,
+      socialHistoryRows,
+      productHistoryRows
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -1004,6 +1197,10 @@ export async function GET(request: Request) {
       getSystemState("operating_mode"),
       getSystemState("scheduler_control"),
       getSystemState("scheduler_status"),
+      getSystemState("scheduler_pilot_daily-health-check"),
+      getSystemState("scheduler_observe_daily-health-check"),
+      getSystemState("scheduler_observe_evening-closeout"),
+      getSystemState("scheduler_enforcement_modes"),
       getScheduledJobsWithLatestRuns(),
       getTasksAwaitingApproval(25),
       getPendingAgentPlans(15),
@@ -1018,17 +1215,56 @@ export async function GET(request: Request) {
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
       loadLocalDashboardArtifacts(),
-      getDashboardSnapshots(["website", "cloudflare", "meta", "social"])
+      getDashboardSnapshots(snapshotKeys as unknown as string[]),
+      getAlertPolicy(),
+      getPreparedActionsForDashboard(),
+      getDashboardSnapshotHistoryForKey("website", 2),
+      getDashboardSnapshotHistoryForKey("marketing_command", 2),
+      getDashboardSnapshotHistoryForKey("meta", 2),
+      getDashboardSnapshotHistoryForKey("social_content", 2),
+      getDashboardSnapshotHistoryForKey("product_conversion", 2)
     ]);
 
     const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
+    logSnapshotDebug(
+      "snapshot-fetch",
+      `requestedKeys=${JSON.stringify(snapshotKeys)} rowCount=${snapshotRows.length} returnedKeys=${JSON.stringify(
+        snapshotRows.map((row) => row?.key)
+      )}`
+    );
     const snapshotMap = new Map(snapshotRows.map((row) => [row.key, row]));
+    const supWebsiteRow = snapshotMap.get("website");
+    logSnapshotDebug(
+      "website-row",
+      `supabaseRowPresent=${Boolean(supWebsiteRow)} payloadHasGeneratedAt=${Boolean(
+        (supWebsiteRow?.payload as WebsiteConversionSnapshot | undefined)?.generatedAt
+      )} payloadHasGa4=${Boolean((supWebsiteRow?.payload as WebsiteConversionSnapshot | undefined)?.ga4)} payloadHasWoo=${Boolean(
+        (supWebsiteRow?.payload as WebsiteConversionSnapshot | undefined)?.wooCommerce
+      )}`
+    );
     const websiteSnapshot =
-      (snapshotMap.get("website")?.payload as WebsiteConversionSnapshot | null) ?? localArtifacts.websiteSnapshot;
+      (supWebsiteRow?.payload as WebsiteConversionSnapshot | null) ?? localArtifacts.websiteSnapshot;
+    logSnapshotDebug(
+      "website-selection",
+      `finalSnapshotPresent=${Boolean(websiteSnapshot)} hasGeneratedAt=${Boolean(websiteSnapshot?.generatedAt)} hasGa4=${Boolean(
+        websiteSnapshot?.ga4
+      )} hasWoo=${Boolean(websiteSnapshot?.wooCommerce)}`
+    );
     const cloudflareSnapshot =
       (snapshotMap.get("cloudflare")?.payload as CloudflareTelemetrySnapshot | null) ?? localArtifacts.cloudflareSnapshot;
     const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
-    const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
+    const socialContentSnapshot =
+      (snapshotMap.get("social_content")?.payload as SocialContentSnapshot | null) ?? localArtifacts.socialContentSnapshot;
+    const partnershipFeedSnapshot =
+      (snapshotMap.get("partnership_feed")?.payload as PartnershipOpportunitySnapshot | null) ?? localArtifacts.partnershipSnapshot;
+    const marketingCommandSnapshot = snapshotMap.get("marketing_command")?.payload as MarketingCommandSnapshot | null;
+    const salesGeographySnapshot = marketingCommandSnapshot?.salesGeography ?? null;
+    const previousWebsiteSnapshot = extractPreviousSnapshot<WebsiteConversionSnapshot>(websiteHistoryRows, websiteSnapshot?.generatedAt ?? null);
+    const previousMarketingSnapshot = extractPreviousSnapshot<MarketingCommandSnapshot>(marketingHistoryRows, marketingCommandSnapshot?.generatedAt ?? null);
+    const previousMetaSnapshot = extractPreviousSnapshot<MetaAdsSnapshot>(metaHistoryRows, metaSnapshot?.generatedAt ?? null);
+    const previousSocialSnapshot = extractPreviousSnapshot<SocialContentSnapshot>(socialHistoryRows, socialContentSnapshot?.generatedAt ?? null);
+
+    const preparedActions = initialPreparedActions as PreparedAction[];
 
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
@@ -1453,6 +1689,11 @@ export async function GET(request: Request) {
     const failingCount = schedulerJobs.filter((job) => job.lastStatus === "failed").length;
     const missingTelemetryCount = schedulerJobs.filter((job) => !job.lastRunAt).length;
     const schedulerControlJson = (schedulerControlState?.value_json as Record<string, unknown> | undefined) ?? {};
+    const schedulerEnforcementJson = (schedulerEnforcementState?.value_json as { modes?: Record<string, string> } | undefined) ?? {};
+    const enforcementModes = schedulerEnforcementJson.modes ?? {};
+    const pilotDailyValue = (schedulerPilotDailyState?.value_json as PilotSummaryRecord | undefined) ?? null;
+    const observeDailyValue = (schedulerObserveDailyState?.value_json as ObserveReportRecord | undefined) ?? null;
+    const observeEveningValue = (schedulerObserveEveningState?.value_json as ObserveReportRecord | undefined) ?? null;
     const cronEnabled = typeof schedulerControlJson.cronEnabled === "boolean" ? schedulerControlJson.cronEnabled : false;
     const schedulerStatusJson = (schedulerStatusState?.value_json as Record<string, unknown> | undefined) ?? null;
     const schedulerSummary = schedulerStatusJson
@@ -1486,6 +1727,53 @@ export async function GET(request: Request) {
           lastUpdatedAt: new Date().toISOString(),
           source: "derived"
         };
+
+    const activeSnapshotJobs = schedulerJobs
+      .filter((job) => job.isActive && SNAPSHOT_JOB_KEYS.includes(job.jobKey))
+      .map((job) => job.jobKey);
+
+    const policySummary = {
+      maxAlertsPerRun: alertPolicy.meta.maxAlertsPerRun,
+      cooldownHours: alertPolicy.meta.cooldownHours,
+      eligibleCategories: alertPolicy.categories
+        .filter((category) => category.classification === "eligible_for_alert_only")
+        .map((category) => category.name),
+      groupedCategories: alertPolicy.categories
+        .filter((category) => category.classification === "grouped_only")
+        .map((category) => category.name),
+      manualReviewCategories: alertPolicy.categories
+        .filter((category) => category.classification === "manual_review_only")
+        .map((category) => category.name)
+    };
+
+    const schedulerPilotStatus = {
+      cronStatus: schedulerSummary.status,
+      activeSnapshotJobs,
+      pilotJobs: [
+        {
+          jobKey: "daily-health-check",
+          mode: enforcementModes["daily-health-check"] ?? "disabled",
+          lastRunAt: pilotDailyValue?.generatedAt ?? observeDailyValue?.generatedAt ?? null,
+          alertCap: pilotDailyValue?.alertCap ?? 3,
+          cooldownHours: pilotDailyValue?.cooldownHours ?? 24,
+          createdCount: pilotDailyValue?.createdCount ?? 0,
+          skippedByReason: pilotDailyValue?.skippedByReason ?? {}
+        }
+      ],
+      observeJobs: [
+        {
+          jobKey: "evening-closeout",
+          mode: enforcementModes["evening-closeout"] ?? "disabled",
+          lastRunAt: observeEveningValue?.generatedAt ?? null
+        }
+      ],
+      blockedJobs: [
+        `proof-enforcement (${enforcementModes["proof-enforcement"] ?? "disabled"})`,
+        `war-room-digest (${enforcementModes["war-room-digest"] ?? "disabled"})`,
+        ...STEP3_JOB_KEYS.map((key) => `${key} (disabled)`)
+      ],
+      policySummary
+    };
 
     const openTaskRows = tasks as TaskRow[];
     const recentTaskRows = recentTasks as TaskRow[];
@@ -1667,6 +1955,8 @@ export async function GET(request: Request) {
       nextMove: collector.next_move,
       nextMoveDueAt: collector.next_move_due_at,
       estimatedValue: collector.estimated_value,
+      source: collector.source ?? null,
+      priority: collector.priority ?? null,
       supportingDocs: buildSupportingDocs(collector)
     }));
 
@@ -1879,6 +2169,18 @@ export async function GET(request: Request) {
       endDate: range.endDate
     };
 
+    let previousCommerceTelemetry: CommerceTelemetrySnapshot | null = null;
+    if (previousRange) {
+      try {
+        previousCommerceTelemetry =
+          (await getCommerceTelemetry({ startDate: previousRange.startDate, endDate: previousRange.endDate })) ?? null;
+      } catch (error) {
+        console.warn("Failed to load previous commerce telemetry", error);
+      }
+    }
+
+    const performanceBaseline = buildPerformanceBaseline(commerceTelemetry ?? null, previousCommerceTelemetry);
+
     const commercePayload = commerceTelemetry
       ? {
           range: responseRange,
@@ -1889,6 +2191,27 @@ export async function GET(request: Request) {
       : {
           range: responseRange
         };
+
+    const supProductRow = snapshotMap.get("product_conversion");
+    const productConversionSnapshot = (supProductRow?.payload as ProductConversionIntelligence | null) ?? localArtifacts.productConversionSnapshot ?? null;
+    const productConversionIntelligence = productConversionSnapshot ?? loadProductConversionPrototype();
+    const previousProductConversionSnapshot = extractPreviousSnapshot<ProductConversionIntelligence>(
+      productHistoryRows,
+      productConversionSnapshot?.generatedAt ?? null
+    );
+
+    const changeInsights = buildChangeInsights({
+      websiteCurrent: websiteSnapshot,
+      websitePrevious: previousWebsiteSnapshot,
+      productCurrent: productConversionIntelligence,
+      productPrevious: previousProductConversionSnapshot,
+      metaCurrent: metaSnapshot,
+      metaPrevious: previousMetaSnapshot,
+      marketingCurrent: marketingCommandSnapshot,
+      marketingPrevious: previousMarketingSnapshot,
+      socialCurrent: socialContentSnapshot,
+      socialPrevious: previousSocialSnapshot
+    });
 
     return ok({
       ok: true,
@@ -1907,16 +2230,23 @@ export async function GET(request: Request) {
       proofOfWork: proofOfWorkEntries,
       schedulerJobs,
       schedulerSummary,
+      schedulerPilotStatus,
       agentSla,
       approvalBottlenecks,
       actionQueue,
       systemHealth,
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
+      performanceBaseline,
+      marketingCommand: marketingCommandSnapshot ?? null,
+      promotionPlanner: marketingCommandSnapshot?.promotionPlanner ?? null,
+      collectorRadar: marketingCommandSnapshot?.collectorRadar ?? null,
+      salesGeography: salesGeographySnapshot,
       websiteConversion: websiteSnapshot,
       metaAds: metaSnapshot,
       executiveSummary: localArtifacts.executiveSummary,
-      socialIntelligence: socialSnapshot,
+      socialContent: socialContentSnapshot,
+      partnershipFeed: partnershipFeedSnapshot,
       cloudflare: cloudflareSnapshot,
       leadIntelligence: localArtifacts.leadSnapshot,
       agentStatusPanel: localArtifacts.agentStatus,
@@ -1924,6 +2254,7 @@ export async function GET(request: Request) {
       dataSourceAccess: localArtifacts.dataSourceMatrix,
       topActions: localArtifacts.topActions,
       blockedItems: localArtifacts.blockedItems,
+      preparedActions,
       agentKpis,
       ideaBoard: {
         columns: ideaBoard,
@@ -1937,6 +2268,8 @@ export async function GET(request: Request) {
         }))
       },
       ceoQuestionDesk,
+      productConversionIntelligence,
+      changeInsights,
       industryPulse: industryPulseResult?.snapshot
         ? {
             day: industryPulseResult.snapshot.day,
