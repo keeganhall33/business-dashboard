@@ -8,7 +8,9 @@ import { DateRange, DayPicker } from "react-day-picker";
 const PRESETS: Array<{ label: string; value: RangePreset }> = [
   { label: "7D", value: "7d" },
   { label: "30D", value: "30d" },
-  { label: "3M", value: "90d" }
+  { label: "6M", value: "180d" },
+  { label: "12M", value: "365d" },
+  { label: "YTD", value: "ytd" }
 ];
 
 type Props = {

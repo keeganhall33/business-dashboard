@@ -18,6 +18,7 @@ import { runMidweekOpportunityPulse } from "@/lib/scheduler/midweekOpportunityPu
 import { runAgentIdeaPulse } from "@/lib/scheduler/agentIdeaPulse";
 import { runIndustryNewsPulse } from "@/lib/scheduler/industryNewsPulse";
 import { runScoreboardRefresh } from "@/lib/scheduler/scoreboardRefresh";
+import { runWarRoomDigest } from "@/lib/scheduler/warRoomDigest";
 
 export const runtime = "nodejs";
 
@@ -34,15 +35,20 @@ const runners: Record<string, JobRunner> = {
   "daily-agent-cycle": runDailyAgentCycle,
   "daily-health-check": runDailyHealthCheck,
   "proof-enforcement": runProofEnforcementChecks,
+  "proof-enforcement-half": runProofEnforcementChecks,
   "deliverable-harvest": runDeliverableHarvest,
   "ceo-digest": runCeoDigest,
   "evening-closeout": runEveningCloseout,
   "weekly-command-cycle": runWeeklyCommandCycle,
   "weekly-summary": runWeeklySummary,
+  "weekly-summary-sat": runWeeklySummary,
   "midweek-opportunity-pulse": runMidweekOpportunityPulse,
   "agent-idea-pulse": runAgentIdeaPulse,
   "industry-news-pulse": runIndustryNewsPulse,
-  "scoreboard-refresh": runScoreboardRefresh
+  "industry-news-pulse-pm": runIndustryNewsPulse,
+  "scoreboard-refresh": runScoreboardRefresh,
+  "war-room-digest": runWarRoomDigest,
+  "war-room-digest-fri": runWarRoomDigest
 };
 
 /**

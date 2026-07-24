@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import fetch from 'node-fetch';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import { createClient } from '@supabase/supabase-js';
+
+const args = new Set(process.argv.slice(2));
+const DRY_RUN = args.has('--dry-run') || process.env.WEBSITE_AGENT_DRY_RUN === '1';
 
 const REQUIRED_ENV_VARS = [
   'GA4_CREDENTIALS_JSON',
@@ -45,9 +49,12 @@ const supabaseClient = supabaseEnabled
     })
   : null;
 
-const repoRoot = process.cwd();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '..', '..');
 const agentOutputPath = path.join(repoRoot, 'dashboard', 'data', 'website', 'latest.json');
 const agentLogPath = path.join(repoRoot, 'dashboard', 'logs', 'website_agent.log');
+const dryRunArtifactPath = path.join(path.dirname(agentOutputPath), 'latest.dry-run.json');
 
 const GA4_DATE_RANGE = { startDate: '7daysAgo', endDate: 'today' };
 const REQUIRED_GA4_METRICS = [
@@ -159,56 +166,36 @@ async function fetchBreakdown(dimensionName) {
   }
 }
 
-async function fetchAddToCartEvents() {
+async function fetchEventCount(eventName) {
   try {
-    const [directMetric] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'addToCartEvents' }]
-    });
-    const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-    if (!Number.isNaN(directValue) && directValue) return directValue;
-
-    const [eventFilterReport] = await client.runReport({
+    const [report] = await client.runReport({
       property: `properties/${propertyId}`,
       dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'eventCount' }],
       dimensionFilter: {
         filter: {
           fieldName: 'eventName',
-          stringFilter: { matchType: 'EXACT', value: 'add_to_cart' }
+          stringFilter: { matchType: 'EXACT', value: eventName }
         }
       }
     });
-    return Number(eventFilterReport.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-  } catch (error) {
-    warnings.push(`addToCartEvents unavailable: ${error instanceof Error ? error.message : error}`);
-    return null;
-  }
-}
-
-async function fetchBeginCheckoutEvents() {
-  try {
-    const [report] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'beginCheckoutEvents' }]
-    });
     return Number(report.rows?.[0]?.metricValues?.[0]?.value ?? 0);
   } catch (error) {
-    warnings.push(`beginCheckoutEvents unavailable: ${error instanceof Error ? error.message : error}`);
+    warnings.push(`${eventName} events unavailable: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }
 
-const [deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents] = await Promise.all([
+const [deviceBreakdown, channelBreakdown, viewItemEvents, addToCartEvents, beginCheckoutEvents, purchaseEvents] = await Promise.all([
   fetchBreakdown('deviceCategory'),
   fetchBreakdown('sessionDefaultChannelGroup'),
-  fetchAddToCartEvents(),
-  fetchBeginCheckoutEvents()
+  fetchEventCount('view_item'),
+  fetchEventCount('add_to_cart'),
+  fetchEventCount('begin_checkout'),
+  fetchEventCount('purchase')
 ]);
 
-return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings };
+return { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, viewItemEvents, purchaseEvents, warnings };
 }
 
 async function fetchGA4WithApiKey() {
@@ -233,32 +220,22 @@ async function runGa4ApiKeyReport(body) {
   return await response.json();
 }
 
-async function fetchAddToCartEventsWithApiKey() {
+async function fetchEventCountWithApiKey(eventName, label) {
   try {
-    const directMetric = await runGa4ApiKeyReport({
-      dateRanges: [GA4_DATE_RANGE],
-      metrics: [{ name: 'addToCartEvents' }]
-    });
-    const directValue = Number(directMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0);
-    if (!Number.isNaN(directValue) && directValue) return { value: directValue };
-
-    const fallbackMetric = await runGa4ApiKeyReport({
+    const response = await runGa4ApiKeyReport({
       dateRanges: [GA4_DATE_RANGE],
       metrics: [{ name: 'eventCount' }],
       dimensionFilter: {
         filter: {
           fieldName: 'eventName',
-          stringFilter: { matchType: 'EXACT', value: 'add_to_cart' }
+          stringFilter: { matchType: 'EXACT', value: eventName }
         }
       }
     });
-
-    return {
-      value: Number(fallbackMetric.rows?.[0]?.metricValues?.[0]?.value ?? 0)
-    };
+    return { value: Number(response.rows?.[0]?.metricValues?.[0]?.value ?? 0) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { value: null, warning: `addToCartEvents unavailable: ${message}` };
+    return { value: null, warning: `${label} events unavailable: ${message}` };
   }
 }
 
@@ -286,22 +263,32 @@ async function fetchGA4Summary() {
     const warnings = [];
     const summary = await fetchGA4WithApiKey();
     const normalized = normalizeGa4Response(summary);
-    const { value: addToCartEvents, warning } = await fetchAddToCartEventsWithApiKey();
+    const { value: addToCartEvents, warning } = await fetchEventCountWithApiKey('add_to_cart', 'add_to_cart');
+    const { value: viewItemEvents, warning: viewWarning } = await fetchEventCountWithApiKey('view_item', 'view_item');
+    const { value: beginCheckoutEvents, warning: beginWarning } = await fetchEventCountWithApiKey('begin_checkout', 'begin_checkout');
+    const { value: purchaseEvents, warning: purchaseWarning } = await fetchEventCountWithApiKey('purchase', 'purchase');
     if (warning) warnings.push(warning);
+    if (viewWarning) warnings.push(viewWarning);
+    if (beginWarning) warnings.push(beginWarning);
+    if (purchaseWarning) warnings.push(purchaseWarning);
     return {
       ...normalized,
+      viewItemEvents,
       addToCartEvents,
-      beginCheckoutEvents: null,
+      beginCheckoutEvents,
+      purchaseEvents,
       warnings
     };
   }
 
-  const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, warnings } =
+  const { baseReport, deviceBreakdown, channelBreakdown, addToCartEvents, beginCheckoutEvents, viewItemEvents, purchaseEvents, warnings } =
     await fetchGA4WithServiceAccount();
   const normalized = normalizeGa4Response(baseReport);
   return {
     ...normalized,
+    viewItemEvents,
     addToCartEvents,
+    purchaseEvents,
     beginCheckoutEvents,
     deviceBreakdown,
     channelBreakdown,
@@ -309,26 +296,50 @@ async function fetchGA4Summary() {
   };
 }
 
+const WOO_LOOKBACK_DAYS = Number(process.env.WOO_LOOKBACK_DAYS ?? "7");
+
+function buildWindowBounds(days) {
+  const now = new Date();
+  const end = new Date(now);
+  end.setUTCHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  start.setUTCHours(0, 0, 0, 0);
+  return { start, end };
+}
+
 async function fetchWooCommerceSummary() {
   const auth = Buffer.from(`${wooKey}:${wooSecret}`).toString('base64');
-  const response = await fetch(
-    `${wooBaseUrl}/wp-json/wc/v3/orders?per_page=50&status=completed`,
-    {
-      headers: {
-        Authorization: `Basic ${auth}`
-      }
+  const windowDays = Number.isFinite(WOO_LOOKBACK_DAYS) && WOO_LOOKBACK_DAYS > 0 ? Math.floor(WOO_LOOKBACK_DAYS) : 7;
+  const { start: windowStart, end: windowEnd } = buildWindowBounds(windowDays);
+  const params = new URLSearchParams({
+    per_page: '100',
+    status: 'completed',
+    orderby: 'date',
+    order: 'desc',
+    after: windowStart.toISOString()
+  });
+  const response = await fetch(`${wooBaseUrl}/wp-json/wc/v3/orders?${params.toString()}`, {
+    headers: {
+      Authorization: `Basic ${auth}`
     }
-  );
+  });
 
   if (!response.ok) {
     throw new Error(`WooCommerce API failed: ${response.status} ${response.statusText}`);
   }
 
   const orders = await response.json();
-  const totalRevenue = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const filteredOrders = orders.filter((order) => {
+    const completedIso = order.date_completed_gmt ?? order.date_completed ?? order.date_created_gmt ?? order.date_created;
+    if (!completedIso) return false;
+    const completedDate = new Date(completedIso);
+    return completedDate >= windowStart && completedDate <= windowEnd;
+  });
+  const totalRevenue = filteredOrders.reduce((sum, order) => sum + Number(order.total), 0);
   const productMap = new Map();
 
-  for (const order of orders) {
+  for (const order of filteredOrders) {
     for (const item of order.line_items ?? []) {
       const current = productMap.get(item.name) ?? { units: 0, revenue: 0 };
       current.units += item.quantity ?? 0;
@@ -352,10 +363,16 @@ async function fetchWooCommerceSummary() {
       `${order.billing?.first_name ?? ''} ${order.billing?.last_name ?? ''}`.trim() : 'Unknown'
   }));
 
+  const windowStartIso = windowStart.toISOString();
+  const windowEndIso = windowEnd.toISOString();
+
   return {
     totalRevenue,
-    orderCount: orders.length,
-    averageOrderValue: orders.length ? totalRevenue / orders.length : 0,
+    orderCount: filteredOrders.length,
+    averageOrderValue: filteredOrders.length ? totalRevenue / filteredOrders.length : 0,
+    rangeDays: windowDays,
+    windowStart: windowStartIso,
+    windowEnd: windowEndIso,
     topProducts,
     recentOrders: orderSummaries
   };
@@ -374,74 +391,92 @@ async function main() {
       wooCommerce: wooSummary
     };
 
-    await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
-    await fs.writeFile(agentOutputPath, JSON.stringify(output, null, 2));
+    if (!DRY_RUN) {
+      await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
+      console.log(`[website-agent] Writing snapshot to ${agentOutputPath}`);
+      await fs.writeFile(agentOutputPath, JSON.stringify(output, null, 2));
 
-    await baseLog({ status: 'success', orders: wooSummary.orderCount, sessions: ga4Summary.sessions });
-    await sendSchedulerAlert({
-      status: 'success',
-      message: 'Website agent completed',
-      orders: wooSummary.orderCount,
-      sessions: ga4Summary.sessions
-    });
+      await baseLog({ status: 'success', orders: wooSummary.orderCount, sessions: ga4Summary.sessions });
+      await sendSchedulerAlert({
+        status: 'success',
+        message: 'Website agent completed',
+        orders: wooSummary.orderCount,
+        sessions: ga4Summary.sessions
+      });
+    } else {
+      await fs.mkdir(path.dirname(dryRunArtifactPath), { recursive: true });
+      await fs.writeFile(dryRunArtifactPath, JSON.stringify(output, null, 2));
+    }
     const conversionRate =
-      ga4Summary?.sessions && ga4Summary.sessions > 0 && ga4Summary?.ecommercePurchases != null
-        ? ((ga4Summary.ecommercePurchases / ga4Summary.sessions) * 100).toFixed(2)
+      ga4Summary?.sessions && ga4Summary.sessions > 0 && ga4Summary?.purchaseEvents != null
+        ? ((ga4Summary.purchaseEvents / ga4Summary.sessions) * 100).toFixed(2)
         : 'n/a';
     const websiteStatus = ga4Summary && wooSummary ? 'LIVE' : ga4Summary || wooSummary ? 'PARTIAL' : 'BROKEN';
     output.status = websiteStatus;
-    await upsertSupabaseSnapshot(output, websiteStatus);
+    if (!DRY_RUN) {
+      await upsertSupabaseSnapshot(output, websiteStatus);
+    }
 
     console.log(
       `[website-agent] Summary: generatedAt=${output.generatedAt} ga4.users=${ga4Summary?.totalUsers ?? 'n/a'} ga4.sessions=${
         ga4Summary?.sessions ?? 'n/a'
-      } ga4.purchases=${ga4Summary?.ecommercePurchases ?? 'n/a'} ga4.add_to_cart=${
+      } ga4.purchase_events=${ga4Summary?.purchaseEvents ?? 'n/a'} ga4.add_to_cart=${
         ga4Summary?.addToCartEvents ?? 'n/a'
       } ga4.begin_checkout=${ga4Summary?.beginCheckoutEvents ?? 'n/a'} ga4.conversion_rate=${conversionRate}% woo.revenue=${
         wooSummary.totalRevenue ?? 'n/a'
       } woo.orders=${wooSummary.orderCount ?? 'n/a'} woo.aov=${wooSummary.averageOrderValue ?? 'n/a'} status=${websiteStatus}`
     );
-    console.log('[website-agent] Updated website metrics snapshot');
+    if (DRY_RUN) {
+      console.log('[website-agent] DRY RUN complete — wrote dry-run artifact only (dashboard/data/website/latest.dry-run.json). No production snapshot or Supabase write occurred.');
+    } else {
+      console.log('[website-agent] Updated website metrics snapshot');
+    }
   } catch (error) {
     const friendlyMessage = error instanceof Error ? error.message : String(error);
     const errorDetails = error && typeof error === 'object' && 'details' in error ? error.details : undefined;
     const errorCode = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
     const diagnostic = { message: friendlyMessage, details: errorDetails, code: errorCode };
 
-    await baseLog({
-      status: 'error',
-      ...diagnostic,
-      stack: error instanceof Error && error.stack ? error.stack : undefined
-    });
-    await sendSchedulerAlert({ status: 'error', message: friendlyMessage });
+    if (!DRY_RUN) {
+      await baseLog({
+        status: 'error',
+        ...diagnostic,
+        stack: error instanceof Error && error.stack ? error.stack : undefined
+      });
+      await sendSchedulerAlert({ status: 'error', message: friendlyMessage });
+    }
 
     const failureOutput = {
       generatedAt: new Date().toISOString(),
       status: 'BROKEN',
       error: diagnostic
     };
-    await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
-    await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
-    await upsertSupabaseSnapshot(failureOutput, 'BROKEN');
+    if (!DRY_RUN) {
+      await fs.mkdir(path.dirname(agentOutputPath), { recursive: true });
+      await fs.writeFile(agentOutputPath, JSON.stringify(failureOutput, null, 2));
+      await upsertSupabaseSnapshot(failureOutput, 'BROKEN');
+    }
 
-    try {
-      const snapshotExists = await fs
-        .access(agentOutputPath)
-        .then(() => true)
-        .catch(() => false);
-      const logExists = await fs
-        .access(agentLogPath)
-        .then(() => true)
-        .catch(() => false);
-      console.error('[website-agent] Failure artifacts', {
-        cwd: process.cwd(),
-        snapshotExists,
-        logExists,
-        snapshotPath: agentOutputPath,
-        logPath: agentLogPath
-      });
-    } catch (artifactError) {
-      console.error('[website-agent] Artifact existence check failed', artifactError);
+    if (!DRY_RUN) {
+      try {
+        const snapshotExists = await fs
+          .access(agentOutputPath)
+          .then(() => true)
+          .catch(() => false);
+        const logExists = await fs
+          .access(agentLogPath)
+          .then(() => true)
+          .catch(() => false);
+        console.error('[website-agent] Failure artifacts', {
+          cwd: process.cwd(),
+          snapshotExists,
+          logExists,
+          snapshotPath: agentOutputPath,
+          logPath: agentLogPath
+        });
+      } catch (artifactError) {
+        console.error('[website-agent] Artifact existence check failed', artifactError);
+      }
     }
 
     console.error('[website-agent] Failed:', friendlyMessage);

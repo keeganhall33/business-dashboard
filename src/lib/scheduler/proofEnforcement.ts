@@ -1,6 +1,14 @@
 import { createTask, findOpenTaskByTitle, getRecentTasks, upsertSystemState } from "@/lib/supabase/queries";
 import { createOrUpdateAlert, makeAlertDedupeKey, resolveAlertByKey } from "./alerting";
 import { withJobRun } from "./jobLogger";
+import {
+  describeMode,
+  getEnforcementMode,
+  modeAllowsAlerts,
+  modeAllowsTasks,
+  modeIsDisabled
+} from "./enforcement";
+import type { EnforcementMode } from "./enforcement";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -17,11 +25,14 @@ function isMissingProof(task: Record<string, unknown>) {
 }
 
 export type ProofEnforcementResult = {
+  mode: EnforcementMode;
   scanned: number;
   missingProofCount: number;
   missingProofTaskIds: string[];
   alertsCreatedOrUpdated: number;
   averyFollowupTasksCreated: number;
+  simulatedTasks: Array<{ title: string; reason: string }>;
+  simulatedAlerts: Array<{ action: "create" | "resolve"; title: string }>;
 };
 
 /**
@@ -32,7 +43,31 @@ export type ProofEnforcementResult = {
  *
  * Source: ops/strategy/avery_operating_system.md ("Missing proof for 24h = freeze + reassignment.")
  */
+const MAX_FOLLOWUPS_PER_RUN = 5;
+
 export async function runProofEnforcementChecks(): Promise<ProofEnforcementResult> {
+  const mode = await getEnforcementMode("proof-enforcement");
+  if (modeIsDisabled(mode)) {
+    return withJobRun({
+      jobKey: "proof-enforcement",
+      fn: async () => ({
+        mode,
+        skipped: true,
+        scanned: 0,
+        missingProofCount: 0,
+        missingProofTaskIds: [],
+        alertsCreatedOrUpdated: 0,
+        averyFollowupTasksCreated: 0,
+        simulatedTasks: [],
+        simulatedAlerts: []
+      }),
+      summarize: () => ({ summary: `Skipped (${describeMode(mode)})`, detailsJson: { mode, skipped: true } })
+    });
+  }
+
+  const allowAlerts = modeAllowsAlerts(mode);
+  const allowTasks = modeAllowsTasks(mode);
+
   return withJobRun({
     jobKey: "proof-enforcement",
     fn: async () => {
@@ -42,12 +77,18 @@ export async function runProofEnforcementChecks(): Promise<ProofEnforcementResul
       let alertsCreatedOrUpdated = 0;
       let averyFollowupTasksCreated = 0;
       const missingProofTaskIds: string[] = [];
+      const simulatedTasks: Array<{ title: string; reason: string }> = [];
+      const simulatedAlerts: Array<{ action: "create" | "resolve"; title: string }> = [];
 
       for (const task of completed) {
         const dedupeKey = makeAlertDedupeKey(["missing_proof", task.id]);
 
         if (!isMissingProof(task)) {
-          await resolveAlertByKey(dedupeKey);
+          if (allowAlerts) {
+            await resolveAlertByKey(dedupeKey);
+          } else {
+            simulatedAlerts.push({ action: "resolve", title: `Resolve missing proof alert: ${task.title}` });
+          }
           continue;
         }
 
@@ -59,43 +100,55 @@ export async function runProofEnforcementChecks(): Promise<ProofEnforcementResul
         }
 
         missingProofTaskIds.push(task.id);
-        const result = await createOrUpdateAlert({
-          alertType: "missing_proof",
-          severity: "high",
-          title: `Missing proof: ${task.title}`,
-          summary:
-            `Task was completed ${Math.floor(completedHours)}h ago but is missing deliverable proof. ` +
-            `Add result_summary + deliverable_links in task_queue.`,
-          relatedAgentKey: task.agent_key,
-          relatedTaskId: task.id,
-          dedupeKey
-        });
-        if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+        if (allowAlerts) {
+          const result = await createOrUpdateAlert({
+            alertType: "missing_proof",
+            severity: "high",
+            title: `Missing proof: ${task.title}`,
+            summary:
+              `Task was completed ${Math.floor(completedHours)}h ago but is missing deliverable proof. ` +
+              `Add result_summary + deliverable_links in task_queue.`,
+            relatedAgentKey: task.agent_key,
+            relatedTaskId: task.id,
+            dedupeKey
+          });
+          if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+        } else {
+          simulatedAlerts.push({ action: "create", title: `Missing proof: ${task.title}` });
+        }
 
         // Create a follow-up for Avery (system operator) to harvest/log proof.
         const followupTitle = `[PROOF] Log deliverables for: ${task.title}`;
         const existing = await findOpenTaskByTitle("avery", followupTitle);
         if (!existing) {
-          await createTask({
-            title: followupTitle,
-            description:
-              `This task was marked completed but is missing proof in Supabase.\n\n` +
-              `Original task id: ${task.id}\n` +
-              `Owner agent: ${task.agent_key}\n\n` +
-              `Required: add a 2–3 sentence result_summary and at least one deliverable link.`,
-            agentKey: "avery",
-            priority: "high",
-            executionType: "strategy",
-            requiresApproval: false
-          });
-          averyFollowupTasksCreated++;
+          if (allowTasks && averyFollowupTasksCreated < MAX_FOLLOWUPS_PER_RUN) {
+            await createTask({
+              title: followupTitle,
+              description:
+                `This task was marked completed but is missing proof in Supabase.\n\n` +
+                `Original task id: ${task.id}\n` +
+                `Owner agent: ${task.agent_key}\n\n` +
+                `Required: add a 2–3 sentence result_summary and at least one deliverable link.`,
+              agentKey: "avery",
+              priority: "high",
+              executionType: "strategy",
+              requiresApproval: false
+            });
+            averyFollowupTasksCreated++;
+          } else {
+            simulatedTasks.push({ title: followupTitle, reason: allowTasks ? "per-run cap reached" : "task creation disabled" });
+          }
         }
       }
 
       const rollupKey = makeAlertDedupeKey(["missing_proof", "rollup"]);
       if (missingProofTaskIds.length === 0) {
-        await resolveAlertByKey(rollupKey);
-      } else {
+        if (allowAlerts) {
+          await resolveAlertByKey(rollupKey);
+        } else {
+          simulatedAlerts.push({ action: "resolve", title: "Resolve missing proof rollup" });
+        }
+      } else if (allowAlerts) {
         const result = await createOrUpdateAlert({
           alertType: "missing_proof",
           severity: "high",
@@ -104,20 +157,27 @@ export async function runProofEnforcementChecks(): Promise<ProofEnforcementResul
           dedupeKey: rollupKey
         });
         if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      } else {
+        simulatedAlerts.push({ action: "create", title: "Missing proof on completed tasks" });
       }
 
-      await upsertSystemState("missing_proof", {
-        missingProofCount: missingProofTaskIds.length,
-        missingProofTaskIds,
-        updatedAt: new Date().toISOString()
-      });
+      if (mode === "active") {
+        await upsertSystemState("missing_proof", {
+          missingProofCount: missingProofTaskIds.length,
+          missingProofTaskIds,
+          updatedAt: new Date().toISOString()
+        });
+      }
 
       return {
+        mode,
         scanned: completed.length,
         missingProofCount: missingProofTaskIds.length,
         missingProofTaskIds,
-        alertsCreatedOrUpdated,
-        averyFollowupTasksCreated
+        alertsCreatedOrUpdated: allowAlerts ? alertsCreatedOrUpdated : 0,
+        averyFollowupTasksCreated,
+        simulatedTasks,
+        simulatedAlerts
       };
     },
     summarize: (result) => ({

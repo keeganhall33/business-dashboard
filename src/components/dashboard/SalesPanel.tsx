@@ -62,7 +62,7 @@ export function SalesPanel({ telemetry }: Props) {
       ) : null}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <StatusChip label="Evidence: Woo API" tone="zinc" />
+        <StatusChip label="Source: Woo API (reliable)" tone="emerald" />
         <StatusChip label={optimisticDelta.revenue || optimisticDelta.orders ? "Manual entry: queued" : "Manual entry: ready"} tone={optimisticDelta.revenue || optimisticDelta.orders ? "amber" : "zinc"} />
       </div>
 

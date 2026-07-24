@@ -1,6 +1,6 @@
 export type MetricStatus = "healthy" | "on_track" | "warning" | "critical";
 
-export type RangePreset = "7d" | "30d" | "90d" | "custom";
+export type RangePreset = "7d" | "30d" | "90d" | "180d" | "365d" | "ytd" | "custom";
 
 export type HeaderMetric = {
   metricKey: string;
@@ -86,6 +86,8 @@ export type CollectorRelationship = {
   nextMove: string | null;
   nextMoveDueAt: string | null;
   estimatedValue: number | null;
+  source?: string | null;
+  priority?: number | null;
   supportingDocs?: DeliverableLink[] | null;
 };
 
@@ -330,6 +332,37 @@ export type SchedulerSummary = {
   source?: string | null;
 };
 
+export type SchedulerPilotJob = {
+  jobKey: string;
+  mode: string;
+  lastRunAt?: string | null;
+  alertCap?: number;
+  cooldownHours?: number;
+  createdCount?: number;
+  skippedByReason?: Record<string, number>;
+};
+
+export type SchedulerObserveJob = {
+  jobKey: string;
+  mode: string;
+  lastRunAt?: string | null;
+};
+
+export type SchedulerControlState = {
+  cronStatus: string;
+  activeSnapshotJobs: string[];
+  pilotJobs: SchedulerPilotJob[];
+  observeJobs: SchedulerObserveJob[];
+  blockedJobs: string[];
+  policySummary?: {
+    maxAlertsPerRun: number;
+    cooldownHours: number;
+    eligibleCategories: string[];
+    groupedCategories: string[];
+    manualReviewCategories: string[];
+  };
+};
+
 export type AgentSlaSnapshot = {
   agentKey: string;
   lastRunAt: string | null;
@@ -368,6 +401,88 @@ export type ActionQueue = {
   invoicesToSend: ActionQueueSection;
 };
 
+export type PreparedActionEvidence = {
+  label: string;
+  value?: string | null;
+  url?: string | null;
+};
+
+export type PreparedAssetType =
+  | "content_post_draft"
+  | "meta_creative_brief"
+  | "email_draft"
+  | "checkout_audit_brief";
+
+export type PreparedActionAsset = {
+  label: string;
+  value?: string | null;
+  assetType?: PreparedAssetType;
+  generatedAt?: string | null;
+};
+
+export type PreparedActionCategory =
+  | "website"
+  | "product"
+  | "email"
+  | "meta"
+  | "tracking"
+  | "collector"
+  | "operations"
+  | "partnership";
+
+export type PreparedActionStatus =
+  | "draft"
+  | "ready_for_review"
+  | "approved"
+  | "rejected"
+  | "manually_executed"
+  | "archived";
+
+export type PreparedAction = {
+  id: string;
+  title: string;
+  category: PreparedActionCategory;
+  sourcePanel: string;
+  sourceInsightId?: string | null;
+  sourceSnapshotAt?: string | null;
+  sourceUrl?: string | null;
+  dedupeKey?: string | null;
+  whyItMatters: string;
+  evidence: PreparedActionEvidence[];
+  preparedAsset: PreparedActionAsset[];
+  estimatedImpact?: string | null;
+  riskLevel: "low" | "medium" | "high";
+  confidence: "low" | "medium" | "high";
+  dataLight: boolean;
+  requiredApprovalAction: string;
+  status: PreparedActionStatus;
+  createdByAgent: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt?: string | null;
+  approvalNote?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  manuallyExecutedAt?: string | null;
+  manualExecutionNote?: string | null;
+  archivedAt?: string | null;
+  expiresAt?: string | null;
+  notes?: string | null;
+};
+
+export type PerformanceMetricSnapshot = {
+  current: number | null;
+  previous: number | null;
+};
+
+export type PerformanceBaseline = {
+  revenue: PerformanceMetricSnapshot;
+  orders: PerformanceMetricSnapshot;
+  aov: PerformanceMetricSnapshot;
+  conversion: PerformanceMetricSnapshot;
+  sessions: PerformanceMetricSnapshot;
+};
+
 export type AgentHealth = {
   agentKey: string;
   lastRunAt: string | null;
@@ -390,12 +505,44 @@ export type WooSummary = {
   shippingTotal: number | null;
   taxTotal: number | null;
   items: number | null;
+  hasData?: boolean;
 };
 
 export type WooTimeseriesPoint = {
   date: string;
   revenue: number;
   orders: number;
+};
+
+export type WooProductPerformance = {
+  productId: number | null;
+  name: string;
+  units: number;
+  revenue: number;
+};
+
+export type WooRecentOrder = {
+  orderId: number;
+  orderNumber: string;
+  status: string;
+  total: number;
+  currency: string;
+  createdAt: string;
+};
+
+export type WooRangeMeta = {
+  rangeStart: string;
+  rangeEnd: string;
+  rangeDays: number;
+  effectiveStart: string | null;
+  dataStartDate: string | null;
+  dataEndDate: string | null;
+  source: string;
+  isSelectedRange: boolean;
+  isFallback: boolean;
+  fallbackReason?: string | null;
+  lastRefreshedAt?: string | null;
+  bucketSize?: "day" | "week" | "month";
 };
 
 export type GaSummary = {
@@ -436,8 +583,11 @@ export type CommerceTelemetry = {
     endDate: string;
   };
   woo?: {
-    summary: WooSummary;
-    timeseries: WooTimeseriesPoint[];
+    summary?: WooSummary | null;
+    timeseries?: WooTimeseriesPoint[];
+    products?: WooProductPerformance[];
+    recentOrders?: WooRecentOrder[];
+    range?: WooRangeMeta | null;
   };
   ga4?: {
     summary: GaSummary;
@@ -459,6 +609,7 @@ export type WebsiteConversionSnapshot = {
     beginCheckoutEvents?: number | null;
     ecommercePurchases?: number | null;
     purchaseRevenue?: number | null;
+    viewItemEvents?: number | null;
     deviceBreakdown?: Array<{ label: string; sessions: number }>;
     channelBreakdown?: Array<{ label: string; sessions: number }>;
     warnings?: string[];
@@ -467,8 +618,21 @@ export type WebsiteConversionSnapshot = {
     totalRevenue?: number;
     orderCount?: number;
     averageOrderValue?: number;
-    topProducts?: Array<{ name: string; units: number; revenue: number }>;
+    topProducts?: Array<{
+      name: string;
+      units: number;
+      revenue: number;
+      productId?: number | null;
+      variationId?: number | null;
+      sku?: string | null;
+      orderCount?: number | null;
+      averageUnitRevenue?: number | null;
+      rank?: number | null;
+    }>;
     recentOrders?: Array<{ id: number | string; status: string; total: number; currency: string; date: string; customer: string }>;
+    rangeDays?: number | null;
+    windowStart?: string | null;
+    windowEnd?: string | null;
   };
 };
 
@@ -500,6 +664,305 @@ export type MetaAdsSnapshot = {
     roas: number | null;
   };
   status?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
+};
+
+export type MarketingCommandSnapshot = {
+  status: "LIVE" | "PARTIAL";
+  generatedAt: string;
+  range?: {
+    preset: RangePreset;
+    startDate: string;
+    endDate: string;
+  };
+  priorRange?: {
+    preset: RangePreset | "custom";
+    startDate: string;
+    endDate: string;
+  };
+  summary: string[];
+  whatChanged: string[];
+  whatMatters: string[];
+  actions: Array<{ title: string; detail: string; metric: string }>;
+  risks: string[];
+  monitorTomorrow: string[];
+  topConnectedInsights?: MarketingCommandInsight[];
+  suppressedInsights?: MarketingCommandInsight[];
+  comparisonSummary?: string[];
+  metricDeltas?: MarketingCommandMetricDelta[];
+  productMomentum?: MarketingCommandProductMomentum;
+  promotionPlanner?: PromotionPlanner | null;
+  collectorRadar?: CollectorRadar | null;
+  confidenceSummary?: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  sourceFreshnessSummary?: Array<{ source: string; hoursSince: number | null; stale: boolean; thresholdHours: number }>;
+  insightBasis?: {
+    current: RangeSummary;
+    previous: RangeSummary;
+  };
+  salesGeography?: SalesGeographySnapshot | null;
+};
+
+export type MarketingCommandInsight = {
+  id: string;
+  title: string;
+  insight: string;
+  recommendedAction: string;
+  sourcesUsed: string[];
+  triggerMetrics: Record<string, unknown>;
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  severity: "LOW" | "MEDIUM" | "HIGH";
+  range?: {
+    preset: RangePreset;
+    startDate: string;
+    endDate: string;
+  };
+  suppressReason?: string;
+};
+
+export type RangeSummary = {
+  preset: RangePreset | "custom";
+  startDate: string;
+  endDate: string;
+};
+
+export type MarketingCommandMetricDelta = {
+  metric: string;
+  label: string;
+  unit?: string | null;
+  currentValue: number | null;
+  previousValue: number | null;
+  absoluteChange: number | null;
+  percentChange: number | null;
+  direction?: "up" | "down";
+};
+
+export type MarketingCommandProductMomentum = {
+  winners: ProductMomentumEntry[];
+  laggards: ProductMomentumEntry[];
+  newBreakouts: ProductMomentumEntry[];
+  concentration?: ProductConcentration | null;
+  suppressedReasons?: string[];
+} | null;
+
+export type PromotionRecommendationCategory =
+  | "PROMOTE_NOW"
+  | "RISING_MOMENTUM"
+  | "RELIABLE_SELLER"
+  | "COOLING_OFF"
+  | "HIDDEN_OPPORTUNITY"
+  | "TRAFFIC_GAP"
+  | "HISTORICAL_ANCHOR"
+  | "HIGH_AOV_ANCHOR"
+  | "COLLECTOR_FAVORITE";
+
+export type PromotionRecommendation = {
+  category: PromotionRecommendationCategory;
+  productName: string;
+  sku?: string | null;
+  reason: string;
+  supportingMetric?: string | null;
+  suggestedAction: string;
+  suggestedChannel?: string | null;
+  confidence: "high" | "medium" | "low";
+  directional?: boolean;
+  revenue7d?: number | null;
+  revenue30d?: number | null;
+  units7d?: number | null;
+  momentumPercent?: number | null;
+  lastSoldDate?: string | null;
+};
+
+export type PromotionPlanner = {
+  generatedAt: string;
+  trafficInsightsAvailable: boolean;
+  recommendations: PromotionRecommendation[];
+};
+
+export type ProductConversionClassification =
+  | "HIGH_TRAFFIC_LOW_SALES"
+  | "HIGH_CARTS_LOW_SALES"
+  | "HIGH_SALES_LOW_TRAFFIC"
+  | "HISTORICAL_ANCHOR"
+  | "HIGH_AOV_OPPORTUNITY"
+  | "CURRENT_MOMENTUM"
+  | "INSTRUMENTATION_GAP"
+  | "DATA_LIGHT";
+
+export type ProductConversionChecklistItem = {
+  label: string;
+  status: "ready" | "todo" | "blocked";
+  detail?: string;
+};
+
+export type ProductConversionRangeSnapshot = {
+  range: RangePreset;
+  label: string;
+  source: string;
+  confidence: "high" | "medium" | "low";
+  gaPageViews?: number | null;
+  gaViewItem?: number | null;
+  gaAddToCart?: number | null;
+  gaViewToCartRate?: number | null;
+  wooRevenue?: number | null;
+  wooUnits?: number | null;
+  wooAov?: number | null;
+  wooSalesToTrafficRatio?: number | null;
+  notes?: string[];
+};
+
+export type ProductConversionRow = {
+  productId: number | null;
+  productName: string;
+  slug: string;
+  sku?: string | null;
+  priceLabel?: string | null;
+  classification: ProductConversionClassification;
+  summary: string;
+  recommendedAction: string;
+  confidence: "high" | "medium" | "low";
+  instrumentationGap?: boolean;
+  tags?: string[];
+  ranges: ProductConversionRangeSnapshot[];
+  signals?: string[];
+};
+
+export type ProductConversionIntelligence = {
+  generatedAt: string;
+  supportedRanges: RangePreset[];
+  rows: ProductConversionRow[];
+  instrumentationChecklist: ProductConversionChecklistItem[];
+  notes?: string[];
+};
+
+export type ChangeInsight = {
+  id: string;
+  title: string;
+  detail: string;
+  deltaLabel: string;
+  tone: "positive" | "negative" | "neutral";
+  source: string;
+  comparisonLabel: string;
+  badges?: string[];
+};
+
+export type CollectorRadarSegment =
+  | "TOP_COLLECTOR"
+  | "REPEAT_BUYER"
+  | "LAPSED_COLLECTOR"
+  | "RECENT_HIGH_VALUE"
+  | "NURTURE_OPPORTUNITY";
+
+export type CollectorRecommendation = {
+  segment: CollectorRadarSegment;
+  displayName: string;
+  maskedEmail?: string | null;
+  totalSpend: number;
+  orderCount: number;
+  lastOrderDate?: string | null;
+  daysSinceLastOrder?: number | null;
+  products?: string[];
+  lookbackLabel?: string | null;
+  reason: string;
+  suggestedAction: string;
+  confidence: "high" | "medium" | "low";
+};
+
+export type CollectorRadar = {
+  generatedAt: string;
+  segments: CollectorRecommendation[];
+};
+
+export type ProductMomentumEntry = {
+  name: string;
+  currentRevenue?: number | null;
+  previousRevenue?: number | null;
+  revenueDelta?: number | null;
+  revenueDeltaPercent?: number | null;
+  currentUnits?: number | null;
+  previousUnits?: number | null;
+  unitsDelta?: number | null;
+  unitsDeltaPercent?: number | null;
+  rankChange?: number | null;
+  status?: "winner" | "laggard" | "breakout" | "steady";
+  productId?: number | null;
+  variationId?: number | null;
+  sku?: string | null;
+  orderCount?: number | null;
+  averageUnitRevenue?: number | null;
+  currentRank?: number | null;
+  previousRank?: number | null;
+};
+
+export type ProductConcentration = {
+  topProduct?: string | null;
+  sharePercent?: number | null;
+  revenue?: number | null;
+};
+
+export type SalesGeographyProduct = {
+  name: string;
+  units: number;
+  revenue: number;
+};
+
+export type SalesGeographyLocation = {
+  id: string;
+  label: string;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  privacyLevel: "city" | "state" | "country" | "unknown";
+  orderCount: number;
+  revenue: number;
+  units: number;
+  topProducts: SalesGeographyProduct[];
+};
+
+export type SalesGeographySummary = {
+  totalLocations: number;
+  topCountry: { label: string; revenue: number } | null;
+  topRegion: { label: string; revenue: number } | null;
+  topCity: { label: string; revenue: number } | null;
+  domesticRevenue: number;
+  internationalRevenue: number;
+};
+
+export type SalesGeographyDelta = {
+  id: string;
+  label: string;
+  privacyLevel: SalesGeographyLocation["privacyLevel"];
+  currentRevenue: number;
+  previousRevenue: number;
+  revenueDelta: number;
+  revenueDeltaPercent: number | null;
+  currentOrders: number;
+  previousOrders: number;
+  direction: "new" | "rising" | "cooling";
+};
+
+export type SalesGeographyComparison = {
+  currentRange: RangeSummary;
+  previousRange?: RangeSummary | null;
+  newLocations: SalesGeographyDelta[];
+  risingLocations: SalesGeographyDelta[];
+  coolingLocations: SalesGeographyDelta[];
+  domesticDelta?: number | null;
+  internationalDelta?: number | null;
+  summary?: string[];
+};
+
+export type SalesGeographySnapshot = {
+  range: RangeSummary;
+  locations: SalesGeographyLocation[];
+  summary: SalesGeographySummary;
+  suppressedReasons?: string[];
+  privacyNotes?: string[];
+  source?: string | null;
+  generatedAt?: string | null;
+  comparison?: SalesGeographyComparison | null;
 };
 
 export type ExecutiveWebsiteSummary = {
@@ -594,27 +1057,87 @@ export type IndustryPulseSnapshot = {
   alerts: IndustryAlert[];
 };
 
-export type SocialInsight = {
-  platform: string;
-  title: string;
-  format: string;
-  date: string;
-  metrics: string;
-  engagement: string;
-  collectorSignal?: string | null;
-  why: string;
-  nextIdea: string;
-  confidence: "high" | "medium" | "low";
-  source?: string | null;
-  status: string;
+export type SocialContentSnapshot = {
+  generatedAt: string;
+  source: string;
+  range: {
+    from: string;
+    to: string;
+  };
+  accounts: Array<{
+    platform: string;
+    accountName: string;
+    accountId: string;
+    followers: number | null;
+  }>;
+  posts: Array<{
+    platform: string;
+    postId: string;
+    format: string;
+    publishedAt: string;
+    caption: string;
+    hook: string | null;
+    subject: string | null;
+    artwork: string | null;
+    permalink: string | null;
+    thumbnailUrl: string | null;
+    metrics: {
+      views: number | null;
+      impressions: number | null;
+      reach: number | null;
+      likes: number | null;
+      comments: number | null;
+      shares: number | null;
+      saves: number | null;
+      engagementRate: number | null;
+    };
+    takeaway: string;
+  }>;
+  summary?: {
+    topPost?: string | null;
+    topFormat?: string | null;
+    topHookPattern?: string | null;
+    underperformingFormat?: string | null;
+    recommendedNextContent?: string | null;
+  };
 };
 
-export type SocialIntelligenceSnapshot = {
+export type PartnershipOpportunity = {
+  id: string;
+  headline: string;
+  category:
+    | "sports"
+    | "entertainment"
+    | "sponsorship"
+    | "charity"
+    | "museum"
+    | "brand_campaign"
+    | "product_launch"
+    | "collector_market"
+    | "cultural_moment";
+  subject: string;
+  organization?: string | null;
+  sourceName?: string | null;
+  sourceUrl?: string | null;
+  observedAt: string;
+  whyNow: string;
+  whyItMatters: string;
+  keeganAngle: string;
+  recommendedArtworkOrConcept?: string | null;
+  suggestedContactType?: string | null;
+  suggestedPitchAngle?: string | null;
+  urgency?: "high" | "medium" | "low";
+  confidence: "high" | "medium" | "low";
+  nextManualAction: string;
+  shouldBecomePreparedAction?: boolean;
+  notes?: string | null;
+  status?: "sample" | "draft" | "live";
+};
+
+export type PartnershipOpportunitySnapshot = {
   generatedAt: string;
-  insights: SocialInsight[];
-  mode?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
   source?: string | null;
-  sourceDetails?: Record<string, unknown>;
+  items: PartnershipOpportunity[];
 };
 
 export type CloudflareTelemetrySnapshot = {
@@ -845,16 +1368,21 @@ export type DashboardOverviewResponse = {
   proofOfWork: ProofOfWorkEntry[];
   schedulerJobs: SchedulerJobHealth[];
   schedulerSummary?: SchedulerSummary;
+  schedulerPilotStatus?: SchedulerControlState | null;
   agentSla: AgentSlaSnapshot[];
   approvalBottlenecks: ApprovalBottleneck;
   actionQueue: ActionQueue;
   systemHealth: SystemHealth;
   agentUpdateFeed: AgentUpdateFeedItem[];
   commerceTelemetry?: CommerceTelemetry;
+  performanceBaseline?: PerformanceBaseline | null;
+  marketingCommand?: MarketingCommandSnapshot | null;
+  salesGeography?: SalesGeographySnapshot | null;
   websiteConversion?: WebsiteConversionSnapshot | null;
   metaAds?: MetaAdsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
-  socialIntelligence?: SocialIntelligenceSnapshot | null;
+  socialContent?: SocialContentSnapshot | null;
+  partnershipFeed?: PartnershipOpportunitySnapshot | null;
   cloudflare?: CloudflareTelemetrySnapshot | null;
   collectorTelemetry?: CollectorTelemetrySnapshot | null;
   agentStatusPanel?: AgentStatusPanelEntry[];
@@ -870,6 +1398,8 @@ export type DashboardOverviewResponse = {
   agentKpis: AgentKpiBucket[];
   ideaBoard: IdeaBoard;
   ceoQuestionDesk: CeoQuestionDesk;
+  productConversionIntelligence?: ProductConversionIntelligence | null;
+  changeInsights?: ChangeInsight[];
 
   // Optional: enriched, curated opportunity digest (twice-daily ingestion)
   industryPulse?: {
@@ -889,4 +1419,6 @@ export type DashboardOverviewResponse = {
       sourceUrl: string | null;
     }>;
   };
+
+  preparedActions: PreparedAction[];
 };

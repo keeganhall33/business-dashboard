@@ -1,6 +1,5 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
-import type { AgentDashboardResponse } from "@/lib/types/agent";
 
 // Visual smoke page for dashboard components.
 // Safe to keep in repo; not linked from nav.
@@ -11,8 +10,6 @@ export default async function DevUiPage() {
   const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/overview`, { cache: "no-store" });
   const data = (await res.json()) as DashboardOverviewResponse;
 
-  const agents: AgentDashboardResponse[] = [];
-
   return (
     <main className="min-h-dvh bg-black px-4 py-10 text-white md:px-6">
       <div className="mx-auto max-w-7xl">
@@ -22,7 +19,7 @@ export default async function DevUiPage() {
           <p className="mt-2 text-sm text-zinc-400">Pulls live /api/dashboard/overview and renders the full shell.</p>
         </div>
 
-        <DashboardShell data={data} agents={agents} />
+        <DashboardShell data={data} />
       </div>
     </main>
   );

@@ -59,6 +59,17 @@ function iso(date) {
   return date.toISOString().slice(0, 10);
 }
 
+const PURCHASE_ACTION_PRIORITY = [
+  'offsite_conversion.fb_pixel_purchase',
+  'purchase',
+  'omni_purchase',
+  'onsite_web_purchase',
+  'onsite_web_app_purchase',
+  'web_in_store_purchase',
+  'web_app_in_store_purchase',
+  'offsite_conversion.purchase'
+];
+
 function summarizeCampaign(row) {
   const spend = Number(row.spend ?? 0);
   const impressions = Number(row.impressions ?? 0);
@@ -67,8 +78,8 @@ function summarizeCampaign(row) {
   const cpc = Number(row.cpc ?? 0);
   const cpm = Number(row.cpm ?? 0);
 
-  const purchases = getActionValue(row.actions, 'offsite_conversion.purchase');
-  const purchaseValue = getActionValue(row.action_values, 'offsite_conversion.purchase');
+  const { value: purchases, actionType: purchaseActionTypeUsed } = getPriorityActionValue(row.actions, PURCHASE_ACTION_PRIORITY);
+  const { value: purchaseValue, actionType: purchaseValueActionTypeUsed } = getPriorityActionValue(row.action_values, PURCHASE_ACTION_PRIORITY);
   const roas = purchaseValue && spend ? purchaseValue / spend : null;
 
   return {
@@ -82,16 +93,24 @@ function summarizeCampaign(row) {
     cpm,
     purchases,
     purchaseValue,
+    purchaseActionTypeUsed,
+    purchaseValueActionTypeUsed,
     roas
   };
 }
 
-function getActionValue(actions, target) {
-  if (!Array.isArray(actions)) return null;
-  const match = actions.find((action) => action?.action_type === target);
-  if (!match) return null;
-  const value = Number(match.value ?? match.action_value ?? match.inline_value ?? 0);
-  return Number.isFinite(value) ? value : null;
+function getPriorityActionValue(actions, targets) {
+  if (!Array.isArray(actions)) return { value: null, actionType: null };
+  for (const target of targets) {
+    const match = actions.find((action) => action?.action_type === target);
+    if (match) {
+      const value = Number(match.value ?? match.action_value ?? match.inline_value ?? 0);
+      if (Number.isFinite(value)) {
+        return { value, actionType: target };
+      }
+    }
+  }
+  return { value: null, actionType: null };
 }
 
 async function resolveAccountId() {

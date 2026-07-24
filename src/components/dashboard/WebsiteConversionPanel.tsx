@@ -2,7 +2,7 @@
 
 import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
-import { formatRelativeTimeFromNow } from "@/lib/date";
+import { formatDateRangeLabel, formatRelativeTimeFromNow } from "@/lib/date";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const decimalCurrency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -15,6 +15,7 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const windowLabel = getRangeLabel(snapshot);
   const missingAddToCart = ga4?.addToCartEvents == null;
   const missingBeginCheckout = ga4?.beginCheckoutEvents == null;
   const hasFunnelGap = Boolean(missingAddToCart || missingBeginCheckout);
@@ -24,6 +25,13 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
       : missingAddToCart
         ? "`add_to_cart` event"
         : "`begin_checkout` event";
+  const snapshotAgeHours = snapshot?.generatedAt ? (Date.now() - new Date(snapshot.generatedAt).getTime()) / 36e5 : null;
+  const snapshotStale = snapshotAgeHours != null && snapshotAgeHours > 24;
+  const snapshotChipLabel = snapshotStale ? `Snapshot stale (${snapshotAgeHours?.toFixed(1)}h)` : "Snapshot fresh";
+  const sourceMismatch =
+    ga4?.ecommercePurchases != null &&
+    woo?.orderCount != null &&
+    Math.abs(ga4.ecommercePurchases - woo.orderCount) >= Math.max(1, Math.ceil(0.2 * Math.max(ga4.ecommercePurchases, woo.orderCount)));
 
   return (
     <section className="ui-glass ui-glass-hover space-y-5 rounded-3xl p-6">
@@ -32,14 +40,32 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce automation snapshot.</div>
           <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
+          {windowLabel ? <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Window {windowLabel}</div> : null}
         </div>
-        <StatusChip label="Live telemetry" tone="emerald" />
+        <div className="flex flex-wrap gap-2">
+          <StatusChip label="Source: Woo = canonical" tone="emerald" />
+          <StatusChip label="GA4 directional" tone={hasFunnelGap ? "amber" : "sky"} />
+          <StatusChip label={snapshotChipLabel} tone={snapshotStale ? "rose" : "emerald"} />
+        </div>
       </div>
 
       {hasFunnelGap ? (
         <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
           Optional GA4 {funnelLabel} is still unavailable. Website data is LIVE, but funnel drop-off insights stay disabled until GA4 instrumentation is
           fixed. These metrics remain best-effort and will continue to warn instead of blocking the run.
+        </div>
+      ) : null}
+
+      {sourceMismatch ? (
+        <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-xs text-rose-100">
+          Woo completed orders ({woo?.orderCount ?? "–"}) do not match GA4 purchases ({ga4?.ecommercePurchases ?? "–"}). Treat GA4 revenue + purchase metrics as directional only until
+          instrumentation reconciles.
+        </div>
+      ) : null}
+
+      {snapshotStale ? (
+        <div className="rounded-2xl border border-zinc-700 bg-black/30 p-3 text-xs text-zinc-300">
+          Snapshot generated {generatedLabel}. If 7d and 30d views look identical, re-run `pnpm website:run` + `pnpm marketing:run` to refresh GA4 + FunnelKit data before making funnel decisions.
         </div>
       ) : null}
 
@@ -61,6 +87,7 @@ function Ga4Section({
         <div className="flex flex-wrap gap-2">
           <StatusChip label={`Users ${formatNumber(data.totalUsers)}`} tone="sky" />
           <StatusChip label={`Sessions ${formatNumber(data.sessions)}`} />
+          {data.viewItemEvents != null ? <StatusChip label={`View item ${formatNumber(data.viewItemEvents)}`} tone="zinc" /> : null}
           <StatusChip label={`Purchases ${formatNumber(data.ecommercePurchases)}`} tone="emerald" />
           {Number(data.purchaseRevenue) ? (
             <StatusChip label={`Revenue ${currency.format(Number(data.purchaseRevenue))}`} tone="emerald" />
@@ -171,4 +198,17 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 function formatNumber(value?: number | null) {
   if (value == null) return "–";
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function getRangeLabel(snapshot?: WebsiteConversionSnapshot | null) {
+  const start = snapshot?.wooCommerce?.windowStart;
+  const end = snapshot?.wooCommerce?.windowEnd;
+  if (start && end) {
+    return formatDateRangeLabel({ startDate: start, endDate: end });
+  }
+  const rangeDays = snapshot?.wooCommerce?.rangeDays ?? null;
+  if (rangeDays) {
+    return `Last ${rangeDays} days`;
+  }
+  return null;
 }

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
-import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { DashboardShell } from "./DashboardShell";
 import { DASHBOARD_REFRESH_EVENT } from "@/lib/dashboard/events";
 import { DashboardToastHost } from "./ui/DashboardToastHost";
@@ -24,10 +23,9 @@ function buildTargetKey(preset: string, start?: string | null, end?: string | nu
 
 type Props = {
   initialData: DashboardOverviewResponse;
-  agents: AgentDashboardResponse[];
 };
 
-export function DashboardPageClient({ initialData, agents }: Props) {
+export function DashboardPageClient({ initialData }: Props) {
   const searchParams = useSearchParams();
   const [overview, setOverview] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -37,7 +35,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   const paramsKey = useMemo(() => searchParams.toString(), [searchParams]);
   const targetConfig = useMemo(() => {
     const params = new URLSearchParams(paramsKey);
-    const preset = (params.get("range") ?? "30d").toLowerCase();
+    const preset = (params.get("range") ?? "7d").toLowerCase();
     const start = params.get("start");
     const end = params.get("end");
     const search = new URLSearchParams();
@@ -124,7 +122,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
             {error ? error : null}
           </div>
         )}
-        <DashboardShell data={overview} agents={agents} />
+        <DashboardShell data={overview} />
       </div>
     </>
   );

@@ -1,5 +1,6 @@
 import { createTask, findOpenTaskByTitle, getLatestScoreboardMetrics, getMetricAlertRules } from "@/lib/supabase/queries";
 import type { ScoreboardMetric } from "@/lib/agents/shared";
+import type { EnforcementMode } from "@/lib/scheduler/enforcement";
 
 function compare(operator: string, left: number, right: number) {
   switch (operator) {
@@ -20,19 +21,30 @@ function compare(operator: string, left: number, right: number) {
   }
 }
 
-export async function evaluateRules() {
+type EvaluateRulesOptions = {
+  mode?: EnforcementMode;
+};
+
+export async function evaluateRules(options?: EvaluateRulesOptions) {
+  const mode = options?.mode ?? "active";
+  const allowTaskCreation = mode === "active";
   const [rules, metrics] = await Promise.all([
     getMetricAlertRules(),
     getLatestScoreboardMetrics() as Promise<ScoreboardMetric[]>
   ]);
 
-  const triggersFired = [] as Array<{
-    metricKey: string;
-    condition: string;
-    assignedAgent: string;
-    taskCreated: boolean;
-    taskId: string;
-  }>;
+type TriggerSummary = {
+  metricKey: string;
+  condition: string;
+  assignedAgent: string;
+  taskCreated: boolean;
+  taskId: string;
+  taskPlanned?: boolean;
+  skippedReason?: string;
+  severity?: string;
+};
+
+  const triggersFired: TriggerSummary[] = [];
 
   for (const rule of rules) {
     const metric = metrics.find((m) => m.metric_key === rule.metric_key);
@@ -54,7 +66,23 @@ export async function evaluateRules() {
         condition: `${rule.condition_operator} ${rule.threshold_value}`,
         assignedAgent: rule.assigned_agent,
         taskCreated: false,
-        taskId: existing.id
+        taskId: existing.id,
+        taskPlanned: false,
+        severity: rule.severity ?? undefined
+      });
+      continue;
+    }
+
+    if (!allowTaskCreation) {
+      triggersFired.push({
+        metricKey: rule.metric_key,
+        condition: `${rule.condition_operator} ${rule.threshold_value}`,
+        assignedAgent: rule.assigned_agent,
+        taskCreated: false,
+        taskId: "simulated",
+        taskPlanned: true,
+        skippedReason: "task_creation_disabled",
+        severity: rule.severity ?? undefined
       });
       continue;
     }
@@ -78,7 +106,9 @@ export async function evaluateRules() {
       condition: `${rule.condition_operator} ${rule.threshold_value}`,
       assignedAgent: rule.assigned_agent,
       taskCreated: true,
-      taskId: task.id
+      taskId: task.id,
+      taskPlanned: true,
+      severity: rule.severity ?? undefined
     });
   }
 

@@ -2,6 +2,12 @@ import { agentKeys } from "@/lib/types/requests";
 import { createAgentMessage, getOrCreateAgentThread } from "@/lib/supabase/queries";
 import { withJobRun } from "./jobLogger";
 import { evaluateWarRoomMode } from "./warRoom";
+import {
+  describeMode,
+  getEnforcementMode,
+  modeAllowsMessages,
+  modeIsDisabled
+} from "./enforcement";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -43,6 +49,17 @@ async function postWarRoomDigest(agentKey: string, triggers: string[], reason: s
 }
 
 export async function runWarRoomDigest() {
+  const mode = await getEnforcementMode("war-room-digest");
+  if (modeIsDisabled(mode)) {
+    return withJobRun({
+      jobKey: "war-room-digest",
+      fn: async () => ({ skipped: true, mode }),
+      summarize: () => ({ summary: `Skipped (${describeMode(mode)})`, detailsJson: { skipped: true, mode } })
+    });
+  }
+
+  const allowMessages = modeAllowsMessages(mode);
+
   return withJobRun({
     jobKey: "war-room-digest",
     fn: async () => {
@@ -50,7 +67,16 @@ export async function runWarRoomDigest() {
       const warRoom = await evaluateWarRoomMode();
 
       if (warRoom.mode !== "war_room") {
-        return { skipped: true, mode: warRoom.mode } as const;
+        return { skipped: true, mode: warRoom.mode, enforcementMode: mode } as const;
+      }
+
+      if (!allowMessages) {
+        return {
+          skipped: true,
+          enforcementMode: mode,
+          mode: warRoom.mode,
+          plannedPosts: agentKeys.length
+        } as const;
       }
 
       await Promise.all(
@@ -59,6 +85,7 @@ export async function runWarRoomDigest() {
 
       return {
         skipped: false,
+         enforcementMode: mode,
         mode: warRoom.mode,
         triggers: warRoom.triggers,
         reason: warRoom.reason,

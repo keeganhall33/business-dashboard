@@ -4,17 +4,11 @@ import {
   getRecentTasks
 } from "@/lib/supabase/queries";
 import { createOrUpdateAlert, makeAlertDedupeKey, resolveAlertByKey } from "./alerting";
+import type { EnforcementMode } from "@/lib/scheduler/enforcement";
+import type { SimulatedAlert } from "./observeReports";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const agents = ["avery", "sloan", "lyra", "noah"] as const;
-
-export type StaleCheckResult = {
-  alertsCreatedOrUpdated: number;
-  staleAgents: string[];
-  staleTaskIds: string[];
-  pendingApprovalCount: number;
-  stalledOpportunityIds: string[];
-};
 
 type TaskRow = {
   id: string;
@@ -34,6 +28,21 @@ type OpportunityRow = {
   owner_agent?: string | null;
   status: string;
   updated_at?: string | null;
+};
+
+export type StaleCheckResult = {
+  alertsCreatedOrUpdated: number;
+  alertsAttempted: number;
+  staleAgents: string[];
+  staleTaskIds: string[];
+  pendingApprovalCount: number;
+  stalledOpportunityIds: string[];
+  simulatedAlerts: SimulatedAlert[];
+  mode: EnforcementMode;
+};
+
+export type StaleCheckOptions = {
+  mode?: EnforcementMode;
 };
 
 function hoursSince(dateString?: string | null) {
@@ -88,11 +97,15 @@ function getTaskStaleSeverity(task: TaskRow) {
   return null;
 }
 
-export async function runStaleChecks(): Promise<StaleCheckResult> {
+export async function runStaleChecks(options?: StaleCheckOptions): Promise<StaleCheckResult> {
+  const mode = options?.mode ?? "active";
+  const allowAlerts = mode === "active";
   let alertsCreatedOrUpdated = 0;
+  let alertsAttempted = 0;
   const staleAgents: string[] = [];
   const staleTaskIds: string[] = [];
   const stalledOpportunityIds: string[] = [];
+  const simulatedAlerts: SimulatedAlert[] = [];
 
   const [tasks, opportunities] = await Promise.all([
     getRecentTasks(200),
@@ -114,17 +127,27 @@ export async function runStaleChecks(): Promise<StaleCheckResult> {
 
     if (severity) {
       staleAgents.push(agentKey);
-      const result = await createOrUpdateAlert({
-        alertType: "stale_agent",
-        severity,
-        title: `${agentKey} is stale`,
-        summary: `${agentKey} has not run in ${Math.floor(days)} day(s).`,
-        relatedAgentKey: agentKey,
-        dedupeKey
-      });
-      if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "create", title: `${agentKey} is stale`, severity });
+      } else {
+        const result = await createOrUpdateAlert({
+          alertType: "stale_agent",
+          severity,
+          title: `${agentKey} is stale`,
+          summary: `${agentKey} has not run in ${Math.floor(days)} day(s).`,
+          relatedAgentKey: agentKey,
+          dedupeKey
+        });
+        if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      }
     } else {
-      await resolveAlertByKey(dedupeKey);
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "resolve", title: `Resolve stale agent alert: ${agentKey}`, severity: "info" });
+      } else {
+        await resolveAlertByKey(dedupeKey);
+      }
     }
   }
 
@@ -138,18 +161,28 @@ export async function runStaleChecks(): Promise<StaleCheckResult> {
 
     if (severity) {
       staleTaskIds.push(task.id);
-      const result = await createOrUpdateAlert({
-        alertType: "stale_task",
-        severity,
-        title: `Task is stale: ${task.title}`,
-        summary: `Task ${task.title} is stale in status ${task.status} at priority ${task.priority}.`,
-        relatedAgentKey: task.agent_key,
-        relatedTaskId: task.id,
-        dedupeKey
-      });
-      if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "create", title: `Task is stale: ${task.title}`, severity });
+      } else {
+        const result = await createOrUpdateAlert({
+          alertType: "stale_task",
+          severity,
+          title: `Task is stale: ${task.title}`,
+          summary: `Task ${task.title} is stale in status ${task.status} at priority ${task.priority}.`,
+          relatedAgentKey: task.agent_key,
+          relatedTaskId: task.id,
+          dedupeKey
+        });
+        if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      }
     } else {
-      await resolveAlertByKey(dedupeKey);
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "resolve", title: `Resolve stale task alert: ${task.title}`, severity: "info" });
+      } else {
+        await resolveAlertByKey(dedupeKey);
+      }
     }
   }
 
@@ -162,16 +195,27 @@ export async function runStaleChecks(): Promise<StaleCheckResult> {
 
   const approvalBottleneckKey = makeAlertDedupeKey(["approval_bottleneck", "all"]);
   if (pendingApprovals.length > 5) {
-    const result = await createOrUpdateAlert({
-      alertType: "approval_bottleneck",
-      severity: "high",
-      title: "Approval bottleneck detected",
-      summary: `${pendingApprovals.length} approval-gated tasks are waiting on user approval.`,
-      dedupeKey: approvalBottleneckKey
-    });
-    if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+    alertsAttempted++;
+    if (!allowAlerts) {
+      const severity = pendingApprovals.length > 10 ? "high" : "medium";
+      simulatedAlerts.push({ action: "create", title: "Approval bottleneck detected", severity });
+    } else {
+      const result = await createOrUpdateAlert({
+        alertType: "approval_bottleneck",
+        severity: "high",
+        title: "Approval bottleneck detected",
+        summary: `${pendingApprovals.length} approval-gated tasks are waiting on user approval.`,
+        dedupeKey: approvalBottleneckKey
+      });
+      if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+    }
   } else {
-    await resolveAlertByKey(approvalBottleneckKey);
+    alertsAttempted++;
+    if (!allowAlerts) {
+      simulatedAlerts.push({ action: "resolve", title: "Resolve approval bottleneck", severity: "info" });
+    } else {
+      await resolveAlertByKey(approvalBottleneckKey);
+    }
   }
 
   const criticalPendingApprovals = pendingApprovals.filter(
@@ -180,16 +224,21 @@ export async function runStaleChecks(): Promise<StaleCheckResult> {
 
   for (const task of criticalPendingApprovals) {
     const dedupeKey = makeAlertDedupeKey(["approval_bottleneck", "critical", task.id]);
-    const result = await createOrUpdateAlert({
-      alertType: "approval_bottleneck",
-      severity: "critical",
-      title: `Critical task awaiting approval: ${task.title}`,
-      summary: "Critical approval-gated task has been waiting more than 48 hours.",
-      relatedAgentKey: task.agent_key,
-      relatedTaskId: task.id,
-      dedupeKey
-    });
-    if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+    alertsAttempted++;
+    if (!allowAlerts) {
+      simulatedAlerts.push({ action: "create", title: `Critical task awaiting approval: ${task.title}`, severity: "critical" });
+    } else {
+      const result = await createOrUpdateAlert({
+        alertType: "approval_bottleneck",
+        severity: "critical",
+        title: `Critical task awaiting approval: ${task.title}`,
+        summary: "Critical approval-gated task has been waiting more than 48 hours.",
+        relatedAgentKey: task.agent_key,
+        relatedTaskId: task.id,
+        dedupeKey
+      });
+      if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+    }
   }
 
   const activeOpportunities = (opportunities as OpportunityRow[]).filter(
@@ -202,25 +251,38 @@ export async function runStaleChecks(): Promise<StaleCheckResult> {
 
     if (staleDays > 10) {
       stalledOpportunityIds.push(opp.id);
-      const result = await createOrUpdateAlert({
-        alertType: "stalled_opportunity",
-        severity: "medium",
-        title: `Opportunity is stalled: ${opp.name}`,
-        summary: `Opportunity ${opp.name} has not meaningfully changed in ${Math.floor(staleDays)} day(s).`,
-        relatedAgentKey: opp.owner_agent,
-        dedupeKey
-      });
-      if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "create", title: `Opportunity stalled: ${opp.name ?? opp.id}`, severity: "medium" });
+      } else {
+        const result = await createOrUpdateAlert({
+          alertType: "stalled_opportunity",
+          severity: "medium",
+          title: `Opportunity stalled: ${opp.name ?? opp.id}`,
+          summary: `Opportunity has gone ${Math.floor(staleDays)} day(s) without movement.`,
+          relatedAgentKey: opp.owner_agent,
+          dedupeKey
+        });
+        if (result.action !== "unchanged") alertsCreatedOrUpdated++;
+      }
     } else {
-      await resolveAlertByKey(dedupeKey);
+      alertsAttempted++;
+      if (!allowAlerts) {
+        simulatedAlerts.push({ action: "resolve", title: `Resolve stalled opportunity: ${opp.name ?? opp.id}`, severity: "info" });
+      } else {
+        await resolveAlertByKey(dedupeKey);
+      }
     }
   }
 
   return {
-    alertsCreatedOrUpdated,
+    alertsCreatedOrUpdated: allowAlerts ? alertsCreatedOrUpdated : 0,
+    alertsAttempted,
     staleAgents,
     staleTaskIds,
     pendingApprovalCount: pendingApprovals.length,
-    stalledOpportunityIds
+    stalledOpportunityIds,
+    simulatedAlerts,
+    mode
   };
 }

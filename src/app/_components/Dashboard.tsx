@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { MarketingCommandSnapshot } from "@/lib/types/dashboard";
+import { MarketingCommandPanel } from "@/components/dashboard/MarketingCommandPanel";
 
 type MetricStatus = "healthy" | "warning" | "critical";
 
@@ -97,6 +99,7 @@ type DashboardOverview = {
     agents: AgentHealth[];
   };
   commerceTelemetry?: CommerceTelemetry | null;
+  marketingCommand?: MarketingCommandSnapshot | null;
 };
 
 const statusTone: Record<MetricStatus, string> = {
@@ -270,6 +273,8 @@ export default function Dashboard() {
           </div>
         ))}
       </section>
+
+      <MarketingCommandPanel snapshot={data?.marketingCommand ?? null} />
 
       <section className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6 lg:col-span-1">

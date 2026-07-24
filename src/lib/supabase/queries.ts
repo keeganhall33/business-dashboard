@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { getSupabaseServerClient } from "./server";
+import { upsertOpportunity, type OpportunityInput } from "@/lib/supabase/opportunityWriter";
 import { canTransitionTaskStatus } from "@/lib/domain/taskStatus";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AgentKey,
   OpportunityStatus,
@@ -8,11 +13,139 @@ import type {
   TaskPriority,
   TaskStatus
 } from "@/lib/types/requests";
+import type {
+  PreparedAction,
+  PreparedActionAsset,
+  PreparedActionCategory,
+  PreparedActionEvidence,
+  PreparedActionStatus
+} from "@/lib/types/dashboard";
 
 type DeliverableLinkInput = {
   label: string;
   url: string;
 };
+
+type PreparedActionRow = {
+  id: string;
+  title: string;
+  category: PreparedActionCategory;
+  source_panel: string;
+  source_insight_id: string | null;
+  source_snapshot_at: string | null;
+  source_url: string | null;
+  dedupe_key: string | null;
+  why_it_matters: string;
+  evidence: unknown;
+  prepared_asset: unknown;
+  estimated_impact: string | null;
+  risk_level: string;
+  confidence: string;
+  data_light: boolean;
+  required_approval_action: string;
+  status: PreparedActionStatus;
+  created_by_agent: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  approval_note: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  manually_executed_at: string | null;
+  manual_execution_note: string | null;
+  archived_at: string | null;
+  expires_at: string | null;
+  notes: string | null;
+};
+
+type PreparedActionInsert = {
+  title: string;
+  category: PreparedActionCategory;
+  sourcePanel: string;
+  sourceInsightId?: string | null;
+  sourceSnapshotAt?: string | null;
+  sourceUrl?: string | null;
+  dedupeKey?: string | null;
+  whyItMatters: string;
+  evidence: PreparedActionEvidence[];
+  preparedAsset?: PreparedActionAsset[];
+  estimatedImpact?: string | null;
+  riskLevel?: "low" | "medium" | "high";
+  confidence?: "low" | "medium" | "high";
+  dataLight?: boolean;
+  requiredApprovalAction: string;
+  createdByAgent: string;
+  expiresAt?: string | null;
+  notes?: string | null;
+};
+
+type PreparedActionUpdate = Partial<{
+  status: PreparedActionStatus;
+  approvalNote: string | null;
+  rejectionReason: string | null;
+  manualExecutionNote: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  manuallyExecutedAt: string | null;
+  archivedAt: string | null;
+  notes: string | null;
+  preparedAsset: PreparedActionAsset[];
+}>;
+
+const preparedActionsFilePath = path.join(process.cwd(), "tmp", "prepared-actions-mock.json");
+
+function preparedActionsFileStoreEnabled() {
+  return process.env.PREPARED_ACTIONS_FILE_STORE === "1";
+}
+
+async function readPreparedActionsMock(): Promise<PreparedAction[]> {
+  try {
+    const raw = await readFile(preparedActionsFilePath, "utf8");
+    return JSON.parse(raw) as PreparedAction[];
+  } catch {
+    return [];
+  }
+}
+
+async function writePreparedActionsMock(actions: PreparedAction[]) {
+  await mkdir(path.dirname(preparedActionsFilePath), { recursive: true });
+  await writeFile(preparedActionsFilePath, JSON.stringify(actions, null, 2));
+}
+
+function buildPreparedActionFromInsert(input: PreparedActionInsert): PreparedAction {
+  const now = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    title: input.title,
+    category: input.category,
+    sourcePanel: input.sourcePanel,
+    sourceInsightId: input.sourceInsightId ?? null,
+    sourceSnapshotAt: input.sourceSnapshotAt ?? null,
+    sourceUrl: input.sourceUrl ?? null,
+    dedupeKey: input.dedupeKey ?? null,
+    whyItMatters: input.whyItMatters,
+    evidence: input.evidence,
+    preparedAsset: input.preparedAsset ?? [],
+    estimatedImpact: input.estimatedImpact ?? null,
+    riskLevel: input.riskLevel ?? "medium",
+    confidence: input.confidence ?? "medium",
+    dataLight: input.dataLight ?? false,
+    requiredApprovalAction: input.requiredApprovalAction,
+    status: "draft",
+    createdByAgent: input.createdByAgent,
+    createdAt: now,
+    updatedAt: now,
+    approvedAt: null,
+    approvalNote: null,
+    rejectedAt: null,
+    rejectionReason: null,
+    manuallyExecutedAt: null,
+    manualExecutionNote: null,
+    archivedAt: null,
+    expiresAt: input.expiresAt ?? null,
+    notes: input.notes ?? null
+  };
+}
 
 type PostgrestError = {
   code?: string;
@@ -945,41 +1078,9 @@ export async function getOpportunities(filters: { ownerAgent?: string; status?: 
   return { items: data ?? [], count: count ?? (data?.length ?? 0) };
 }
 
-export async function createOpportunity(input: {
-  name: string;
-  organization?: string;
-  opportunityType: OpportunityType | string;
-  status: OpportunityStatus | string;
-  valueEstimate?: number;
-  prestigeScore?: number;
-  probabilityScore?: number;
-  ownerAgent: AgentKey | string;
-  nextStep?: string;
-  nextStepDueAt?: string;
-  notesMd?: string;
-  source?: string;
-}) {
-  const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("opportunity_pipeline")
-    .insert({
-      name: input.name,
-      organization: input.organization ?? null,
-      opportunity_type: input.opportunityType,
-      status: input.status,
-      value_estimate: input.valueEstimate ?? null,
-      prestige_score: input.prestigeScore ?? null,
-      probability_score: input.probabilityScore ?? null,
-      owner_agent: input.ownerAgent,
-      next_step: input.nextStep ?? null,
-      next_step_due_at: input.nextStepDueAt ?? null,
-      notes_md: input.notesMd ?? null,
-      source: input.source ?? null
-    })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data;
+export async function createOpportunity(input: OpportunityInput, supabaseClient?: SupabaseClient) {
+  const supabase = supabaseClient ?? getSupabaseServerClient();
+  return upsertOpportunity(supabase, input);
 }
 
 export async function updateOpportunityStatus(id: string, status: OpportunityStatus) {
@@ -1190,6 +1291,225 @@ export async function finishSystemRun(
     .single();
   if (error) throw error;
   return data;
+}
+
+// -----------------------------
+// Prepared actions
+// -----------------------------
+
+function mapPreparedActionRow(row: PreparedActionRow): PreparedAction {
+  const parseArray = <T>(value: unknown): T[] => {
+    if (Array.isArray(value)) return value as T[];
+    return [];
+  };
+
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    sourcePanel: row.source_panel,
+    sourceInsightId: row.source_insight_id,
+    sourceSnapshotAt: row.source_snapshot_at,
+    sourceUrl: row.source_url,
+    dedupeKey: row.dedupe_key,
+    whyItMatters: row.why_it_matters,
+    evidence: parseArray<PreparedActionEvidence>(row.evidence),
+    preparedAsset: parseArray<PreparedActionAsset>(row.prepared_asset),
+    estimatedImpact: row.estimated_impact,
+    riskLevel: (row.risk_level as "low" | "medium" | "high") ?? "medium",
+    confidence: (row.confidence as "low" | "medium" | "high") ?? "medium",
+    dataLight: Boolean(row.data_light),
+    requiredApprovalAction: row.required_approval_action,
+    status: row.status,
+    createdByAgent: row.created_by_agent,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    approvedAt: row.approved_at,
+    approvalNote: row.approval_note,
+    rejectedAt: row.rejected_at,
+    rejectionReason: row.rejection_reason,
+    manuallyExecutedAt: row.manually_executed_at,
+    manualExecutionNote: row.manual_execution_note,
+    archivedAt: row.archived_at,
+    expiresAt: row.expires_at,
+    notes: row.notes
+  };
+}
+
+export async function getPreparedActions(filters?: {
+  statuses?: PreparedActionStatus[];
+  categories?: PreparedActionCategory[];
+  riskLevel?: "low" | "medium" | "high";
+  sourcePanel?: string;
+  limit?: number;
+}) {
+  if (preparedActionsFileStoreEnabled()) {
+    const actions = await readPreparedActionsMock();
+    return actions
+      .filter((action) => {
+        if (filters?.statuses?.length && !filters.statuses.includes(action.status)) return false;
+        if (filters?.categories?.length && !filters.categories.includes(action.category)) return false;
+        if (filters?.riskLevel && action.riskLevel !== filters.riskLevel) return false;
+        if (filters?.sourcePanel && action.sourcePanel !== filters.sourcePanel) return false;
+        return true;
+      })
+      .slice(0, filters?.limit ?? actions.length);
+  }
+
+  const supabase = getSupabaseServerClient();
+  let query = supabase.from("prepared_actions").select("*").order("status").order("updated_at", { ascending: false });
+
+  if (filters?.statuses?.length) {
+    query = query.in("status", filters.statuses);
+  }
+  if (filters?.categories?.length) {
+    query = query.in("category", filters.categories);
+  }
+  if (filters?.riskLevel) {
+    query = query.eq("risk_level", filters.riskLevel);
+  }
+  if (filters?.sourcePanel) {
+    query = query.eq("source_panel", filters.sourcePanel);
+  }
+  if (filters?.limit) {
+    query = query.limit(filters.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingTableError(error, "prepared_actions")) return [];
+    throw error;
+  }
+
+  return (data ?? []).map(mapPreparedActionRow);
+}
+
+export async function getPreparedActionById(id: string) {
+  if (preparedActionsFileStoreEnabled()) {
+    const actions = await readPreparedActionsMock();
+    return actions.find((action) => action.id === id) ?? null;
+  }
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.from("prepared_actions").select("*").eq("id", id).single();
+  if (error) {
+    if (isMissingTableError(error, "prepared_actions")) return null;
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+  return mapPreparedActionRow(data as PreparedActionRow);
+}
+
+export async function createPreparedAction(input: PreparedActionInsert) {
+  if (preparedActionsFileStoreEnabled()) {
+    const actions = await readPreparedActionsMock();
+    if (input.dedupeKey) {
+      const hasConflict = actions.some(
+        (action) =>
+          action.dedupeKey === input.dedupeKey && ["draft", "ready_for_review", "approved"].includes(action.status)
+      );
+      if (hasConflict) {
+        throw new Error("duplicate key value violates unique constraint prepared_actions_dedupe_active_idx");
+      }
+    }
+    const action = buildPreparedActionFromInsert(input);
+    actions.push(action);
+    await writePreparedActionsMock(actions);
+    return action;
+  }
+
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("prepared_actions")
+    .insert({
+      title: input.title,
+      category: input.category,
+      source_panel: input.sourcePanel,
+      source_insight_id: input.sourceInsightId ?? null,
+      source_snapshot_at: input.sourceSnapshotAt ?? null,
+      source_url: input.sourceUrl ?? null,
+      dedupe_key: input.dedupeKey ?? null,
+      why_it_matters: input.whyItMatters,
+      evidence: input.evidence ?? [],
+      prepared_asset: input.preparedAsset ?? [],
+      estimated_impact: input.estimatedImpact ?? null,
+      risk_level: input.riskLevel ?? "medium",
+      confidence: input.confidence ?? "medium",
+      data_light: input.dataLight ?? false,
+      required_approval_action: input.requiredApprovalAction,
+      created_by_agent: input.createdByAgent,
+      expires_at: input.expiresAt ?? null,
+      notes: input.notes ?? null
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    if (isMissingTableError(error, "prepared_actions")) {
+      throw new Error("prepared_actions table is missing");
+    }
+    throw error;
+  }
+
+  return mapPreparedActionRow(data as PreparedActionRow);
+}
+
+export async function updatePreparedAction(id: string, patch: PreparedActionUpdate) {
+  if (preparedActionsFileStoreEnabled()) {
+    const actions = await readPreparedActionsMock();
+    const index = actions.findIndex((action) => action.id === id);
+    if (index === -1) return null;
+    const updated: PreparedAction = {
+      ...actions[index],
+      status: patch.status ?? actions[index].status,
+      approvalNote: patch.approvalNote ?? actions[index].approvalNote,
+      rejectionReason: patch.rejectionReason ?? actions[index].rejectionReason,
+      manualExecutionNote: patch.manualExecutionNote ?? actions[index].manualExecutionNote,
+      approvedAt: patch.approvedAt ?? actions[index].approvedAt,
+      rejectedAt: patch.rejectedAt ?? actions[index].rejectedAt,
+      manuallyExecutedAt: patch.manuallyExecutedAt ?? actions[index].manuallyExecutedAt,
+      archivedAt: patch.archivedAt ?? actions[index].archivedAt,
+      notes: patch.notes ?? actions[index].notes,
+      preparedAsset: patch.preparedAsset ?? actions[index].preparedAsset,
+      updatedAt: new Date().toISOString()
+    };
+    actions[index] = updated;
+    await writePreparedActionsMock(actions);
+    return updated;
+  }
+
+  const supabase = getSupabaseServerClient();
+  const updatePayload: Record<string, unknown> = {};
+  if (patch.status) updatePayload.status = patch.status;
+  if (patch.approvalNote !== undefined) updatePayload.approval_note = patch.approvalNote;
+  if (patch.rejectionReason !== undefined) updatePayload.rejection_reason = patch.rejectionReason;
+  if (patch.manualExecutionNote !== undefined) updatePayload.manual_execution_note = patch.manualExecutionNote;
+  if (patch.approvedAt !== undefined) updatePayload.approved_at = patch.approvedAt;
+  if (patch.rejectedAt !== undefined) updatePayload.rejected_at = patch.rejectedAt;
+  if (patch.manuallyExecutedAt !== undefined) updatePayload.manually_executed_at = patch.manuallyExecutedAt;
+  if (patch.archivedAt !== undefined) updatePayload.archived_at = patch.archivedAt;
+  if (patch.notes !== undefined) updatePayload.notes = patch.notes;
+  if (patch.preparedAsset !== undefined) updatePayload.prepared_asset = patch.preparedAsset ?? [];
+
+  const { data, error } = await supabase
+    .from("prepared_actions")
+    .update(updatePayload)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    if (isMissingTableError(error, "prepared_actions")) return null;
+    throw error;
+  }
+
+  return mapPreparedActionRow(data as PreparedActionRow);
+}
+
+export async function getPreparedActionsForDashboard() {
+  return getPreparedActions({
+    statuses: ["draft", "ready_for_review", "approved", "rejected", "manually_executed"],
+    limit: 60
+  });
 }
 
 export async function getRecentSystemRunsByAgent(agentKey: string, limit = 10) {
@@ -2171,6 +2491,21 @@ export async function getDashboardSnapshots(keys: string[]): Promise<DashboardSn
     .from("dashboard_snapshots")
     .select("key, payload, mode, generated_at, updated_at")
     .in("key", keys);
+  if (error) {
+    if (isMissingTableError(error, "dashboard_snapshots")) return [];
+    throw error;
+  }
+  return (data ?? []) as DashboardSnapshotRecord[];
+}
+
+export async function getDashboardSnapshotHistoryForKey(key: string, limit = 2): Promise<DashboardSnapshotRecord[]> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("dashboard_snapshots")
+    .select("key, payload, mode, generated_at, updated_at")
+    .eq("key", key)
+    .order("generated_at", { ascending: false })
+    .limit(limit);
   if (error) {
     if (isMissingTableError(error, "dashboard_snapshots")) return [];
     throw error;

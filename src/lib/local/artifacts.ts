@@ -10,9 +10,11 @@ import type {
   MetaAdsSnapshot,
   ExecutiveSummary,
   IndustryPulseSnapshot,
-  SocialIntelligenceSnapshot,
+  SocialContentSnapshot,
   LeadIntelligenceSnapshot,
-  CloudflareTelemetrySnapshot
+  CloudflareTelemetrySnapshot,
+  PartnershipOpportunitySnapshot,
+  ProductConversionIntelligence
 } from "@/lib/types/dashboard";
 
 const DASHBOARD_ROOT = path.resolve(process.cwd(), "..", "dashboard");
@@ -22,6 +24,8 @@ const EXEC_SUMMARY_PATH = path.join(DASHBOARD_ROOT, "data", "executive", "latest
 const INDUSTRY_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "industry", "latest.json");
 const SOCIAL_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "social", "latest.json");
 const LEAD_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "leads", "latest.json");
+const PRODUCT_CONVERSION_PATH = path.join(DASHBOARD_ROOT, "data", "products", "latest.json");
+const PARTNERSHIP_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "opportunities", "latest.json");
 const CLOUDFLARE_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "cloudflare", "latest.json");
 const AGENT_STATUS_PATH = path.join(DASHBOARD_ROOT, "agent_status_panel.csv");
 const AUTOMATION_STATUS_PATH = path.join(DASHBOARD_ROOT, "automation_status_panel.csv");
@@ -32,8 +36,10 @@ export type LocalDashboardArtifacts = {
   metaSnapshot: MetaAdsSnapshot | null;
   executiveSummary: ExecutiveSummary | null;
   industrySnapshot: IndustryPulseSnapshot | null;
-  socialSnapshot: SocialIntelligenceSnapshot | null;
+  socialContentSnapshot: SocialContentSnapshot | null;
   leadSnapshot: LeadIntelligenceSnapshot | null;
+  productConversionSnapshot: ProductConversionIntelligence | null;
+  partnershipSnapshot: PartnershipOpportunitySnapshot | null;
   cloudflareSnapshot: CloudflareTelemetrySnapshot | null;
   agentStatus: AgentStatusPanelEntry[];
   automationStatus: AutomationStatusEntry[];
@@ -43,13 +49,15 @@ export type LocalDashboardArtifacts = {
 };
 
 export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtifacts> {
-  const [snapshot, meta, executive, industry, social, leads, cloudflare, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
+  const [snapshot, meta, executive, industry, socialContent, leads, productConversion, partnership, cloudflare, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
     readJsonIfExists<WebsiteConversionSnapshot>(WEBSITE_SNAPSHOT_PATH),
     readJsonIfExists<MetaAdsSnapshot>(META_SNAPSHOT_PATH),
     readJsonIfExists<ExecutiveSummary>(EXEC_SUMMARY_PATH),
     readJsonIfExists<IndustryPulseSnapshot>(INDUSTRY_SNAPSHOT_PATH),
-    readJsonIfExists<SocialIntelligenceSnapshot>(SOCIAL_SNAPSHOT_PATH),
+    readJsonIfExists<SocialContentSnapshot>(SOCIAL_SNAPSHOT_PATH),
     readJsonIfExists<LeadIntelligenceSnapshot>(LEAD_SNAPSHOT_PATH),
+    readJsonIfExists<ProductConversionIntelligence>(PRODUCT_CONVERSION_PATH),
+    readJsonIfExists<PartnershipOpportunitySnapshot>(PARTNERSHIP_SNAPSHOT_PATH),
     readJsonIfExists<CloudflareTelemetrySnapshot>(CLOUDFLARE_SNAPSHOT_PATH),
     readCsvIfExists(AGENT_STATUS_PATH),
     readCsvIfExists(AUTOMATION_STATUS_PATH),
@@ -67,8 +75,10 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
     metaSnapshot: meta,
     executiveSummary: executive,
     industrySnapshot: industry,
-    socialSnapshot: social,
+    socialContentSnapshot: socialContent,
     leadSnapshot: leads,
+    productConversionSnapshot: productConversion,
+    partnershipSnapshot: partnership,
     cloudflareSnapshot: cloudflare,
     agentStatus,
     automationStatus,

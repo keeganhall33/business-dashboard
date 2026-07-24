@@ -54,6 +54,7 @@ function defaultOverviewResponse(nowIso: string): DashboardOverviewResponse {
     agentKpis: [],
     ideaBoard: { columns: {}, recentComments: [], linkedTasks: {} },
     ceoQuestionDesk: { openQuestions: [], escalations: [], recentComments: [] },
+    preparedActions: [],
     collectorTelemetry: {
       status: "BROKEN",
       statusLabel: "BROKEN · collectors unavailable",

@@ -1,6 +1,5 @@
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
-import { getAgentDashboard, getDashboardOverview } from "@/lib/api/dashboard";
-import { agentKeys } from "@/lib/types/requests";
+import { getDashboardOverview } from "@/lib/api/dashboard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,12 +11,9 @@ type PageProps = {
 
 export default async function DashboardPage({ searchParams }: PageProps) {
   const resolvedParams = (await searchParams) ?? {};
-  const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
+  const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : "7d";
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
-  const [overview, agents] = await Promise.all([
-    getDashboardOverview({ preset, startDate: start, endDate: end }),
-    Promise.all(agentKeys.map((key) => getAgentDashboard(key)))
-  ]);
-  return <DashboardPageClient initialData={overview} agents={agents} />;
+  const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
+  return <DashboardPageClient initialData={overview} />;
 }

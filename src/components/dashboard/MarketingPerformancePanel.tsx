@@ -29,7 +29,8 @@ export function MarketingPerformancePanel({ telemetry }: Props) {
           <div className="mt-1 text-sm text-zinc-400">GA4 sessions, engagement, and revenue trend for the selected range.</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusChip label="GA4" tone="sky" />
+          <StatusChip label="GA4 telemetry" tone="sky" />
+          <StatusChip label="Directional only" tone="amber" />
         </div>
       </div>
 
