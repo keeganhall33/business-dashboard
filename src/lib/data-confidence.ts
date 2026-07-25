@@ -245,6 +245,7 @@ function evaluateGa4(data: DashboardOverviewResponse, timestamp: number, conflic
   const gaCommerce = data.commerceTelemetry?.ga4 as GaCommerceSummary | undefined;
   const gaSessions = gaCommerce?.summary?.sessions ?? null;
   const gaRevenue = gaCommerce?.summary?.revenue ?? websiteGa?.ga4?.revenue ?? null;
+  const telemetryLastVerified = data.commerceTelemetry?.range?.endDate ? `${data.commerceTelemetry.range.endDate}T00:00:00Z` : null;
   const rangeMismatch = Boolean(
     metadata?.requestedStartDate &&
       (metadata.requestedStartDate !== data.range.startDate || metadata.requestedEndDate !== data.range.endDate)
@@ -253,7 +254,7 @@ function evaluateGa4(data: DashboardOverviewResponse, timestamp: number, conflic
     domain: "ga4",
     hasData: gaSessions != null || gaRevenue != null,
     metadataTimestamp: metadata?.generatedAt,
-    lastVerified: metadata?.latestCompletedBusinessDate ?? null,
+    lastVerified: metadata?.latestCompletedBusinessDate ?? telemetryLastVerified,
     coverageStatus: metadata?.coverageStatus,
     healthStatus: health?.status,
     warnings: [...(metadata?.warningCodes ?? []), ...(health?.warningCodes ?? []), ...(conflicts.ga4 ?? [])],
