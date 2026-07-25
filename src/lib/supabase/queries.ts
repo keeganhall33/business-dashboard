@@ -2177,3 +2177,19 @@ export async function getDashboardSnapshots(keys: string[]): Promise<DashboardSn
   }
   return (data ?? []) as DashboardSnapshotRecord[];
 }
+
+export async function getDashboardSnapshotHistoryForKey(key: string, options?: { limit?: number }): Promise<DashboardSnapshotRecord[]> {
+  const limit = Math.max(1, Math.min(options?.limit ?? 6, 12));
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("dashboard_snapshots")
+    .select("key, payload, mode, generated_at, updated_at")
+    .eq("key", key)
+    .order("generated_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (isMissingTableError(error, "dashboard_snapshots")) return [];
+    throw error;
+  }
+  return (data ?? []) as DashboardSnapshotRecord[];
+}
