@@ -49,6 +49,7 @@ import {
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
+import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 
 export const runtime = "nodejs";
 
@@ -978,6 +979,15 @@ export async function GET(request: Request) {
     const startParam = url.searchParams.get("start");
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
+
+    const previousRangeForBaseline = computePreviousInclusiveDateRange({
+      startDate: range.startDate,
+      endDate: range.endDate
+    });
+
+    const previousCommerceTelemetryPromise = previousRangeForBaseline
+      ? getCommerceTelemetry({ startDate: previousRangeForBaseline.startDate, endDate: previousRangeForBaseline.endDate }).catch(() => null)
+      : Promise.resolve(null);
 
     const [
       metrics,
@@ -1920,6 +1930,25 @@ export async function GET(request: Request) {
           range: responseRange
         };
 
+    const previousTelemetry = await previousCommerceTelemetryPromise;
+    const previousPayload = previousTelemetry && previousRangeForBaseline
+      ? {
+          range: { preset: responseRange.preset, startDate: previousRangeForBaseline.startDate, endDate: previousRangeForBaseline.endDate },
+          woo: previousTelemetry.woo ?? undefined,
+          ga4: previousTelemetry.ga4 ?? undefined,
+          funnel: previousTelemetry.funnel ?? undefined
+        }
+      : null;
+
+    const performanceBaseline =
+      previousPayload && previousRangeForBaseline
+        ? buildPerformanceBaselineSnapshot({
+            range: responseRange,
+            currentTelemetry: commercePayload,
+            previousTelemetry: previousPayload
+          })
+        : null;
+
     return ok({
       ok: true,
       timestamp: new Date().toISOString(),
@@ -1946,6 +1975,7 @@ export async function GET(request: Request) {
       websiteConversion: websiteSnapshot,
       metaAds: metaSnapshot,
       changeInsights,
+      performanceBaseline,
       executiveSummary: localArtifacts.executiveSummary,
       socialIntelligence: socialSnapshot,
       cloudflare: cloudflareSnapshot,

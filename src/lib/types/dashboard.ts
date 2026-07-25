@@ -632,6 +632,43 @@ export type ChangeInsightsSnapshot = {
   insights: ChangeInsight[];
 };
 
+export type PerformanceBaselineMetricId =
+  | "revenue"
+  | "orders"
+  | "avg_order_value"
+  | "sessions"
+  | "conversion_rate";
+
+export type PerformanceBaselineUnit = "currency" | "count" | "percent";
+
+export type PerformanceBaselineMetric = {
+  id: PerformanceBaselineMetricId;
+  unit: PerformanceBaselineUnit;
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  deltaPercent: number | null;
+};
+
+export type PerformanceBaselineSnapshot = {
+  range: {
+    preset: RangePreset;
+    startDate: string;
+    endDate: string;
+  };
+  previousRange: {
+    startDate: string;
+    endDate: string;
+  };
+  metrics: {
+    revenue: PerformanceBaselineMetric;
+    orders: PerformanceBaselineMetric;
+    avgOrderValue: PerformanceBaselineMetric;
+    sessions: PerformanceBaselineMetric;
+    conversionRate: PerformanceBaselineMetric;
+  };
+};
+
 export type ExecutiveWebsiteSummary = {
   available: boolean;
   message?: string;
@@ -984,6 +1021,7 @@ export type DashboardOverviewResponse = {
   websiteConversion?: WebsiteConversionSnapshot | null;
   metaAds?: MetaAdsSnapshot | null;
   changeInsights?: ChangeInsightsSnapshot | null;
+  performanceBaseline?: PerformanceBaselineSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
   industryPulseSnapshot?: IndustryPulseSnapshot | null;

@@ -14,6 +14,7 @@ import { BrandPowerPanel } from "./BrandPowerPanel";
 import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ChangeInsightsPanel } from "./ChangeInsightsPanel";
+import { PerformanceBaselinePanel } from "./PerformanceBaselinePanel";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
@@ -37,6 +38,7 @@ export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
   const changeInsights = data.changeInsights ?? null;
+  const performanceBaseline = data.performanceBaseline ?? null;
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
   const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
@@ -69,6 +71,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
+            <PerformanceBaselinePanel snapshot={performanceBaseline} />
             {websiteSnapshot ? (
               <WebsiteConversionPanel snapshot={websiteSnapshot} />
             ) : (
