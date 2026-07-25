@@ -16,8 +16,14 @@ function getAppUrl() {
     return `https://${process.env.VERCEL_URL}`;
   }
 
+  // Next.js dev server origin (includes port) when available.
+  if (process.env.__NEXT_PRIVATE_ORIGIN) {
+    return process.env.__NEXT_PRIVATE_ORIGIN;
+  }
+
   // Local dev fallback.
-  return "http://localhost:3000";
+  const port = process.env.PORT?.trim() || "3000";
+  return `http://localhost:${port}`;
 }
 
 let hasLoggedMissingToken = false;
@@ -46,7 +52,12 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
     }
   }
 
-  const res = await fetch(input, { ...init, headers, cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(input, { ...init, headers, cache: "no-store" });
+  } catch (error) {
+    throw new Error(`[dashboard] fetch failed for ${String(input)}: ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Request failed (${res.status}): ${text || res.statusText}`);

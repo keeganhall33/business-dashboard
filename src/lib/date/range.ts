@@ -63,7 +63,8 @@ export function formatIso(date: Date) {
 
 function parseDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = Date.parse(`${value}T00:00:00Z`);
+  // Use midday UTC to avoid timezone rendering shifting the calendar date.
+  const parsed = Date.parse(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed);
 }
