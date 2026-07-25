@@ -49,6 +49,7 @@ import {
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
+import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 
 export const runtime = "nodejs";
 
@@ -1920,6 +1921,32 @@ export async function GET(request: Request) {
           range: responseRange
         };
 
+    let performanceBaseline = null;
+    try {
+      const previousRange = computePreviousInclusiveDateRange({ startDate: responseRange.startDate, endDate: responseRange.endDate });
+      if (previousRange) {
+        const previousTelemetry = await getCommerceTelemetry({ startDate: previousRange.startDate, endDate: previousRange.endDate });
+        const previousPayload = previousTelemetry
+          ? {
+              range: { preset: responseRange.preset, startDate: previousRange.startDate, endDate: previousRange.endDate },
+              woo: previousTelemetry.woo ?? undefined,
+              ga4: previousTelemetry.ga4 ?? undefined,
+              funnel: previousTelemetry.funnel ?? undefined
+            }
+          : null;
+
+        performanceBaseline =
+          buildPerformanceBaselineSnapshot({
+            range: responseRange,
+            currentTelemetry: commercePayload,
+            previousTelemetry: previousPayload
+          }) ?? null;
+      }
+    } catch {
+      // Best-effort: do not fail the overview route due to previous-period telemetry failures.
+      performanceBaseline = null;
+    }
+
     return ok({
       ok: true,
       timestamp: new Date().toISOString(),
@@ -1946,6 +1973,7 @@ export async function GET(request: Request) {
       websiteConversion: websiteSnapshot,
       metaAds: metaSnapshot,
       changeInsights,
+      performanceBaseline,
       executiveSummary: localArtifacts.executiveSummary,
       socialIntelligence: socialSnapshot,
       cloudflare: cloudflareSnapshot,
