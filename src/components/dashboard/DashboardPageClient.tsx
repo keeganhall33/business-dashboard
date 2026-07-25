@@ -39,7 +39,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
 
     window.addEventListener(DASHBOARD_REFRESH_EVENT, handleManualRefresh);
     return () => window.removeEventListener(DASHBOARD_REFRESH_EVENT, handleManualRefresh);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     // Canonicalize the URL to the server-resolved range to avoid mismatched UI state.
