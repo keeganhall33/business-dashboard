@@ -39,7 +39,7 @@ export function MarketingPerformancePanel({ telemetry }: Props) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Kpi label="Revenue" value={currency.format(Number(summary?.revenue ?? 0))} series={revenueSeries} tone="sky" />
+        <Kpi label="GA4 revenue" value={currency.format(Number(summary?.revenue ?? 0))} series={revenueSeries} tone="sky" />
         <Kpi label="Events" value={formatInt(summary?.eventCount)} />
         <Kpi label="Avg engagement" value={formatSeconds(summary?.avgEngagementSeconds)} />
       </div>

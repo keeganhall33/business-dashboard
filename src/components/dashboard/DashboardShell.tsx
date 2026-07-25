@@ -59,7 +59,6 @@ export function DashboardShell({ data }: Props) {
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
-        <ForwardStrategyPanel data={data} />
       </div>
 
       <div className="space-y-6">
@@ -71,7 +70,7 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            <PerformanceBaselinePanel snapshot={performanceBaseline} />
+            <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
             {websiteSnapshot ? (
               <WebsiteConversionPanel snapshot={websiteSnapshot} />
             ) : (
@@ -118,6 +117,15 @@ export function DashboardShell({ data }: Props) {
         </DashboardSection>
 
         <DashboardSection
+          title="Change Insights"
+          subtitle="Key movements versus the previous saved snapshot"
+          storageKey="dashboard-section-change-insights"
+          {...SECTION_PROPS}
+        >
+          <ChangeInsightsPanel snapshot={changeInsights} />
+        </DashboardSection>
+
+        <DashboardSection
           title="Data Confidence"
           subtitle="Source freshness, coverage, and telemetry warnings"
           storageKey="dashboard-section-data-confidence"
@@ -128,12 +136,12 @@ export function DashboardShell({ data }: Props) {
         </DashboardSection>
 
         <DashboardSection
-          title="Change Insights"
-          subtitle="Key movements versus the previous saved snapshot"
-          storageKey="dashboard-section-change-insights"
+          title="Forward Strategy"
+          subtitle="Long-range positioning and focus (collapsed by default)"
+          storageKey="dashboard-section-forward-strategy"
           {...SECTION_PROPS}
         >
-          <ChangeInsightsPanel snapshot={changeInsights} />
+          <ForwardStrategyPanel data={data} />
         </DashboardSection>
       </div>
     </div>
@@ -174,19 +182,29 @@ function toneText(tone: SectionSummary["tone"]) {
 }
 
 function buildCommerceSummary(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[]): SectionSummary {
-  const woo = data.websiteConversion?.wooCommerce;
-  const ga4 = data.websiteConversion?.ga4;
-  const revenue = woo?.grossOrderRevenue ?? woo?.netRevenue ?? null;
-  const orders = woo?.paidOrdersInWindow ?? null;
-  const conversion = ga4?.funnelRates?.sessionToPurchase ?? null;
+  const wooTelemetry = data.commerceTelemetry?.woo?.summary;
+  const funnelTelemetry = data.commerceTelemetry?.funnel?.summary;
+
+  const wooSnapshot = data.websiteConversion?.wooCommerce;
+  const ga4Snapshot = data.websiteConversion?.ga4;
+
+  const revenue = wooTelemetry?.revenue ?? wooSnapshot?.netRevenue ?? wooSnapshot?.grossOrderRevenue ?? null;
+  const orders = wooTelemetry?.orders ?? wooSnapshot?.paidOrdersInWindow ?? null;
+  // Prefer FunnelKit conversion rate (0–100) when available. Fall back to GA4-derived funnel rates (0–1 fraction).
+  const conversionPercent =
+    funnelTelemetry?.conversionRate != null
+      ? funnelTelemetry.conversionRate
+      : ga4Snapshot?.funnelRates?.sessionToPurchase != null
+        ? ga4Snapshot.funnelRates.sessionToPurchase * 100
+        : null;
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
   return {
-    status: woo ? "Live" : "Needs data",
-    tone: woo ? "emerald" : "amber",
+    status: revenue != null || orders != null ? "Live" : "Needs data",
+    tone: revenue != null || orders != null ? "emerald" : "amber",
     metrics: [
       revenue != null ? `Rev ${formatCurrencyShort(revenue)}` : null,
       orders != null ? `Orders ${formatCount(orders)}` : null,
-      conversion != null ? `Conv ${(conversion * 100).toFixed(1)}%` : null
+      conversionPercent != null ? `Conv ${conversionPercent.toFixed(1)}%` : null
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("top-")).length

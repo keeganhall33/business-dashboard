@@ -25,11 +25,13 @@ export function SalesPanel({ telemetry }: Props) {
 
   const summary = woo?.summary;
 
-  const revenue = Number(summary?.revenue ?? 0) + optimisticDelta.revenue;
-  const orders = Number(summary?.orders ?? 0) + optimisticDelta.orders;
+  const revenue = summary?.revenue != null ? Number(summary.revenue) + optimisticDelta.revenue : null;
+  const orders = summary?.orders != null ? Number(summary.orders) + optimisticDelta.orders : null;
   const aov = useMemo(() => {
-    const denom = Math.max(1, orders);
-    return revenue / denom;
+    if (revenue == null || orders == null) return null;
+    if (!Number.isFinite(revenue) || !Number.isFinite(orders)) return null;
+    if (orders <= 0) return null;
+    return revenue / orders;
   }, [orders, revenue]);
 
   return (
@@ -47,9 +49,9 @@ export function SalesPanel({ telemetry }: Props) {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Kpi label="Revenue" value={currency.format(revenue)} tone="emerald" />
-        <Kpi label="Orders" value={String(orders)} />
-        <Kpi label="AOV" value={currency.format(aov)} />
+        <Kpi label="Revenue" value={revenue == null ? "Unavailable" : currency.format(revenue)} tone="emerald" />
+        <Kpi label="Orders" value={orders == null ? "Unavailable" : String(orders)} />
+        <Kpi label="AOV" value={aov == null ? "Unavailable" : currency.format(aov)} />
         <Kpi label="Discounts" value={currency.format(Number(summary?.discountTotal ?? 0))} />
         <Kpi label="Shipping" value={currency.format(Number(summary?.shippingTotal ?? 0))} />
         <Kpi label="Tax" value={currency.format(Number(summary?.taxTotal ?? 0))} />
