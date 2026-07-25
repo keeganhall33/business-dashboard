@@ -57,6 +57,7 @@ export function DashboardShell({ data }: Props) {
         <ExecutivePerspectivePanel data={data} actions={executiveActions} />
         {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
         <ExecutiveKpiScorecard metrics={data.headerMetrics} />
+        <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
       </div>

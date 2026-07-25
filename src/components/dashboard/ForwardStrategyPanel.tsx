@@ -23,10 +23,15 @@ export function ForwardStrategyPanel({
     (metric) => metric.metricKey.toLowerCase().includes("order") || metric.metricName.toLowerCase().includes("order")
   );
 
-  const currentRevenue = revenueMetric?.currentValue ?? data.websiteConversion?.wooCommerce?.grossOrderRevenue ?? 0;
+  const currentRevenue =
+    revenueMetric?.currentValue ??
+    data.commerceTelemetry?.woo?.summary?.revenue ??
+    data.websiteConversion?.wooCommerce?.netRevenue ??
+    data.websiteConversion?.wooCommerce?.grossOrderRevenue ??
+    null;
   const revenueTarget = revenueMetric?.targetValue ?? null;
-  const paceRevenue = elapsedDays > 0 ? (currentRevenue / elapsedDays) * totalDays : currentRevenue;
-  const revenueGap = revenueTarget != null ? revenueTarget - paceRevenue : null;
+  const paceRevenue = currentRevenue != null && elapsedDays > 0 ? (currentRevenue / elapsedDays) * totalDays : currentRevenue;
+  const revenueGap = revenueTarget != null && paceRevenue != null ? revenueTarget - paceRevenue : null;
   const remainingDays = Math.max(0, totalDays - elapsedDays);
   const requiredDaily = remainingDays > 0 && revenueGap != null ? Math.max(0, revenueGap) / remainingDays : null;
 
@@ -57,7 +62,7 @@ export function ForwardStrategyPanel({
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <MetricTile
           label="Revenue pace"
-          value={`$${Math.round(paceRevenue ?? 0).toLocaleString()}`}
+          value={paceRevenue == null ? "Unavailable" : `$${Math.round(paceRevenue).toLocaleString()}`}
           detail={
             revenueTarget != null
               ? `Target $${Math.round(revenueTarget).toLocaleString()} • Gap ${formatDelta(revenueGap ?? 0)}`
@@ -71,7 +76,7 @@ export function ForwardStrategyPanel({
         />
         <MetricTile
           label="Orders gap"
-          value={ordersGap != null ? formatDelta(ordersGap) : "—"}
+          value={ordersGap != null ? formatCountDelta(ordersGap) : "—"}
           detail={orderTarget != null ? `Target ${orderTarget.toLocaleString()} orders` : "No order target on file"}
         />
       </div>
@@ -107,6 +112,11 @@ function summarizeTopOpportunity(insights?: ExecutiveInsightsPayload | null) {
 
 function formatDelta(value: number) {
   return value >= 0 ? `+$${Math.round(value).toLocaleString()}` : `-$${Math.abs(Math.round(value)).toLocaleString()}`;
+}
+
+function formatCountDelta(value: number) {
+  const rounded = Math.round(value);
+  return rounded >= 0 ? `+${rounded.toLocaleString()}` : `-${Math.abs(rounded).toLocaleString()}`;
 }
 
 function MetricTile({ label, value, detail }: { label: string; value: string; detail?: string }) {
