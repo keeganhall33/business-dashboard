@@ -13,6 +13,7 @@ import { RevenueEnginePanel } from "./RevenueEnginePanel";
 import { BrandPowerPanel } from "./BrandPowerPanel";
 import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
+import { ChangeInsightsPanel } from "./ChangeInsightsPanel";
 import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
@@ -35,6 +36,7 @@ type Props = {
 export function DashboardShell({ data }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
+  const changeInsights = data.changeInsights ?? null;
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
   const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
@@ -120,6 +122,15 @@ export function DashboardShell({ data }: Props) {
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
           <DataConfidencePanel summary={dataConfidence} />
+        </DashboardSection>
+
+        <DashboardSection
+          title="Change Insights"
+          subtitle="Key movements versus the previous saved snapshot"
+          storageKey="dashboard-section-change-insights"
+          {...SECTION_PROPS}
+        >
+          <ChangeInsightsPanel snapshot={changeInsights} />
         </DashboardSection>
       </div>
     </div>

@@ -28,6 +28,7 @@ import {
   getCeoQuestions,
   getRecentCeoQuestionComments,
   getDashboardSnapshots,
+  getDashboardSnapshotHistoryForKey,
   type DashboardSnapshotRecord
 } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -36,6 +37,7 @@ import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
 import {
   RangePreset,
   type AgentHealth,
+  type ChangeInsightsSnapshot,
   type CollectorTelemetrySnapshot,
   type DeliverableLink,
   type ProofOfWorkEntry,
@@ -45,6 +47,8 @@ import {
   type SocialIntelligenceSnapshot
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
+import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
+import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 
 export const runtime = "nodejs";
 
@@ -87,6 +91,8 @@ type ScoreboardMetricStats = {
   max: number | null;
   changePercent: number | null;
 };
+
+// NOTE: previous-snapshot selection lives in src/lib/dashboard/snapshot-selection.ts
 
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
@@ -1034,6 +1040,26 @@ export async function GET(request: Request) {
     const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
 
+    let changeInsights: ChangeInsightsSnapshot | null = null;
+    try {
+      const metaHistory = await getDashboardSnapshotHistoryForKey("meta", { limit: 4 });
+
+      const currentMetaCutoff = snapshotMap.get("meta")?.generated_at ?? metaSnapshot?.generatedAt ?? null;
+      const metaPrevious = selectPreviousSnapshot<MetaAdsSnapshot>(metaHistory, currentMetaCutoff)?.payload ?? null;
+
+      changeInsights =
+        buildChangeInsightsSnapshot({
+          websiteCurrent: websiteSnapshot,
+          websitePrevious: null,
+          metaCurrent: metaSnapshot,
+          metaPrevious,
+          maxInsights: 5
+        }) ?? null;
+    } catch {
+      // Best-effort: do not fail the overview route due to history lookup errors.
+      changeInsights = null;
+    }
+
     const kpiKeys = (kpiDefinitions as AgentKpiRow[]).map((kpi) => kpi.kpi_key);
 
     const { startIso, endIsoExclusive, durationMs } = isoRangeBoundsFromDateRange(range);
@@ -1919,6 +1945,7 @@ export async function GET(request: Request) {
       commerceTelemetry: commercePayload,
       websiteConversion: websiteSnapshot,
       metaAds: metaSnapshot,
+      changeInsights,
       executiveSummary: localArtifacts.executiveSummary,
       socialIntelligence: socialSnapshot,
       cloudflare: cloudflareSnapshot,

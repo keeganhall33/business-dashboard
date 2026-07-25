@@ -611,6 +611,27 @@ export type MetaAdsSnapshot = {
   status?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
 };
 
+export type ChangeInsightDirection = "up" | "down" | "unknown";
+
+export type ChangeInsight = {
+  id: string;
+  label: string;
+  source: "website" | "meta";
+  unit: "currency" | "count" | "percent" | "multiplier";
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  deltaPercent: number | null;
+  direction: ChangeInsightDirection;
+  interpretation: string;
+};
+
+export type ChangeInsightsSnapshot = {
+  generatedAt: string;
+  previousGeneratedAt: string | null;
+  insights: ChangeInsight[];
+};
+
 export type ExecutiveWebsiteSummary = {
   available: boolean;
   message?: string;
@@ -962,6 +983,7 @@ export type DashboardOverviewResponse = {
   commerceTelemetry?: CommerceTelemetry;
   websiteConversion?: WebsiteConversionSnapshot | null;
   metaAds?: MetaAdsSnapshot | null;
+  changeInsights?: ChangeInsightsSnapshot | null;
   executiveSummary?: ExecutiveSummary | null;
   socialIntelligence?: SocialIntelligenceSnapshot | null;
   industryPulseSnapshot?: IndustryPulseSnapshot | null;
