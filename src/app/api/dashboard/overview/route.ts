@@ -662,6 +662,8 @@ function isIsoDate(value: string | null): value is string {
 
 function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
   const presets: Record<string, { preset: RangePreset; days: number }> = {
+    today: { preset: "today", days: 1 },
+    yesterday: { preset: "yesterday", days: 1 },
     "7d": { preset: "7d", days: 7 },
     "30d": { preset: "30d", days: 30 },
     "90d": { preset: "90d", days: 90 }
@@ -675,10 +677,38 @@ function resolveRange(rangeParam: string | null, startParam: string | null, endP
     }
   }
 
-  const fallback = presets[rangeParam ?? ""] ?? presets["30d"];
+  const normalized = (rangeParam ?? "").toLowerCase();
   const today = new Date();
-  const endDate = formatIsoDate(today);
-  const start = new Date(today);
+
+  if (normalized === "month_to_date") {
+    const endDate = formatIsoDate(today);
+    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
+    return { preset: "month_to_date" as RangePreset, startDate, endDate };
+  }
+
+  if (normalized === "previous_month") {
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth();
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0));
+    return { preset: "previous_month" as RangePreset, startDate: formatIsoDate(start), endDate: formatIsoDate(end) };
+  }
+
+  if (normalized === "year_to_date") {
+    const endDate = formatIsoDate(today);
+    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), 0, 1)));
+    return { preset: "year_to_date" as RangePreset, startDate, endDate };
+  }
+
+  const fallback = presets[normalized] ?? presets["30d"];
+
+  const end = new Date(today);
+  if (fallback.preset === "yesterday") {
+    end.setUTCDate(end.getUTCDate() - 1);
+  }
+
+  const endDate = formatIsoDate(end);
+  const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
   const startDate = formatIsoDate(start);
   return { preset: fallback.preset, startDate, endDate };

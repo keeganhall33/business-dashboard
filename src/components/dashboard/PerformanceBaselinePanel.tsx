@@ -1,11 +1,36 @@
-import type { PerformanceBaselineMetric, PerformanceBaselineSnapshot } from "@/lib/types/dashboard";
+import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import type { PerformanceBaselineMetric, PerformanceBaselineSnapshot, RangePreset } from "@/lib/types/dashboard";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const percent = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-export function PerformanceBaselinePanel({ snapshot }: { snapshot?: PerformanceBaselineSnapshot | null }) {
-  if (!snapshot) return null;
+export function PerformanceBaselinePanel({
+  snapshot,
+  range
+}: {
+  snapshot?: PerformanceBaselineSnapshot | null;
+  range: { preset: RangePreset; startDate: string; endDate: string };
+}) {
+  const previousRange = computePreviousInclusiveDateRange({ startDate: range.startDate, endDate: range.endDate });
+
+  if (!snapshot) {
+    return (
+      <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Performance baseline</div>
+            <p className="mt-1 text-sm text-zinc-400">Baseline unavailable for the selected window.</p>
+          </div>
+          <div className="text-xs text-zinc-500">
+            {range.startDate} → {range.endDate}
+            <span className="mx-2 text-zinc-700">/</span>
+            {previousRange ? `${previousRange.startDate} → ${previousRange.endDate}` : "Previous window unavailable"}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">

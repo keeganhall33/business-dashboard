@@ -10,6 +10,7 @@ type WebsiteGaSnapshot = {
 
 type GaCommerceSummary = {
   summary?: {
+    sessions?: number | null;
     ecommercePurchases?: number | null;
     revenue?: number | null;
   };
@@ -242,6 +243,7 @@ function evaluateGa4(data: DashboardOverviewResponse, timestamp: number, conflic
   const health = data.telemetryHealth?.ga4;
   const websiteGa = data.websiteConversion as WebsiteGaSnapshot | null;
   const gaCommerce = data.commerceTelemetry?.ga4 as GaCommerceSummary | undefined;
+  const gaSessions = gaCommerce?.summary?.sessions ?? null;
   const gaRevenue = gaCommerce?.summary?.revenue ?? websiteGa?.ga4?.revenue ?? null;
   const rangeMismatch = Boolean(
     metadata?.requestedStartDate &&
@@ -249,7 +251,7 @@ function evaluateGa4(data: DashboardOverviewResponse, timestamp: number, conflic
   );
   return evaluateTelemetryDomain({
     domain: "ga4",
-    hasData: gaRevenue != null,
+    hasData: gaSessions != null || gaRevenue != null,
     metadataTimestamp: metadata?.generatedAt,
     lastVerified: metadata?.latestCompletedBusinessDate ?? null,
     coverageStatus: metadata?.coverageStatus,

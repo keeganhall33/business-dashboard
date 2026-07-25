@@ -67,26 +67,30 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
             {telemetry.range.startDate} → {telemetry.range.endDate}
           </div>
         </div>
-        {revenueSummary && (
+        {revenueSummary ? (
           <div className="flex gap-6 text-sm text-zinc-300">
             <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Revenue</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Woo revenue</div>
               <div className="text-lg font-semibold text-white">
-                {currencyFormatter.format(Number(revenueSummary.revenue ?? 0))}
+                {revenueSummary.revenue == null ? "Unavailable" : currencyFormatter.format(Number(revenueSummary.revenue))}
               </div>
             </div>
             <div>
               <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Orders</div>
-              <div className="text-lg font-semibold text-white">{Number(revenueSummary.orders ?? 0)}</div>
+              <div className="text-lg font-semibold text-white">
+                {revenueSummary.orders == null ? "Unavailable" : Number(revenueSummary.orders).toLocaleString()}
+              </div>
             </div>
             <div>
               <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">AOV</div>
               <div className="text-lg font-semibold text-white">
-                {currencyFormatter.format(Number(revenueSummary.avgOrderValue ?? 0))}
+                {revenueSummary.avgOrderValue == null
+                  ? "Unavailable"
+                  : currencyFormatter.format(Number(revenueSummary.avgOrderValue))}
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="mt-6 chart-grid">
@@ -160,9 +164,9 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="text-sm text-zinc-400">Funnel Conversion</div>
-            {funnelSummary ? (
+            {funnelSummary && funnelSummary.conversionRate != null ? (
               <div className="mt-1 text-3xl font-semibold text-white">
-                {(Number(funnelSummary.conversionRate ?? 0)).toFixed(1)}%
+                {Number(funnelSummary.conversionRate).toFixed(1)}%
               </div>
             ) : (
               <div className="mt-1 text-zinc-500">No funnel data</div>
