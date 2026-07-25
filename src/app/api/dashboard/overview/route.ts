@@ -980,6 +980,15 @@ export async function GET(request: Request) {
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
 
+    const previousRangeForBaseline = computePreviousInclusiveDateRange({
+      startDate: range.startDate,
+      endDate: range.endDate
+    });
+
+    const previousCommerceTelemetryPromise = previousRangeForBaseline
+      ? getCommerceTelemetry({ startDate: previousRangeForBaseline.startDate, endDate: previousRangeForBaseline.endDate }).catch(() => null)
+      : Promise.resolve(null);
+
     const [
       metrics,
       tasks,
@@ -1921,31 +1930,24 @@ export async function GET(request: Request) {
           range: responseRange
         };
 
-    let performanceBaseline = null;
-    try {
-      const previousRange = computePreviousInclusiveDateRange({ startDate: responseRange.startDate, endDate: responseRange.endDate });
-      if (previousRange) {
-        const previousTelemetry = await getCommerceTelemetry({ startDate: previousRange.startDate, endDate: previousRange.endDate });
-        const previousPayload = previousTelemetry
-          ? {
-              range: { preset: responseRange.preset, startDate: previousRange.startDate, endDate: previousRange.endDate },
-              woo: previousTelemetry.woo ?? undefined,
-              ga4: previousTelemetry.ga4 ?? undefined,
-              funnel: previousTelemetry.funnel ?? undefined
-            }
-          : null;
+    const previousTelemetry = await previousCommerceTelemetryPromise;
+    const previousPayload = previousTelemetry && previousRangeForBaseline
+      ? {
+          range: { preset: responseRange.preset, startDate: previousRangeForBaseline.startDate, endDate: previousRangeForBaseline.endDate },
+          woo: previousTelemetry.woo ?? undefined,
+          ga4: previousTelemetry.ga4 ?? undefined,
+          funnel: previousTelemetry.funnel ?? undefined
+        }
+      : null;
 
-        performanceBaseline =
-          buildPerformanceBaselineSnapshot({
+    const performanceBaseline =
+      previousPayload && previousRangeForBaseline
+        ? buildPerformanceBaselineSnapshot({
             range: responseRange,
             currentTelemetry: commercePayload,
             previousTelemetry: previousPayload
-          }) ?? null;
-      }
-    } catch {
-      // Best-effort: do not fail the overview route due to previous-period telemetry failures.
-      performanceBaseline = null;
-    }
+          })
+        : null;
 
     return ok({
       ok: true,

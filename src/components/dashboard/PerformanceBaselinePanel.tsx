@@ -50,7 +50,7 @@ function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; labe
 }
 
 function formatValue(metric: PerformanceBaselineMetric): string {
-  if (metric.current == null) return "—";
+  if (metric.current == null) return "Unavailable";
 
   switch (metric.unit) {
     case "currency":
@@ -64,7 +64,7 @@ function formatValue(metric: PerformanceBaselineMetric): string {
 }
 
 function formatDelta(metric: PerformanceBaselineMetric): string {
-  if (metric.current == null || metric.previous == null || metric.delta == null) return "No comparable history";
+  if (metric.current == null || metric.previous == null || metric.delta == null) return "Unavailable";
 
   const sign = metric.delta > 0 ? "+" : metric.delta < 0 ? "-" : "";
   const abs = Math.abs(metric.delta);
