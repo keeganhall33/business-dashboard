@@ -27,34 +27,46 @@ export function ChangeInsightsPanel({ snapshot }: { snapshot?: ChangeInsightsSna
         <ul className="mt-5 space-y-3">
           {snapshot.insights.map((insight) => (
             <li key={insight.id} className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <div className="text-sm font-semibold text-white">{insight.label}</div>
-                <div className="text-xs text-zinc-400">{formatDeltaLabel(insight.unit, insight.delta, insight.deltaPercent)}</div>
-              </div>
-              <p className="mt-2 text-sm text-zinc-300">{insight.interpretation}</p>
-              <div className="mt-2 text-xs text-zinc-500">
-                Current {formatValue(insight.unit, insight.current)} · Previous {formatValue(insight.unit, insight.previous)}
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <div className="text-sm font-semibold text-white">{insight.label}</div>
+                  <div className="text-xs text-zinc-400">{formatChangeInsightsDeltaLabel(insight.unit, insight.delta, insight.deltaPercent)}</div>
+                </div>
+                <p className="mt-2 text-sm text-zinc-300">{insight.interpretation}</p>
+                <div className="mt-2 text-xs text-zinc-500">
+                  Current {formatChangeInsightsValue(insight.unit, insight.current)} · Previous {formatChangeInsightsValue(insight.unit, insight.previous)}
+                </div>
+              </li>
+            ))}
+          </ul>
       )}
     </section>
   );
 }
 
-function formatValue(unit: "currency" | "count" | "percent", value: number | null) {
+export function formatChangeInsightsValue(unit: "currency" | "count" | "percent" | "multiplier", value: number | null) {
   if (value == null) return "—";
   if (unit === "currency") return currencyFormatter.format(value);
   if (unit === "percent") return percentFormatter.format(value);
+  if (unit === "multiplier") return `${value.toFixed(2)}x`;
   return numberFormatter.format(value);
 }
 
-function formatDeltaLabel(unit: "currency" | "count" | "percent", delta: number | null, deltaPercent: number | null) {
+export function formatChangeInsightsDeltaLabel(
+  unit: "currency" | "count" | "percent" | "multiplier",
+  delta: number | null,
+  deltaPercent: number | null
+) {
   if (delta == null) return "—";
   const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
   const abs = Math.abs(delta);
-  const base = unit === "currency" ? currencyFormatter.format(abs) : unit === "percent" ? percentFormatter.format(abs) : numberFormatter.format(abs);
+  const base =
+    unit === "currency"
+      ? currencyFormatter.format(abs)
+      : unit === "percent"
+        ? percentFormatter.format(abs)
+        : unit === "multiplier"
+          ? `${abs.toFixed(2)}x`
+          : numberFormatter.format(abs);
 
   if (deltaPercent == null) return `${sign}${base}`;
   const pct = percentFormatter.format(Math.abs(deltaPercent));
