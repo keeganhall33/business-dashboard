@@ -29,14 +29,27 @@ test("valid current and previous data emits deterministic insights", () => {
     wooCommerce: { totalRevenue: 6000, orderCount: 12 }
   };
 
-  const snapshot = buildChangeInsightsSnapshot({ websiteCurrent: cur, websitePrevious: prev, maxInsights: 5 });
+  const metaPrev = {
+    generatedAt: "2026-07-23T00:00:00.000Z",
+    accountId: "acct",
+    range: 7,
+    campaigns: [],
+    summary: { spend: 100, impressions: 1000, clicks: 10, purchases: 1, purchaseValue: 100, roas: 1.0 }
+  };
+  const metaCur = {
+    ...metaPrev,
+    generatedAt: "2026-07-24T00:00:00.000Z",
+    summary: { ...metaPrev.summary, spend: 150, roas: 2.35 }
+  };
+
+  const snapshot = buildChangeInsightsSnapshot({ websiteCurrent: cur, websitePrevious: prev, metaCurrent: metaCur, metaPrevious: metaPrev, maxInsights: 5 });
   assert.ok(snapshot);
-  assert.equal(snapshot.previousGeneratedAt, prev.generatedAt);
+  assert.equal(snapshot.previousGeneratedAt, metaPrev.generatedAt);
   assert.ok(snapshot.insights.length > 0);
 
   const ids = snapshot.insights.map((i) => i.id);
-  // stable ordering: revenue, conversion, sessions (website) first
-  assert.deepEqual(ids.slice(0, 3), ["website-revenue", "website-session-to-purchase", "website-sessions"]);
+  // stable ordering: Meta ROAS then Meta spend
+  assert.deepEqual(ids.slice(0, 2), ["meta-roas", "meta-spend"]);
 
   for (const insight of snapshot.insights) {
     assert.ok(!insight.interpretation.includes("<"), "no raw HTML in interpretation");
@@ -58,10 +71,7 @@ test("unchanged data produces flat deltas (not misleading)", () => {
 
   const snapshot = buildChangeInsightsSnapshot({ metaCurrent: cur, metaPrevious: prev });
   assert.ok(snapshot);
-  const roas = snapshot.insights.find((i) => i.id === "meta-roas");
-  assert.ok(roas);
-  assert.equal(roas.delta, 0);
-  assert.equal(roas.direction, "flat");
+  assert.equal(snapshot.insights.length, 0);
 });
 
 test("previous value of zero yields deltaPercent null", () => {
@@ -78,25 +88,43 @@ test("previous value of zero yields deltaPercent null", () => {
 
   const snapshot = buildChangeInsightsSnapshot({ websiteCurrent: cur, websitePrevious: prev });
   assert.ok(snapshot);
-  const revenue = snapshot.insights.find((i) => i.id === "website-revenue");
-  assert.ok(revenue);
-  assert.equal(revenue.previous, 0);
-  assert.equal(revenue.deltaPercent, null);
+  assert.equal(snapshot.insights.length, 0);
 });
 
 test("output limit is enforced", () => {
-  const prev: WebsiteConversionSnapshot = {
+  const prevMeta = {
     generatedAt: "2026-07-23T00:00:00.000Z",
-    ga4: { sessions: 100, funnelRates: { sessionToPurchase: 0.02 } },
-    wooCommerce: { totalRevenue: 5000, orderCount: 10 }
+    accountId: "acct",
+    range: 7,
+    campaigns: [],
+    summary: { spend: 100, impressions: 1000, clicks: 10, purchases: 1, purchaseValue: 100, roas: 1.0 }
   };
-  const cur: WebsiteConversionSnapshot = {
+  const curMeta = {
+    ...prevMeta,
     generatedAt: "2026-07-24T00:00:00.000Z",
-    ga4: { sessions: 150, funnelRates: { sessionToPurchase: 0.03 } },
-    wooCommerce: { totalRevenue: 6000, orderCount: 12 }
+    summary: { ...prevMeta.summary, spend: 150, roas: 2.0 }
   };
 
-  const snapshot = buildChangeInsightsSnapshot({ websiteCurrent: cur, websitePrevious: prev, maxInsights: 1 });
+  const snapshot = buildChangeInsightsSnapshot({ metaCurrent: curMeta, metaPrevious: prevMeta, maxInsights: 1 });
   assert.ok(snapshot);
   assert.equal(snapshot.insights.length, 1);
+});
+
+test("meta comparability: mismatched ranges omit meta insights", () => {
+  const prevMeta = {
+    generatedAt: "2026-07-23T00:00:00.000Z",
+    accountId: "acct",
+    range: 7,
+    campaigns: [],
+    summary: { spend: 100, impressions: 1000, clicks: 10, purchases: 1, purchaseValue: 100, roas: 1.0 }
+  };
+  const curMeta = {
+    ...prevMeta,
+    generatedAt: "2026-07-24T00:00:00.000Z",
+    range: 30
+  };
+
+  const snapshot = buildChangeInsightsSnapshot({ metaCurrent: curMeta, metaPrevious: prevMeta });
+  assert.ok(snapshot);
+  assert.equal(snapshot.insights.length, 0);
 });

@@ -611,13 +611,13 @@ export type MetaAdsSnapshot = {
   status?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";
 };
 
-export type ChangeInsightDirection = "up" | "down" | "flat" | "unknown";
+export type ChangeInsightDirection = "up" | "down" | "unknown";
 
 export type ChangeInsight = {
   id: string;
   label: string;
   source: "website" | "meta";
-  unit: "currency" | "count" | "percent";
+  unit: "currency" | "count" | "percent" | "multiplier";
   current: number | null;
   previous: number | null;
   delta: number | null;

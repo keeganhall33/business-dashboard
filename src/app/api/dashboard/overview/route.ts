@@ -48,6 +48,7 @@ import {
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
+import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 
 export const runtime = "nodejs";
 
@@ -91,21 +92,7 @@ type ScoreboardMetricStats = {
   changePercent: number | null;
 };
 
-function extractPreviousSnapshot<T extends { generatedAt: string }>(
-  rows: DashboardSnapshotRecord[] | undefined,
-  currentGeneratedAt?: string | null
-): T | null {
-  if (!rows?.length) return null;
-  for (const row of rows) {
-    const payload = row.payload as T | null;
-    if (!payload) continue;
-    if (currentGeneratedAt && payload.generatedAt === currentGeneratedAt) {
-      continue;
-    }
-    return payload;
-  }
-  return null;
-}
+// NOTE: previous-snapshot selection lives in src/lib/dashboard/snapshot-selection.ts
 
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
@@ -1055,18 +1042,15 @@ export async function GET(request: Request) {
 
     let changeInsights: ChangeInsightsSnapshot | null = null;
     try {
-      const [websiteHistory, metaHistory] = await Promise.all([
-        getDashboardSnapshotHistoryForKey("website", { limit: 4 }),
-        getDashboardSnapshotHistoryForKey("meta", { limit: 4 })
-      ]);
+      const metaHistory = await getDashboardSnapshotHistoryForKey("meta", { limit: 4 });
 
-      const websitePrevious = extractPreviousSnapshot<WebsiteConversionSnapshot>(websiteHistory, websiteSnapshot?.generatedAt ?? null);
-      const metaPrevious = extractPreviousSnapshot<MetaAdsSnapshot>(metaHistory, metaSnapshot?.generatedAt ?? null);
+      const currentMetaCutoff = snapshotMap.get("meta")?.generated_at ?? metaSnapshot?.generatedAt ?? null;
+      const metaPrevious = selectPreviousSnapshot<MetaAdsSnapshot>(metaHistory, currentMetaCutoff)?.payload ?? null;
 
       changeInsights =
         buildChangeInsightsSnapshot({
           websiteCurrent: websiteSnapshot,
-          websitePrevious,
+          websitePrevious: null,
           metaCurrent: metaSnapshot,
           metaPrevious,
           maxInsights: 5
