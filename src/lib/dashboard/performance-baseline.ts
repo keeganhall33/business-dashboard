@@ -129,6 +129,8 @@ function parseUtcDate(value: string): Date | null {
   if (!y || !mo || !d) return null;
   const date = new Date(Date.UTC(y, mo - 1, d));
   if (Number.isNaN(date.getTime())) return null;
+  // Reject impossible calendar dates like 2026-02-30 that overflow into the next month.
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
   return date;
 }
 

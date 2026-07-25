@@ -2,7 +2,7 @@ import type { PerformanceBaselineMetric, PerformanceBaselineSnapshot } from "@/l
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 });
+const percent = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export function PerformanceBaselinePanel({ snapshot }: { snapshot?: PerformanceBaselineSnapshot | null }) {
   if (!snapshot) return null;
@@ -37,8 +37,8 @@ export function PerformanceBaselinePanel({ snapshot }: { snapshot?: PerformanceB
 }
 
 function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; label: string }) {
-  const value = formatValue(metric);
-  const delta = formatDelta(metric);
+  const value = formatPerformanceBaselineValue(metric);
+  const delta = formatPerformanceBaselineDelta(metric);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
@@ -49,35 +49,50 @@ function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; labe
   );
 }
 
-function formatValue(metric: PerformanceBaselineMetric): string {
+function normalizeDisplayZero(value: number): number {
+  // Avoid rendering -0, -$0, -0.0%, etc.
+  return Object.is(value, -0) ? 0 : value;
+}
+
+function formatPercentagePoints(value: number): string {
+  const normalized = normalizeDisplayZero(value);
+  return `${normalized.toFixed(1)} pp`;
+}
+
+export function formatPerformanceBaselineValue(metric: PerformanceBaselineMetric): string {
   if (metric.current == null) return "Unavailable";
+  const current = normalizeDisplayZero(metric.current);
 
   switch (metric.unit) {
     case "currency":
-      return currency.format(metric.current);
+      return currency.format(current);
     case "percent":
       // Conversion rate is already 0–100 scale.
-      return `${metric.current.toFixed(1)}%`;
+      return `${current.toFixed(1)}%`;
     default:
-      return integer.format(metric.current);
+      return integer.format(current);
   }
 }
 
-function formatDelta(metric: PerformanceBaselineMetric): string {
+export function formatPerformanceBaselineDelta(metric: PerformanceBaselineMetric): string {
   if (metric.current == null || metric.previous == null || metric.delta == null) return "Unavailable";
 
-  const sign = metric.delta > 0 ? "+" : metric.delta < 0 ? "-" : "";
-  const abs = Math.abs(metric.delta);
+  const delta = normalizeDisplayZero(metric.delta);
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
+  const abs = Math.abs(delta);
 
   const base =
     metric.unit === "currency"
       ? currency.format(abs)
       : metric.unit === "percent"
-        ? `${abs.toFixed(1)}%`
+        ? formatPercentagePoints(abs)
         : integer.format(abs);
 
   if (metric.deltaPercent == null) return `${sign}${base}`;
 
   // deltaPercent is fraction (e.g. 0.12 => 12%)
-  return `${sign}${base} (${percent.format(Math.abs(metric.deltaPercent))})`;
+  const rel = normalizeDisplayZero(metric.deltaPercent);
+  const relAbs = Math.abs(rel);
+  const relSign = rel > 0 ? "+" : rel < 0 ? "-" : "";
+  return `${sign}${base} (${relSign}${percent.format(relAbs)})`;
 }
