@@ -28,6 +28,9 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
     null;
   const measuredAt = (metric as { measuredAt?: string | null }).measuredAt ?? (history && history.length ? history[history.length - 1]?.measuredAt : null);
 
+  const currentValue = metric.currentValue;
+  const targetValue = metric.targetValue;
+
   const historyValues = (history ?? []).map((h) => h.value);
   const changePercent = stats?.changePercent ?? null;
   const changeLabel =
@@ -58,9 +61,11 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
       </div>
 
       <div className={resolvedDensity === "compact" ? "mt-2 text-2xl font-semibold" : "mt-2 text-3xl font-semibold"}>
-        {formatMetricValue(metric.currentValue ?? 0, metric.unit)}
+        {formatMetricValue(currentValue, metric.unit)}
       </div>
-      <div className="mt-1 text-xs text-zinc-500">Target {formatMetricValue(metric.targetValue ?? 0, metric.unit)}</div>
+      <div className="mt-1 text-xs text-zinc-500">
+        {targetValue == null ? "Target Unavailable" : `Target ${formatMetricValue(targetValue, metric.unit)}`}
+      </div>
 
       {!hideSupportingDetails && (
         <>
@@ -85,15 +90,23 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
                 </div>
                 <div className="mt-2">
                   <Sparkline
-                    values={historyValues.length ? historyValues : [metric.currentValue, metric.currentValue * 0.98, metric.currentValue * 1.01]}
+                    values={
+                      historyValues.length
+                        ? historyValues
+                        : currentValue == null
+                          ? []
+                          : [currentValue, currentValue * 0.98, currentValue * 1.01]
+                    }
                     tone={tone}
                   />
                 </div>
               </div>
 
-              <div className="mt-3">
-                <TargetProgress current={metric.currentValue ?? 0} target={metric.targetValue ?? 0} unit={metric.unit} tone={tone} />
-              </div>
+              {currentValue != null && targetValue != null ? (
+                <div className="mt-3">
+                  <TargetProgress current={currentValue} target={targetValue} unit={metric.unit} tone={tone} />
+                </div>
+              ) : null}
             </div>
 
             <div className="lg:col-span-5">
