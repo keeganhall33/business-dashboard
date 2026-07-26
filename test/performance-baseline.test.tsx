@@ -111,10 +111,14 @@ test("builds baseline metrics with independent degradation and safe percent math
   assert.equal(baseline.metrics.sessions.previous, 0);
   assert.equal(baseline.metrics.sessions.deltaPercent, null);
 
-  // Conversion rate: current ok, previous missing => conversion metric unavailable (no delta)
-  assert.equal(baseline.metrics.conversionRate.current, 3.0);
-  assert.equal(baseline.metrics.conversionRate.previous, null);
-  assert.equal(baseline.metrics.conversionRate.delta, null);
+  // Funnel completion rate: current ok, previous missing => metric unavailable (no delta)
+  assert.equal(baseline.metrics.funnelCompletionRate.current, 3.0);
+  assert.equal(baseline.metrics.funnelCompletionRate.previous, null);
+  assert.equal(baseline.metrics.funnelCompletionRate.delta, null);
+
+  // Purchase conversion rate uses Woo orders / GA4 sessions.
+  assert.equal(baseline.metrics.purchaseConversionRate.current, (14 / 1000) * 100);
+  assert.equal(baseline.metrics.purchaseConversionRate.previous, null);
 });
 
 test("rejects NaN and Infinity but preserves zeros", () => {
@@ -160,7 +164,8 @@ test("rejects NaN and Infinity but preserves zeros", () => {
   // invalid values rejected
   assert.equal(baseline.metrics.revenue.current, null);
   assert.equal(baseline.metrics.orders.current, null);
-  assert.equal(baseline.metrics.conversionRate.current, null);
+  assert.equal(baseline.metrics.funnelCompletionRate.current, null);
+  assert.equal(baseline.metrics.purchaseConversionRate.current, null);
   // valid zero preserved
   assert.equal(baseline.metrics.sessions.current, 0);
 });
@@ -197,7 +202,8 @@ test("numeric strings and empty strings are rejected", () => {
   assert.equal(baseline.metrics.orders.current, null);
   assert.equal(baseline.metrics.avgOrderValue.current, null);
   assert.equal(baseline.metrics.sessions.current, null);
-  assert.equal(baseline.metrics.conversionRate.current, null);
+  assert.equal(baseline.metrics.funnelCompletionRate.current, null);
+  assert.equal(baseline.metrics.purchaseConversionRate.current, null);
 });
 
 test("extremely large finite numbers remain valid", () => {
@@ -221,7 +227,7 @@ test("extremely large finite numbers remain valid", () => {
   assert.equal(baseline.metrics.revenue.current, huge);
 });
 
-test("conversion rate remains on 0–100 scale (no extra scaling)", () => {
+test("funnel completion rate remains on 0–100 scale (no extra scaling)", () => {
   const current: CommerceTelemetry = {
     range: { preset: "7d", startDate: "2026-07-19", endDate: "2026-07-25" },
     funnel: { summary: { entries: 100, completions: 3, conversionRate: 3.2, upsellOffers: 0, upsellAccepts: 0, upsellTakeRate: null }, timeseries: [] }
@@ -238,6 +244,28 @@ test("conversion rate remains on 0–100 scale (no extra scaling)", () => {
   });
 
   assert.ok(baseline);
-  assert.equal(baseline.metrics.conversionRate.current, 3.2);
-  assert.equal(baseline.metrics.conversionRate.previous, 2.2);
+  assert.equal(baseline.metrics.funnelCompletionRate.current, 3.2);
+  assert.equal(baseline.metrics.funnelCompletionRate.previous, 2.2);
+});
+
+test("purchase conversion rate uses Woo orders / GA4 sessions", () => {
+  const current: CommerceTelemetry = {
+    range: { preset: "7d", startDate: "2026-07-19", endDate: "2026-07-25" },
+    woo: { summary: { revenue: 0, orders: 7, avgOrderValue: null, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0 }, timeseries: [] },
+    ga4: { summary: { revenue: 0, sessions: 5589, engagedSessions: 0, eventCount: 0, avgEngagementSeconds: null }, timeseries: [] }
+  };
+  const previous: CommerceTelemetry = {
+    range: { preset: "7d", startDate: "2026-07-12", endDate: "2026-07-18" },
+    woo: { summary: { revenue: 0, orders: 7, avgOrderValue: null, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0 }, timeseries: [] },
+    ga4: { summary: { revenue: 0, sessions: 5589, engagedSessions: 0, eventCount: 0, avgEngagementSeconds: null }, timeseries: [] }
+  };
+
+  const baseline = buildPerformanceBaselineSnapshot({
+    range: { preset: "7d", startDate: "2026-07-19", endDate: "2026-07-25" },
+    currentTelemetry: current,
+    previousTelemetry: previous
+  });
+
+  assert.ok(baseline);
+  assert.equal(baseline.metrics.purchaseConversionRate.current, (7 / 5589) * 100);
 });

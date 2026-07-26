@@ -647,7 +647,8 @@ export type PerformanceBaselineMetricId =
   | "orders"
   | "avg_order_value"
   | "sessions"
-  | "conversion_rate";
+  | "purchase_conversion_rate"
+  | "funnel_completion_rate";
 
 export type PerformanceBaselineUnit = "currency" | "count" | "percent";
 
@@ -675,7 +676,8 @@ export type PerformanceBaselineSnapshot = {
     orders: PerformanceBaselineMetric;
     avgOrderValue: PerformanceBaselineMetric;
     sessions: PerformanceBaselineMetric;
-    conversionRate: PerformanceBaselineMetric;
+    purchaseConversionRate: PerformanceBaselineMetric;
+    funnelCompletionRate: PerformanceBaselineMetric;
   };
 };
 

@@ -43,9 +43,18 @@ export function buildPerformanceBaselineSnapshot(params: {
   const sessionsCurrent = toFiniteNumber(current.ga4?.summary?.sessions);
   const sessionsPrevious = toFiniteNumber(previous.ga4?.summary?.sessions);
 
+  const purchaseConversionCurrent =
+    ordersCurrent != null && sessionsCurrent != null && sessionsCurrent > 0
+      ? (ordersCurrent / sessionsCurrent) * 100
+      : null;
+  const purchaseConversionPrevious =
+    ordersPrevious != null && sessionsPrevious != null && sessionsPrevious > 0
+      ? (ordersPrevious / sessionsPrevious) * 100
+      : null;
+
   // FunnelKit conversionRate is already in 0–100 scale (percent).
-  const conversionCurrent = toFiniteNumber(current.funnel?.summary?.conversionRate);
-  const conversionPrevious = toFiniteNumber(previous.funnel?.summary?.conversionRate);
+  const funnelCompletionCurrent = toFiniteNumber(current.funnel?.summary?.conversionRate);
+  const funnelCompletionPrevious = toFiniteNumber(previous.funnel?.summary?.conversionRate);
 
   return {
     range: {
@@ -59,7 +68,18 @@ export function buildPerformanceBaselineSnapshot(params: {
       orders: metric({ id: "orders", unit: "count", current: ordersCurrent, previous: ordersPrevious }),
       avgOrderValue: metric({ id: "avg_order_value", unit: "currency", current: aovCurrent, previous: aovPrevious }),
       sessions: metric({ id: "sessions", unit: "count", current: sessionsCurrent, previous: sessionsPrevious }),
-      conversionRate: metric({ id: "conversion_rate", unit: "percent", current: conversionCurrent, previous: conversionPrevious })
+      purchaseConversionRate: metric({
+        id: "purchase_conversion_rate",
+        unit: "percent",
+        current: purchaseConversionCurrent,
+        previous: purchaseConversionPrevious
+      }),
+      funnelCompletionRate: metric({
+        id: "funnel_completion_rate",
+        unit: "percent",
+        current: funnelCompletionCurrent,
+        previous: funnelCompletionPrevious
+      })
     }
   };
 }

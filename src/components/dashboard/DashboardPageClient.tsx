@@ -15,6 +15,24 @@ function normalizeRange(data: DashboardOverviewResponse) {
   return data.range.preset;
 }
 
+function isIsoDate(value: string | null) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function isKnownRangePreset(value: string) {
+  return [
+    "today",
+    "yesterday",
+    "7d",
+    "30d",
+    "90d",
+    "month_to_date",
+    "previous_month",
+    "year_to_date",
+    "custom"
+  ].includes(value);
+}
+
 type Props = {
   initialData: DashboardOverviewResponse;
   agents: AgentDashboardResponse[];
@@ -42,7 +60,9 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   }, [router]);
 
   useEffect(() => {
-    // Canonicalize the URL to the server-resolved range to avoid mismatched UI state.
+    // Canonicalize only when the requested query is invalid.
+    // On mobile Safari/WebKit, eager canonicalization can race the App Router RSC update,
+    // causing the URL to "snap back" to the prior range even after a successful tap.
     const canonical = normalizeRange(overview);
     const params = new URLSearchParams(paramsKey);
     const requestedPreset = (params.get("range") ?? "30d").toLowerCase();
@@ -51,7 +71,10 @@ export function DashboardPageClient({ initialData, agents }: Props) {
         ? `custom:${params.get("start")}:${params.get("end")}`
         : requestedPreset;
 
-    if (canonical !== requestedKey) {
+    const hasValidCustom = requestedPreset === "custom" && isIsoDate(params.get("start")) && isIsoDate(params.get("end"));
+    const isValidRequest = isKnownRangePreset(requestedPreset) && (requestedPreset !== "custom" || hasValidCustom);
+
+    if (!isValidRequest && canonical !== requestedKey) {
       params.set("range", overview.range.preset);
       if (overview.range.preset === "custom") {
         params.set("start", overview.range.startDate);
