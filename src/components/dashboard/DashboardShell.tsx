@@ -48,6 +48,12 @@ export function DashboardShell({ data }: Props) {
   const industrySummary = buildIndustrySummary(data);
   const dataConfidenceSummary = buildConfidenceSectionSummary(dataConfidence);
   const operationsIntel = buildOperationsIntel(data);
+  const hasBrandSignals = Boolean(
+    data.brandPower &&
+      (data.brandPower.metrics?.some((m) => m.currentValue != null || m.targetValue != null) ||
+        (data.brandPower.whatIsWorking?.length ?? 0) > 0 ||
+        (data.brandPower.whatToDoNext?.length ?? 0) > 0)
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
@@ -56,7 +62,7 @@ export function DashboardShell({ data }: Props) {
         <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
         <ExecutivePerspectivePanel data={data} actions={executiveActions} />
         {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
-        <ExecutiveKpiScorecard metrics={data.headerMetrics} />
+        <ExecutiveKpiScorecard metrics={data.headerMetrics} range={data.range} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
         <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
@@ -71,14 +77,12 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
             {websiteSnapshot ? (
-              <WebsiteConversionPanel snapshot={websiteSnapshot} />
+              <WebsiteConversionPanel snapshot={websiteSnapshot} range={data.range} />
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
             {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
-            {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : null}
           </div>
         </DashboardSection>
 
@@ -144,6 +148,19 @@ export function DashboardShell({ data }: Props) {
         >
           <ForwardStrategyPanel data={data} />
         </DashboardSection>
+
+        {hasBrandSignals ? (
+          <DashboardSection
+            title="Experimental"
+            subtitle="Prototype signals and non-production-grade metrics"
+            storageKey="dashboard-section-experimental"
+            {...SECTION_PROPS}
+          >
+            <div className="space-y-5">
+              {data.brandPower ? <BrandPowerPanel data={data.brandPower} /> : null}
+            </div>
+          </DashboardSection>
+        ) : null}
       </div>
     </div>
   );
@@ -279,13 +296,13 @@ function buildConfidenceSectionSummary(summary: ReturnType<typeof buildDataConfi
 }
 
 function formatCurrencyShort(value: number | null | undefined) {
-  if (value == null) return "$0";
+  if (value == null || !Number.isFinite(value)) return "Unavailable";
   if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
   return `$${Math.round(value)}`;
 }
 
 function formatCount(value: number | null | undefined) {
-  const num = Number(value ?? 0);
-  return Number.isFinite(num) ? num.toString() : "0";
+  if (value == null || !Number.isFinite(value)) return "Unavailable";
+  return Math.round(value).toString();
 }

@@ -6,8 +6,8 @@ export type HeaderMetric = {
   metricKey: string;
   metricName: string;
   category: string;
-  currentValue: number;
-  targetValue: number;
+  currentValue: number | null;
+  targetValue: number | null;
   targetLabel?: string | null;
   deltaPercent: number | null;
   status: MetricStatus;
@@ -27,8 +27,8 @@ export type ExecutiveCommand = {
 
 export type RevenueMetric = {
   metricKey: string;
-  currentValue: number;
-  targetValue: number;
+  currentValue: number | null;
+  targetValue: number | null;
   targetLabel?: string | null;
   status: MetricStatus;
   comparisonValue?: number | null;
@@ -577,7 +577,17 @@ export type WebsiteConversionSnapshot = {
     refundRate?: number | null;
     discountRate?: number | null;
     topProducts?: Array<{ name: string; units: number; revenue: number }>;
-    recentOrders?: Array<{ id: number | string | null; status: string | null; total: number | null; currency: string | null; date_paid?: string | null; date_paid_gmt?: string | null; customer?: string | null; date?: string | null }>;
+    recentOrders?: Array<{
+      id: number | string | null;
+      number?: string | null;
+      status: string | null;
+      total: number | null;
+      currency: string | null;
+      date_paid?: string | null;
+      date_paid_gmt?: string | null;
+      customer?: string | null;
+      date?: string | null;
+    }>;
   };
 };
 

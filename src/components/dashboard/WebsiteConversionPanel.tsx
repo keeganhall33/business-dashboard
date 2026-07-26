@@ -9,12 +9,17 @@ const decimalCurrency = new Intl.NumberFormat("en-US", { style: "currency", curr
 
 type Props = {
   snapshot?: WebsiteConversionSnapshot | null;
+  range?: { startDate: string; endDate: string };
 };
 
-export function WebsiteConversionPanel({ snapshot }: Props) {
+export function WebsiteConversionPanel({ snapshot, range }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
   const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const observedPaid = woo?.observedPaidRange ?? null;
+  const selectedWindow = range ? `${range.startDate} → ${range.endDate}` : null;
+  const observedWindow = observedPaid?.earliestPaid && observedPaid?.latestPaid ? `${observedPaid.earliestPaid} → ${observedPaid.latestPaid}` : null;
+  const rangeMismatch = Boolean(selectedWindow && observedWindow && selectedWindow !== observedWindow);
   const missingAddToCart = ga4?.addToCartEvents == null;
   const missingBeginCheckout = ga4?.beginCheckoutEvents == null;
   const hasFunnelGap = Boolean(missingAddToCart || missingBeginCheckout);
@@ -30,11 +35,19 @@ export function WebsiteConversionPanel({ snapshot }: Props) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
-          <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce automation snapshot.</div>
+          <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce snapshot (may differ from selected-range telemetry).</div>
           <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
+          {selectedWindow ? <div className="text-xs text-zinc-500">Selected range {selectedWindow}</div> : null}
+          {observedWindow ? <div className="text-xs text-zinc-500">Woo observed paid window {observedWindow}</div> : null}
         </div>
         <StatusChip label="Live telemetry" tone="emerald" />
       </div>
+
+      {rangeMismatch ? (
+        <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
+          Snapshot windows do not match the selected range. Treat this panel as &quot;latest snapshot&quot; evidence, not selected-range truth.
+        </div>
+      ) : null}
 
       {hasFunnelGap ? (
         <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
@@ -62,8 +75,8 @@ function Ga4Section({
           <StatusChip label={`Users ${formatNumber(data.totalUsers)}`} tone="sky" />
           <StatusChip label={`Sessions ${formatNumber(data.sessions)}`} />
           <StatusChip label={`Purchases ${formatNumber(data.ecommercePurchases)}`} tone="emerald" />
-          {Number(data.purchaseRevenue) ? (
-            <StatusChip label={`Revenue ${currency.format(Number(data.purchaseRevenue))}`} tone="emerald" />
+          {data.purchaseRevenue != null ? (
+            <StatusChip label={`GA4 revenue ${currency.format(Number(data.purchaseRevenue))}`} tone="emerald" />
           ) : null}
           {data.warnings?.map((warning) => (
             <StatusChip key={warning} label={warning} tone="amber" />
@@ -83,15 +96,19 @@ function WooSection({
 }: {
   data: NonNullable<WebsiteConversionSnapshot["wooCommerce"]>;
 }) {
-  const aov = data.averageOrderValue ?? (data.orderCount ? (data.totalRevenue ?? 0) / data.orderCount : 0);
+  const revenue = data.totalRevenue ?? data.netRevenue ?? data.grossOrderRevenue ?? null;
+  const orders = data.orderCount ?? data.paidOrdersInWindow ?? null;
+  const aov =
+    data.averageOrderValue ??
+    (revenue != null && orders != null && orders > 0 ? revenue / orders : null);
   return (
     <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm font-semibold text-zinc-200">Sales</div>
         <div className="flex flex-wrap gap-2">
-          <StatusChip label={`Revenue ${currency.format(data.totalRevenue ?? 0)}`} tone="emerald" />
-          <StatusChip label={`Orders ${formatNumber(data.orderCount)}`} tone="zinc" />
-          <StatusChip label={`AOV ${decimalCurrency.format(aov || 0)}`} tone="sky" />
+          <StatusChip label={`Revenue ${revenue == null ? "Unavailable" : currency.format(revenue)}`} tone={revenue == null ? "zinc" : "emerald"} />
+          <StatusChip label={`Orders ${orders == null ? "Unavailable" : formatNumber(orders)}`} tone="zinc" />
+          <StatusChip label={`AOV ${aov == null ? "Unavailable" : decimalCurrency.format(aov)}`} tone="sky" />
         </div>
       </div>
 
@@ -117,11 +134,11 @@ function WooSection({
             {(data.recentOrders ?? []).slice(0, 5).map((order) => (
               <li key={order.id} className="rounded-xl border border-white/5 bg-black/30 px-3 py-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-300">{order.customer || `Order #${order.id}`}</span>
-                  <span className="text-zinc-400">{decimalCurrency.format(order.total ?? 0)}</span>
+                  <span className="text-zinc-300">{formatCustomerLabel(order)}</span>
+                  <span className="text-zinc-400">{order.total == null ? "Unavailable" : decimalCurrency.format(order.total)}</span>
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {order.date ? new Date(order.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Unknown"} · {order.status}
+                  {formatOrderMeta(order)}
                 </div>
               </li>
             ))}
@@ -131,6 +148,28 @@ function WooSection({
       </div>
     </div>
   );
+}
+
+function formatCustomerLabel(order: NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number]) {
+  const customer = typeof order.customer === "string" ? order.customer.trim() : "";
+  if (customer) return customer;
+  const orderNumber = (order as unknown as { number?: string | number | null }).number;
+  if (orderNumber != null && String(orderNumber).trim()) return `Order #${orderNumber}`;
+  if (order.id != null && String(order.id).trim()) return `Order #${order.id}`;
+  return "Unknown customer";
+}
+
+function formatOrderMeta(order: NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number]) {
+  const rawDate = order.date ?? order.date_paid ?? order.date_paid_gmt ?? null;
+  const dateLabel = rawDate ? safeShortDate(rawDate) : "Unknown date";
+  const statusLabel = order.status ? order.status : "Unknown status";
+  return `${dateLabel} · ${statusLabel}`;
+}
+
+function safeShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function BreakdownCard({

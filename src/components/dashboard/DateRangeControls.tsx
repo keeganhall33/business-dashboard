@@ -131,6 +131,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
               key={option.value}
               type="button"
               onClick={() => handlePresetClick(option.value)}
+              data-testid={`range-preset-${option.value}`}
               className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] transition ${
                 activePreset === option.value
                   ? "bg-sky-500 text-white shadow-[0_15px_35px_rgba(56,189,248,0.35)]"
@@ -144,6 +145,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
             ref={buttonRef}
             type="button"
             onClick={openCalendar}
+            data-testid="range-preset-custom"
             className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] transition ${
               activePreset === "custom"
                 ? "bg-sky-500 text-white shadow-[0_15px_35px_rgba(56,189,248,0.35)]"
@@ -177,6 +179,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
                 <button
                   type="button"
                   onClick={cancelPendingRange}
+                  data-testid="range-custom-cancel"
                   className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300 hover:bg-zinc-800"
                 >
                   Cancel
@@ -185,6 +188,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
                   type="button"
                   disabled={!pendingRange?.from || !pendingRange?.to}
                   onClick={applyPendingRange}
+                  data-testid="range-custom-apply"
                   className="rounded-full bg-sky-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:bg-zinc-700"
                 >
                   Apply

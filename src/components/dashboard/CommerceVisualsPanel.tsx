@@ -40,19 +40,19 @@ export function CommerceVisualsPanel({ telemetry }: Props) {
 
   const revenueSeries = (telemetry.woo?.timeseries ?? []).map((point) => ({
     date: point.date,
-    revenue: Number(point.revenue ?? 0),
-    orders: Number(point.orders ?? 0)
+    revenue: point.revenue == null ? null : Number(point.revenue),
+    orders: point.orders == null ? null : Number(point.orders)
   }));
 
   const trafficSeries = (telemetry.ga4?.timeseries ?? []).map((point) => ({
     date: point.date,
-    sessions: Number(point.sessions ?? 0),
-    engagedSessions: Number(point.engagedSessions ?? 0)
+    sessions: point.sessions == null ? null : Number(point.sessions),
+    engagedSessions: point.engagedSessions == null ? null : Number(point.engagedSessions)
   }));
 
   const funnelSeries = (telemetry.funnel?.timeseries ?? []).map((point) => ({
     date: point.date,
-    conversionRate: Number(point.conversionRate ?? 0)
+    conversionRate: point.conversionRate == null ? null : Number(point.conversionRate)
   }));
 
   const revenueSummary = telemetry.woo?.summary;

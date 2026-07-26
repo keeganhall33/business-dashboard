@@ -50,6 +50,7 @@ import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
 
 export const runtime = "nodejs";
 
@@ -765,7 +766,8 @@ export async function GET(request: Request) {
     // NOTE: keep payload shape stable with the real endpoint.
     if (process.env.E2E_TEST === "1") {
       const now = new Date();
-      const responseRange = { preset: "30d" as const, startDate: "2026-05-01", endDate: "2026-05-30" };
+      const url = new URL(request.url);
+      const responseRange = resolveRange(url.searchParams.get("range"), url.searchParams.get("start"), url.searchParams.get("end"));
 
       const iso = (daysFromNow: number) => {
         const d = new Date(now);
@@ -1075,6 +1077,7 @@ export async function GET(request: Request) {
     const snapshotMap = new Map(snapshotRows.map((row) => [row.key, row]));
     const websiteSnapshot =
       (snapshotMap.get("website")?.payload as WebsiteConversionSnapshot | null) ?? localArtifacts.websiteSnapshot;
+    const normalizedWebsiteSnapshot = websiteSnapshot ? normalizeWebsiteSnapshot(websiteSnapshot) : websiteSnapshot;
     const cloudflareSnapshot =
       (snapshotMap.get("cloudflare")?.payload as CloudflareTelemetrySnapshot | null) ?? localArtifacts.cloudflareSnapshot;
     const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
@@ -1257,15 +1260,22 @@ export async function GET(request: Request) {
     if (commerceTelemetry) {
       const wooSummary = (commerceTelemetry as Record<string, unknown>).woo as Record<string, unknown> | undefined;
       const gaSummary = (commerceTelemetry as Record<string, unknown>).ga4 as Record<string, unknown> | undefined;
+      const funnelSummary = (commerceTelemetry as Record<string, unknown>).funnel as Record<string, unknown> | undefined;
       const wooSummaryData = (wooSummary?.summary ?? {}) as Record<string, unknown>;
       const gaSummaryData = (gaSummary?.summary ?? {}) as Record<string, unknown>;
+      const funnelSummaryData = (funnelSummary?.summary ?? {}) as Record<string, unknown>;
       const wooRevenue = toNumber(wooSummaryData.revenue);
       const wooOrders = toNumber(wooSummaryData.orders);
       const wooAov = toNumber(wooSummaryData.avgOrderValue);
       const gaSessions = toNumber(gaSummaryData.sessions);
 
+      const funnelConversion = toNumber(funnelSummaryData.conversionRate);
       const conversionRate =
-        wooOrders != null && gaSessions != null && gaSessions > 0 ? (wooOrders / gaSessions) * 100 : null;
+        funnelConversion != null
+          ? funnelConversion
+          : wooOrders != null && gaSessions != null && gaSessions > 0
+            ? (wooOrders / gaSessions) * 100
+            : null;
       const revenuePerVisitor =
         wooRevenue != null && gaSessions != null && gaSessions > 0 ? wooRevenue / gaSessions : null;
 
@@ -1294,8 +1304,8 @@ export async function GET(request: Request) {
           metricKey: card.cardKey,
           metricName: card.fallbackName,
           category: "general",
-          currentValue: 0,
-          targetValue: 0,
+          currentValue: null,
+          targetValue: null,
           deltaPercent: null,
           status: "warning" as const,
           unit: card.fallbackUnit ?? null,
@@ -1304,8 +1314,8 @@ export async function GET(request: Request) {
         };
       }
 
-      const currentValue = toNumber(metric.current_value) ?? 0;
-      const targetValue = toNumber(metric.target_value) ?? 0;
+      const currentValue = toNumber(metric.current_value);
+      const targetValue = toNumber(metric.target_value);
       return {
         metricKey: metric.metric_key,
         metricName: metric.metric_name ?? card.fallbackName,
@@ -1371,8 +1381,8 @@ export async function GET(request: Request) {
       .filter(isScoreboardMetricRow)
       .map((m) => ({
         metricKey: m.metric_key,
-        currentValue: toNumber(m.current_value) ?? 0,
-        targetValue: toNumber(m.target_value) ?? 0,
+        currentValue: toNumber(m.current_value),
+        targetValue: toNumber(m.target_value),
         status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
         unit: m.unit ?? null,
         history: (m.history ?? null)
@@ -1412,8 +1422,8 @@ export async function GET(request: Request) {
 
     const brandPowerMetrics = brandPowerMetricRows.map((m) => ({
       metricKey: m.metric_key,
-      currentValue: toNumber(m.current_value) ?? 0,
-      targetValue: toNumber(m.target_value) ?? 0,
+      currentValue: toNumber(m.current_value),
+      targetValue: toNumber(m.target_value),
       status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
       unit: m.unit ?? null
     }));
@@ -2002,7 +2012,7 @@ export async function GET(request: Request) {
       systemHealth,
       agentUpdateFeed,
       commerceTelemetry: commercePayload,
-      websiteConversion: websiteSnapshot,
+      websiteConversion: normalizedWebsiteSnapshot,
       metaAds: metaSnapshot,
       changeInsights,
       performanceBaseline,

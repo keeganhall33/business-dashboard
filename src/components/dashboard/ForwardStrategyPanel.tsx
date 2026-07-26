@@ -1,5 +1,6 @@
 import type { DashboardOverviewResponse, ExecutiveInsightsPayload, HeaderMetric } from "@/lib/types/dashboard";
 import { countRangeDays, elapsedRangeDays } from "@/lib/date/range";
+import { formatCurrency } from "@/lib/utils/format";
 
 function findMetric(metrics: HeaderMetric[], predicate: (metric: HeaderMetric) => boolean) {
   return metrics.find(predicate);
@@ -11,6 +12,7 @@ export function ForwardStrategyPanel({
   data: DashboardOverviewResponse;
 }) {
   const range = data.range;
+  const rangeIsMonthly = range.preset === "month_to_date" || range.preset === "previous_month";
   const totalDays = countRangeDays(range);
   const elapsedDays = elapsedRangeDays(range);
 
@@ -23,19 +25,20 @@ export function ForwardStrategyPanel({
     (metric) => metric.metricKey.toLowerCase().includes("order") || metric.metricName.toLowerCase().includes("order")
   );
 
-  const currentRevenue =
-    revenueMetric?.currentValue ??
-    data.commerceTelemetry?.woo?.summary?.revenue ??
-    data.websiteConversion?.wooCommerce?.netRevenue ??
-    data.websiteConversion?.wooCommerce?.grossOrderRevenue ??
-    null;
+  const currentRevenue = data.commerceTelemetry?.woo?.summary?.revenue ?? null;
   const revenueTarget = revenueMetric?.targetValue ?? null;
-  const paceRevenue = currentRevenue != null && elapsedDays > 0 ? (currentRevenue / elapsedDays) * totalDays : currentRevenue;
+  const paceRevenue =
+    range.preset === "month_to_date" && currentRevenue != null && elapsedDays > 0
+      ? (currentRevenue / elapsedDays) * totalDays
+      : currentRevenue;
   const revenueGap = revenueTarget != null && paceRevenue != null ? revenueTarget - paceRevenue : null;
   const remainingDays = Math.max(0, totalDays - elapsedDays);
-  const requiredDaily = remainingDays > 0 && revenueGap != null ? Math.max(0, revenueGap) / remainingDays : null;
+  const requiredDaily =
+    range.preset === "month_to_date" && remainingDays > 0 && revenueGap != null && currentRevenue != null
+      ? Math.max(0, revenueGap) / remainingDays
+      : null;
 
-  const currentOrders = ordersMetric?.currentValue ?? data.websiteConversion?.wooCommerce?.paidOrdersInWindow ?? null;
+  const currentOrders = data.commerceTelemetry?.woo?.summary?.orders ?? null;
   const orderTarget = ordersMetric?.targetValue ?? null;
   const ordersGap = orderTarget != null && currentOrders != null ? orderTarget - currentOrders : null;
 
@@ -46,8 +49,22 @@ export function ForwardStrategyPanel({
 
   const topOpportunity = summarizeTopOpportunity(data.executiveInsights);
 
-  const forecastBadge = revenueGap != null ? (revenueGap > 0 ? "Behind target" : "Ahead of target") : "Forecast";
-  const forecastTone = revenueGap != null ? (revenueGap > 0 ? "text-amber-300" : "text-emerald-300") : "text-zinc-300";
+  const forecastBadge =
+    !rangeIsMonthly
+      ? "Unavailable"
+      : revenueGap != null
+        ? revenueGap > 0
+          ? "Behind target"
+          : "Ahead of target"
+        : "Forecast";
+  const forecastTone =
+    !rangeIsMonthly
+      ? "text-zinc-300"
+      : revenueGap != null
+        ? revenueGap > 0
+          ? "text-amber-300"
+          : "text-emerald-300"
+        : "text-zinc-300";
 
   return (
     <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-950/60 via-zinc-950 to-zinc-950 p-6">
@@ -62,22 +79,32 @@ export function ForwardStrategyPanel({
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <MetricTile
           label="Revenue pace"
-          value={paceRevenue == null ? "Unavailable" : `$${Math.round(paceRevenue).toLocaleString()}`}
+          value={!rangeIsMonthly ? "Unavailable" : formatCurrency(paceRevenue, { maximumFractionDigits: 0 })}
           detail={
-            revenueTarget != null
-              ? `Target $${Math.round(revenueTarget).toLocaleString()} • Gap ${formatDelta(revenueGap ?? 0)}`
-              : "No revenue target on file"
+            !rangeIsMonthly
+              ? "This panel only supports month-to-date or previous-month ranges."
+              : revenueTarget != null
+                ? `Target ${formatCurrency(revenueTarget, { maximumFractionDigits: 0 })} • Gap ${formatDelta(revenueGap)}`
+                : "No monthly revenue target on file"
           }
         />
         <MetricTile
           label="Daily needed"
-          value={requiredDaily != null ? `$${Math.round(requiredDaily).toLocaleString()}` : "—"}
-          detail={remainingDays > 0 ? `${remainingDays} day window remaining` : "Range complete"}
+          value={requiredDaily != null ? formatCurrency(requiredDaily, { maximumFractionDigits: 0 }) : "—"}
+          detail={
+            !rangeIsMonthly
+              ? "Unavailable"
+              : range.preset !== "month_to_date"
+                ? "Only shown for active month-to-date periods"
+                : remainingDays > 0
+                  ? `${remainingDays} days remaining`
+                  : "Range complete"
+          }
         />
         <MetricTile
           label="Orders gap"
           value={ordersGap != null ? formatCountDelta(ordersGap) : "—"}
-          detail={orderTarget != null ? `Target ${orderTarget.toLocaleString()} orders` : "No order target on file"}
+          detail={!rangeIsMonthly ? "Unavailable" : orderTarget != null ? `Target ${orderTarget.toLocaleString()} orders` : "No monthly order target on file"}
         />
       </div>
 
@@ -110,8 +137,11 @@ function summarizeTopOpportunity(insights?: ExecutiveInsightsPayload | null) {
   return [label, explanation, action];
 }
 
-function formatDelta(value: number) {
-  return value >= 0 ? `+$${Math.round(value).toLocaleString()}` : `-$${Math.abs(Math.round(value)).toLocaleString()}`;
+function formatDelta(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "Unavailable";
+  return value >= 0
+    ? `+${formatCurrency(value, { maximumFractionDigits: 0 })}`
+    : `-${formatCurrency(Math.abs(value), { maximumFractionDigits: 0 })}`;
 }
 
 function formatCountDelta(value: number) {
