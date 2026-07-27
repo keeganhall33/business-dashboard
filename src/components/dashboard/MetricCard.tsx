@@ -30,6 +30,8 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
 
   const currentValue = metric.currentValue;
   const targetValue = metric.targetValue;
+  const currentQualifier = (metric as { currentQualifier?: "at_least" }).currentQualifier;
+  const currentCompleteness = (metric as { currentCompleteness?: "complete" | "partial" | "unknown" }).currentCompleteness;
 
   const historyValues = (history ?? []).map((h) => h.value);
   const changePercent = stats?.changePercent ?? null;
