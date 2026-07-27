@@ -101,7 +101,7 @@ type ScoreboardMetricStats = {
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
   { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
-  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" }
+  { cardKey: "conversion_rate", fallbackName: "Purchase conversion", fallbackUnit: "percent" }
 ] as const;
 
 type TaskRow = {
@@ -1263,14 +1263,8 @@ export async function GET(request: Request) {
       const wooOrders = toNumber(wooSummaryData.orders);
       const wooAov = toNumber(wooSummaryData.avgOrderValue);
       const gaSessions = toNumber(gaSummaryData.sessions);
-
-      const funnelConversion = toNumber(funnelSummaryData.conversionRate);
       const conversionRate =
-        funnelConversion != null
-          ? funnelConversion
-          : wooOrders != null && gaSessions != null && gaSessions > 0
-            ? (wooOrders / gaSessions) * 100
-            : null;
+        wooOrders != null && gaSessions != null && gaSessions > 0 ? (wooOrders / gaSessions) * 100 : null;
       const revenuePerVisitor =
         wooRevenue != null && gaSessions != null && gaSessions > 0 ? wooRevenue / gaSessions : null;
 
@@ -1313,7 +1307,7 @@ export async function GET(request: Request) {
       const targetValue = toNumber(metric.target_value);
       return {
         metricKey: metric.metric_key,
-        metricName: metric.metric_name ?? card.fallbackName,
+        metricName: card.cardKey === "conversion_rate" ? card.fallbackName : (metric.metric_name ?? card.fallbackName),
         category: metric.category ?? "general",
         currentValue,
         targetValue,
