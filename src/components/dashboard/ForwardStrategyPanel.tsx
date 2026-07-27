@@ -18,6 +18,12 @@ export function ForwardStrategyPanel({
   const totalDays = countRangeDays(range);
   const elapsedDays = elapsedRangeDays(range);
 
+
+  const wooCompleteness = (data.commerceTelemetry as { woo?: { summary?: { completeness?: "complete" | "partial" | "unknown" } } })?.woo?.summary?.completeness;
+  const commerceIncomplete = wooCompleteness != null && wooCompleteness !== "complete";
+  const commerceQualification =
+    "Woo totals are partial for this range, so exact pacing and target gaps are unavailable.";
+
   const revenueMetric = findMetric(
     data.headerMetrics,
     (metric) => metric.metricKey.toLowerCase().includes("revenue") || metric.metricName.toLowerCase().includes("revenue")
@@ -28,21 +34,23 @@ export function ForwardStrategyPanel({
   );
 
   const currentRevenue = data.commerceTelemetry?.woo?.summary?.revenue ?? null;
+  const effectiveRevenue = commerceIncomplete ? null : currentRevenue;
   const revenueTarget = revenueMetric?.targetValue ?? null;
   const paceRevenue =
     range.preset === "month_to_date" && currentRevenue != null && elapsedDays > 0
-      ? (currentRevenue / elapsedDays) * totalDays
-      : currentRevenue;
-  const revenueGap = revenueTarget != null && paceRevenue != null ? revenueTarget - paceRevenue : null;
+      ? (effectiveRevenue / elapsedDays) * totalDays
+      : effectiveRevenue;
+  const revenueGap = !commerceIncomplete && revenueTarget != null && paceRevenue != null ? revenueTarget - paceRevenue : null;
   const remainingDays = Math.max(0, totalDays - elapsedDays);
   const requiredDaily =
-    range.preset === "month_to_date" && remainingDays > 0 && revenueGap != null && currentRevenue != null
+    !commerceIncomplete && range.preset === "month_to_date" && remainingDays > 0 && revenueGap != null && effectiveRevenue != null
       ? Math.max(0, revenueGap) / remainingDays
       : null;
 
   const currentOrders = data.commerceTelemetry?.woo?.summary?.orders ?? null;
+  const effectiveOrders = commerceIncomplete ? null : currentOrders;
   const orderTarget = ordersMetric?.targetValue ?? null;
-  const ordersGap = orderTarget != null && currentOrders != null ? orderTarget - currentOrders : null;
+  const ordersGap = !commerceIncomplete && orderTarget != null && effectiveOrders != null ? orderTarget - effectiveOrders : null;
 
   const telemetryWarnings = Object.values(data.telemetryHealth ?? {})
     .filter((entry) => entry && entry.status !== "healthy")
@@ -54,7 +62,7 @@ export function ForwardStrategyPanel({
   const topOpportunity = summarizeTopOpportunity(data.executiveInsights);
 
   const forecastBadge =
-    !rangeIsMonthly
+    !rangeIsMonthly || commerceIncomplete
       ? "Unavailable"
       : revenueGap != null
         ? revenueGap > 0
@@ -62,7 +70,7 @@ export function ForwardStrategyPanel({
           : "Ahead of target"
         : "Forecast";
   const forecastTone =
-    !rangeIsMonthly
+    !rangeIsMonthly || commerceIncomplete
       ? "text-zinc-300"
       : revenueGap != null
         ? revenueGap > 0
@@ -83,18 +91,18 @@ export function ForwardStrategyPanel({
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <MetricTile
           label="Revenue pace"
-          value={!rangeIsMonthly ? "Unavailable" : formatCurrency(paceRevenue, { maximumFractionDigits: 0 })}
+          value={!rangeIsMonthly || commerceIncomplete ? "Unavailable" : formatCurrency(paceRevenue, { maximumFractionDigits: 0 })}
           detail={
             !rangeIsMonthly
               ? "This panel only supports month-to-date or previous-month ranges."
-              : revenueTarget != null
+              : commerceIncomplete ? commerceQualification : revenueTarget != null
                 ? `Target ${formatCurrency(revenueTarget, { maximumFractionDigits: 0 })} • Gap ${formatDelta(revenueGap)}`
                 : "No monthly revenue target on file"
           }
         />
         <MetricTile
           label="Daily needed"
-          value={requiredDaily != null ? formatCurrency(requiredDaily, { maximumFractionDigits: 0 }) : "—"}
+          value={!commerceIncomplete && requiredDaily != null ? formatCurrency(requiredDaily, { maximumFractionDigits: 0 }) : "—"}
           detail={
             !rangeIsMonthly
               ? "Unavailable"
@@ -107,7 +115,7 @@ export function ForwardStrategyPanel({
         />
         <MetricTile
           label="Orders gap"
-          value={ordersGap != null ? formatCountDelta(ordersGap) : "—"}
+          value={!commerceIncomplete && ordersGap != null ? formatCountDelta(ordersGap) : "—"}
           detail={!rangeIsMonthly ? "Unavailable" : orderTarget != null ? `Target ${orderTarget.toLocaleString()} orders` : "No monthly order target on file"}
         />
       </div>
