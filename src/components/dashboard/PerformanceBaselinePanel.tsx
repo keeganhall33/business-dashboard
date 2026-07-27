@@ -66,13 +66,15 @@ export function PerformanceBaselinePanel({
 }
 
 function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; label: string }) {
-  const value = formatPerformanceBaselineValue(metric);
+  const previousValue = formatPerformanceBaselinePrevious(metric);
+  const currentValue = formatPerformanceBaselineValue(metric);
   const delta = formatPerformanceBaselineDelta(metric);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-3 sm:p-4">
       <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-white sm:text-2xl">{value}</div>
+      <div className="mt-2 text-xl font-semibold text-white sm:text-2xl">{previousValue}</div>
+      <div className="mt-1 text-[11px] text-zinc-500">Now: {currentValue}</div>
       <div className="mt-1 text-[11px] text-zinc-400">{delta}</div>
     </div>
   );
@@ -111,6 +113,20 @@ export function formatPerformanceBaselineValue(metric: PerformanceBaselineMetric
       return `${current.toFixed(1)}%`;
     default:
       return `${qualifierPrefix}${integer.format(current)}`;
+  }
+}
+
+export function formatPerformanceBaselinePrevious(metric: PerformanceBaselineMetric): string {
+  if (metric.previous == null) return "Unavailable";
+  const previous = normalizeDisplayZero(metric.previous);
+
+  switch (metric.unit) {
+    case "currency":
+      return currency.format(previous);
+    case "percent":
+      return `${previous.toFixed(1)}%`;
+    default:
+      return integer.format(previous);
   }
 }
 
