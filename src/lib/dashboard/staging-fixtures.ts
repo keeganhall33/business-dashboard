@@ -112,7 +112,10 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
   const revenue = revenueByPreset[range.preset];
   const orders = ordersByPreset[range.preset];
   const sessions = sessionsByPreset[range.preset];
-  const aov = orders > 0 ? revenue / orders : null;
+
+  const partialCommerce = range.preset !== "today" && range.preset !== "yesterday";
+
+  const aov = !partialCommerce && orders > 0 ? revenue / orders : null;
   const purchaseConversion = sessions > 0 ? (orders / sessions) * 100 : null;
 
   const overview: DashboardOverviewResponse = {
@@ -135,6 +138,11 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
           revenue,
           orders,
           avgOrderValue: aov,
+          completeness: partialCommerce ? "partial" : "complete",
+          source: partialCommerce ? "snapshot_recent_orders" : "selected_range",
+          note: partialCommerce
+            ? "Recent-order snapshot data is available, but revenue and order totals are partial and may be understated."
+            : null,
           discountTotal: 0,
           shippingTotal: 0,
           taxTotal: 0,
@@ -168,9 +176,33 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
       range,
       previousRange: { startDate: "2026-06-01", endDate: "2026-06-30" },
       metrics: {
-        revenue: { id: "revenue", unit: "currency", current: revenue, previous: revenue * 1.2, delta: revenue - revenue * 1.2, deltaPercent: revenue / (revenue * 1.2) - 1 },
-        orders: { id: "orders", unit: "count", current: orders, previous: orders + 2, delta: orders - (orders + 2), deltaPercent: orders == null ? null : (orders - (orders + 2)) / (orders + 2) },
-        avgOrderValue: { id: "avg_order_value", unit: "currency", current: aov, previous: aov == null ? null : aov * 1.05, delta: aov == null ? null : aov - aov * 1.05, deltaPercent: aov == null ? null : aov / (aov * 1.05) - 1 },
+        revenue: {
+          id: "revenue",
+          unit: "currency",
+          current: revenue,
+          previous: revenue * 1.2,
+          delta: partialCommerce ? null : revenue - revenue * 1.2,
+          deltaPercent: partialCommerce ? null : revenue / (revenue * 1.2) - 1,
+          ...(partialCommerce ? { currentQualifier: "at_least", currentCompleteness: "partial", previousCompleteness: "partial" } : null)
+        },
+        orders: {
+          id: "orders",
+          unit: "count",
+          current: orders,
+          previous: orders + 2,
+          delta: partialCommerce ? null : orders - (orders + 2),
+          deltaPercent: partialCommerce ? null : orders == null ? null : (orders - (orders + 2)) / (orders + 2),
+          ...(partialCommerce ? { currentQualifier: "at_least", currentCompleteness: "partial", previousCompleteness: "partial" } : null)
+        },
+        avgOrderValue: {
+          id: "avg_order_value",
+          unit: "currency",
+          current: aov,
+          previous: partialCommerce ? null : aov == null ? null : aov * 1.05,
+          delta: partialCommerce ? null : aov == null ? null : aov - aov * 1.05,
+          deltaPercent: partialCommerce ? null : aov == null ? null : aov / (aov * 1.05) - 1,
+          ...(partialCommerce ? { currentCompleteness: "partial", previousCompleteness: "partial" } : null)
+        },
         sessions: { id: "sessions", unit: "count", current: sessions, previous: Math.round(sessions * 1.1), delta: sessions - Math.round(sessions * 1.1), deltaPercent: sessions / Math.round(sessions * 1.1) - 1 },
         purchaseConversionRate: { id: "purchase_conversion_rate", unit: "percent", current: purchaseConversion, previous: purchaseConversion == null ? null : purchaseConversion * 0.9, delta: purchaseConversion == null ? null : purchaseConversion - purchaseConversion * 0.9, deltaPercent: purchaseConversion == null ? null : purchaseConversion / (purchaseConversion * 0.9) - 1 },
         funnelCompletionRate: { id: "funnel_completion_rate", unit: "percent", current: 27.3, previous: 25.0, delta: 2.3, deltaPercent: 2.3 / 25.0 }
