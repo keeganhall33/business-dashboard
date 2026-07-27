@@ -2,6 +2,7 @@ import { ok, serverError } from "@/lib/api/responses";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
+import { buildStagingFixtureOverview } from "@/lib/dashboard/staging-fixtures";
 import {
   getActiveOpportunities,
   getAgentHealth,
@@ -735,6 +736,21 @@ export async function GET(request: Request) {
   if (authResponse) return authResponse;
 
   try {
+    // Staging fixture mode: safe read-only rendering on keegan-dashboard-preview.
+    // Guardrails:
+    // - Disabled by default.
+    // - Only allowed on Fly staging app.
+    // - Produces sanitized, non-PII fixture data.
+    const stagingEnabled = process.env.DASHBOARD_STAGING_FIXTURES === "1";
+    const flyApp = process.env.FLY_APP_NAME ?? "";
+    const isStagingApp = flyApp === "keegan-dashboard-preview";
+    if (stagingEnabled && isStagingApp) {
+      const url = new URL(request.url);
+      const responseRange = resolveRange(url.searchParams.get("range"), url.searchParams.get("start"), url.searchParams.get("end"));
+      const fixture = buildStagingFixtureOverview({ range: responseRange });
+      return ok(sanitizeDashboardPayloadForHtml(fixture.overview));
+    }
+
     // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This is intentionally temporary so the UI can render without env/network.
     if ((process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed") {
