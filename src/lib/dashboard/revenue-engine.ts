@@ -49,12 +49,12 @@ export function buildRevenueEngineMetrics(params: {
 }): RevenueEngineMetric[] {
   const { metricByKey, commerceTelemetry } = params;
 
-  const metrics: RevenueEngineMetric[] = ["monthly_revenue", "aov", "revenue_per_visitor", "conversion_rate"]
+  const metrics: RevenueEngineMetric[] = ["monthly_revenue", "aov", "revenue_per_visitor", "purchase_conversion_rate"]
     .map((key) => metricByKey.get(key))
     .filter((m): m is ScoreboardMetricRow => Boolean(m))
     .map((m) => ({
       metricKey: m.metric_key,
-      metricName: m.metric_key === "conversion_rate" ? "Purchase conversion" : m.metric_name,
+      metricName: m.metric_key === "purchase_conversion_rate" ? "Purchase conversion" : m.metric_name,
       currentValue: toNumber(m.current_value),
       targetValue: toNumber(m.target_value),
       status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),

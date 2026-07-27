@@ -101,7 +101,7 @@ type ScoreboardMetricStats = {
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
   { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
-  { cardKey: "conversion_rate", fallbackName: "Purchase conversion", fallbackUnit: "percent" }
+  { cardKey: "purchase_conversion_rate", fallbackName: "Purchase conversion", fallbackUnit: "percent" }
 ] as const;
 
 type TaskRow = {
@@ -433,7 +433,7 @@ const DEFAULT_BRAND_POWER_ACTIONS = [
   "Reposition homepage and campaign copy around Impossible in Pencil.",
   "Create a collector-status narrative series."
 ];
-const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "conversion_rate", "revenue_per_visitor"];
+const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "purchase_conversion_rate", "revenue_per_visitor"];
 
 function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
   if (value == null || Number.isNaN(value)) return null;
@@ -1269,7 +1269,7 @@ export async function GET(request: Request) {
       const overrides: Array<{ key: string; value: number | null; unit: string }> = [
         { key: "monthly_revenue", value: wooRevenue, unit: "usd" },
         { key: "aov", value: wooAov, unit: "usd" },
-        { key: "conversion_rate", value: conversionRate, unit: "percent" },
+        { key: "purchase_conversion_rate", value: conversionRate, unit: "percent" },
         { key: "revenue_per_visitor", value: revenuePerVisitor, unit: "usd" }
       ];
 
@@ -1305,7 +1305,7 @@ export async function GET(request: Request) {
       const targetValue = toNumber(metric.target_value);
       return {
         metricKey: metric.metric_key,
-        metricName: card.cardKey === "conversion_rate" ? card.fallbackName : (metric.metric_name ?? card.fallbackName),
+        metricName: card.cardKey === "purchase_conversion_rate" ? card.fallbackName : (metric.metric_name ?? card.fallbackName),
         category: metric.category ?? "general",
         currentValue,
         targetValue,
