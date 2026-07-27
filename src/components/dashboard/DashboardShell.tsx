@@ -49,7 +49,7 @@ export function DashboardShell({ data }: Props) {
   const operationsIntel = buildOperationsIntel(data);
   const hasBrandSignals = Boolean(
     data.brandPower &&
-      (data.brandPower.metrics?.some((m) => m.currentValue != null || m.targetValue != null) ||
+      (data.brandPower.metrics?.some((m) => (m.currentValue != null || m.targetValue != null) && Boolean(m.ownerAgent) && Boolean((m as unknown as { measuredAt?: string | null }).measuredAt)) ||
         (data.brandPower.whatIsWorking?.length ?? 0) > 0 ||
         (data.brandPower.whatToDoNext?.length ?? 0) > 0)
   );
@@ -84,7 +84,14 @@ export function DashboardShell({ data }: Props) {
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
+            {data.revenueEngine ? (
+              <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <summary className="cursor-pointer select-none text-sm font-semibold text-zinc-200">Revenue Engine (diagnostics)</summary>
+                <div className="mt-4">
+                  <RevenueEnginePanel data={data.revenueEngine} />
+                </div>
+              </details>
+            ) : null}
           </div>
         </DashboardSection>
 

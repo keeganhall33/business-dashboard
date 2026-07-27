@@ -33,35 +33,34 @@ export function PerformanceBaselinePanel({
   }
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Performance baseline</div>
           <p className="mt-1 text-sm text-zinc-400">Current window versus the immediately preceding window of equal length.</p>
         </div>
         <div className="text-xs text-zinc-500">
-          {snapshot.range.startDate} → {snapshot.range.endDate}
+          {formatShortRange(snapshot.range.startDate, snapshot.range.endDate)}
           <span className="mx-2 text-zinc-700">/</span>
-          {snapshot.previousRange.startDate} → {snapshot.previousRange.endDate}
+          {formatShortRange(snapshot.previousRange.startDate, snapshot.previousRange.endDate)}
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard metric={snapshot.metrics.revenue} label="Revenue" />
         <MetricCard metric={snapshot.metrics.orders} label="Orders" />
         <MetricCard metric={snapshot.metrics.avgOrderValue} label="AOV" />
         <MetricCard metric={snapshot.metrics.sessions} label="Sessions" />
         <MetricCard metric={snapshot.metrics.purchaseConversionRate} label="Purchase conv" />
+        <MetricCard metric={snapshot.metrics.funnelCompletionRate} label="Funnel" />
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="lg:col-span-3" />
-        <MetricCard metric={snapshot.metrics.funnelCompletionRate} label="Funnel completion" />
-      </div>
-
-      <p className="mt-4 text-xs text-zinc-500">
-        Comparisons are computed only when both current and previous values are available. Percent deltas are omitted when the prior value is zero.
-      </p>
+      <details className="mt-3 text-xs text-zinc-500">
+        <summary className="cursor-pointer select-none">Methodology</summary>
+        <p className="mt-2">
+          Comparisons are computed only when both current and previous values are available. Percent deltas are omitted when the prior value is zero.
+        </p>
+      </details>
     </section>
   );
 }
@@ -71,12 +70,21 @@ function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; labe
   const delta = formatPerformanceBaselineDelta(metric);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-white">{value}</div>
-      <div className="mt-2 text-xs text-zinc-400">{delta}</div>
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-3 sm:p-4">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-white sm:text-2xl">{value}</div>
+      <div className="mt-1 text-[11px] text-zinc-400">{delta}</div>
     </div>
   );
+}
+
+function formatShortRange(start: string, end: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    return `${formatter.format(new Date(start))} → ${formatter.format(new Date(end))}`;
+  } catch {
+    return `${start} → ${end}`;
+  }
 }
 
 function normalizeDisplayZero(value: number): number {

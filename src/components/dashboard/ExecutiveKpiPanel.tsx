@@ -41,10 +41,9 @@ function KpiCard({
 
   return (
     <article className="rounded-2xl border border-white/10 bg-black/30 p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500">{metric.label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">{metric.label}</div>
       <div className="mt-2 text-xl font-semibold text-white">{value}</div>
       <div className="mt-1 text-[11px] text-zinc-400">{delta}</div>
     </article>
   );
 }
-
