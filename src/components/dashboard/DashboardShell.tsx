@@ -54,6 +54,11 @@ export function DashboardShell({ data }: Props) {
         (data.brandPower.whatToDoNext?.length ?? 0) > 0)
   );
 
+  const rangeIsMonthly = data.range.preset === "month_to_date" || data.range.preset === "previous_month";
+  const shouldShowOperations = Boolean(operationsSummary.actions > 0 || operationsSummary.tone !== "zinc");
+  const shouldShowIndustry = Boolean(data.industryPulseSnapshot && (data.industryPulseSnapshot.alerts?.length ?? 0) > 0);
+  const shouldShowChangeInsights = Boolean(changeInsights && (changeInsights.insights?.length ?? 0) > 0);
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
@@ -96,36 +101,42 @@ export function DashboardShell({ data }: Props) {
           </div>
         </DashboardSection>
 
-        <DashboardSection
-          title="Operations"
-          subtitle="Automation cadence, system health, and approvals"
-          storageKey="dashboard-section-operations"
-          {...SECTION_PROPS}
-          meta={<SectionMeta summary={operationsSummary} />}
-        >
-          <OperationsReliabilityPanel intel={operationsIntel} />
-        </DashboardSection>
+        {shouldShowOperations ? (
+          <DashboardSection
+            title="Operations"
+            subtitle="Automation cadence and system health"
+            storageKey="dashboard-section-operations"
+            {...SECTION_PROPS}
+            meta={<SectionMeta summary={operationsSummary} />}
+          >
+            <OperationsReliabilityPanel intel={operationsIntel} />
+          </DashboardSection>
+        ) : null}
 
-        <DashboardSection
-          title="Industry"
-          subtitle="External signals, War Room, and intelligence"
-          storageKey="dashboard-section-industry"
-          meta={<SectionMeta summary={industrySummary} />}
-          {...SECTION_PROPS}
-        >
-          <div className="space-y-5">
-            {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
-          </div>
-        </DashboardSection>
+        {shouldShowIndustry ? (
+          <DashboardSection
+            title="Industry"
+            subtitle="External signals"
+            storageKey="dashboard-section-industry"
+            meta={<SectionMeta summary={industrySummary} />}
+            {...SECTION_PROPS}
+          >
+            <div className="space-y-5">
+              {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : null}
+            </div>
+          </DashboardSection>
+        ) : null}
 
-        <DashboardSection
-          title="Change Insights"
-          subtitle="Key movements versus the previous saved snapshot"
-          storageKey="dashboard-section-change-insights"
-          {...SECTION_PROPS}
-        >
-          <ChangeInsightsPanel snapshot={changeInsights} />
-        </DashboardSection>
+        {shouldShowChangeInsights ? (
+          <DashboardSection
+            title="Change Insights"
+            subtitle="Key movements versus the previous saved snapshot"
+            storageKey="dashboard-section-change-insights"
+            {...SECTION_PROPS}
+          >
+            <ChangeInsightsPanel snapshot={changeInsights} />
+          </DashboardSection>
+        ) : null}
 
         <DashboardSection
           title="Data Confidence"
@@ -137,14 +148,16 @@ export function DashboardShell({ data }: Props) {
           <DataConfidencePanel summary={dataConfidence} />
         </DashboardSection>
 
-        <DashboardSection
-          title="Forward Strategy"
-          subtitle="Long-range positioning and focus (collapsed by default)"
-          storageKey="dashboard-section-forward-strategy"
-          {...SECTION_PROPS}
-        >
-          <ForwardStrategyPanel data={data} />
-        </DashboardSection>
+        {rangeIsMonthly ? (
+          <DashboardSection
+            title="Forward Strategy"
+            subtitle="Long-range positioning and focus"
+            storageKey="dashboard-section-forward-strategy"
+            {...SECTION_PROPS}
+          >
+            <ForwardStrategyPanel data={data} />
+          </DashboardSection>
+        ) : null}
 
         {hasBrandSignals ? (
           <DashboardSection
