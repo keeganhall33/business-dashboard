@@ -1099,6 +1099,29 @@ export async function GET(request: Request) {
     const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
 
+    // Range integrity: when Woo selected-range telemetry is missing/stale but the latest Woo snapshot
+    // contains eligible orders within the selected window, compute a best-effort selected-range summary
+    // from the snapshot order list. This prevents the executive layer from showing "0" while recent
+    // orders clearly exist in-range.
+    //
+    // IMPORTANT: this is explicitly labeled as snapshot-derived in `woo.source` and `woo.note`.
+    try {
+      const wooSummary = (commerceTelemetry as any)?.woo?.summary as any;
+      const recentOrders = normalizedWebsiteSnapshot?.wooCommerce?.recentOrders ?? null;
+      if (wooSummary && recentOrders && Array.isArray(recentOrders) && recentOrders.length > 0) {
+        const hasData = Boolean(wooSummary.hasData) || Boolean(wooSummary.orders) || Boolean(wooSummary.items);
+        if (!hasData) {
+          const derived = deriveWooSummaryFromRecentOrders(range, recentOrders);
+          if (derived) {
+            (commerceTelemetry as any).woo = (commerceTelemetry as any).woo ?? {};
+            (commerceTelemetry as any).woo.summary = { ...wooSummary, ...derived };
+          }
+        }
+      }
+    } catch {
+      // best-effort only
+    }
+
     let changeInsights: ChangeInsightsSnapshot | null = null;
     try {
       const metaHistory = await getDashboardSnapshotHistoryForKey("meta", { limit: 4 });
@@ -2192,4 +2215,39 @@ function normalizeRelationship(status: string | null | undefined) {
 
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function deriveWooSummaryFromRecentOrders(
+  range: { startDate: string; endDate: string },
+  recentOrders: Array<{ status: string | null; total: number | null; date_paid?: string | null; date_paid_gmt?: string | null; date?: string | null }>
+) {
+  const eligibleStatuses = new Set(["completed", "processing"]);
+  const start = range.startDate;
+  const end = range.endDate;
+
+  const included = recentOrders
+    .map((order) => {
+      const status = (order.status ?? "").toLowerCase();
+      const total = typeof order.total === "number" && Number.isFinite(order.total) ? order.total : null;
+      const rawDate = order.date_paid_gmt ?? order.date_paid ?? order.date ?? null;
+      const isoDay = rawDate ? String(rawDate).slice(0, 10) : null;
+      const inWindow = isoDay != null && isoDay >= start && isoDay <= end;
+      const eligible = eligibleStatuses.has(status);
+      return { eligible, inWindow, total };
+    })
+    .filter((o) => o.eligible && o.inWindow && o.total != null);
+
+  if (included.length === 0) return null;
+
+  const revenue = roundCurrency(included.reduce((sum, o) => sum + (o.total ?? 0), 0));
+  const orders = included.length;
+  return {
+    revenue,
+    orders,
+    items: orders,
+    avgOrderValue: orders > 0 ? revenue / orders : null,
+    hasData: true,
+    source: "snapshot_recent_orders" as const,
+    note: "Selected-range Woo telemetry was unavailable; derived from latest snapshot recent orders." as const
+  };
 }

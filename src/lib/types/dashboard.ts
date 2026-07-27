@@ -402,6 +402,9 @@ export type WooSummary = {
   shippingTotal: number | null;
   taxTotal: number | null;
   items: number | null;
+  hasData?: boolean;
+  source?: "telemetry" | "snapshot_recent_orders";
+  note?: string | null;
 };
 
 export type WooTimeseriesPoint = {
