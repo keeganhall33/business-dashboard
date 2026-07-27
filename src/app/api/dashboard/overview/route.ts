@@ -36,7 +36,6 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
 import {
-  RangePreset,
   type AgentHealth,
   type ChangeInsightsSnapshot,
   type CollectorTelemetrySnapshot,
@@ -49,6 +48,7 @@ import {
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
+import { resolveRange } from "@/lib/date/resolve-range";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
@@ -654,67 +654,7 @@ function buildSurvivalStrip(snapshot: FinanceSnapshotRow | null) {
   };
 }
 
-function formatIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function isIsoDate(value: string | null): value is string {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-}
-
-function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
-  const presets: Record<string, { preset: RangePreset; days: number }> = {
-    today: { preset: "today", days: 1 },
-    yesterday: { preset: "yesterday", days: 1 },
-    "7d": { preset: "7d", days: 7 },
-    "30d": { preset: "30d", days: 30 },
-    "90d": { preset: "90d", days: 90 }
-  };
-
-  if (rangeParam === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
-    const startDate = startParam;
-    const endDate = endParam;
-    if (startDate <= endDate) {
-      return { preset: "custom" as RangePreset, startDate, endDate };
-    }
-  }
-
-  const normalized = (rangeParam ?? "").toLowerCase();
-  const today = new Date();
-
-  if (normalized === "month_to_date") {
-    const endDate = formatIsoDate(today);
-    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
-    return { preset: "month_to_date" as RangePreset, startDate, endDate };
-  }
-
-  if (normalized === "previous_month") {
-    const year = today.getUTCFullYear();
-    const month = today.getUTCMonth();
-    const start = new Date(Date.UTC(year, month - 1, 1));
-    const end = new Date(Date.UTC(year, month, 0));
-    return { preset: "previous_month" as RangePreset, startDate: formatIsoDate(start), endDate: formatIsoDate(end) };
-  }
-
-  if (normalized === "year_to_date") {
-    const endDate = formatIsoDate(today);
-    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), 0, 1)));
-    return { preset: "year_to_date" as RangePreset, startDate, endDate };
-  }
-
-  const fallback = presets[normalized] ?? presets["30d"];
-
-  const end = new Date(today);
-  if (fallback.preset === "yesterday") {
-    end.setUTCDate(end.getUTCDate() - 1);
-  }
-
-  const endDate = formatIsoDate(end);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
-  const startDate = formatIsoDate(start);
-  return { preset: fallback.preset, startDate, endDate };
-}
+// resolveRange now lives in src/lib/date/resolve-range.ts and uses Pacific calendar semantics.
 
 function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string }) {
   // start/end are YYYY-MM-DD in UTC. Treat endDate as inclusive.
@@ -1106,15 +1046,21 @@ export async function GET(request: Request) {
     //
     // IMPORTANT: this is explicitly labeled as snapshot-derived in `woo.source` and `woo.note`.
     try {
-      const wooSummary = (commerceTelemetry as any)?.woo?.summary as any;
+      type WooSummaryLike = {
+        hasData?: boolean;
+        orders?: number | null;
+        items?: number | null;
+      };
+      const wooSummary = (commerceTelemetry as unknown as { woo?: { summary?: WooSummaryLike } })?.woo?.summary;
       const recentOrders = normalizedWebsiteSnapshot?.wooCommerce?.recentOrders ?? null;
       if (wooSummary && recentOrders && Array.isArray(recentOrders) && recentOrders.length > 0) {
         const hasData = Boolean(wooSummary.hasData) || Boolean(wooSummary.orders) || Boolean(wooSummary.items);
         if (!hasData) {
           const derived = deriveWooSummaryFromRecentOrders(range, recentOrders);
           if (derived) {
-            (commerceTelemetry as any).woo = (commerceTelemetry as any).woo ?? {};
-            (commerceTelemetry as any).woo.summary = { ...wooSummary, ...derived };
+            const next = commerceTelemetry as unknown as { woo?: { summary?: unknown } };
+            next.woo = next.woo ?? {};
+            next.woo.summary = { ...(wooSummary as Record<string, unknown>), ...derived };
           }
         }
       }
@@ -2248,6 +2194,7 @@ function deriveWooSummaryFromRecentOrders(
     avgOrderValue: orders > 0 ? revenue / orders : null,
     hasData: true,
     source: "snapshot_recent_orders" as const,
-    note: "Selected-range Woo telemetry was unavailable; derived from latest snapshot recent orders." as const
+    note: "Selected-range Woo telemetry was unavailable; derived from latest snapshot recent orders." as const,
+    completeness: "partial" as const
   };
 }

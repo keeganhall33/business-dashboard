@@ -405,6 +405,7 @@ export type WooSummary = {
   hasData?: boolean;
   source?: "telemetry" | "snapshot_recent_orders";
   note?: string | null;
+  completeness?: "complete" | "partial" | "unknown";
 };
 
 export type WooTimeseriesPoint = {
