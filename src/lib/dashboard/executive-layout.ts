@@ -82,20 +82,27 @@ export function buildExecutiveDrivers(trends: TrendComparison[], limit = 3, conf
 export function buildExecutiveActions(data: DashboardOverviewResponse, limit = 7, confidence?: ConfidenceSummary): ExecutiveActionPlan[] {
   const rows: ExecutiveActionPlan[] = [];
 
-  (data.topActions ?? []).forEach((item, idx) => {
-    rows.push({
-      id: `top-${idx}`,
-      priority: derivePriority(item),
-      title: item.title,
-      impact: item.detail ?? "Clarify expected impact",
-      confidence: toneToConfidence(item.tone),
-      owner: item.owner ?? null,
-      evidence: item.status ?? "Top action",
-      due: formatDue(item.dueAt),
-      weight: priorityWeight(derivePriority(item)) + 2,
-      sourceDomain: "overall"
+  const wooState = getDomainConfidence(confidence, "woo")?.state;
+  const commerceUntrusted = wooState != null && wooState !== "trusted";
+
+  // Under partial/unknown Woo totals we avoid generating exact commerce-gap actions.
+  // The executive panel should fall back to GA4/FunnelKit/Meta/operations evidence.
+  if (!commerceUntrusted) {
+    (data.topActions ?? []).forEach((item, idx) => {
+      rows.push({
+        id: `top-${idx}`,
+        priority: derivePriority(item),
+        title: item.title,
+        impact: item.detail ?? "Clarify expected impact",
+        confidence: toneToConfidence(item.tone),
+        owner: item.owner ?? null,
+        evidence: item.status ?? "Top action",
+        due: formatDue(item.dueAt),
+        weight: priorityWeight(derivePriority(item)) + 2,
+        sourceDomain: "overall"
+      });
     });
-  });
+  }
 
   addPipelineActions(rows, data.pipelinePanel?.deals ?? []);
   addSchedulerAction(rows, data);

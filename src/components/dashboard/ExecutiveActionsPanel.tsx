@@ -44,6 +44,7 @@ function ActionCard({ action }: { action: ExecutiveActionPlan }) {
       </div>
 
       <div className="mt-2 text-xs text-zinc-500">Evidence: {evidence}</div>
+      {action.sourceDomain ? <div className="mt-1 text-xs text-zinc-500">Source: {action.sourceDomain}</div> : null}
       {due ? <div className="mt-1 text-xs text-zinc-500">{due}</div> : null}
     </article>
   );
