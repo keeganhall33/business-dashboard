@@ -1,4 +1,5 @@
 import type { DashboardOverviewResponse, RangePreset, WebsiteConversionSnapshot } from "@/lib/types/dashboard";
+import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
 
 type RecentOrder = NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number];
 
@@ -175,7 +176,7 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
         funnelCompletionRate: { id: "funnel_completion_rate", unit: "percent", current: 27.3, previous: 25.0, delta: 2.3, deltaPercent: 2.3 / 25.0 }
       }
     },
-    websiteConversion: buildWebsiteSnapshot(range),
+    websiteConversion: normalizeWebsiteSnapshot(buildWebsiteSnapshot(range)),
     metaAds: null,
     brandPower: { metrics: [], whatIsWorking: [], whatToDoNext: [] },
     opportunityRadar: { activeCount: 0, readyForOutreachCount: 0, topOpportunities: [], nextFiveMoves: [] },
