@@ -139,7 +139,7 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
           orders,
           avgOrderValue: aov,
           completeness: partialCommerce ? "partial" : "complete",
-          source: partialCommerce ? "snapshot_recent_orders" : "selected_range",
+          source: partialCommerce ? "snapshot_recent_orders" : "telemetry",
           note: partialCommerce
             ? "Recent-order snapshot data is available, but revenue and order totals are partial and may be understated."
             : null,
