@@ -1,5 +1,7 @@
 import type { DashboardOverviewResponse, PerformanceBaselineMetric } from "@/lib/types/dashboard";
 
+export const EXECUTIVE_MATERIALITY_THRESHOLD = 0.1; // 10%
+
 export type ExecutiveMetric = {
   label: string;
   unit: PerformanceBaselineMetric["unit"];
@@ -20,6 +22,12 @@ export type ExecutiveSummary = {
     purchaseConversion: ExecutiveMetric;
     funnelCompletion: ExecutiveMetric;
   };
+};
+
+export type ExecutiveMovement = {
+  key: keyof ExecutiveSummary["metrics"];
+  label: string;
+  deltaPercent: number;
 };
 
 function metric(label: string, unit: PerformanceBaselineMetric["unit"], m: PerformanceBaselineMetric): ExecutiveMetric {
@@ -54,3 +62,15 @@ export function buildExecutiveSummary(data: DashboardOverviewResponse): Executiv
   };
 }
 
+export function getMaterialMovements(summary: ExecutiveSummary, threshold = EXECUTIVE_MATERIALITY_THRESHOLD): ExecutiveMovement[] {
+  const entries = Object.entries(summary.metrics) as Array<[
+    keyof ExecutiveSummary["metrics"],
+    ExecutiveSummary["metrics"][keyof ExecutiveSummary["metrics"]]
+  ]>;
+
+  return entries
+    .map(([key, metric]) => ({ key, label: metric.label, deltaPercent: metric.deltaPercent }))
+    .filter((m): m is ExecutiveMovement => typeof m.deltaPercent === "number" && Number.isFinite(m.deltaPercent))
+    .filter((m) => Math.abs(m.deltaPercent) >= threshold)
+    .sort((a, b) => Math.abs(b.deltaPercent) - Math.abs(a.deltaPercent));
+}

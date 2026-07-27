@@ -49,7 +49,13 @@ export function DashboardShell({ data }: Props) {
   const operationsIntel = buildOperationsIntel(data);
   const hasBrandSignals = Boolean(
     data.brandPower &&
-      (data.brandPower.metrics?.some((m) => (m.currentValue != null || m.targetValue != null) && Boolean(m.ownerAgent) && Boolean((m as unknown as { measuredAt?: string | null }).measuredAt)) ||
+      (data.brandPower.metrics?.some((m) => {
+        const measuredAt = (m as unknown as { measuredAt?: string | null }).measuredAt;
+        const source = (m as unknown as { source?: string | null }).source;
+        const formula = (m as unknown as { formula?: string | null }).formula;
+        const hasValue = m.currentValue != null;
+        return hasValue && Boolean(measuredAt) && Boolean(source) && Boolean(formula);
+      }) ||
         (data.brandPower.whatIsWorking?.length ?? 0) > 0 ||
         (data.brandPower.whatToDoNext?.length ?? 0) > 0)
   );
@@ -162,7 +168,7 @@ export function DashboardShell({ data }: Props) {
             storageKey="dashboard-section-forward-strategy"
             {...SECTION_PROPS}
           >
-            <ForwardStrategyPanel data={data} />
+            <ForwardStrategyPanel data={{ ...data, executiveSummary } as DashboardOverviewResponse & { executiveSummary: typeof executiveSummary }} />
           </DashboardSection>
         ) : null}
 
