@@ -1,6 +1,8 @@
 import type { DashboardOverviewResponse, ExecutiveInsightsPayload, HeaderMetric } from "@/lib/types/dashboard";
 import { countRangeDays, elapsedRangeDays } from "@/lib/date/range";
 import { formatCurrency } from "@/lib/utils/format";
+import type { ExecutiveSummary } from "@/lib/dashboard/executive-summary";
+import { buildForwardStrategyCopy } from "@/lib/dashboard/forward-strategy";
 
 function findMetric(metrics: HeaderMetric[], predicate: (metric: HeaderMetric) => boolean) {
   return metrics.find(predicate);
@@ -47,6 +49,8 @@ export function ForwardStrategyPanel({
     .slice(0, 3)
     .map((entry) => `${entry?.source.toUpperCase()}: ${entry?.reasons?.[0] ?? "Needs attention"}`);
 
+  const summary = (data as unknown as { executiveSummary?: ExecutiveSummary | null }).executiveSummary ?? null;
+  const strategyCopy = buildForwardStrategyCopy(summary);
   const topOpportunity = summarizeTopOpportunity(data.executiveInsights);
 
   const forecastBadge =
@@ -111,15 +115,11 @@ export function ForwardStrategyPanel({
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <ListTile
           title="Top risks"
-          items={
-            telemetryWarnings.length
-              ? telemetryWarnings
-              : ["No telemetry risks surfaced. Continue monitoring core sources."]
-          }
+          items={telemetryWarnings.length ? telemetryWarnings : strategyCopy.risks}
         />
         <ListTile
           title="Next growth move"
-          items={topOpportunity ?? ["No material positive driver detected. Focus on defending core KPIs."]}
+          items={topOpportunity ?? [strategyCopy.nextAction]}
         />
       </div>
     </section>

@@ -34,30 +34,34 @@ export function WebsiteConversionPanel({ snapshot, range }: Props) {
     <section className="ui-glass ui-glass-hover space-y-5 rounded-3xl p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Website & Conversion</div>
-          <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce snapshot (may differ from selected-range telemetry).</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Latest website snapshot</div>
+          <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce snapshot (separate from selected-range telemetry).</div>
           <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
           {selectedWindow ? <div className="text-xs text-zinc-500">Selected range {selectedWindow}</div> : null}
-          {observedWindow ? <div className="text-xs text-zinc-500">Woo observed paid window {observedWindow}</div> : null}
+          {observedWindow ? <div className="text-xs text-zinc-500">Snapshot window {observedWindow}</div> : null}
         </div>
-        <StatusChip label="Live telemetry" tone="emerald" />
+        <StatusChip label="Snapshot" tone="zinc" />
       </div>
 
       {rangeMismatch ? (
         <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
-          Snapshot windows do not match the selected range. Treat this panel as &quot;latest snapshot&quot; evidence, not selected-range truth.
+          Snapshot window differs from the selected range. Treat this as latest-snapshot evidence, not selected-range truth.
         </div>
       ) : null}
 
       {hasFunnelGap ? (
         <div className="rounded-2xl border border-amber-300/30 bg-amber-400/5 p-3 text-xs text-amber-100">
-          Optional GA4 {funnelLabel} is still unavailable. Website data is LIVE, but funnel drop-off insights stay disabled until GA4 instrumentation is
-          fixed. These metrics remain best-effort and will continue to warn instead of blocking the run.
+          Optional GA4 {funnelLabel} is unavailable. Purchase conversion remains available via Woo orders / GA4 sessions.
         </div>
       ) : null}
 
-      {ga4 ? <Ga4Section data={ga4} /> : <EmptyState title="GA4 offline" detail="Website agent could not load GA4 metrics." />}
-      {woo ? <WooSection data={woo} /> : <EmptyState title="WooCommerce offline" detail="Unable to load latest order data." />}
+      <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <summary className="cursor-pointer select-none text-sm font-semibold text-zinc-200">Show snapshot detail</summary>
+        <div className="mt-5 space-y-5">
+          {ga4 ? <Ga4Section data={ga4} /> : <EmptyState title="GA4 offline" detail="Website agent could not load GA4 metrics." />}
+          {woo ? <WooSection data={woo} /> : <EmptyState title="WooCommerce offline" detail="Unable to load latest order data." />}
+        </div>
+      </details>
     </section>
   );
 }
@@ -106,7 +110,10 @@ function WooSection({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm font-semibold text-zinc-200">Sales</div>
         <div className="flex flex-wrap gap-2">
-          <StatusChip label={`Revenue ${revenue == null ? "Unavailable" : currency.format(revenue)}`} tone={revenue == null ? "zinc" : "emerald"} />
+          <StatusChip
+            label={`Latest Woo snapshot ${revenue == null ? "Unavailable" : currency.format(revenue)}`}
+            tone={revenue == null ? "zinc" : "emerald"}
+          />
           <StatusChip label={`Orders ${orders == null ? "Unavailable" : formatNumber(orders)}`} tone="zinc" />
           <StatusChip label={`AOV ${aov == null ? "Unavailable" : decimalCurrency.format(aov)}`} tone="sky" />
         </div>

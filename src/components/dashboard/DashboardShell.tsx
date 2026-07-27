@@ -1,10 +1,11 @@
-import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import { buildExecutiveActions, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import { buildExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
-import { ExecutiveKpiScorecard } from "./ExecutiveKpiScorecard";
-import { ExecutiveDriversPanel } from "./ExecutiveDriversPanel";
+import { BusinessStatusPanel } from "./BusinessStatusPanel";
+import { ExecutiveKpiPanel } from "./ExecutiveKpiPanel";
+import { TopDriversPanel } from "./TopDriversPanel";
 import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
 import { DataConfidencePanel } from "./DataConfidencePanel";
 import { DashboardSection } from "./ui/DashboardSection";
@@ -15,12 +16,10 @@ import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ChangeInsightsPanel } from "./ChangeInsightsPanel";
 import { PerformanceBaselinePanel } from "./PerformanceBaselinePanel";
-import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
-import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
@@ -39,9 +38,9 @@ export function DashboardShell({ data }: Props) {
   const metaSnapshot = data.metaAds ?? null;
   const changeInsights = data.changeInsights ?? null;
   const performanceBaseline = data.performanceBaseline ?? null;
+  const executiveSummary = buildExecutiveSummary(data);
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
-  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
@@ -50,21 +49,30 @@ export function DashboardShell({ data }: Props) {
   const operationsIntel = buildOperationsIntel(data);
   const hasBrandSignals = Boolean(
     data.brandPower &&
-      (data.brandPower.metrics?.some((m) => m.currentValue != null || m.targetValue != null) ||
+      (data.brandPower.metrics?.some((m) => {
+        const measuredAt = (m as unknown as { measuredAt?: string | null }).measuredAt;
+        const source = (m as unknown as { source?: string | null }).source;
+        const formula = (m as unknown as { formula?: string | null }).formula;
+        const hasValue = m.currentValue != null;
+        return hasValue && Boolean(measuredAt) && Boolean(source) && Boolean(formula);
+      }) ||
         (data.brandPower.whatIsWorking?.length ?? 0) > 0 ||
         (data.brandPower.whatToDoNext?.length ?? 0) > 0)
   );
+
+  const rangeIsMonthly = data.range.preset === "month_to_date" || data.range.preset === "previous_month";
+  const shouldShowOperations = Boolean(operationsSummary.actions > 0 || operationsSummary.tone !== "zinc");
+  const shouldShowIndustry = Boolean(data.industryPulseSnapshot && (data.industryPulseSnapshot.alerts?.length ?? 0) > 0);
+  const shouldShowChangeInsights = Boolean(changeInsights && (changeInsights.insights?.length ?? 0) > 0);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
-        <ExecutivePerspectivePanel data={data} actions={executiveActions} />
-        {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
-        <ExecutiveKpiScorecard metrics={data.headerMetrics} range={data.range} />
+        <BusinessStatusPanel summary={executiveSummary} />
+        <ExecutiveKpiPanel summary={executiveSummary} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
-        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
+        <TopDriversPanel summary={executiveSummary} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
       </div>
 
@@ -82,7 +90,14 @@ export function DashboardShell({ data }: Props) {
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : null}
+            {data.revenueEngine ? (
+              <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <summary className="cursor-pointer select-none text-sm font-semibold text-zinc-200">Revenue Engine (diagnostics)</summary>
+                <div className="mt-4">
+                  <RevenueEnginePanel data={data.revenueEngine} />
+                </div>
+              </details>
+            ) : null}
           </div>
         </DashboardSection>
 
@@ -99,36 +114,42 @@ export function DashboardShell({ data }: Props) {
           </div>
         </DashboardSection>
 
-        <DashboardSection
-          title="Operations"
-          subtitle="Automation cadence, system health, and approvals"
-          storageKey="dashboard-section-operations"
-          {...SECTION_PROPS}
-          meta={<SectionMeta summary={operationsSummary} />}
-        >
-          <OperationsReliabilityPanel intel={operationsIntel} />
-        </DashboardSection>
+        {shouldShowOperations ? (
+          <DashboardSection
+            title="Operations"
+            subtitle="Automation cadence and system health"
+            storageKey="dashboard-section-operations"
+            {...SECTION_PROPS}
+            meta={<SectionMeta summary={operationsSummary} />}
+          >
+            <OperationsReliabilityPanel intel={operationsIntel} />
+          </DashboardSection>
+        ) : null}
 
-        <DashboardSection
-          title="Industry"
-          subtitle="External signals, War Room, and intelligence"
-          storageKey="dashboard-section-industry"
-          meta={<SectionMeta summary={industrySummary} />}
-          {...SECTION_PROPS}
-        >
-          <div className="space-y-5">
-            {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : <PanelAuditPlaceholder title="Industry pulse offline" detail="No consolidated feed available." />}
-          </div>
-        </DashboardSection>
+        {shouldShowIndustry ? (
+          <DashboardSection
+            title="Industry"
+            subtitle="External signals"
+            storageKey="dashboard-section-industry"
+            meta={<SectionMeta summary={industrySummary} />}
+            {...SECTION_PROPS}
+          >
+            <div className="space-y-5">
+              {data.industryPulseSnapshot ? <IndustryPulsePanel snapshot={data.industryPulseSnapshot} /> : null}
+            </div>
+          </DashboardSection>
+        ) : null}
 
-        <DashboardSection
-          title="Change Insights"
-          subtitle="Key movements versus the previous saved snapshot"
-          storageKey="dashboard-section-change-insights"
-          {...SECTION_PROPS}
-        >
-          <ChangeInsightsPanel snapshot={changeInsights} />
-        </DashboardSection>
+        {shouldShowChangeInsights ? (
+          <DashboardSection
+            title="Change Insights"
+            subtitle="Key movements versus the previous saved snapshot"
+            storageKey="dashboard-section-change-insights"
+            {...SECTION_PROPS}
+          >
+            <ChangeInsightsPanel snapshot={changeInsights} />
+          </DashboardSection>
+        ) : null}
 
         <DashboardSection
           title="Data Confidence"
@@ -140,14 +161,16 @@ export function DashboardShell({ data }: Props) {
           <DataConfidencePanel summary={dataConfidence} />
         </DashboardSection>
 
-        <DashboardSection
-          title="Forward Strategy"
-          subtitle="Long-range positioning and focus (collapsed by default)"
-          storageKey="dashboard-section-forward-strategy"
-          {...SECTION_PROPS}
-        >
-          <ForwardStrategyPanel data={data} />
-        </DashboardSection>
+        {rangeIsMonthly ? (
+          <DashboardSection
+            title="Forward Strategy"
+            subtitle="Long-range positioning and focus"
+            storageKey="dashboard-section-forward-strategy"
+            {...SECTION_PROPS}
+          >
+            <ForwardStrategyPanel data={{ ...data, executiveSummary } as DashboardOverviewResponse & { executiveSummary: typeof executiveSummary }} />
+          </DashboardSection>
+        ) : null}
 
         {hasBrandSignals ? (
           <DashboardSection
@@ -203,18 +226,11 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
   const wooTelemetry = data.commerceTelemetry?.woo?.summary;
   const funnelTelemetry = data.commerceTelemetry?.funnel?.summary;
 
-  const wooSnapshot = data.websiteConversion?.wooCommerce;
-  const ga4Snapshot = data.websiteConversion?.ga4;
-
-  const revenue = wooTelemetry?.revenue ?? wooSnapshot?.netRevenue ?? wooSnapshot?.grossOrderRevenue ?? null;
-  const orders = wooTelemetry?.orders ?? wooSnapshot?.paidOrdersInWindow ?? null;
-  // Prefer FunnelKit conversion rate (0–100) when available. Fall back to GA4-derived funnel rates (0–1 fraction).
-  const conversionPercent =
-    funnelTelemetry?.conversionRate != null
-      ? funnelTelemetry.conversionRate
-      : ga4Snapshot?.funnelRates?.sessionToPurchase != null
-        ? ga4Snapshot.funnelRates.sessionToPurchase * 100
-        : null;
+  const revenue = wooTelemetry?.revenue ?? null;
+  const orders = wooTelemetry?.orders ?? null;
+  // Selected-range truth: purchase conversion from baseline if available; otherwise FunnelKit completion.
+  const purchaseConversion = data.performanceBaseline?.metrics.purchaseConversionRate.current ?? null;
+  const conversionPercent = purchaseConversion ?? (funnelTelemetry?.conversionRate ?? null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
   return {
     status: revenue != null || orders != null ? "Live" : "Needs data",

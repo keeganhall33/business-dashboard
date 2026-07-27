@@ -94,6 +94,11 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
     updateQuery(value);
   };
 
+  const resetToDefault = () => {
+    setCalendarOpen(false);
+    updateQuery("30d");
+  };
+
   const handleRangeSelect = (range?: DateRange) => {
     setPendingRange(range);
   };
@@ -156,6 +161,17 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
               ? `${formatShortLabel(selectedRange.from)} → ${formatShortLabel(selectedRange.to)}`
               : "Custom range"}
           </button>
+
+          {activePreset === "custom" ? (
+            <button
+              type="button"
+              onClick={resetToDefault}
+              data-testid="range-custom-reset"
+              className="rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300 hover:bg-black/30"
+            >
+              Reset
+            </button>
+          ) : null}
         </div>
 
         {calendarOpen && (
