@@ -210,7 +210,7 @@ export function buildStagingFixtureOverview(params: { range: { preset: RangePres
     },
     websiteConversion: normalizeWebsiteSnapshot(buildWebsiteSnapshot(range)),
     metaAds: null,
-    brandPower: { metrics: [], whatIsWorking: [], whatToDoNext: [] },
+    brandPower: { metrics: [], whatIsWorking: ["Fixture placeholder"], whatToDoNext: ["Fixture placeholder"] },
     opportunityRadar: { activeCount: 0, readyForOutreachCount: 0, topOpportunities: [], nextFiveMoves: [] },
     pipelinePanel: { collectors: [], deals: [] },
     survivalStrip: { configured: false, cashOnHand: null, survivalFloor: 0, monthlyBurn: null, projected30dRevenue: null, runwayDays: null },
