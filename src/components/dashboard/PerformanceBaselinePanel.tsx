@@ -1,7 +1,7 @@
 import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import type { PerformanceBaselineMetric, PerformanceBaselineSnapshot, RangePreset } from "@/lib/types/dashboard";
 
-const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const percent = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -66,13 +66,15 @@ export function PerformanceBaselinePanel({
 }
 
 function MetricCard({ metric, label }: { metric: PerformanceBaselineMetric; label: string }) {
-  const value = formatPerformanceBaselineValue(metric);
+  const previousValue = formatPerformanceBaselinePrevious(metric);
+  const currentValue = formatPerformanceBaselineValue(metric);
   const delta = formatPerformanceBaselineDelta(metric);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-3 sm:p-4">
       <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-white sm:text-2xl">{value}</div>
+      <div className="mt-2 text-xl font-semibold text-white sm:text-2xl">{previousValue}</div>
+      <div className="mt-1 text-[11px] text-zinc-500">Now: {currentValue}</div>
       <div className="mt-1 text-[11px] text-zinc-400">{delta}</div>
     </div>
   );
@@ -101,19 +103,43 @@ export function formatPerformanceBaselineValue(metric: PerformanceBaselineMetric
   if (metric.current == null) return "Unavailable";
   const current = normalizeDisplayZero(metric.current);
 
+  const qualifierPrefix = metric.currentQualifier === "at_least" ? "At least " : "";
+
   switch (metric.unit) {
     case "currency":
-      return currency.format(current);
+      return `${qualifierPrefix}${currency.format(current)}`;
     case "percent":
       // Percent metrics are already 0–100 scale.
       return `${current.toFixed(1)}%`;
     default:
-      return integer.format(current);
+      return `${qualifierPrefix}${integer.format(current)}`;
+  }
+}
+
+export function formatPerformanceBaselinePrevious(metric: PerformanceBaselineMetric): string {
+  if (metric.previous == null) return "Unavailable";
+  const previous = normalizeDisplayZero(metric.previous);
+
+  switch (metric.unit) {
+    case "currency":
+      return currency.format(previous);
+    case "percent":
+      return `${previous.toFixed(1)}%`;
+    default:
+      return integer.format(previous);
   }
 }
 
 export function formatPerformanceBaselineDelta(metric: PerformanceBaselineMetric): string {
-  if (metric.current == null || metric.previous == null || metric.delta == null) return "Unavailable";
+  if (metric.current == null || metric.previous == null) return "Unavailable";
+
+  if (metric.delta == null) {
+    // Preserve the prior value internally, but do not claim an exact delta when commerce completeness is partial/unknown.
+    const currentIncomplete = metric.currentCompleteness && metric.currentCompleteness !== "complete";
+    const previousIncomplete = metric.previousCompleteness && metric.previousCompleteness !== "complete";
+    if (currentIncomplete || previousIncomplete) return "Comparison unavailable";
+    return "Unavailable";
+  }
 
   const delta = normalizeDisplayZero(metric.delta);
   const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";

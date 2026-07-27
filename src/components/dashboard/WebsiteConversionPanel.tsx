@@ -15,7 +15,7 @@ type Props = {
 export function WebsiteConversionPanel({ snapshot, range }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
-  const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "Unavailable";
   const observedPaid = woo?.observedPaidRange ?? null;
   const selectedWindow = range ? `${range.startDate} → ${range.endDate}` : null;
   const observedWindow = observedPaid?.earliestPaid && observedPaid?.latestPaid ? `${observedPaid.earliestPaid} → ${observedPaid.latestPaid}` : null;
@@ -36,7 +36,7 @@ export function WebsiteConversionPanel({ snapshot, range }: Props) {
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Latest website snapshot</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce snapshot (separate from selected-range telemetry).</div>
-          <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
+          <div className="text-xs text-zinc-500">Last updated: {generatedLabel}</div>
           {selectedWindow ? <div className="text-xs text-zinc-500">Selected range {selectedWindow}</div> : null}
           {observedWindow ? <div className="text-xs text-zinc-500">Snapshot window {observedWindow}</div> : null}
         </div>
@@ -141,7 +141,7 @@ function WooSection({
             {(data.recentOrders ?? []).slice(0, 5).map((order) => (
               <li key={order.id} className="rounded-xl border border-white/5 bg-black/30 px-3 py-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-300">{formatCustomerLabel(order)}</span>
+                  <span className="text-zinc-300">{formatOrderIdentifier(order)}</span>
                   <span className="text-zinc-400">{order.total == null ? "Unavailable" : decimalCurrency.format(order.total)}</span>
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
@@ -157,13 +157,14 @@ function WooSection({
   );
 }
 
-function formatCustomerLabel(order: NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number]) {
-  const customer = typeof order.customer === "string" ? order.customer.trim() : "";
-  if (customer) return customer;
-  const orderNumber = (order as unknown as { number?: string | number | null }).number;
-  if (orderNumber != null && String(orderNumber).trim()) return `Order #${orderNumber}`;
-  if (order.id != null && String(order.id).trim()) return `Order #${order.id}`;
-  return "Unknown customer";
+function formatOrderIdentifier(order: NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number]) {
+  // Production snapshots do not reliably persist buyer identity fields.
+  // Use the order number/id as the primary identifier and omit any "Unknown customer" filler.
+  const orderNumber = (order as unknown as { number?: string | number | null; order_number?: string | number | null }).number ??
+    (order as unknown as { order_number?: string | number | null }).order_number;
+  if (orderNumber != null && String(orderNumber).trim()) return `Order #${String(orderNumber).trim()}`;
+  if (order.id != null && String(order.id).trim()) return `Order #${String(order.id).trim()}`;
+  return "Order";
 }
 
 function formatOrderMeta(order: NonNullable<NonNullable<WebsiteConversionSnapshot["wooCommerce"]>["recentOrders"]>[number]) {

@@ -53,6 +53,7 @@ function buildDrivers(summary: ExecutiveSummary | null): Driver[] {
   if (!summary) return [];
 
   const materialThreshold = 0.1; // 10%
+
   const candidates = Object.values(summary.metrics)
     .map((m) => ({
       metric: m.label,

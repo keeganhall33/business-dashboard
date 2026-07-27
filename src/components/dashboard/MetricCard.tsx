@@ -30,6 +30,8 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
 
   const currentValue = metric.currentValue;
   const targetValue = metric.targetValue;
+  const currentQualifier = (metric as { currentQualifier?: "at_least" }).currentQualifier;
+  const currentCompleteness = (metric as { currentCompleteness?: "complete" | "partial" | "unknown" }).currentCompleteness;
 
   const historyValues = (history ?? []).map((h) => h.value);
   const changePercent = stats?.changePercent ?? null;
@@ -61,10 +63,10 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
       </div>
 
       <div className={resolvedDensity === "compact" ? "mt-2 text-2xl font-semibold" : "mt-2 text-3xl font-semibold"}>
-        {formatMetricValue(currentValue, metric.unit)}
+        {currentQualifier === "at_least" ? "At least " : ""}{formatMetricValue(currentValue, metric.unit)}
       </div>
       <div className="mt-1 text-xs text-zinc-500">
-        {targetValue == null ? "Target Unavailable" : `Target ${formatMetricValue(targetValue, metric.unit)}`}
+        {targetValue == null || currentQualifier === "at_least" || (currentCompleteness && currentCompleteness !== "complete") ? "Target Unavailable" : ("Target " + formatMetricValue(targetValue, metric.unit))}
       </div>
 
       {!hideSupportingDetails && (
@@ -90,19 +92,13 @@ export function MetricCard({ metric, compact, density, dashboardUpdatedAtIso, hi
                 </div>
                 <div className="mt-2">
                   <Sparkline
-                    values={
-                      historyValues.length
-                        ? historyValues
-                        : currentValue == null
-                          ? []
-                          : [currentValue, currentValue * 0.98, currentValue * 1.01]
-                    }
+                    values={historyValues.length >= 2 ? historyValues : []}
                     tone={tone}
                   />
                 </div>
               </div>
 
-              {currentValue != null && targetValue != null ? (
+              {currentValue != null && targetValue != null && currentQualifier !== "at_least" && (!currentCompleteness || currentCompleteness === "complete") ? (
                 <div className="mt-3">
                   <TargetProgress current={currentValue} target={targetValue} unit={metric.unit} tone={tone} />
                 </div>

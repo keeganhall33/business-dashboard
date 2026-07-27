@@ -36,7 +36,6 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 import { loadLocalDashboardArtifacts } from "@/lib/local/artifacts";
 import {
-  RangePreset,
   type AgentHealth,
   type ChangeInsightsSnapshot,
   type CollectorTelemetrySnapshot,
@@ -49,9 +48,11 @@ import {
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
+import { resolveRange } from "@/lib/date/resolve-range";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
+import { buildRevenueEngineMetrics } from "@/lib/dashboard/revenue-engine";
 
 export const runtime = "nodejs";
 
@@ -100,7 +101,7 @@ type ScoreboardMetricStats = {
 const HEADER_CARD_CONFIG = [
   { cardKey: "monthly_revenue", fallbackName: "Monthly Revenue", fallbackUnit: "usd" },
   { cardKey: "aov", fallbackName: "Average Order Value", fallbackUnit: "usd" },
-  { cardKey: "conversion_rate", fallbackName: "Conversion Rate", fallbackUnit: "percent" }
+  { cardKey: "purchase_conversion_rate", fallbackName: "Purchase conversion", fallbackUnit: "percent" }
 ] as const;
 
 type TaskRow = {
@@ -432,7 +433,7 @@ const DEFAULT_BRAND_POWER_ACTIONS = [
   "Reposition homepage and campaign copy around Impossible in Pencil.",
   "Create a collector-status narrative series."
 ];
-const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "conversion_rate", "revenue_per_visitor"];
+const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "purchase_conversion_rate", "revenue_per_visitor"];
 
 function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
   if (value == null || Number.isNaN(value)) return null;
@@ -528,6 +529,15 @@ function describeRevenueLeak(metric: ScoreboardMetricRow) {
 
 function describeRevenueFastPath(metric: ScoreboardMetricRow) {
   const name = metric.metric_name ?? metric.metric_key;
+  // Remove goal-restating boilerplate. Revenue Engine is diagnostic only.
+  if (
+    name.toLowerCase().includes("monthly revenue") ||
+    name.toLowerCase().includes("average order") ||
+    name.toLowerCase().includes("revenue per visitor") ||
+    name.toLowerCase().includes("conversion")
+  ) {
+    return null;
+  }
   const current =
     formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
   const target =
@@ -654,67 +664,7 @@ function buildSurvivalStrip(snapshot: FinanceSnapshotRow | null) {
   };
 }
 
-function formatIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function isIsoDate(value: string | null): value is string {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-}
-
-function resolveRange(rangeParam: string | null, startParam: string | null, endParam: string | null) {
-  const presets: Record<string, { preset: RangePreset; days: number }> = {
-    today: { preset: "today", days: 1 },
-    yesterday: { preset: "yesterday", days: 1 },
-    "7d": { preset: "7d", days: 7 },
-    "30d": { preset: "30d", days: 30 },
-    "90d": { preset: "90d", days: 90 }
-  };
-
-  if (rangeParam === "custom" && isIsoDate(startParam) && isIsoDate(endParam)) {
-    const startDate = startParam;
-    const endDate = endParam;
-    if (startDate <= endDate) {
-      return { preset: "custom" as RangePreset, startDate, endDate };
-    }
-  }
-
-  const normalized = (rangeParam ?? "").toLowerCase();
-  const today = new Date();
-
-  if (normalized === "month_to_date") {
-    const endDate = formatIsoDate(today);
-    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
-    return { preset: "month_to_date" as RangePreset, startDate, endDate };
-  }
-
-  if (normalized === "previous_month") {
-    const year = today.getUTCFullYear();
-    const month = today.getUTCMonth();
-    const start = new Date(Date.UTC(year, month - 1, 1));
-    const end = new Date(Date.UTC(year, month, 0));
-    return { preset: "previous_month" as RangePreset, startDate: formatIsoDate(start), endDate: formatIsoDate(end) };
-  }
-
-  if (normalized === "year_to_date") {
-    const endDate = formatIsoDate(today);
-    const startDate = formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), 0, 1)));
-    return { preset: "year_to_date" as RangePreset, startDate, endDate };
-  }
-
-  const fallback = presets[normalized] ?? presets["30d"];
-
-  const end = new Date(today);
-  if (fallback.preset === "yesterday") {
-    end.setUTCDate(end.getUTCDate() - 1);
-  }
-
-  const endDate = formatIsoDate(end);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - (fallback.days - 1));
-  const startDate = formatIsoDate(start);
-  return { preset: fallback.preset, startDate, endDate };
-}
+// resolveRange now lives in src/lib/date/resolve-range.ts and uses Pacific calendar semantics.
 
 function isoRangeBoundsFromDateRange(range: { startDate: string; endDate: string }) {
   // start/end are YYYY-MM-DD in UTC. Treat endDate as inclusive.
@@ -1099,6 +1049,35 @@ export async function GET(request: Request) {
     const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
 
+    // Range integrity: when Woo selected-range telemetry is missing/stale but the latest Woo snapshot
+    // contains eligible orders within the selected window, compute a best-effort selected-range summary
+    // from the snapshot order list. This prevents the executive layer from showing "0" while recent
+    // orders clearly exist in-range.
+    //
+    // IMPORTANT: this is explicitly labeled as snapshot-derived in `woo.source` and `woo.note`.
+    try {
+      type WooSummaryLike = {
+        hasData?: boolean;
+        orders?: number | null;
+        items?: number | null;
+      };
+      const wooSummary = (commerceTelemetry as unknown as { woo?: { summary?: WooSummaryLike } })?.woo?.summary;
+      const recentOrders = normalizedWebsiteSnapshot?.wooCommerce?.recentOrders ?? null;
+      if (wooSummary && recentOrders && Array.isArray(recentOrders) && recentOrders.length > 0) {
+        const hasData = Boolean(wooSummary.hasData) || Boolean(wooSummary.orders) || Boolean(wooSummary.items);
+        if (!hasData) {
+          const derived = deriveWooSummaryFromRecentOrders(range, recentOrders);
+          if (derived) {
+            const next = commerceTelemetry as unknown as { woo?: { summary?: unknown } };
+            next.woo = next.woo ?? {};
+            next.woo.summary = { ...(wooSummary as Record<string, unknown>), ...derived };
+          }
+        }
+      }
+    } catch {
+      // best-effort only
+    }
+
     let changeInsights: ChangeInsightsSnapshot | null = null;
     try {
       const metaHistory = await getDashboardSnapshotHistoryForKey("meta", { limit: 4 });
@@ -1276,29 +1255,21 @@ export async function GET(request: Request) {
     if (commerceTelemetry) {
       const wooSummary = (commerceTelemetry as Record<string, unknown>).woo as Record<string, unknown> | undefined;
       const gaSummary = (commerceTelemetry as Record<string, unknown>).ga4 as Record<string, unknown> | undefined;
-      const funnelSummary = (commerceTelemetry as Record<string, unknown>).funnel as Record<string, unknown> | undefined;
       const wooSummaryData = (wooSummary?.summary ?? {}) as Record<string, unknown>;
       const gaSummaryData = (gaSummary?.summary ?? {}) as Record<string, unknown>;
-      const funnelSummaryData = (funnelSummary?.summary ?? {}) as Record<string, unknown>;
       const wooRevenue = toNumber(wooSummaryData.revenue);
       const wooOrders = toNumber(wooSummaryData.orders);
       const wooAov = toNumber(wooSummaryData.avgOrderValue);
       const gaSessions = toNumber(gaSummaryData.sessions);
-
-      const funnelConversion = toNumber(funnelSummaryData.conversionRate);
       const conversionRate =
-        funnelConversion != null
-          ? funnelConversion
-          : wooOrders != null && gaSessions != null && gaSessions > 0
-            ? (wooOrders / gaSessions) * 100
-            : null;
+        wooOrders != null && gaSessions != null && gaSessions > 0 ? (wooOrders / gaSessions) * 100 : null;
       const revenuePerVisitor =
         wooRevenue != null && gaSessions != null && gaSessions > 0 ? wooRevenue / gaSessions : null;
 
       const overrides: Array<{ key: string; value: number | null; unit: string }> = [
         { key: "monthly_revenue", value: wooRevenue, unit: "usd" },
         { key: "aov", value: wooAov, unit: "usd" },
-        { key: "conversion_rate", value: conversionRate, unit: "percent" },
+        { key: "purchase_conversion_rate", value: conversionRate, unit: "percent" },
         { key: "revenue_per_visitor", value: revenuePerVisitor, unit: "usd" }
       ];
 
@@ -1334,7 +1305,7 @@ export async function GET(request: Request) {
       const targetValue = toNumber(metric.target_value);
       return {
         metricKey: metric.metric_key,
-        metricName: metric.metric_name ?? card.fallbackName,
+        metricName: card.cardKey === "purchase_conversion_rate" ? card.fallbackName : (metric.metric_name ?? card.fallbackName),
         category: metric.category ?? "general",
         currentValue,
         targetValue,
@@ -1387,43 +1358,28 @@ export async function GET(request: Request) {
       ceoRecommendation: directive?.detail_md?.trim() || DEFAULT_EXECUTIVE_RECOMMENDATION
     };
 
-    const revenueEngineMetrics = [
-      "monthly_revenue",
-      "aov",
-      "revenue_per_visitor",
-      "conversion_rate"
-    ]
-      .map((key) => metricByKey.get(key))
-      .filter(isScoreboardMetricRow)
-      .map((m) => ({
-        metricKey: m.metric_key,
-        currentValue: toNumber(m.current_value),
-        targetValue: toNumber(m.target_value),
-        status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-        unit: m.unit ?? null,
-        history: (m.history ?? null)
-          ? (m.history ?? []).map((h) => ({ measuredAt: h.measured_at, value: h.value }))
-          : null,
-        stats: (m.stats ?? null)
-          ? {
-              average: m.stats?.average ?? null,
-              min: m.stats?.min ?? null,
-              max: m.stats?.max ?? null,
-              changePercent: m.stats?.changePercent ?? null
-            }
-          : null
-      }));
+    const revenueEngineMetrics = buildRevenueEngineMetrics({ metricByKey, commerceTelemetry: commerceTelemetry });
+
+    const wooSummaryCompletenessRaw = (commerceTelemetry as { woo?: { summary?: { completeness?: unknown; revenue?: unknown; orders?: unknown } } })?.woo?.summary;
+    const completenessValue = wooSummaryCompletenessRaw?.completeness;
+    const normalizedCompleteness = completenessValue === "complete" || completenessValue === "partial" || completenessValue === "unknown" ? completenessValue : null;
+    const commerceIncomplete =
+      (normalizedCompleteness != null && normalizedCompleteness !== "complete") ||
+      (normalizedCompleteness == null && (wooSummaryCompletenessRaw?.revenue != null || wooSummaryCompletenessRaw?.orders != null));
 
     const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
+    const revenueDiagEligibleRows = commerceIncomplete ? [] : revenueDiagRows;
+
     const revenueLeaks = dedupeStrings(
-      revenueDiagRows
+      revenueDiagEligibleRows
         .map((metric) => describeRevenueLeak(metric))
         .filter((value): value is string => Boolean(value))
     ).slice(0, 3);
-    const fastestPaths = revenueDiagRows
+    const fastestPaths = revenueDiagEligibleRows
       .filter((metric) => isMetricOffTrack(metric))
-      .slice(0, 3)
-      .map((metric) => describeRevenueFastPath(metric));
+      .map((metric) => describeRevenueFastPath(metric))
+      .filter((value): value is { move: string; estimatedImpact: string } => Boolean(value))
+      .slice(0, 3);
 
     const revenueEngine = {
       metrics: revenueEngineMetrics,
@@ -2192,4 +2148,40 @@ function normalizeRelationship(status: string | null | undefined) {
 
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function deriveWooSummaryFromRecentOrders(
+  range: { startDate: string; endDate: string },
+  recentOrders: Array<{ status: string | null; total: number | null; date_paid?: string | null; date_paid_gmt?: string | null; date?: string | null }>
+) {
+  const eligibleStatuses = new Set(["completed", "processing"]);
+  const start = range.startDate;
+  const end = range.endDate;
+
+  const included = recentOrders
+    .map((order) => {
+      const status = (order.status ?? "").toLowerCase();
+      const total = typeof order.total === "number" && Number.isFinite(order.total) ? order.total : null;
+      const rawDate = order.date_paid_gmt ?? order.date_paid ?? order.date ?? null;
+      const isoDay = rawDate ? String(rawDate).slice(0, 10) : null;
+      const inWindow = isoDay != null && isoDay >= start && isoDay <= end;
+      const eligible = eligibleStatuses.has(status);
+      return { eligible, inWindow, total };
+    })
+    .filter((o) => o.eligible && o.inWindow && o.total != null);
+
+  if (included.length === 0) return null;
+
+  const revenue = roundCurrency(included.reduce((sum, o) => sum + (o.total ?? 0), 0));
+  const orders = included.length;
+  return {
+    revenue,
+    orders,
+    items: orders,
+    avgOrderValue: orders > 0 ? revenue / orders : null,
+    hasData: true,
+    source: "snapshot_recent_orders" as const,
+    note: "Selected-range Woo telemetry was unavailable; derived from latest snapshot recent orders." as const,
+    completeness: "partial" as const
+  };
 }

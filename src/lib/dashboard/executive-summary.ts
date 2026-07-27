@@ -9,6 +9,9 @@ export type ExecutiveMetric = {
   previous: number | null;
   delta: number | null;
   deltaPercent: number | null;
+  currentCompleteness?: PerformanceBaselineMetric["currentCompleteness"];
+  previousCompleteness?: PerformanceBaselineMetric["previousCompleteness"];
+  currentQualifier?: PerformanceBaselineMetric["currentQualifier"];
 };
 
 export type ExecutiveSummary = {
@@ -37,8 +40,12 @@ function metric(label: string, unit: PerformanceBaselineMetric["unit"], m: Perfo
     current: m.current,
     previous: m.previous,
     delta: m.delta,
-    deltaPercent: m.deltaPercent
+    deltaPercent: m.deltaPercent,
+    ...(m.currentCompleteness ? { currentCompleteness: m.currentCompleteness } : null),
+    ...(m.previousCompleteness ? { previousCompleteness: m.previousCompleteness } : null),
+    ...(m.currentQualifier ? { currentQualifier: m.currentQualifier } : null)
   };
+
 }
 
 export function buildExecutiveSummary(data: DashboardOverviewResponse): ExecutiveSummary | null {

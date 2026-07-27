@@ -61,7 +61,10 @@ export function DashboardShell({ data }: Props) {
   );
 
   const rangeIsMonthly = data.range.preset === "month_to_date" || data.range.preset === "previous_month";
-  const shouldShowOperations = Boolean(operationsSummary.actions > 0 || operationsSummary.tone !== "zinc");
+  const shouldShowOperations = Boolean(
+    operationsIntel.incidents.some((incident) => incident.severity === "critical") ||
+      operationsIntel.actions.length > 0
+  );
   const shouldShowIndustry = Boolean(data.industryPulseSnapshot && (data.industryPulseSnapshot.alerts?.length ?? 0) > 0);
   const shouldShowChangeInsights = Boolean(changeInsights && (changeInsights.insights?.length ?? 0) > 0);
 

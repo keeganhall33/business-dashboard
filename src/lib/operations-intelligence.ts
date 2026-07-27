@@ -832,31 +832,6 @@ function buildOperationsActions(args: {
       });
     });
 
-  const staleQueue = args.humanIntervention.find((item) => {
-    const created = parseDate(item.createdAt);
-    if (!created) return false;
-    return Date.now() - created.getTime() > 48 * MS_IN_HOUR;
-  });
-  if (staleQueue) {
-    actions.push({
-      id: `approval-${staleQueue.id}`,
-      title: `Unblock ${staleQueue.title}`,
-      detail: `${staleQueue.label} has been waiting since ${staleQueue.createdAt ?? "submission"}.`,
-      owner: staleQueue.owner,
-      urgency: "today"
-    });
-  }
-
-  if (args.overdueJobs.length) {
-    const job = args.overdueJobs[0];
-    actions.push({
-      id: `overdue-${job.id}`,
-      title: `Restart ${job.title}`,
-      detail: job.detail,
-      owner: job.owner,
-      urgency: "this week"
-    });
-  }
 
   if (args.site.status === "incident") {
     actions.push({
@@ -904,7 +879,6 @@ function buildOverallStatus(args: {
   const hasCriticalIncident = args.incidents.some((incident) => incident.severity === "critical");
   const hasWarningIncident = args.incidents.some((incident) => incident.severity === "warning");
   const schedulerBroken = args.schedulerSummary?.status === "BROKEN";
-  const overdue = args.overdueJobs.length > 0;
   const failed = args.failedJobs.length > 0;
 
   let tone: OperationsStatusCard["tone"] = "emerald";
@@ -915,7 +889,7 @@ function buildOverallStatus(args: {
     tone = "rose";
     label = "Operations incident";
     detail = args.incidents[0]?.detail ?? "Scheduler offline.";
-  } else if (failed || overdue || hasWarningIncident || args.site.status === "degraded") {
+  } else if (failed || hasWarningIncident || args.site.status === "degraded") {
     tone = "amber";
     label = "Operations at risk";
     detail = args.incidents[0]?.detail ?? (failed ? "Automation failures detected." : "Attention required.");
@@ -960,12 +934,6 @@ function hoursSince(value: string | null | undefined): number | null {
   return (Date.now() - date) / MS_IN_HOUR;
 }
 
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed);
-}
 
 function dateDesc(a: string | null, b: string | null) {
   const aTime = a ? Date.parse(a) : 0;

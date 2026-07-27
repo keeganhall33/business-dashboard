@@ -16,9 +16,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
+  const stagingEnabled = process.env.DASHBOARD_STAGING_FIXTURES === "1";
+  const flyApp = process.env.FLY_APP_NAME ?? "";
+  const isStagingApp = flyApp === "keegan-dashboard-preview";
+
   const [overview, agents] = await Promise.all([
     getDashboardOverview({ preset, startDate: start, endDate: end }),
-    Promise.all(agentKeys.map((key) => getAgentDashboard(key)))
+    stagingEnabled && isStagingApp ? Promise.resolve([]) : Promise.all(agentKeys.map((key) => getAgentDashboard(key)))
   ]);
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.

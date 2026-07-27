@@ -1,12 +1,7 @@
 import type { CommerceTelemetry } from "@/lib/types/dashboard";
+import { formatCurrency } from "@/lib/utils/format";
 import { StatusChip } from "./ui/StatusChip";
 import { TrendCard } from "./ui/TrendCard";
-
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0
-});
 
 type Props = {
   telemetry?: CommerceTelemetry;
@@ -17,9 +12,9 @@ export function MarketingPerformancePanel({ telemetry }: Props) {
   const summary = ga4?.summary;
   const series = ga4?.timeseries ?? [];
 
-  const sessionsSeries = series.map((point) => Number(point.sessions ?? 0));
-  const engagedSeries = series.map((point) => Number(point.engagedSessions ?? 0));
-  const revenueSeries = series.map((point) => Number(point.revenue ?? 0));
+  const sessionsSeries = normalizeSeries(series.map((point) => toFiniteNumber(point.sessions)));
+  const engagedSeries = normalizeSeries(series.map((point) => toFiniteNumber(point.engagedSessions)));
+  const revenueSeries = normalizeSeries(series.map((point) => toFiniteNumber(point.revenue)));
 
   return (
     <section className="ui-glass ui-glass-hover rounded-3xl p-6">
@@ -39,7 +34,7 @@ export function MarketingPerformancePanel({ telemetry }: Props) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Kpi label="GA4 revenue" value={currency.format(Number(summary?.revenue ?? 0))} series={revenueSeries} tone="sky" />
+        <Kpi label="GA4 revenue" value={formatCurrency(summary?.revenue, { maximumFractionDigits: 0 })} series={revenueSeries} tone="sky" />
         <Kpi label="Events" value={formatInt(summary?.eventCount)} />
         <Kpi label="Avg engagement" value={formatSeconds(summary?.avgEngagementSeconds)} />
       </div>
@@ -92,13 +87,23 @@ function Kpi({
 }
 
 function formatInt(value: number | null | undefined) {
-  const num = Number(value ?? 0);
-  return Number.isFinite(num) ? num.toLocaleString() : "0";
+  if (value == null || !Number.isFinite(value)) return "Unavailable";
+  return Math.round(value).toLocaleString();
 }
 
 function formatSeconds(value: number | null | undefined) {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num) || num <= 0) return "0s";
-  if (num < 60) return `${Math.round(num)}s`;
-  return `${Math.round(num / 60)}m`;
+  if (value == null || !Number.isFinite(value) || value <= 0) return "Unavailable";
+  if (value < 60) return `${Math.round(value)}s`;
+  return `${Math.round(value / 60)}m`;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value !== "number") return null;
+  if (!Number.isFinite(value)) return null;
+  return value;
+}
+
+function normalizeSeries(values: Array<number | null>): number[] {
+  const numeric = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return numeric.length >= 2 ? numeric : [];
 }

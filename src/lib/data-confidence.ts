@@ -218,19 +218,64 @@ export function mapStateToConfidenceLabel(state: ConfidenceState | undefined): "
 function evaluateWoo(data: DashboardOverviewResponse, timestamp: number, conflicts: ConflictMap, partialDay: boolean): ConfidenceEntry {
   const metadata = data.telemetryMetadata?.woo;
   const health = data.telemetryHealth?.woo;
-  const wooRevenue = data.websiteConversion?.wooCommerce?.netRevenue ?? data.commerceTelemetry?.woo?.summary?.revenue;
+  const wooSummary = data.commerceTelemetry?.woo?.summary as
+    | { revenue?: number | null; orders?: number | null; source?: string; completeness?: string; note?: string | null }
+    | undefined;
+
+  const wooRevenue = data.websiteConversion?.wooCommerce?.netRevenue ?? wooSummary?.revenue ?? null;
+  const wooOrders = wooSummary?.orders ?? null;
+  const hasSnapshotDerived = wooSummary?.source === "snapshot_recent_orders";
+  const snapshotCompleteness = wooSummary?.completeness === "partial" ? "partial" : wooSummary?.completeness === "complete" ? "complete" : "unknown";
+
   const rangeMismatch = Boolean(
     metadata?.requestedStartDate &&
       (metadata.requestedStartDate !== data.range.startDate || metadata.requestedEndDate !== data.range.endDate)
   );
+
+  const reference = metadata?.generatedAt ?? metadata?.latestCompletedBusinessDate ?? data.websiteConversion?.generatedAt ?? null;
+  const freshnessHours = reference ? hoursSince(reference, timestamp) : null;
+
+  const warnings = [...(metadata?.warningCodes ?? []), ...(health?.warningCodes ?? []), ...(conflicts.woo ?? [])];
+
+  const hasAnyWooData = wooRevenue != null || wooOrders != null;
+
+  // Special handling: if selected-range Woo telemetry is stale but we have a recent-order snapshot,
+  // do not claim Woo is fully unavailable. Instead, qualify commerce decisions only.
+  if (hasSnapshotDerived && hasAnyWooData) {
+    warnings.push("Selected-range Woo telemetry is stale.");
+    warnings.push(
+      snapshotCompleteness === "partial"
+        ? "Recent-order snapshot data is available, but revenue and order totals are partial and may be understated."
+        : "Recent-order snapshot data is available, but snapshot completeness is unknown."
+    );
+
+    if (rangeMismatch) warnings.push("Range mismatch");
+
+    return buildEntry({
+      domain: "woo",
+      state: conflicts.woo?.length ? "conflicting" : "usable_with_caveats",
+      freshnessHours,
+      coverage: "Partial",
+      completeness: snapshotCompleteness === "partial" ? "Partial totals" : snapshotCompleteness === "complete" ? "Complete totals" : "Unknown totals",
+      provenance: "Woo selected-range telemetry + recent-order snapshot fallback",
+      lastSuccess: reference,
+      lastVerified: metadata?.latestCompletedBusinessDate ?? data.websiteConversion?.generatedAt ?? null,
+      warningCodes: warnings,
+      executiveImpact: DOMAIN_CONFIG.woo.impact,
+      recommendedAction: "Refresh selected-range Woo telemetry.",
+      decisionImpact:
+        "Selected-range Woo telemetry is stale. Recent-order snapshot data is available, but revenue and order totals are partial and may be understated. Exact revenue, exact order count, AOV, target pacing, and period-over-period commerce comparison are unavailable."
+    });
+  }
+
   return evaluateTelemetryDomain({
     domain: "woo",
-    hasData: wooRevenue != null,
+    hasData: hasAnyWooData,
     metadataTimestamp: metadata?.generatedAt,
     lastVerified: metadata?.latestCompletedBusinessDate ?? data.websiteConversion?.generatedAt ?? null,
     coverageStatus: metadata?.coverageStatus,
     healthStatus: health?.status,
-    warnings: [...(metadata?.warningCodes ?? []), ...(health?.warningCodes ?? []), ...(conflicts.woo ?? [])],
+    warnings: rangeMismatch ? [...warnings, "Range mismatch"] : warnings,
     conflicts: conflicts.woo,
     timestamp,
     partialDay,
