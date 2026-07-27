@@ -1255,10 +1255,8 @@ export async function GET(request: Request) {
     if (commerceTelemetry) {
       const wooSummary = (commerceTelemetry as Record<string, unknown>).woo as Record<string, unknown> | undefined;
       const gaSummary = (commerceTelemetry as Record<string, unknown>).ga4 as Record<string, unknown> | undefined;
-      const funnelSummary = (commerceTelemetry as Record<string, unknown>).funnel as Record<string, unknown> | undefined;
       const wooSummaryData = (wooSummary?.summary ?? {}) as Record<string, unknown>;
       const gaSummaryData = (gaSummary?.summary ?? {}) as Record<string, unknown>;
-      const funnelSummaryData = (funnelSummary?.summary ?? {}) as Record<string, unknown>;
       const wooRevenue = toNumber(wooSummaryData.revenue);
       const wooOrders = toNumber(wooSummaryData.orders);
       const wooAov = toNumber(wooSummaryData.avgOrderValue);
