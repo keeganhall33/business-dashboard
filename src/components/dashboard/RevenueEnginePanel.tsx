@@ -59,7 +59,7 @@ export function RevenueEnginePanel({ data }: Props) {
                 </div>
               ) : (
                 <div className="mt-3">
-                  <EmptyState title="No playbook" detail="Add next moves to populate this summary." />
+                  <EmptyState title="No playbook" detail="No evidence-backed recommendations available for this period." />
                 </div>
               )}
             </div>

@@ -218,11 +218,20 @@ export function mapStateToConfidenceLabel(state: ConfidenceState | undefined): "
 function evaluateWoo(data: DashboardOverviewResponse, timestamp: number, conflicts: ConflictMap, partialDay: boolean): ConfidenceEntry {
   const metadata = data.telemetryMetadata?.woo;
   const health = data.telemetryHealth?.woo;
-  const wooRevenue = data.websiteConversion?.wooCommerce?.netRevenue ?? data.commerceTelemetry?.woo?.summary?.revenue;
+  const wooSummary = data.commerceTelemetry?.woo?.summary as { revenue?: number | null; orders?: number | null; source?: string; completeness?: string; note?: string | null } | undefined;
+  const wooRevenue = data.websiteConversion?.wooCommerce?.netRevenue ?? wooSummary?.revenue ?? null;
+  const hasSnapshotDerived = wooSummary?.source === "snapshot_recent_orders";
   const rangeMismatch = Boolean(
     metadata?.requestedStartDate &&
       (metadata.requestedStartDate !== data.range.startDate || metadata.requestedEndDate !== data.range.endDate)
   );
+
+  const warnings = [...(metadata?.warningCodes ?? []), ...(health?.warningCodes ?? []), ...(conflicts.woo ?? [])];
+  if (hasSnapshotDerived) {
+    warnings.push("Selected-range Woo telemetry stale; derived from recent-order snapshot");
+    if (wooSummary?.completeness === "partial") warnings.push("Snapshot-derived totals may be understated");
+  }
+
   return evaluateTelemetryDomain({
     domain: "woo",
     hasData: wooRevenue != null,
@@ -230,7 +239,7 @@ function evaluateWoo(data: DashboardOverviewResponse, timestamp: number, conflic
     lastVerified: metadata?.latestCompletedBusinessDate ?? data.websiteConversion?.generatedAt ?? null,
     coverageStatus: metadata?.coverageStatus,
     healthStatus: health?.status,
-    warnings: [...(metadata?.warningCodes ?? []), ...(health?.warningCodes ?? []), ...(conflicts.woo ?? [])],
+    warnings,
     conflicts: conflicts.woo,
     timestamp,
     partialDay,

@@ -52,6 +52,7 @@ import { resolveRange } from "@/lib/date/resolve-range";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
+import { buildRevenueEngineMetrics } from "@/lib/dashboard/revenue-engine";
 
 export const runtime = "nodejs";
 
@@ -528,6 +529,15 @@ function describeRevenueLeak(metric: ScoreboardMetricRow) {
 
 function describeRevenueFastPath(metric: ScoreboardMetricRow) {
   const name = metric.metric_name ?? metric.metric_key;
+  // Remove goal-restating boilerplate. Revenue Engine is diagnostic only.
+  if (
+    name.toLowerCase().includes("monthly revenue") ||
+    name.toLowerCase().includes("average order") ||
+    name.toLowerCase().includes("revenue per visitor") ||
+    name.toLowerCase().includes("conversion")
+  ) {
+    return null;
+  }
   const current =
     formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
   const target =
@@ -1356,32 +1366,7 @@ export async function GET(request: Request) {
       ceoRecommendation: directive?.detail_md?.trim() || DEFAULT_EXECUTIVE_RECOMMENDATION
     };
 
-    const revenueEngineMetrics = [
-      "monthly_revenue",
-      "aov",
-      "revenue_per_visitor",
-      "conversion_rate"
-    ]
-      .map((key) => metricByKey.get(key))
-      .filter(isScoreboardMetricRow)
-      .map((m) => ({
-        metricKey: m.metric_key,
-        currentValue: toNumber(m.current_value),
-        targetValue: toNumber(m.target_value),
-        status: statusFromGap(toNumber(m.current_value), toNumber(m.target_value)),
-        unit: m.unit ?? null,
-        history: (m.history ?? null)
-          ? (m.history ?? []).map((h) => ({ measuredAt: h.measured_at, value: h.value }))
-          : null,
-        stats: (m.stats ?? null)
-          ? {
-              average: m.stats?.average ?? null,
-              min: m.stats?.min ?? null,
-              max: m.stats?.max ?? null,
-              changePercent: m.stats?.changePercent ?? null
-            }
-          : null
-      }));
+    const revenueEngineMetrics = buildRevenueEngineMetrics({ metricByKey, commerceTelemetry: commerceTelemetry });
 
     const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
     const revenueLeaks = dedupeStrings(
@@ -1391,8 +1376,9 @@ export async function GET(request: Request) {
     ).slice(0, 3);
     const fastestPaths = revenueDiagRows
       .filter((metric) => isMetricOffTrack(metric))
-      .slice(0, 3)
-      .map((metric) => describeRevenueFastPath(metric));
+      .map((metric) => describeRevenueFastPath(metric))
+      .filter((value): value is { move: string; estimatedImpact: string } => Boolean(value))
+      .slice(0, 3);
 
     const revenueEngine = {
       metrics: revenueEngineMetrics,
