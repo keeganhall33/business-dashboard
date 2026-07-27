@@ -6,53 +6,75 @@ import { rankActions, formatConfidence } from "@/lib/executive-actions";
 export function ExecutiveActionsPanel({ data, actions: provided, confidence }: { data: DashboardOverviewResponse; actions?: ExecutiveActionPlan[]; confidence?: ConfidenceSummary }) {
   const actions = provided ?? buildExecutiveActions(data, 7, confidence);
   const ranked = rankActions(actions);
+  const filtered = filterEvidenceBacked(ranked).slice(0, 3);
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive Actions</div>
-      {ranked.length === 0 ? (
-        <p className="mt-3 text-sm text-zinc-400">No high-priority actions surfaced for this window.</p>
+    <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Recommended Actions</div>
+
+      {filtered.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-400">No evidence-backed recommendation is available for this period.</p>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-white/5">
-          <table className="min-w-full text-sm text-zinc-200">
-            <thead className="bg-white/5 text-[11px] uppercase tracking-[0.25em] text-zinc-400">
-              <tr>
-                <th className="px-4 py-3 text-left">Priority</th>
-                <th className="px-4 py-3 text-left">Action</th>
-                <th className="px-4 py-3 text-left">Impact</th>
-                <th className="px-4 py-3 text-left">Confidence</th>
-                <th className="px-4 py-3 text-left">Owner</th>
-                <th className="px-4 py-3 text-left">Evidence</th>
-                <th className="px-4 py-3 text-left">Due</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ranked.map((action) => (
-                <ActionRow key={action.id} action={action} />
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-4 space-y-3">
+          {filtered.map((action) => (
+            <ActionCard key={action.id} action={action} />
+          ))}
         </div>
       )}
     </section>
   );
 }
 
-function ActionRow({ action }: { action: ExecutiveActionPlan }) {
+function ActionCard({ action }: { action: ExecutiveActionPlan }) {
+  const evidence = action.evidence.trim();
+  const impact = action.impact.trim();
+  const due = action.due ? `Due: ${action.due}` : null;
+  const confidenceLabel = formatConfidence(action.confidence);
   return (
-    <tr className="border-t border-white/5">
-      <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">{action.priority}</td>
-      <td className="px-4 py-3 font-semibold text-white">{action.title}</td>
-      <td className="px-4 py-3 text-zinc-300">{action.impact}</td>
-      <td className="px-4 py-3 text-zinc-300">
-        {formatConfidence(action.confidence)}
-        {action.confidenceDetail ? <p className="text-[10px] text-zinc-500">{action.confidenceDetail}</p> : null}
-      </td>
-      <td className="px-4 py-3 text-zinc-300">{action.owner ?? "—"}</td>
-      <td className="px-4 py-3 text-zinc-400">
-        <div>{action.evidence}</div>
-      </td>
-      <td className="px-4 py-3 text-zinc-300">{action.due ?? "—"}</td>
-    </tr>
+    <article className="rounded-2xl border border-white/10 bg-black/30 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">{action.title}</div>
+          <div className="mt-1 text-sm text-zinc-300">{impact}</div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-300">{action.priority}</div>
+          <div className="mt-1 text-[11px] text-zinc-400">{confidenceLabel}</div>
+        </div>
+      </div>
+
+      <div className="mt-2 text-xs text-zinc-500">Evidence: {evidence}</div>
+      {due ? <div className="mt-1 text-xs text-zinc-500">{due}</div> : null}
+    </article>
   );
+}
+
+function filterEvidenceBacked(actions: ExecutiveActionPlan[]) {
+  const blockedPhrases = [
+    "stabilize automation cadence",
+    "increase monthly revenue",
+    "increase average order value",
+    "move toward target",
+    "design premium pricing architecture",
+    "investigation required",
+    "re-enable cron",
+    "repair",
+    "automation"
+  ];
+
+  return actions.filter((action) => {
+    // Remove operational / automation actions from the executive view.
+    if (action.id === "scheduler" || action.id.startsWith("telemetry-")) return false;
+    if (action.sourceDomain === "operations") return false;
+
+    const title = action.title.toLowerCase();
+    if (blockedPhrases.some((phrase) => title.includes(phrase))) return false;
+
+    // Must have concrete evidence.
+    const evidence = action.evidence?.trim();
+    if (!evidence) return false;
+    if (evidence.toLowerCase().includes("missing telemetry") || evidence.toLowerCase().includes("unknown")) return false;
+
+    return true;
+  });
 }

@@ -1,13 +1,12 @@
 const FORBIDDEN_SUBSTRINGS = [
-  "no_data",
-  "semantic_summary_unsafe",
-  "multiple_currencies",
-  "Critical warning",
-  "Urgent intervention",
-  "Upper Deck",
-  "Topps",
-  "Revenue Per Visitor",
-  "Forward Strategy"
+  "[timestamp]",
+  "[redacted]",
+  "scheduler-status-script",
+  "run cadence unknown",
+  "next run: unknown",
+  "command queue",
+  "downstream automation",
+  "war room"
 ] as const;
 
 // Matches common ISO-8601 timestamp strings, including Z and explicit offsets.
@@ -24,14 +23,10 @@ function sanitize(input: unknown): unknown {
   if (input == null) return input;
 
   if (typeof input === "string") {
-    if (ISO_TIMESTAMP_RE.test(input)) {
-      return "[timestamp]";
-    }
+    if (ISO_TIMESTAMP_RE.test(input)) return null;
 
     for (const term of FORBIDDEN_SUBSTRINGS) {
-      if (input.includes(term)) {
-        return "[redacted]";
-      }
+      if (input.toLowerCase().includes(term.toLowerCase())) return null;
     }
 
     return input;

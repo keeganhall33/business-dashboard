@@ -220,18 +220,11 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
   const wooTelemetry = data.commerceTelemetry?.woo?.summary;
   const funnelTelemetry = data.commerceTelemetry?.funnel?.summary;
 
-  const wooSnapshot = data.websiteConversion?.wooCommerce;
-  const ga4Snapshot = data.websiteConversion?.ga4;
-
-  const revenue = wooTelemetry?.revenue ?? wooSnapshot?.netRevenue ?? wooSnapshot?.grossOrderRevenue ?? null;
-  const orders = wooTelemetry?.orders ?? wooSnapshot?.paidOrdersInWindow ?? null;
-  // Prefer FunnelKit conversion rate (0–100) when available. Fall back to GA4-derived funnel rates (0–1 fraction).
-  const conversionPercent =
-    funnelTelemetry?.conversionRate != null
-      ? funnelTelemetry.conversionRate
-      : ga4Snapshot?.funnelRates?.sessionToPurchase != null
-        ? ga4Snapshot.funnelRates.sessionToPurchase * 100
-        : null;
+  const revenue = wooTelemetry?.revenue ?? null;
+  const orders = wooTelemetry?.orders ?? null;
+  // Selected-range truth: purchase conversion from baseline if available; otherwise FunnelKit completion.
+  const purchaseConversion = data.performanceBaseline?.metrics.purchaseConversionRate.current ?? null;
+  const conversionPercent = purchaseConversion ?? (funnelTelemetry?.conversionRate ?? null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
   return {
     status: revenue != null || orders != null ? "Live" : "Needs data",
