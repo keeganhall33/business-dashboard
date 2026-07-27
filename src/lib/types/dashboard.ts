@@ -663,6 +663,14 @@ export type PerformanceBaselineMetric = {
   previous: number | null;
   delta: number | null;
   deltaPercent: number | null;
+  /**
+   * When present, indicates the current value is not known to be complete for the selected range.
+   * UI must avoid treating it as an exact total (e.g. no exact target gaps or percent deltas).
+   */
+  currentQualifier?: "at_least";
+  /** Optional completeness marker carried forward from Woo telemetry/snapshot fallback. */
+  currentCompleteness?: "complete" | "partial" | "unknown";
+  previousCompleteness?: "complete" | "partial" | "unknown";
 };
 
 export type PerformanceBaselineSnapshot = {

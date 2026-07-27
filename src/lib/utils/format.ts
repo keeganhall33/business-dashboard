@@ -28,10 +28,13 @@ export function formatMetricValue(value: number | null | undefined, unit: string
 
 export function formatCurrency(value: number | null | undefined, opts?: { maximumFractionDigits?: number }): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
+  const abs = Math.abs(value);
+  const maximumFractionDigits =
+    opts?.maximumFractionDigits ?? (abs > 0 && abs < 1 ? 2 : abs < 10 ? 2 : 0);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: opts?.maximumFractionDigits ?? 0
+    maximumFractionDigits
   }).format(value);
 }
 

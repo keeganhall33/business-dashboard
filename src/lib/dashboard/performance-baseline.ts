@@ -23,22 +23,31 @@ export function buildPerformanceBaselineSnapshot(params: {
   const previousRange = computePreviousInclusiveDateRange(params.range);
   if (!previousRange) return null;
 
+  const wooCompletenessCurrent = normalizeCompleteness(current.woo?.summary?.completeness);
+  const wooCompletenessPrevious = normalizeCompleteness(previous.woo?.summary?.completeness);
+
   const revenueCurrent = toFiniteNumber(current.woo?.summary?.revenue);
   const revenuePrevious = toFiniteNumber(previous.woo?.summary?.revenue);
 
   const ordersCurrent = toFiniteNumber(current.woo?.summary?.orders);
   const ordersPrevious = toFiniteNumber(previous.woo?.summary?.orders);
 
-  const aovCurrent = computeAov({
-    direct: current.woo?.summary?.avgOrderValue,
-    revenue: revenueCurrent,
-    orders: ordersCurrent
-  });
-  const aovPrevious = computeAov({
-    direct: previous.woo?.summary?.avgOrderValue,
-    revenue: revenuePrevious,
-    orders: ordersPrevious
-  });
+  const aovCurrent =
+    wooCompletenessCurrent === "complete"
+      ? computeAov({
+          direct: current.woo?.summary?.avgOrderValue,
+          revenue: revenueCurrent,
+          orders: ordersCurrent
+        })
+      : null;
+  const aovPrevious =
+    wooCompletenessPrevious === "complete"
+      ? computeAov({
+          direct: previous.woo?.summary?.avgOrderValue,
+          revenue: revenuePrevious,
+          orders: ordersPrevious
+        })
+      : null;
 
   const sessionsCurrent = toFiniteNumber(current.ga4?.summary?.sessions);
   const sessionsPrevious = toFiniteNumber(previous.ga4?.summary?.sessions);
@@ -56,6 +65,8 @@ export function buildPerformanceBaselineSnapshot(params: {
   const funnelCompletionCurrent = toFiniteNumber(current.funnel?.summary?.conversionRate);
   const funnelCompletionPrevious = toFiniteNumber(previous.funnel?.summary?.conversionRate);
 
+  const currentQualifier = wooCompletenessCurrent !== "complete" ? ("at_least" as const) : undefined;
+
   return {
     range: {
       preset: params.range.preset,
@@ -64,15 +75,40 @@ export function buildPerformanceBaselineSnapshot(params: {
     },
     previousRange,
     metrics: {
-      revenue: metric({ id: "revenue", unit: "currency", current: revenueCurrent, previous: revenuePrevious }),
-      orders: metric({ id: "orders", unit: "count", current: ordersCurrent, previous: ordersPrevious }),
-      avgOrderValue: metric({ id: "avg_order_value", unit: "currency", current: aovCurrent, previous: aovPrevious }),
+      revenue: metric({
+        id: "revenue",
+        unit: "currency",
+        current: revenueCurrent,
+        previous: revenuePrevious,
+        currentCompleteness: wooCompletenessCurrent,
+        previousCompleteness: wooCompletenessPrevious,
+        currentQualifier
+      }),
+      orders: metric({
+        id: "orders",
+        unit: "count",
+        current: ordersCurrent,
+        previous: ordersPrevious,
+        currentCompleteness: wooCompletenessCurrent,
+        previousCompleteness: wooCompletenessPrevious,
+        currentQualifier
+      }),
+      avgOrderValue: metric({
+        id: "avg_order_value",
+        unit: "currency",
+        current: aovCurrent,
+        previous: aovPrevious,
+        currentCompleteness: wooCompletenessCurrent,
+        previousCompleteness: wooCompletenessPrevious
+      }),
       sessions: metric({ id: "sessions", unit: "count", current: sessionsCurrent, previous: sessionsPrevious }),
       purchaseConversionRate: metric({
         id: "purchase_conversion_rate",
         unit: "percent",
         current: purchaseConversionCurrent,
-        previous: purchaseConversionPrevious
+        previous: purchaseConversionPrevious,
+        currentCompleteness: wooCompletenessCurrent,
+        previousCompleteness: wooCompletenessPrevious
       }),
       funnelCompletionRate: metric({
         id: "funnel_completion_rate",
@@ -82,6 +118,14 @@ export function buildPerformanceBaselineSnapshot(params: {
       })
     }
   };
+}
+
+function normalizeCompleteness(value: unknown): "complete" | "partial" | "unknown" {
+  if (value === "complete" || value === "partial" || value === "unknown") return value;
+  // When the upstream source doesn't provide an explicit completeness marker,
+  // treat it as complete (typical for live telemetry paths).
+  if (value == null) return "complete";
+  return "unknown";
 }
 
 export function computePreviousInclusiveDateRange(range: { startDate: string; endDate: string }): { startDate: string; endDate: string } | null {
@@ -106,11 +150,21 @@ function metric(params: {
   unit: PerformanceBaselineMetric["unit"];
   current: number | null;
   previous: number | null;
+  currentQualifier?: PerformanceBaselineMetric["currentQualifier"];
+  currentCompleteness?: PerformanceBaselineMetric["currentCompleteness"];
+  previousCompleteness?: PerformanceBaselineMetric["previousCompleteness"];
 }): PerformanceBaselineMetric {
   const { current, previous } = params;
-  const delta = current != null && previous != null ? current - previous : null;
+
+  const comparisonAllowed =
+    current != null &&
+    previous != null &&
+    (params.currentCompleteness ?? "complete") === "complete" &&
+    (params.previousCompleteness ?? "complete") === "complete";
+
+  const delta = comparisonAllowed ? current - previous : null;
   const deltaPercent =
-    delta != null && previous != null && previous !== 0
+    comparisonAllowed && delta != null && previous != null && previous !== 0
       ? delta / previous
       : null;
 
@@ -120,7 +174,10 @@ function metric(params: {
     current,
     previous,
     delta,
-    deltaPercent
+    deltaPercent,
+    ...(params.currentQualifier ? { currentQualifier: params.currentQualifier } : null),
+    ...(params.currentCompleteness ? { currentCompleteness: params.currentCompleteness } : null),
+    ...(params.previousCompleteness ? { previousCompleteness: params.previousCompleteness } : null)
   };
 }
 

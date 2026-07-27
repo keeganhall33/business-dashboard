@@ -5,7 +5,7 @@ import type { PerformanceBaselineMetric } from "../src/lib/types/dashboard";
 
 test("percent deltas render as percentage points with relative percent in parentheses", () => {
   const metric: PerformanceBaselineMetric = {
-    id: "conversion_rate",
+    id: "purchase_conversion_rate",
     unit: "percent",
     current: 4,
     previous: 2,
@@ -19,7 +19,7 @@ test("percent deltas render as percentage points with relative percent in parent
 
 test("percent delta negative shows pp + negative relative percent", () => {
   const metric: PerformanceBaselineMetric = {
-    id: "conversion_rate",
+    id: "purchase_conversion_rate",
     unit: "percent",
     current: 2,
     previous: 4,
@@ -32,7 +32,7 @@ test("percent delta negative shows pp + negative relative percent", () => {
 
 test("previous zero shows absolute pp with no relative percent", () => {
   const metric: PerformanceBaselineMetric = {
-    id: "conversion_rate",
+    id: "purchase_conversion_rate",
     unit: "percent",
     current: 2,
     previous: 0,
@@ -45,7 +45,7 @@ test("previous zero shows absolute pp with no relative percent", () => {
 
 test("zero-to-zero renders neutral 0.0 pp", () => {
   const metric: PerformanceBaselineMetric = {
-    id: "conversion_rate",
+    id: "purchase_conversion_rate",
     unit: "percent",
     current: 0,
     previous: 0,
@@ -58,7 +58,7 @@ test("zero-to-zero renders neutral 0.0 pp", () => {
 
 test("negative zero is normalized in display", () => {
   const metric: PerformanceBaselineMetric = {
-    id: "conversion_rate",
+    id: "purchase_conversion_rate",
     unit: "percent",
     current: -0,
     previous: 0,
@@ -92,6 +92,23 @@ test("currency and count metrics do not display pp", () => {
 
   assert.ok(!formatPerformanceBaselineDelta(revenue).includes("pp"));
   assert.ok(!formatPerformanceBaselineDelta(orders).includes("pp"));
+});
+
+test("partial commerce values are labeled as At least and do not show exact deltas", () => {
+  const revenue: PerformanceBaselineMetric = {
+    id: "revenue",
+    unit: "currency",
+    current: 0.14,
+    previous: 6,
+    delta: null,
+    deltaPercent: null,
+    currentQualifier: "at_least",
+    currentCompleteness: "partial",
+    previousCompleteness: "complete"
+  };
+
+  assert.equal(formatPerformanceBaselineValue(revenue), "At least $0.14");
+  assert.equal(formatPerformanceBaselineDelta(revenue), "Comparison unavailable");
 });
 
 test("unavailable metrics render safely", () => {
