@@ -15,7 +15,7 @@ type Props = {
 export function WebsiteConversionPanel({ snapshot, range }: Props) {
   const ga4 = snapshot?.ga4;
   const woo = snapshot?.wooCommerce;
-  const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "unknown";
+  const generatedLabel = snapshot?.generatedAt ? formatRelativeTimeFromNow(snapshot.generatedAt) : "Unavailable";
   const observedPaid = woo?.observedPaidRange ?? null;
   const selectedWindow = range ? `${range.startDate} → ${range.endDate}` : null;
   const observedWindow = observedPaid?.earliestPaid && observedPaid?.latestPaid ? `${observedPaid.earliestPaid} → ${observedPaid.latestPaid}` : null;
@@ -36,7 +36,7 @@ export function WebsiteConversionPanel({ snapshot, range }: Props) {
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Latest website snapshot</div>
           <div className="mt-1 text-sm text-zinc-400">GA4 + WooCommerce snapshot (separate from selected-range telemetry).</div>
-          <div className="text-xs text-zinc-500">Last updated {generatedLabel}</div>
+          <div className="text-xs text-zinc-500">Last updated: {generatedLabel}</div>
           {selectedWindow ? <div className="text-xs text-zinc-500">Selected range {selectedWindow}</div> : null}
           {observedWindow ? <div className="text-xs text-zinc-500">Snapshot window {observedWindow}</div> : null}
         </div>
