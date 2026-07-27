@@ -1,10 +1,11 @@
-import { buildExecutiveActions, buildExecutiveDrivers, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import { buildExecutiveActions, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import { buildExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { ExecutiveStatusPanel } from "./ExecutiveStatusPanel";
-import { ExecutiveKpiScorecard } from "./ExecutiveKpiScorecard";
-import { ExecutiveDriversPanel } from "./ExecutiveDriversPanel";
+import { BusinessStatusPanel } from "./BusinessStatusPanel";
+import { ExecutiveKpiPanel } from "./ExecutiveKpiPanel";
+import { TopDriversPanel } from "./TopDriversPanel";
 import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
 import { DataConfidencePanel } from "./DataConfidencePanel";
 import { DashboardSection } from "./ui/DashboardSection";
@@ -15,12 +16,10 @@ import { MarketingPerformancePanel } from "./MarketingPerformancePanel";
 import { MetaAdsPanel } from "./MetaAdsPanel";
 import { ChangeInsightsPanel } from "./ChangeInsightsPanel";
 import { PerformanceBaselinePanel } from "./PerformanceBaselinePanel";
-import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
-import { ExecutivePerspectivePanel } from "./ExecutivePerspectivePanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
 
@@ -39,9 +38,9 @@ export function DashboardShell({ data }: Props) {
   const metaSnapshot = data.metaAds ?? null;
   const changeInsights = data.changeInsights ?? null;
   const performanceBaseline = data.performanceBaseline ?? null;
+  const executiveSummary = buildExecutiveSummary(data);
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
-  const executiveDrivers = buildExecutiveDrivers(data.executiveInsights?.trends ?? [], 3, dataConfidence);
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
@@ -59,12 +58,10 @@ export function DashboardShell({ data }: Props) {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <ExecutiveStatusPanel insights={data.executiveInsights} fallbackRange={data.range} />
-        <ExecutivePerspectivePanel data={data} actions={executiveActions} />
-        {data.executiveInsights ? <ExecutiveBriefPanel insights={data.executiveInsights} /> : null}
-        <ExecutiveKpiScorecard metrics={data.headerMetrics} range={data.range} />
+        <BusinessStatusPanel summary={executiveSummary} />
+        <ExecutiveKpiPanel summary={executiveSummary} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
-        <ExecutiveDriversPanel trends={data.executiveInsights?.trends ?? []} drivers={executiveDrivers} confidence={dataConfidence} />
+        <TopDriversPanel summary={executiveSummary} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
       </div>
 
