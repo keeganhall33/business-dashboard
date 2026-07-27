@@ -42,7 +42,11 @@ function summarize(summary: ExecutiveSummary | null) {
     };
   }
 
-  const { revenue, orders, sessions, purchaseConversion, aov } = summary.metrics;
+  const { revenue, orders, sessions, purchaseConversion, aov, funnelCompletion } = summary.metrics;
+
+  const commerceIncomplete =
+    (revenue.currentCompleteness && revenue.currentCompleteness !== "complete") ||
+    (orders.currentCompleteness && orders.currentCompleteness !== "complete");
 
   const declines: string[] = [];
   const gains: string[] = [];
@@ -54,23 +58,31 @@ function summarize(summary: ExecutiveSummary | null) {
     if (pct >= 10) gains.push(label);
   };
 
-  pushChange("revenue", revenue.deltaPercent);
-  pushChange("orders", orders.deltaPercent);
+  if (!commerceIncomplete) {
+    pushChange("revenue", revenue.deltaPercent);
+    pushChange("orders", orders.deltaPercent);
+  }
   pushChange("sessions", sessions.deltaPercent);
   pushChange("purchase conversion", purchaseConversion.deltaPercent);
   pushChange("AOV", aov.deltaPercent);
+  pushChange("funnel completion", funnelCompletion.deltaPercent);
 
-  const tone: StatusTone = declines.length ? "rose" : gains.length ? "emerald" : "amber";
-  const confidence = "Moderate confidence";
+  const tone: StatusTone = commerceIncomplete ? "rose" : declines.length ? "rose" : gains.length ? "emerald" : "amber";
+  const confidence = commerceIncomplete ? "Low confidence" : "Moderate confidence";
 
-  const headline =
-    declines.length
-      ? `Material declines in ${declines.slice(0, 3).join(", ")} versus the prior comparable period.`
+  const trafficMovedMaterially = typeof sessions.deltaPercent === "number" && Math.abs(sessions.deltaPercent) >= 0.1;
+
+  const headline = commerceIncomplete
+    ? trafficMovedMaterially
+      ? "Traffic declined materially. Current Woo revenue and order totals are partial because selected-range telemetry is unavailable."
+      : "Current Woo revenue and order totals are partial because selected-range telemetry is unavailable."
+    : declines.length
+      ? "Material declines in " + declines.slice(0, 3).join(", ") + " versus the prior comparable period."
       : gains.length
-        ? `Material gains in ${gains.slice(0, 3).join(", ")} versus the prior comparable period.`
+        ? "Material gains in " + gains.slice(0, 3).join(", ") + " versus the prior comparable period."
         : "No material movement detected versus the prior comparable period.";
 
-  const mostImportant = pickMostMaterial(summary);
+  const mostImportant = commerceIncomplete ? null : pickMostMaterial(summary);
   const detail = mostImportant ? mostImportant : null;
 
   return {

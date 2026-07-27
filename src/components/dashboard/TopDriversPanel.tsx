@@ -53,6 +53,10 @@ function buildDrivers(summary: ExecutiveSummary | null): Driver[] {
   if (!summary) return [];
 
   const materialThreshold = 0.1; // 10%
+  const commerceIncomplete =
+    (summary.metrics.revenue.currentCompleteness && summary.metrics.revenue.currentCompleteness !== "complete") ||
+    (summary.metrics.orders.currentCompleteness && summary.metrics.orders.currentCompleteness !== "complete");
+
   const candidates = Object.values(summary.metrics)
     .map((m) => ({
       metric: m.label,
