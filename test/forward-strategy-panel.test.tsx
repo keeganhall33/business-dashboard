@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
@@ -13,8 +14,8 @@ const baseRange = {
 test("Forward Strategy suppresses pacing and target gaps when Woo completeness is partial", () => {
   const html = renderToStaticMarkup(
     <ForwardStrategyPanel
-      range={baseRange as any}
       data={{
+        range: baseRange,
         headerMetrics: [
           { metricKey: "monthly_revenue", metricName: "Revenue", currentValue: 10, targetValue: 100, unit: "usd", status: "warning" }
         ],
@@ -35,8 +36,8 @@ test("Forward Strategy suppresses pacing and target gaps when Woo completeness i
 test("Forward Strategy shows gaps when Woo completeness is complete", () => {
   const html = renderToStaticMarkup(
     <ForwardStrategyPanel
-      range={baseRange as any}
       data={{
+        range: baseRange,
         headerMetrics: [
           { metricKey: "monthly_revenue", metricName: "Revenue", currentValue: 10, targetValue: 100, unit: "usd", status: "warning" },
           { metricKey: "orders", metricName: "Orders", currentValue: 1, targetValue: 10, unit: "count", status: "warning" }

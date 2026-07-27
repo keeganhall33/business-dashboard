@@ -37,7 +37,7 @@ export function ForwardStrategyPanel({
   const effectiveRevenue = commerceIncomplete ? null : currentRevenue;
   const revenueTarget = revenueMetric?.targetValue ?? null;
   const paceRevenue =
-    range.preset === "month_to_date" && currentRevenue != null && elapsedDays > 0
+    range.preset === "month_to_date" && !commerceIncomplete && effectiveRevenue != null && elapsedDays > 0
       ? (effectiveRevenue / elapsedDays) * totalDays
       : effectiveRevenue;
   const revenueGap = !commerceIncomplete && revenueTarget != null && paceRevenue != null ? revenueTarget - paceRevenue : null;
