@@ -1360,13 +1360,22 @@ export async function GET(request: Request) {
 
     const revenueEngineMetrics = buildRevenueEngineMetrics({ metricByKey, commerceTelemetry: commerceTelemetry });
 
+    const wooSummaryCompletenessRaw = (commerceTelemetry as { woo?: { summary?: { completeness?: unknown; revenue?: unknown; orders?: unknown } } })?.woo?.summary;
+    const completenessValue = wooSummaryCompletenessRaw?.completeness;
+    const normalizedCompleteness = completenessValue === "complete" || completenessValue === "partial" || completenessValue === "unknown" ? completenessValue : null;
+    const commerceIncomplete =
+      (normalizedCompleteness != null && normalizedCompleteness !== "complete") ||
+      (normalizedCompleteness == null && (wooSummaryCompletenessRaw?.revenue != null || wooSummaryCompletenessRaw?.orders != null));
+
     const revenueDiagRows = REVENUE_DIAG_METRICS.map((key) => metricByKey.get(key)).filter(isScoreboardMetricRow);
+    const revenueDiagEligibleRows = commerceIncomplete ? [] : revenueDiagRows;
+
     const revenueLeaks = dedupeStrings(
-      revenueDiagRows
+      revenueDiagEligibleRows
         .map((metric) => describeRevenueLeak(metric))
         .filter((value): value is string => Boolean(value))
     ).slice(0, 3);
-    const fastestPaths = revenueDiagRows
+    const fastestPaths = revenueDiagEligibleRows
       .filter((metric) => isMetricOffTrack(metric))
       .map((metric) => describeRevenueFastPath(metric))
       .filter((value): value is { move: string; estimatedImpact: string } => Boolean(value))
