@@ -53,7 +53,7 @@ test("builds baseline metrics with independent degradation and safe percent math
   const current: CommerceTelemetry = {
     range: { preset: "7d", startDate: "2026-07-19", endDate: "2026-07-25" },
     woo: {
-      summary: { revenue: 7000, orders: 14, avgOrderValue: null, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0 },
+      summary: { revenue: 7000, orders: 14, avgOrderValue: null, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0, completeness: "complete" },
       timeseries: []
     },
     ga4: {
@@ -69,7 +69,7 @@ test("builds baseline metrics with independent degradation and safe percent math
   const previous: CommerceTelemetry = {
     range: { preset: "7d", startDate: "2026-07-12", endDate: "2026-07-18" },
     woo: {
-      summary: { revenue: 5000, orders: 10, avgOrderValue: 500, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0 },
+      summary: { revenue: 5000, orders: 10, avgOrderValue: 500, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 0, completeness: "complete" },
       timeseries: []
     },
     ga4: {
