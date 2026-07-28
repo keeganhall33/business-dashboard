@@ -403,9 +403,11 @@ export type WooSummary = {
   taxTotal: number | null;
   items: number | null;
   hasData?: boolean;
-  source?: "telemetry" | "snapshot_recent_orders";
+  source?: "selected_range_telemetry" | "snapshot_recent_orders";
   note?: string | null;
   completeness?: "complete" | "partial" | "unknown";
+  asOf?: string | null;
+  comparisonAvailable?: boolean | null;
 };
 
 export type WooTimeseriesPoint = {

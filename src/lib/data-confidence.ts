@@ -268,6 +268,33 @@ function evaluateWoo(data: DashboardOverviewResponse, timestamp: number, conflic
     });
   }
 
+  // Selected-range Woo telemetry without a verifiable coverage signal must be treated as unknown.
+  if (wooSummary?.source === "selected_range_telemetry" && hasAnyWooData) {
+    const note = typeof wooSummary.note === "string" && wooSummary.note.trim().length ? wooSummary.note : null;
+    warnings.push(
+      note ??
+        "Selected-range Woo telemetry returned data, but its coverage and freshness could not be verified. Revenue and order totals may be incomplete."
+    );
+
+    if (rangeMismatch) warnings.push("Range mismatch");
+
+    return buildEntry({
+      domain: "woo",
+      state: conflicts.woo?.length ? "conflicting" : "usable_with_caveats",
+      freshnessHours,
+      coverage: "Unknown",
+      completeness: "Unknown coverage",
+      provenance: "Selected-range Woo telemetry",
+      lastSuccess: reference,
+      lastVerified: metadata?.latestCompletedBusinessDate ?? data.websiteConversion?.generatedAt ?? null,
+      warningCodes: warnings,
+      executiveImpact: DOMAIN_CONFIG.woo.impact,
+      recommendedAction: "Verify Woo ingestion coverage for this range.",
+      decisionImpact:
+        "Selected-range Woo telemetry returned data, but its coverage and freshness could not be verified. Revenue and order totals may be incomplete, so exact comparisons, AOV, and target pacing are unavailable."
+    });
+  }
+
   return evaluateTelemetryDomain({
     domain: "woo",
     hasData: hasAnyWooData,

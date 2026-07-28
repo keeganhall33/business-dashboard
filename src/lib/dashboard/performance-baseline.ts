@@ -65,7 +65,7 @@ export function buildPerformanceBaselineSnapshot(params: {
   const funnelCompletionCurrent = toFiniteNumber(current.funnel?.summary?.conversionRate);
   const funnelCompletionPrevious = toFiniteNumber(previous.funnel?.summary?.conversionRate);
 
-  const currentQualifier = wooCompletenessCurrent !== "complete" ? ("at_least" as const) : undefined;
+  const currentQualifier = wooCompletenessCurrent === "partial" ? ("at_least" as const) : undefined;
 
   return {
     range: {
@@ -122,9 +122,9 @@ export function buildPerformanceBaselineSnapshot(params: {
 
 function normalizeCompleteness(value: unknown): "complete" | "partial" | "unknown" {
   if (value === "complete" || value === "partial" || value === "unknown") return value;
-  // When the upstream source doesn't provide an explicit completeness marker,
-  // treat it as complete (typical for live telemetry paths).
-  if (value == null) return "complete";
+  // If the source doesn't provide an explicit completeness marker, we cannot treat
+  // the totals as proven complete.
+  if (value == null) return "unknown";
   return "unknown";
 }
 

@@ -49,6 +49,7 @@ import {
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
 import { resolveRange } from "@/lib/date/resolve-range";
+import { deriveWooSummaryFromRecentOrders } from "@/lib/dashboard/woo-fallback";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
@@ -1066,7 +1067,7 @@ export async function GET(request: Request) {
       if (wooSummary && recentOrders && Array.isArray(recentOrders) && recentOrders.length > 0) {
         const hasData = Boolean(wooSummary.hasData) || Boolean(wooSummary.orders) || Boolean(wooSummary.items);
         if (!hasData) {
-          const derived = deriveWooSummaryFromRecentOrders(range, recentOrders);
+          const derived = deriveWooSummaryFromRecentOrders({ range, recentOrders });
           if (derived) {
             const next = commerceTelemetry as unknown as { woo?: { summary?: unknown } };
             next.woo = next.woo ?? {};
@@ -1931,6 +1932,38 @@ export async function GET(request: Request) {
       endDate: range.endDate
     };
 
+    // Woo provenance: never return null source/completeness. Selected-range telemetry coverage is
+    // currently unverified (upstream ingestion can be incomplete), so default to completeness=unknown.
+    if (commerceTelemetry?.woo?.summary) {
+      const summary = commerceTelemetry.woo.summary as Record<string, unknown>;
+      const source = summary.source === "snapshot_recent_orders" ? "snapshot_recent_orders" : "selected_range_telemetry";
+      const completenessRaw = summary.completeness;
+      const completeness = completenessRaw === "partial" || completenessRaw === "complete" || completenessRaw === "unknown" ? completenessRaw : null;
+
+      if (source === "selected_range_telemetry") {
+        commerceTelemetry.woo.summary = {
+          ...summary,
+          source,
+          completeness: "unknown",
+          avgOrderValue: null,
+          comparisonAvailable: false,
+          asOf: typeof summary.asOf === "string" ? (summary.asOf as string) : null,
+          note:
+            typeof summary.note === "string" && summary.note.trim().length
+              ? summary.note
+              : "Selected-range Woo telemetry returned data, but its coverage and freshness could not be verified. Revenue and order totals may be incomplete, so exact comparisons, AOV, and target pacing are unavailable."
+        };
+      } else {
+        commerceTelemetry.woo.summary = {
+          ...summary,
+          source,
+          completeness: completeness ?? "partial",
+          comparisonAvailable: false,
+          asOf: typeof summary.asOf === "string" ? (summary.asOf as string) : null
+        };
+      }
+    }
+
     const commercePayload = commerceTelemetry
       ? {
           range: responseRange,
@@ -2148,40 +2181,4 @@ function normalizeRelationship(status: string | null | undefined) {
 
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
-}
-
-function deriveWooSummaryFromRecentOrders(
-  range: { startDate: string; endDate: string },
-  recentOrders: Array<{ status: string | null; total: number | null; date_paid?: string | null; date_paid_gmt?: string | null; date?: string | null }>
-) {
-  const eligibleStatuses = new Set(["completed", "processing"]);
-  const start = range.startDate;
-  const end = range.endDate;
-
-  const included = recentOrders
-    .map((order) => {
-      const status = (order.status ?? "").toLowerCase();
-      const total = typeof order.total === "number" && Number.isFinite(order.total) ? order.total : null;
-      const rawDate = order.date_paid_gmt ?? order.date_paid ?? order.date ?? null;
-      const isoDay = rawDate ? String(rawDate).slice(0, 10) : null;
-      const inWindow = isoDay != null && isoDay >= start && isoDay <= end;
-      const eligible = eligibleStatuses.has(status);
-      return { eligible, inWindow, total };
-    })
-    .filter((o) => o.eligible && o.inWindow && o.total != null);
-
-  if (included.length === 0) return null;
-
-  const revenue = roundCurrency(included.reduce((sum, o) => sum + (o.total ?? 0), 0));
-  const orders = included.length;
-  return {
-    revenue,
-    orders,
-    items: orders,
-    avgOrderValue: orders > 0 ? revenue / orders : null,
-    hasData: true,
-    source: "snapshot_recent_orders" as const,
-    note: "Selected-range Woo telemetry was unavailable; derived from latest snapshot recent orders." as const,
-    completeness: "partial" as const
-  };
 }
