@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which job to run (website|meta|industry|cloudflare|leads|social|executive)"
+        description: "Which job to run (website|meta|woo|industry|cloudflare|leads|social|executive)"
         required: true
         default: "website"
   schedule:
     - cron: "0 10 * * *" # Website agent at 02:00 PT (10:00 UTC)
+    - cron: "5 10 * * *" # Woo telemetry ingestion at 02:05 PT (10:05 UTC)
     - cron: "0 11 * * *" # Meta agent at 03:00 PT (11:00 UTC)
     - cron: "0 12 * * *" # Industry Pulse at 04:00 PT (12:00 UTC)
     - cron: "30 12 * * *" # Cloudflare telemetry at 04:30 PT (12:30 UTC)
@@ -17,6 +18,35 @@ on:
     - cron: "0 13 * * *" # Executive Command refresh at 05:00 PT (13:00 UTC)
 
 jobs:
+  woo:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'woo' || github.event_name == 'schedule' && github.event.schedule == '5 10 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Install 1Password CLI
+        uses: 1Password/install-cli-action@v1
+      - name: Run Woo Telemetry Ingestion
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+            echo "OP service account token present"
+            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
+          else
+            echo "OP service account token missing" && exit 1
+          fi
+          cp .env.website.ci .env.website
+          op run --env-file .env.website -- npm run woo:ingest
+
   website:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'website' || github.event_name == 'schedule' && github.event.schedule == '0 10 * * *'
     runs-on: ubuntu-latest

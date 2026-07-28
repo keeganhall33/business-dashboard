@@ -630,32 +630,47 @@ returns jsonb
 language sql
 stable
 security definer
-set search_path = public, exec_dashboard
+set search_path = public
 as $$
-  with orders as (
+  with latest_run as (
     select *
-    from exec_dashboard.raw_woocommerce_orders
-    where created_at::date between start_date and end_date
-      and coalesce(status, '') not in ('trash','refunded','cancelled','failed')
+    from woo_ingestion_runs_v1
+    where status = 'success'
+    order by completed_at desc
+    limit 1
+  ),
+  orders as (
+    select *
+    from woo_order_telemetry_v1
+    where paid_pacific_date between start_date and end_date
+      and is_deleted = false
+      and status in ('completed','processing')
   ),
   ts as (
     select
-      created_at::date as bucket,
-      coalesce(sum(total), 0)::numeric as revenue,
+      paid_pacific_date as bucket,
+      coalesce(sum(net_revenue_cents), 0)::numeric / 100 as revenue,
       count(*)::numeric as orders
     from orders
-    group by created_at::date
+    group by paid_pacific_date
     order by bucket
   ),
   agg as (
     select
       count(*)::numeric as orders,
-      coalesce(sum(total), 0)::numeric as revenue,
-      coalesce(sum(discount_total), 0)::numeric as discounts,
-      coalesce(sum(shipping_total), 0)::numeric as shipping,
-      coalesce(sum(tax_total), 0)::numeric as taxes,
-      coalesce(sum(total_items), 0)::numeric as items
+      coalesce(sum(gross_total_cents), 0)::numeric / 100 as gross_revenue,
+      coalesce(sum(refunded_cents), 0)::numeric / 100 as refunded,
+      coalesce(sum(net_revenue_cents), 0)::numeric / 100 as revenue,
+      coalesce(sum(discount_cents), 0)::numeric / 100 as discounts,
+      coalesce(sum(shipping_cents), 0)::numeric / 100 as shipping,
+      coalesce(sum(tax_cents), 0)::numeric / 100 as taxes
     from orders
+  ),
+  coverage as (
+    select
+      (select proven_coverage_start from latest_run) as coverage_start,
+      (select proven_coverage_end from latest_run) as coverage_end,
+      (select source_as_of_gmt from latest_run) as as_of
   )
   select jsonb_build_object(
     'summary', jsonb_build_object(
@@ -665,7 +680,23 @@ as $$
       'discountTotal', discounts,
       'shippingTotal', shipping,
       'taxTotal', taxes,
-      'items', items
+      'items', orders,
+      'grossRevenue', gross_revenue,
+      'refundedTotal', refunded,
+      'netRevenue', revenue,
+      'definitionVersion', 'woo_paid_net_v1',
+      'source', 'selected_range_telemetry',
+      'completeness', case
+        when (select coverage_start from coverage) is not null
+          and start_date >= (select coverage_start from coverage)
+          and end_date <= (select coverage_end from coverage)
+        then 'complete'
+        else 'unknown'
+      end,
+      'asOf', (select as_of from coverage),
+      'coverageStart', (select coverage_start from coverage),
+      'coverageEnd', (select coverage_end from coverage),
+      'comparisonAvailable', false
     ),
     'timeseries', coalesce(
       (select jsonb_agg(jsonb_build_object(
