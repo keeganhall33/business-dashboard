@@ -257,6 +257,29 @@ async function main() {
       })
       .eq("run_id", runId);
 
+    // Emit a sanitized summary (no IDs/keys, no PII).
+    console.log(
+      JSON.stringify(
+        {
+          mode: args.mode,
+          dryRun: args.dryRun,
+          definitionVersion: DEFINITION_VERSION,
+          requestedStartDate: args.startDate,
+          requestedEndDate: args.endDate,
+          sourceWindow: { after, before },
+          primaryCurrency,
+          eligibleOrders: rowsFetched,
+          rowsInserted,
+          rowsUpdated,
+          rowsUnchanged,
+          coverage: { start: coverageStart, end: coverageEnd },
+          asOfGmt: completedAt
+        },
+        null,
+        2
+      )
+    );
+
     process.exit(0);
   } catch (error) {
     const completedAt = new Date().toISOString();
