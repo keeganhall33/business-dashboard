@@ -1932,36 +1932,21 @@ export async function GET(request: Request) {
       endDate: range.endDate
     };
 
-    // Woo provenance: never return null source/completeness. Selected-range telemetry coverage is
-    // currently unverified (upstream ingestion can be incomplete), so default to completeness=unknown.
+    // Woo provenance: never return null source/completeness. When ingest coverage proof exists,
+    // allow selected-range telemetry to report completeness=complete.
     if (commerceTelemetry?.woo?.summary) {
       const summary = commerceTelemetry.woo.summary as Record<string, unknown>;
       const source = summary.source === "snapshot_recent_orders" ? "snapshot_recent_orders" : "selected_range_telemetry";
       const completenessRaw = summary.completeness;
       const completeness = completenessRaw === "partial" || completenessRaw === "complete" || completenessRaw === "unknown" ? completenessRaw : null;
 
-      if (source === "selected_range_telemetry") {
-        commerceTelemetry.woo.summary = {
-          ...summary,
-          source,
-          completeness: "unknown",
-          avgOrderValue: null,
-          comparisonAvailable: false,
-          asOf: typeof summary.asOf === "string" ? (summary.asOf as string) : null,
-          note:
-            typeof summary.note === "string" && summary.note.trim().length
-              ? summary.note
-              : "Selected-range Woo telemetry returned data, but its coverage and freshness could not be verified. Revenue and order totals may be incomplete, so exact comparisons, AOV, and target pacing are unavailable."
-        };
-      } else {
-        commerceTelemetry.woo.summary = {
-          ...summary,
-          source,
-          completeness: completeness ?? "partial",
-          comparisonAvailable: false,
-          asOf: typeof summary.asOf === "string" ? (summary.asOf as string) : null
-        };
-      }
+      commerceTelemetry.woo.summary = {
+        ...summary,
+        source,
+        completeness: completeness ?? (source === "snapshot_recent_orders" ? "partial" : "unknown"),
+        comparisonAvailable: false,
+        asOf: typeof summary.asOf === "string" ? (summary.asOf as string) : null
+      };
     }
 
     const commercePayload = commerceTelemetry

@@ -1,0 +1,71 @@
+{
+  "range": {
+    "start": "2025-07-30",
+    "end": "2026-07-28"
+  },
+  "telemetry": {
+    "count": 337,
+    "idSetHash": "550acadeb187cdc943d2b3fe469fa20732a4d36c44c04a19c87d285f72b89ac5",
+    "totals": {
+      "gross": 6902151,
+      "refunded": 0,
+      "net": 6902151
+    }
+  },
+  "old": {
+    "exactMatch": true,
+    "pagesRequested": 4,
+    "query": {
+      "after": "2025-07-30T00:00:00Z",
+      "before": "2026-07-28T23:59:59Z",
+      "orderby": "date",
+      "order": "desc"
+    },
+    "count": 337,
+    "idSetHash": "550acadeb187cdc943d2b3fe469fa20732a4d36c44c04a19c87d285f72b89ac5",
+    "currencySet": [
+      "USD"
+    ],
+    "totals": {
+      "gross": 6902151,
+      "refunded": 0,
+      "net": 6902151
+    }
+  },
+  "corrected": {
+    "exactMatch": true,
+    "pagesRequested": 4,
+    "query": {
+      "modifiedAfter": "2025-07-28T00:00:00Z",
+      "orderby": "modified",
+      "order": "desc"
+    },
+    "count": 337,
+    "idSetHash": "550acadeb187cdc943d2b3fe469fa20732a4d36c44c04a19c87d285f72b89ac5",
+    "currencySet": [
+      "USD"
+    ],
+    "totals": {
+      "gross": 6902151,
+      "refunded": 0,
+      "net": 6902151
+    }
+  },
+  "delta": {
+    "onlyInCorrected": {
+      "count": 0,
+      "ids": [],
+      "reason": "Excluded by old comparator because Woo after/before filter applies to created date; order(s) were created outside the window but paid inside it."
+    },
+    "onlyInOld": {
+      "count": 0,
+      "ids": [],
+      "reason": "Included by old comparator due to created-date window; paid date (Pacific) fell outside requested window, so corrected comparator excludes."
+    },
+    "totalsDeltaCorrectedMinusOld": {
+      "gross": 0,
+      "refunded": 0,
+      "net": 0
+    }
+  }
+}

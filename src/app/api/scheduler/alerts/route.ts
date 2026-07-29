@@ -7,14 +7,14 @@ const HAS_SUPABASE = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env
 export async function POST(request: Request) {
   try {
     await assertSchedulerAuth(request);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   let body: unknown;
   try {
     body = await request.json();
-  } catch (error) {
+  } catch {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
