@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
+import {
+  subtractDaysIso,
+  isOrderPaidInPacificRange,
+  parsePacificDayFromIso,
+  checksumForOrder,
+  buildWooOrdersQuery
+} from "@/lib/woo/woo-ingestion";
 
 const DEFINITION_VERSION = "woo_paid_net_v1";
 
@@ -30,27 +37,6 @@ function parseArgs(argv) {
   return out;
 }
 
-function pacificIsoDay(date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  return y && m && d ? `${y}-${m}-${d}` : null;
-}
-
-function parsePacificDayFromIso(value) {
-  if (!value) return null;
-  const raw = String(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return pacificIsoDay(parsed);
-}
 
 function toCents(value) {
   if (value == null) return null;
@@ -59,22 +45,6 @@ function toCents(value) {
   return Math.round(num * 100);
 }
 
-function checksumForOrder(order) {
-  const minimal = {
-    id: order.id,
-    status: order.status,
-    currency: order.currency,
-    total: order.total,
-    total_refunded: order.total_refunded,
-    discount_total: order.discount_total,
-    shipping_total: order.shipping_total,
-    total_tax: order.total_tax,
-    date_created_gmt: order.date_created_gmt,
-    date_paid_gmt: order.date_paid_gmt,
-    date_modified_gmt: order.date_modified_gmt
-  };
-  return crypto.createHash("sha256").update(JSON.stringify(minimal)).digest("hex");
-}
 
 function normalizeOrderRow(order) {
   const wooOrderId = Number(order.id);
@@ -115,17 +85,6 @@ function normalizeOrderRow(order) {
   };
 }
 
-function subtractDaysIso(isoDate, days) {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-function isOrderPaidInPacificRange(order, startDate, endDate) {
-  const paidPacific = parsePacificDayFromIso(order?.date_paid_gmt ?? null);
-  if (!paidPacific) return false;
-  return paidPacific >= startDate && paidPacific <= endDate;
-}
 
 async function fetchWooOrders(params) {
   const baseUrl = envOrThrow("WOOCOMMERCE_STORE_URL");
@@ -147,26 +106,16 @@ async function fetchWooOrders(params) {
   let malformedCount = 0;
 
   for (const status of statuses) {
+    // statuses is currently single-entry, but keep loop for future expansion.
+    void status;
     let page = 1;
     while (true) {
       const url = new URL("/wp-json/wc/v3/orders", baseUrl.replace(/\/$/, "") + "/");
       url.searchParams.set("consumer_key", key);
       url.searchParams.set("consumer_secret", secret);
-      url.searchParams.set("per_page", "100");
-      url.searchParams.set("page", String(page));
-      url.searchParams.set("status", status);
 
-      // IMPORTANT:
-      // - Woo's `after/before` filter applies to created date, not paid date.
-      // - To ensure we don't omit orders created outside the range but paid inside it,
-      //   we prefer `modified_after` when a paid-date range is requested.
-      if (modifiedAfter) url.searchParams.set("modified_after", modifiedAfter);
-      else if (after) url.searchParams.set("after", after);
-      if (before) url.searchParams.set("before", before);
-
-      // Deterministic pagination on modified time (stable for reconciliation).
-      url.searchParams.set("orderby", modifiedAfter ? "modified" : "date");
-      url.searchParams.set("order", "desc");
+      const query = buildWooOrdersQuery({ page, after, before, modifiedAfter });
+      Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v));
 
       pagesRequested += 1;
 
