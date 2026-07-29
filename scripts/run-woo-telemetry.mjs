@@ -264,11 +264,17 @@ async function main() {
     const coverageEnd = paidDates.length ? paidDates[paidDates.length - 1] : null;
 
     const completedAt = new Date().toISOString();
+    const runStatus = fetched.malformedCount > 0 ? "partial" : "success";
+    const runNote =
+      fetched.malformedCount > 0
+        ? `Skipped ${fetched.malformedCount} malformed Woo rows (missing id). Coverage may be incomplete.`
+        : null;
+
     await supabase
       .from("woo_ingestion_runs_v1")
       .update({
         completed_at: completedAt,
-        status: "success",
+        status: runStatus,
         pages_requested: fetched.pagesRequested,
         pages_completed: fetched.pagesCompleted,
         retry_count: fetched.retryCount,
@@ -279,7 +285,7 @@ async function main() {
         rows_failed: fetched.malformedCount,
         proven_coverage_start: coverageStart,
         proven_coverage_end: coverageEnd,
-        error_summary: null
+        error_summary: runNote
       })
       .eq("run_id", runId);
 
@@ -294,6 +300,7 @@ async function main() {
           requestedEndDate: args.endDate,
           sourceWindow: { after, before },
           primaryCurrency,
+          status: runStatus,
           eligibleOrders: rowsFetched,
           pagesRequested: fetched.pagesRequested,
           pagesCompleted: fetched.pagesCompleted,
