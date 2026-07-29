@@ -33,19 +33,41 @@ jobs:
       - name: Run Woo Telemetry Ingestion
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
-          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
             echo "OP service account token present"
-            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
           else
             echo "OP service account token missing" && exit 1
           fi
-          cp .env.website.ci .env.website
-          op run --env-file .env.website -- npm run woo:ingest
+
+          # Woo job must not inherit GA4/.env.website.* injection.
+          # Use a dedicated Woo-only env template.
+          cp .env.woo.ci .env.woo
+
+          # Safety: verify we are targeting production Supabase project and not staging.
+          op run --env-file .env.woo -- sh -lc '
+            set -euo pipefail
+            PROJECT_REF="$(op read "op://OpenClaw/Supabase Production API/project_ref")"
+            SUPABASE_URL="$(op read "op://OpenClaw/Supabase Production API/supabase_url")"
+            HOST="$(node -e "console.log(new URL(process.env.U).host)" U="$SUPABASE_URL")"
+
+            if [ "$PROJECT_REF" != "ibjsjosplgbqevmnvvpf" ]; then
+              echo "Unexpected Supabase project_ref" >&2
+              exit 1
+            fi
+
+            if [ "$HOST" != "ibjsjosplgbqevmnvvpf.supabase.co" ]; then
+              echo "Unexpected Supabase host" >&2
+              exit 1
+            fi
+
+            if [ "$PROJECT_REF" = "tpgkyluovzhwvoajinra" ] || [ "$HOST" = "tpgkyluovzhwvoajinra.supabase.co" ]; then
+              echo "Staging Supabase targeted" >&2
+              exit 1
+            fi
+
+            npm run woo:ingest
+          '
 
   website:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'website' || github.event_name == 'schedule' && github.event.schedule == '0 10 * * *'
