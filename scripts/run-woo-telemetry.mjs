@@ -317,14 +317,41 @@ async function main() {
       .update({
         completed_at: completedAt,
         status: "error",
+        pages_requested: typeof fetched?.pagesRequested === "number" ? fetched.pagesRequested : null,
+        pages_completed: typeof fetched?.pagesCompleted === "number" ? fetched.pagesCompleted : null,
+        retry_count: typeof fetched?.retryCount === "number" ? fetched.retryCount : 0,
         rows_fetched: rowsFetched,
         rows_inserted: rowsInserted,
         rows_updated: rowsUpdated,
         rows_unchanged: rowsUnchanged,
-        rows_failed: 1,
+        rows_failed: typeof fetched?.malformedCount === "number" ? fetched.malformedCount : 1,
         error_summary: message
       })
       .eq("run_id", runId);
+
+    // Emit a sanitized error summary.
+    console.log(
+      JSON.stringify(
+        {
+          mode: args.mode,
+          dryRun: args.dryRun,
+          definitionVersion: DEFINITION_VERSION,
+          requestedStartDate: args.startDate,
+          requestedEndDate: args.endDate,
+          primaryCurrency,
+          status: "error",
+          errorSummary: message,
+          eligibleOrders: rowsFetched,
+          pagesRequested: typeof fetched?.pagesRequested === "number" ? fetched.pagesRequested : null,
+          pagesCompleted: typeof fetched?.pagesCompleted === "number" ? fetched.pagesCompleted : null,
+          retryCount: typeof fetched?.retryCount === "number" ? fetched.retryCount : null,
+          malformedRows: typeof fetched?.malformedCount === "number" ? fetched.malformedCount : null,
+          asOfGmt: completedAt
+        },
+        null,
+        2
+      )
+    );
 
     process.exit(1);
   }
