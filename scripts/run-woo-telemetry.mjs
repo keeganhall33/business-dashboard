@@ -115,6 +115,18 @@ function normalizeOrderRow(order) {
   };
 }
 
+function subtractDaysIso(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function isOrderPaidInPacificRange(order, startDate, endDate) {
+  const paidPacific = parsePacificDayFromIso(order?.date_paid_gmt ?? null);
+  if (!paidPacific) return false;
+  return paidPacific >= startDate && paidPacific <= endDate;
+}
+
 async function fetchWooOrders(params) {
   const baseUrl = envOrThrow("WOOCOMMERCE_STORE_URL");
   const key = envOrThrow("WOOCOMMERCE_CONSUMER_KEY");
@@ -125,6 +137,9 @@ async function fetchWooOrders(params) {
 
   const after = params.after;
   const before = params.before;
+  const modifiedAfter = params.modifiedAfter;
+  const startDate = params.startDate;
+  const endDate = params.endDate;
 
   let pagesRequested = 0;
   let pagesCompleted = 0;
@@ -140,10 +155,18 @@ async function fetchWooOrders(params) {
       url.searchParams.set("per_page", "100");
       url.searchParams.set("page", String(page));
       url.searchParams.set("status", status);
-      url.searchParams.set("orderby", "date");
-      url.searchParams.set("order", "desc");
-      if (after) url.searchParams.set("after", after);
+
+      // IMPORTANT:
+      // - Woo's `after/before` filter applies to created date, not paid date.
+      // - To ensure we don't omit orders created outside the range but paid inside it,
+      //   we prefer `modified_after` when a paid-date range is requested.
+      if (modifiedAfter) url.searchParams.set("modified_after", modifiedAfter);
+      else if (after) url.searchParams.set("after", after);
       if (before) url.searchParams.set("before", before);
+
+      // Deterministic pagination on modified time (stable for reconciliation).
+      url.searchParams.set("orderby", modifiedAfter ? "modified" : "date");
+      url.searchParams.set("order", "desc");
 
       pagesRequested += 1;
 
@@ -167,6 +190,9 @@ async function fetchWooOrders(params) {
           malformedCount += 1;
           continue;
         }
+        if (startDate && endDate) {
+          if (!isOrderPaidInPacificRange(order, startDate, endDate)) continue;
+        }
         if (!ordersById.has(order.id)) ordersById.set(order.id, order);
       }
 
@@ -174,7 +200,7 @@ async function fetchWooOrders(params) {
 
       if (rows.length < 100) break;
       page += 1;
-      if (page > 200) throw new Error("Woo pagination exceeded safety cap");
+      if (page > 400) throw new Error("Woo pagination exceeded safety cap");
     }
   }
 
@@ -203,8 +229,12 @@ async function main() {
   const overlapDays = 14;
   const defaultAfter = new Date(now.getTime() - overlapDays * 24 * 60 * 60 * 1000).toISOString();
 
+  // Note: Woo API after/before filters on created date, not paid date.
+  // For paid-date reconciliation runs, we fetch by modified_after and then filter locally by paid date.
   const after = args.startDate ? `${args.startDate}T00:00:00Z` : defaultAfter;
   const before = args.endDate ? `${args.endDate}T23:59:59Z` : null;
+
+  const modifiedAfter = args.startDate ? `${subtractDaysIso(args.startDate, 2)}T00:00:00Z` : null;
 
   await supabase.from("woo_ingestion_runs_v1").insert({
     run_id: runId,
@@ -224,7 +254,13 @@ async function main() {
   let fetched = null;
 
   try {
-    fetched = await fetchWooOrders({ after, before });
+    fetched = await fetchWooOrders({
+      after,
+      before,
+      modifiedAfter,
+      startDate: args.startDate,
+      endDate: args.endDate
+    });
     const orders = fetched.orders;
     rowsFetched = orders.length;
 
