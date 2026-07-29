@@ -26,7 +26,7 @@ async function safeReadJson(file) {
   try {
     const raw = await fs.readFile(file, 'utf8');
     return JSON.parse(raw);
-  } catch (error) {
+  } catch {
     return null;
   }
 }

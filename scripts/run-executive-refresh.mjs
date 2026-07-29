@@ -21,7 +21,7 @@ async function readJson(file) {
   try {
     const raw = await fs.readFile(file, 'utf8');
     return JSON.parse(raw);
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -30,7 +30,7 @@ function readCsv(file) {
   try {
     const raw = readFileSync(file, 'utf8');
     return parse(raw, { columns: true, skip_empty_lines: true, trim: true });
-  } catch (error) {
+  } catch {
     return [];
   }
 }
