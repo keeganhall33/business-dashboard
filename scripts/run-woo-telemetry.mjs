@@ -153,8 +153,8 @@ async function fetchWooOrders(params) {
         attempt += 1;
         res = await fetch(url.toString(), { headers: { accept: "application/json" } });
         if (res.ok) break;
-        if (attempt > 1) retryCount += 1;
         if (attempt >= 4) throw new Error(`Woo page failed: status=${res.status}`);
+        retryCount += 1;
         await sleep(250 * attempt);
       }
 
