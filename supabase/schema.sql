@@ -687,6 +687,12 @@ as $$
       'definitionVersion', 'woo_paid_net_v1',
       'source', 'selected_range_telemetry',
       'completeness', case
+        when (select definition_version from latest_run) is distinct from 'woo_paid_net_v1'
+        then 'unknown'
+        when (select as_of from coverage) is null
+        then 'unknown'
+        when (select as_of from coverage) < (now() - interval '48 hours')
+        then 'unknown'
         when (select coverage_start from coverage) is not null
           and start_date >= (select coverage_start from coverage)
           and end_date <= (select coverage_end from coverage)

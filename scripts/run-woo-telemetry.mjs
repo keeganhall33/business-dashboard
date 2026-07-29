@@ -126,6 +126,11 @@ async function fetchWooOrders(params) {
   const after = params.after;
   const before = params.before;
 
+  let pagesRequested = 0;
+  let pagesCompleted = 0;
+  let retryCount = 0;
+  let malformedCount = 0;
+
   for (const status of statuses) {
     let page = 1;
     while (true) {
@@ -140,12 +145,15 @@ async function fetchWooOrders(params) {
       if (after) url.searchParams.set("after", after);
       if (before) url.searchParams.set("before", before);
 
+      pagesRequested += 1;
+
       let attempt = 0;
       let res;
       while (true) {
         attempt += 1;
         res = await fetch(url.toString(), { headers: { accept: "application/json" } });
         if (res.ok) break;
+        if (attempt > 1) retryCount += 1;
         if (attempt >= 4) throw new Error(`Woo page failed: status=${res.status}`);
         await sleep(250 * attempt);
       }
@@ -155,9 +163,14 @@ async function fetchWooOrders(params) {
       if (!Array.isArray(rows) || rows.length === 0) break;
 
       for (const order of rows) {
-        if (!order || order.id == null) continue;
+        if (!order || order.id == null) {
+          malformedCount += 1;
+          continue;
+        }
         if (!ordersById.has(order.id)) ordersById.set(order.id, order);
       }
+
+      pagesCompleted += 1;
 
       if (rows.length < 100) break;
       page += 1;
@@ -165,7 +178,13 @@ async function fetchWooOrders(params) {
     }
   }
 
-  return Array.from(ordersById.values());
+  return {
+    orders: Array.from(ordersById.values()),
+    pagesRequested,
+    pagesCompleted,
+    retryCount,
+    malformedCount
+  };
 }
 
 async function main() {
@@ -203,7 +222,8 @@ async function main() {
   let rowsUnchanged = 0;
 
   try {
-    const orders = await fetchWooOrders({ after, before });
+    const fetched = await fetchWooOrders({ after, before });
+    const orders = fetched.orders;
     rowsFetched = orders.length;
 
     const normalized = orders.map(normalizeOrderRow);
@@ -247,10 +267,14 @@ async function main() {
       .update({
         completed_at: completedAt,
         status: "success",
+        pages_requested: fetched.pagesRequested,
+        pages_completed: fetched.pagesCompleted,
+        retry_count: fetched.retryCount,
         rows_fetched: rowsFetched,
         rows_inserted: rowsInserted,
         rows_updated: rowsUpdated,
         rows_unchanged: rowsUnchanged,
+        rows_failed: fetched.malformedCount,
         proven_coverage_start: coverageStart,
         proven_coverage_end: coverageEnd,
         error_summary: null
@@ -269,6 +293,10 @@ async function main() {
           sourceWindow: { after, before },
           primaryCurrency,
           eligibleOrders: rowsFetched,
+          pagesRequested: fetched.pagesRequested,
+          pagesCompleted: fetched.pagesCompleted,
+          retryCount: fetched.retryCount,
+          malformedRows: fetched.malformedCount,
           rowsInserted,
           rowsUpdated,
           rowsUnchanged,
