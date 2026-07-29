@@ -680,7 +680,7 @@ as $$
     'summary', jsonb_build_object(
       'orders', orders,
       'revenue', revenue,
-      'avgOrderValue', case when orders > 0 then revenue / orders else null end,
+      'avgOrderValue', case when (select as_of from coverage) is not null and orders > 0 then revenue / orders else null end,
       'discountTotal', discounts,
       'shippingTotal', shipping,
       'taxTotal', taxes,
