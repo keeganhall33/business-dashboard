@@ -6,7 +6,7 @@ import {
   parsePacificDayFromIso,
   checksumForOrder,
   buildWooOrdersQuery
-} from "@/lib/woo/woo-ingestion";
+} from "../src/lib/woo/woo-ingestion.ts";
 
 const DEFINITION_VERSION = "woo_paid_net_v1";
 
