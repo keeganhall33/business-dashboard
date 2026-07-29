@@ -39,6 +39,7 @@ test("created before range, paid inside range is included by paid-date filter", 
 });
 
 test("created inside range, paid after range is excluded", () => {
-  const order = { date_created_gmt: "2026-07-02T00:00:00Z", date_paid_gmt: "2026-07-08T00:00:00Z" };
+  // 2026-07-08T07:00:00Z is 2026-07-08 00:00:00 in America/Los_Angeles
+  const order = { date_created_gmt: "2026-07-02T00:00:00Z", date_paid_gmt: "2026-07-08T07:00:00Z" };
   assert.equal(isOrderPaidInPacificRange(order, "2026-07-01", "2026-07-07"), false);
 });
