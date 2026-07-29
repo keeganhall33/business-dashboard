@@ -43,3 +43,10 @@ test("created inside range, paid after range is excluded", () => {
   const order = { date_created_gmt: "2026-07-02T00:00:00Z", date_paid_gmt: "2026-07-08T07:00:00Z" };
   assert.equal(isOrderPaidInPacificRange(order, "2026-07-01", "2026-07-07"), false);
 });
+
+test("Woo GMT timestamps without timezone are treated as UTC for Pacific date derivation", () => {
+  // 2026-07-29 00:47:11 UTC is 2026-07-28 17:47:11 in America/Los_Angeles
+  const order = { date_paid_gmt: "2026-07-29T00:47:11" };
+  assert.equal(isOrderPaidInPacificRange(order, "2026-07-28", "2026-07-28"), true);
+  assert.equal(isOrderPaidInPacificRange(order, "2026-07-29", "2026-07-29"), false);
+});

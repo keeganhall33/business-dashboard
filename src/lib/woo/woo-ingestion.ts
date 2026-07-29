@@ -21,8 +21,19 @@ export function pacificIsoDay(date: Date) {
 
 export function parsePacificDayFromIso(value: string | null | undefined) {
   if (!value) return null;
-  const raw = String(value);
+  let raw = String(value).trim();
+  if (!raw) return null;
+
+  // Date-only strings are already canonical.
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  // WooCommerce `*_gmt` timestamps are frequently returned without an explicit timezone suffix.
+  // Example: "2026-07-29T00:47:11" is GMT/UTC but, if parsed as local time, can shift the
+  // derived Pacific calendar day. Treat timezone-less ISO timestamps as UTC.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(raw)) {
+    raw = `${raw}Z`;
+  }
+
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return pacificIsoDay(parsed);
