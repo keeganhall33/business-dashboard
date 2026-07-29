@@ -45,7 +45,7 @@ jobs:
           cp .env.woo.ci .env.woo
 
           # Safety: verify we are targeting production Supabase project and not staging.
-          op run --env-file .env.woo -- sh -lc '
+          op run --env-file .env.woo -- bash -lc '
             set -euo pipefail
             PROJECT_REF="$(op read "op://OpenClaw/Supabase Production API/project_ref")"
             SUPABASE_URL="$(op read "op://OpenClaw/Supabase Production API/supabase_url")"
