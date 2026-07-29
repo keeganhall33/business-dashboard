@@ -25,7 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Needs Node 22+ for TypeScript strip-types support used by our *.mjs scripts importing *.ts.
+          node-version: 22
       - name: Install dependencies
         run: npm ci
       - name: Install 1Password CLI

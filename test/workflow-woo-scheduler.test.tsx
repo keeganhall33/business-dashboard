@@ -37,6 +37,9 @@ test("woo scheduler job does not reference GA4 service account or website env fi
   // Must use dedicated woo env template
   assert.ok(wooBlock.includes(".env.woo.ci"), "woo job must use .env.woo.ci");
   assert.ok(wooBlock.includes("cp .env.woo.ci .env.woo"), "woo job must copy woo env template");
+
+  // Must use Node 22+ for the TypeScript-importing scripts.
+  assert.ok(wooBlock.includes("node-version: 22"), "woo job must run on node-version 22");
 });
 
 test("woo scheduler job includes production Supabase safety checks", () => {
