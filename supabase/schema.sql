@@ -636,6 +636,10 @@ as $$
     select *
     from woo_ingestion_runs_v1
     where status = 'success'
+      and definition_version = 'woo_paid_net_v1'
+      and proven_coverage_start is not null
+      and start_date >= proven_coverage_start
+      and end_date <= proven_coverage_end
     order by completed_at desc
     limit 1
   ),
@@ -687,17 +691,9 @@ as $$
       'definitionVersion', 'woo_paid_net_v1',
       'source', 'selected_range_telemetry',
       'completeness', case
-        when (select definition_version from latest_run) is distinct from 'woo_paid_net_v1'
-        then 'unknown'
-        when (select as_of from coverage) is null
-        then 'unknown'
-        when (select as_of from coverage) < (now() - interval '48 hours')
-        then 'unknown'
-        when (select coverage_start from coverage) is not null
-          and start_date >= (select coverage_start from coverage)
-          and end_date <= (select coverage_end from coverage)
-        then 'complete'
-        else 'unknown'
+        when (select as_of from coverage) is null then 'unknown'
+        when (select as_of from coverage) < (now() - interval '48 hours') then 'unknown'
+        else 'complete'
       end,
       'asOf', (select as_of from coverage),
       'coverageStart', (select coverage_start from coverage),
