@@ -221,8 +221,10 @@ async function main() {
   let rowsUpdated = 0;
   let rowsUnchanged = 0;
 
+  let fetched = null;
+
   try {
-    const fetched = await fetchWooOrders({ after, before });
+    fetched = await fetchWooOrders({ after, before });
     const orders = fetched.orders;
     rowsFetched = orders.length;
 
