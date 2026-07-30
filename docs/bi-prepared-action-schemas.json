@@ -1,0 +1,201 @@
+{
+  "generated_at": "2026-07-29T22:25:00-07:00",
+  "milestone": "M6_action_preparation_and_approval",
+  "version": "bi_prepared_action_schemas_v1",
+  "prepared_action": {
+    "required_fields": [
+      "prepared_action_id",
+      "action_type",
+      "action_level",
+      "channel",
+      "target_system",
+      "target_account",
+      "target_object_type",
+      "target_object_ids",
+      "title",
+      "summary",
+      "payload",
+      "preview",
+      "created_at",
+      "created_by",
+      "valid_until",
+      "status",
+      "version",
+      "content_hash",
+      "risk_level",
+      "reversibility",
+      "rollback_plan",
+      "measurement_plan",
+      "success_threshold",
+      "stop_condition",
+      "required_permissions",
+      "required_approval_type",
+      "source_evidence_ids",
+      "data_freshness",
+      "confidence"
+    ],
+    "optional_fields": [
+      "recommendation_id",
+      "opportunity_id",
+      "expected_impact",
+      "expected_cost_cents",
+      "budget_change_cents",
+      "prerequisites",
+      "approval_id",
+      "execution_id",
+      "metadata"
+    ],
+    "immutability": {
+      "after_approval": "payload + targets + audience + budget + schedule must not change; new version required",
+      "invalidate_if": ["content_hash changes", "target changes", "audience/recipients change", "budget changes", "schedule changes materially"]
+    }
+  },
+  "channel_packages": {
+    "meta_ads": {
+      "fields": [
+        "campaign_objective",
+        "campaign_id",
+        "adset_id",
+        "ad_id",
+        "operation",
+        "budget_before_cents",
+        "budget_after_cents",
+        "audience",
+        "placements",
+        "optimization_event",
+        "creative_asset_refs",
+        "copy",
+        "headline",
+        "cta",
+        "destination_url",
+        "utm_parameters",
+        "schedule",
+        "attribution_setting",
+        "forecast_range",
+        "risk",
+        "rollback_trigger"
+      ],
+      "required_approvals": ["content", "audience", "financial", "publication"]
+    },
+    "email": {
+      "fields": [
+        "platform",
+        "campaign_type",
+        "recipient_segment",
+        "estimated_recipient_count",
+        "exclusions",
+        "subject_lines",
+        "preview_text",
+        "sender",
+        "reply_to",
+        "body",
+        "cta",
+        "promoted_products",
+        "utm_parameters",
+        "send_time",
+        "follow_up_logic",
+        "suppression_rules",
+        "test_send_required",
+        "estimated_revenue_range",
+        "stop_condition"
+      ],
+      "required_approvals": ["content", "audience", "publication"]
+    },
+    "website": {
+      "fields": [
+        "page_url",
+        "page_type",
+        "component_section",
+        "current_content",
+        "proposed_content",
+        "proposed_layout",
+        "copy",
+        "cta",
+        "product_refs",
+        "seo_impact",
+        "analytics_tracking",
+        "experiment_type",
+        "rollout_percentage",
+        "rollback_plan",
+        "screenshot_preview"
+      ],
+      "required_approvals": ["content", "publication"]
+    },
+    "social": {
+      "fields": [
+        "platform",
+        "account",
+        "format",
+        "media_requirements",
+        "hook",
+        "script",
+        "caption",
+        "hashtags",
+        "cta",
+        "destination",
+        "post_time",
+        "alignment",
+        "disclosure_requirements",
+        "preview"
+      ],
+      "required_approvals": ["content", "publication"]
+    },
+    "sales_outreach": {
+      "fields": [
+        "recipient_cohort",
+        "reason_for_inclusion",
+        "relationship_context",
+        "recommended_message",
+        "individualized_fields",
+        "offer",
+        "follow_up_sequence",
+        "exclusions",
+        "contact_channel_preference",
+        "over_contact_risk"
+      ],
+      "required_approvals": ["content", "audience", "customer_contact"]
+    },
+    "data_ops": {
+      "fields": [
+        "target_system",
+        "change_type",
+        "current_state",
+        "desired_state",
+        "operation_or_migration",
+        "dry_run_output",
+        "affected_records",
+        "rollback",
+        "validation",
+        "monitoring",
+        "permissions"
+      ],
+      "required_approvals": ["data_system"]
+    }
+  },
+  "side_effect_matrix": {
+    "meta_campaign_creation": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "partial" },
+    "meta_budget_increase": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_budget" },
+    "meta_budget_decrease": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_budget" },
+    "meta_pause": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "unpause" },
+    "email_campaign_creation": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": false, "execution_never": false, "rollback": "n/a" },
+    "email_send": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "cannot_unsend" },
+    "automated_email_flow": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "disable_flow" },
+    "social_post": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "delete_or_archive" },
+    "website_change": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_revision" },
+    "product_page_change": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_revision" },
+    "homepage_feature": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_revision" },
+    "price_change": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_price" },
+    "discount_coupon": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "disable_coupon" },
+    "inventory_change": { "auto_analysis": true, "auto_draft": false, "auto_preview": false, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_inventory" },
+    "collector_outreach": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "cannot_unsend" },
+    "lead_follow_up": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "cannot_unsend" },
+    "customer_segmentation": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": false, "execution_never": false, "rollback": "n/a" },
+    "database_migration": { "auto_analysis": true, "auto_draft": false, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "migration_rollback" },
+    "tracking_change": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_config" },
+    "credential_change": { "auto_analysis": false, "auto_draft": false, "auto_preview": false, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "rotate_back" },
+    "scheduler_change": { "auto_analysis": true, "auto_draft": false, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "revert" },
+    "data_deletion": { "auto_analysis": true, "auto_draft": false, "auto_preview": true, "approval_required": true, "execution_after_approval": false, "execution_never": true, "rollback": "n/a" },
+    "backfill": { "auto_analysis": true, "auto_draft": false, "auto_preview": true, "approval_required": true, "execution_after_approval": true, "execution_never": false, "rollback": "restore_previous" },
+    "report_generation": { "auto_analysis": true, "auto_draft": true, "auto_preview": true, "approval_required": false, "execution_after_approval": false, "execution_never": false, "rollback": "n/a" }
+  }
+}

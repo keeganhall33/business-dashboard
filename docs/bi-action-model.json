@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-07-29T22:25:00-07:00",
+  "milestone": "M6_action_preparation_and_approval",
+  "version": "bi_action_model_v1",
+  "action_levels": [
+    {
+      "level": "L0",
+      "name": "insight_only",
+      "definition": "Reports what happened + explains likely causes + shows evidence; does not recommend an action.",
+      "approval_required": false,
+      "execution_possible": false
+    },
+    {
+      "level": "L1",
+      "name": "recommendation",
+      "definition": "Recommends a specific action; explains why; estimates impact/effort/cost/risk; does not create deployable work.",
+      "approval_required": false,
+      "execution_possible": false
+    },
+    {
+      "level": "L2",
+      "name": "draft_prepared",
+      "definition": "Prepares editable drafts (copy/brief/audience definition/script/experiment plan). Not deployable.",
+      "approval_required": false,
+      "execution_possible": false
+    },
+    {
+      "level": "L3",
+      "name": "execution_ready_package",
+      "definition": "Creates a complete package: exact targets, proposed changes, final content/config, schedule, tracking, success criteria, rollback plan, and approval request. No external side effects.",
+      "approval_required": true,
+      "execution_possible": false
+    },
+    {
+      "level": "L4",
+      "name": "approved_execution",
+      "definition": "Executes the explicitly approved L3 package. Scoped, idempotent, auditable, reversible where possible. Blocked if payload changes after approval.",
+      "approval_required": true,
+      "execution_possible": true
+    },
+    {
+      "level": "L5",
+      "name": "measurement_and_learning",
+      "definition": "Measures outcome vs baseline, records side effects, updates memory and patterns; proposes retain/revise/scale/stop/revert.",
+      "approval_required": false,
+      "execution_possible": false
+    }
+  ],
+  "allowed_transitions": [
+    ["L0", "L1"],
+    ["L1", "L2"],
+    ["L2", "L3"],
+    ["L3", "L4"],
+    ["L4", "L5"],
+    ["L1", "L0"],
+    ["L2", "L1"],
+    ["L3", "L2"]
+  ],
+  "prohibited_transitions": [
+    ["L1", "L4"],
+    ["L2", "L4"],
+    ["L0", "L4"],
+    ["L0", "L3"],
+    ["L1", "L3"],
+    ["L5", "L4"]
+  ],
+  "execution_states": [
+    "queued",
+    "preflight",
+    "blocked",
+    "executing",
+    "partially_completed",
+    "completed",
+    "failed",
+    "rolled_back",
+    "cancelled"
+  ],
+  "non_negotiables": [
+    "Never jump from L1 or L2 directly to L4.",
+    "No autonomous public-facing or financial action.",
+    "Execution must verify approval content hash and scope before any write."
+  ]
+}

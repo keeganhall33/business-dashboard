@@ -344,31 +344,57 @@ Key outputs:
 - conflict detection + precedence rules
 - memory rules preventing repeated rejected or conflicting advice
 
-## 13) Milestone 6 — Action Preparation + Approval Model (started)
+## 13) Milestone 6 — Action Preparation + Approval Model (complete)
 
-### L0–L5 action levels
+Durable artifacts:
+- `docs/bi-action-model.json` (L0–L5 definitions + allowed/prohibited transitions + execution states)
+- `docs/bi-approval-model.json` (approval classes + schema + state machine + invalidation rules)
+- `docs/bi-prepared-action-schemas.json` (PreparedAction schema + per-channel packages + side-effect matrix)
+- `docs/bi-action-examples.json` (20 worked examples)
+- `docs/bi-action-security-model.json` (least-privilege + preflight + secrets/PII rules)
 
-- **L0 Insight only:** explain what happened (no recommendation)
-- **L1 Recommendation:** propose a specific next action
-- **L2 Draft prepared:** generate editable draft (copy/brief/config diff), no approval requested
-- **L3 Ready for approval:** show exact diff, expected impact, risks, rollback plan, measurement plan
-- **L4 Approved execution:** execute only after explicit approval; record immutable receipt
-- **L5 Measurement + learning:** evaluate outcomes; store lessons; update ranking/memory
+### Action levels summary (L0–L5)
 
-### Approval state model (draft)
+- **L0:** insight only; no recommendation; no approval.
+- **L1:** recommendation only; no deployable work.
+- **L2:** editable draft prepared; not deployable.
+- **L3:** execution-ready package + approval request; **no external side effects**.
+- **L4:** approved execution only; strict preflight + scope + idempotency.
+- **L5:** outcome measurement + learning.
 
-States: `draft_prepared` → `approval_requested` → (`approved` | `rejected`) → (`executed` | `expired`) → (`measuring` → `evaluated`).
+Hard prohibition: system must never jump directly from **L1/L2 → L4**.
 
-### Side-effect boundaries (non-negotiable)
+### Approval classes
 
-Never auto-execute without explicit approval:
-- ad budget increases / new campaigns
-- emails or public posts
-- customer contact
-- price/discount/coupon changes
-- production DB mutations beyond ingestion runbooks
+Informational, Content, Audience, Financial, Publication, Customer-contact, Data/system.
 
-## 14) Evidence references (audit anchor list)
+### Side-effect boundaries
+
+Encoded in `docs/bi-prepared-action-schemas.json` under `side_effect_matrix`.
+- `data_deletion` is **execution_never=true**.
+- email sends are irreversible (`cannot_unsend`), requiring publication approval.
+
+## 14) Milestone 7 — Integration Gap Analysis (started)
+
+### Integration-priority scoring model (draft)
+
+Score each missing integration by:
+- expected impact on explanation/recommendations (0–5)
+- ability to unlock cross-channel joins (0–5)
+- historical depth available (0–3)
+- implementation effort (inverted, 0–5)
+- risk/security complexity (inverted, 0–5)
+
+### Initial missing high-value integrations (draft list)
+
+- Email platform event telemetry (sends/opens/clicks/revenue attribution)
+- Product-level + line-item Woo telemetry (product mix, bundles, repeat purchase patterns)
+- Meta ↔ Woo matchback join keys / attribution touch model
+- GA4 raw-ish event exports (beyond snapshots) or more detailed aggregates
+- FunnelKit event feed (abandoned carts, recoveries)
+- Inventory / edition availability signals
+
+## 15) Evidence references (audit anchor list)
 
 - Workflows: `.github/workflows/dashboard-scheduler.yml`
 - CI templates: `.env.website.ci`, `.env.meta.ci`, `.env.leads.ci`, `.env.cloudflare.ci`, `.env.woo.ci`

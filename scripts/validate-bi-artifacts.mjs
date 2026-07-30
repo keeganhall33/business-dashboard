@@ -37,6 +37,12 @@ const oppModel = readJson('docs/bi-opportunity-model.json');
 const recExamples = readJson('docs/bi-recommendation-examples.json');
 const recEval = readJson('docs/bi-recommendation-evaluation.json');
 
+const actionModel = readJson('docs/bi-action-model.json');
+const approvalModel = readJson('docs/bi-approval-model.json');
+const preparedSchemas = readJson('docs/bi-prepared-action-schemas.json');
+const actionExamples = readJson('docs/bi-action-examples.json');
+const actionSecurity = readJson('docs/bi-action-security-model.json');
+
 // basic JSON structural checks
 assert(Array.isArray(model.entities?.list), 'model.entities.list missing');
 assert(model.entities.list.length > 0, 'model.entities.list empty');
@@ -127,6 +133,71 @@ for (const m of mappings.mappings) {
 {
   assert(Array.isArray(recEval.methods) && recEval.methods.length > 0, 'recEval.methods missing');
   assert(Array.isArray(recEval.learning_rules) && recEval.learning_rules.length > 0, 'recEval.learning_rules missing');
+}
+
+// Action model sanity
+{
+  assert(Array.isArray(actionModel.action_levels) && actionModel.action_levels.length === 6, 'actionModel must define 6 levels');
+  const levels = new Set(actionModel.action_levels.map((l) => l.level));
+  for (const l of ['L0', 'L1', 'L2', 'L3', 'L4', 'L5']) {
+    assert(levels.has(l), `missing action level ${l}`);
+  }
+  // prohibited direct L1/L2 -> L4
+  const prohibited = (actionModel.prohibited_transitions || []).map((p) => p.join('->'));
+  assert(prohibited.includes('L1->L4'), 'must prohibit L1->L4');
+  assert(prohibited.includes('L2->L4'), 'must prohibit L2->L4');
+}
+
+// Approval model sanity
+{
+  assert(Array.isArray(approvalModel.approval_states) && approvalModel.approval_states.length > 0, 'approval_states missing');
+  const states = new Set(approvalModel.approval_states);
+  for (const s of ['draft', 'pending', 'approved', 'rejected', 'revoked', 'expired']) {
+    assert(states.has(s), `approval model missing state ${s}`);
+  }
+  assert(typeof approvalModel.approval_classes === 'object', 'approval_classes missing');
+}
+
+// Prepared action schemas sanity
+{
+  assert(Array.isArray(preparedSchemas.prepared_action.required_fields), 'prepared_action.required_fields missing');
+  const channelPackages = preparedSchemas.channel_packages;
+  for (const key of ['meta_ads', 'email', 'website', 'social', 'sales_outreach', 'data_ops']) {
+    assert(channelPackages && channelPackages[key], `missing channel package schema: ${key}`);
+  }
+  // Side-effect matrix must include key rows
+  const m = preparedSchemas.side_effect_matrix || {};
+  for (const k of ['meta_budget_increase', 'email_send', 'website_change', 'price_change', 'database_migration', 'data_deletion', 'backfill']) {
+    assert(m[k], `side_effect_matrix missing ${k}`);
+  }
+  assert(m.data_deletion.execution_never === true, 'data_deletion must be execution_never');
+}
+
+// Action examples sanity
+{
+  assert(Array.isArray(actionExamples.examples) && actionExamples.examples.length >= 20, 'must have at least 20 action examples');
+  const ids = new Set();
+  const levels = new Set(actionModel.action_levels.map((l) => l.level));
+  const allRecTypes = new Set(Object.values(recModel.categories || {}).flat());
+  const approvalClasses = new Set(Object.keys(approvalModel.approval_classes || {}));
+
+  for (const ex of actionExamples.examples) {
+    assert(!ids.has(ex.id), `duplicate action example id: ${ex.id}`);
+    ids.add(ex.id);
+    assert(allRecTypes.has(ex.recommendation), `action example uses undefined recommendation type: ${ex.recommendation}`);
+    assert(levels.has(ex.action_level), `action example uses undefined action level: ${ex.action_level}`);
+    assert(typeof ex.rollback === 'string' && ex.rollback.length, 'action example missing rollback');
+    assert(ex.measurement_plan && ex.measurement_plan.primary_metric, 'action example missing measurement plan');
+    for (const cls of ex.required_approvals || []) {
+      assert(approvalClasses.has(cls), `action example uses undefined approval class: ${cls}`);
+    }
+  }
+}
+
+// Action security sanity
+{
+  assert(Array.isArray(actionSecurity.execution_preflight) && actionSecurity.execution_preflight.length > 0, 'execution_preflight missing');
+  assert(actionSecurity.pii_and_secrets?.no_plaintext_secrets === true, 'security model must forbid plaintext secrets');
 }
 
 // examples sanity
