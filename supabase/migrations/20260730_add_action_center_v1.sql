@@ -2,30 +2,31 @@
 
 begin;
 
--- Preflight: set_updated_at() must exist. If it doesn't, create a minimal, safe implementation.
-do $$
+-- Action Center-owned updated_at trigger function.
+-- Safe to create here and safe to drop in rollback.
+do $do$
 begin
   if not exists (
     select 1
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname = 'set_updated_at'
+      and p.proname = 'set_action_center_updated_at'
   ) then
-    execute $fn$
-      create function public.set_updated_at()
+    execute $sql$
+      create function public.set_action_center_updated_at()
       returns trigger
       language plpgsql
-      as $$
+      as $func$
       begin
         new.updated_at = now();
         return new;
       end;
-      $$;
-    $fn$;
+      $func$;
+    $sql$;
   end if;
 end
-$$;
+$do$;
 
 -- 1) Create all seven tables first.
 create table if not exists action_evidence_snapshots_v1 (
@@ -172,7 +173,7 @@ create index if not exists idx_action_actions_level_status
 -- Prevent duplicate active actions for the same recommendation fingerprint.
 create unique index if not exists idx_action_actions_fingerprint_active_unique
   on action_actions_v1(recommendation_fingerprint)
-  where status in ('detected','analyzed','recommended','draft_prepared','awaiting_approval','approved','rejected','snoozed','needs_revalidation','execution_blocked','executing','measuring');
+  where status in ('detected','analyzed','recommended','draft_prepared','awaiting_approval','approved','snoozed','needs_revalidation','execution_blocked','executing','measuring');
 
 create index if not exists idx_action_audit_events_action_created_at
   on action_audit_events_v1(action_id, created_at asc);
@@ -186,17 +187,17 @@ create index if not exists idx_action_synth_outcomes_action_created_at
 drop trigger if exists trg_action_actions_updated_at on action_actions_v1;
 create trigger trg_action_actions_updated_at
 before update on action_actions_v1
-for each row execute function set_updated_at();
+for each row execute function set_action_center_updated_at();
 
 drop trigger if exists trg_action_measurement_plans_updated_at on action_measurement_plans_v1;
 create trigger trg_action_measurement_plans_updated_at
 before update on action_measurement_plans_v1
-for each row execute function set_updated_at();
+for each row execute function set_action_center_updated_at();
 
 drop trigger if exists trg_action_preferences_updated_at on action_preferences_v1;
 create trigger trg_action_preferences_updated_at
 before update on action_preferences_v1
-for each row execute function set_updated_at();
+for each row execute function set_action_center_updated_at();
 
 -- 3) Enable RLS only after all seven tables exist.
 alter table action_evidence_snapshots_v1 enable row level security;

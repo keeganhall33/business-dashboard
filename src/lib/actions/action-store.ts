@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { DurableAction } from "./action-contract";
 import { isValidTransition } from "./action-transitions";
+import {
+  ACTIVE_DEDUPE_STATUSES,
+  isPermanentlySuppressed,
+  shouldBlockReconsiderationAfterRejection
+} from "./suppression-logic";
 
 function requireWritesEnabled() {
   // Absolute rule: do not allow action persistence writes in production.
@@ -82,14 +87,44 @@ export async function createActionFromRecommendation(input: {
   const snapshotBytes = Buffer.from(JSON.stringify(input.evidence_snapshot));
   const snapshotHash = crypto.createHash("sha256").update(snapshotBytes).digest("hex");
 
+  // Permanent suppression (preferences table) blocks creation.
+  const { data: pref, error: prefErr } = await supabase
+    .from("action_preferences_v1")
+    .select("suppressed")
+    .eq("fingerprint", input.fingerprint)
+    .maybeSingle();
+  if (prefErr && prefErr.code !== "PGRST116") throw prefErr;
+  const prefObj = (pref && typeof pref === "object" && "suppressed" in pref) ? (pref as { suppressed: boolean }) : null;
+  if (isPermanentlySuppressed(prefObj)) {
+    throw new Error("Recommendation is permanently suppressed");
+  }
+
   // Dedupe by fingerprint: update evidence snapshot for existing active action.
   const { data: existing, error: existingErr } = await supabase
     .from("action_actions_v1")
     .select("id,evidence_snapshot_id,status,current_level")
     .eq("recommendation_fingerprint", input.fingerprint)
-    .in("status", ["detected", "analyzed", "recommended", "draft_prepared", "awaiting_approval", "approved", "snoozed", "needs_revalidation", "execution_blocked"])
+    .in("status", [...ACTIVE_DEDUPE_STATUSES])
     .maybeSingle();
   if (existingErr && existingErr.code !== "PGRST116") throw existingErr;
+
+  // Temporary rejection: if most recent rejected action exists and evidence is unchanged, block reconsideration.
+  const { data: rejected, error: rejectedErr } = await supabase
+    .from("action_actions_v1")
+    .select("evidence_snapshot_hash")
+    .eq("recommendation_fingerprint", input.fingerprint)
+    .eq("status", "rejected")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (rejectedErr && rejectedErr.code !== "PGRST116") throw rejectedErr;
+  const rejectedHash =
+    rejected && typeof rejected === "object" && "evidence_snapshot_hash" in rejected
+      ? (rejected as { evidence_snapshot_hash: string | null }).evidence_snapshot_hash
+      : null;
+  if (shouldBlockReconsiderationAfterRejection({ previousRejectedEvidenceHash: rejectedHash ?? null, newEvidenceHash: snapshotHash })) {
+    throw new Error("Recommendation was rejected and evidence has not materially changed");
+  }
 
   const { data: snapRow, error: snapErr } = await supabase
     .from("action_evidence_snapshots_v1")
