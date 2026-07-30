@@ -1,5 +1,33 @@
 -- Milestone 11: Action Center, approvals, audit, measurement, learning (staging/local only)
 
+begin;
+
+-- Preflight: set_updated_at() must exist. If it doesn't, create a minimal, safe implementation.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'set_updated_at'
+  ) then
+    execute $fn$
+      create function public.set_updated_at()
+      returns trigger
+      language plpgsql
+      as $$
+      begin
+        new.updated_at = now();
+        return new;
+      end;
+      $$;
+    $fn$;
+  end if;
+end
+$$;
+
+-- 1) Create all seven tables first.
 create table if not exists action_evidence_snapshots_v1 (
   id uuid primary key default gen_random_uuid(),
   fingerprint text not null,
@@ -7,9 +35,6 @@ create table if not exists action_evidence_snapshots_v1 (
   snapshot_hash text not null,
   created_at timestamptz not null default now()
 );
-
-create index if not exists idx_action_evidence_snapshots_fingerprint_created_at
-  on action_evidence_snapshots_v1(fingerprint, created_at desc);
 
 create table if not exists action_actions_v1 (
   id uuid primary key default gen_random_uuid(),
@@ -84,21 +109,6 @@ create table if not exists action_actions_v1 (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_action_actions_status_updated_at
-  on action_actions_v1(status, updated_at desc);
-create index if not exists idx_action_actions_level_status
-  on action_actions_v1(current_level, status);
-
--- Prevent duplicate active actions for the same recommendation fingerprint.
-create unique index if not exists idx_action_actions_fingerprint_active_unique
-  on action_actions_v1(recommendation_fingerprint)
-  where status in ('detected','analyzed','recommended','draft_prepared','awaiting_approval','approved','snoozed','needs_revalidation','execution_blocked','executing','measuring');
-
-drop trigger if exists trg_action_actions_updated_at on action_actions_v1;
-create trigger trg_action_actions_updated_at
-before update on action_actions_v1
-for each row execute function set_updated_at();
-
 create table if not exists action_measurement_plans_v1 (
   id uuid primary key default gen_random_uuid(),
   action_id uuid not null references action_actions_v1(id) on delete cascade,
@@ -107,11 +117,6 @@ create table if not exists action_measurement_plans_v1 (
   updated_at timestamptz not null default now(),
   unique(action_id)
 );
-
-drop trigger if exists trg_action_measurement_plans_updated_at on action_measurement_plans_v1;
-create trigger trg_action_measurement_plans_updated_at
-before update on action_measurement_plans_v1
-for each row execute function set_updated_at();
 
 create table if not exists action_audit_events_v1 (
   id uuid primary key default gen_random_uuid(),
@@ -128,18 +133,6 @@ create table if not exists action_audit_events_v1 (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_action_audit_events_action_created_at
-  on action_audit_events_v1(action_id, created_at asc);
-
--- Default: lock these tables behind RLS; service role bypasses in server code.
-alter table action_evidence_snapshots_v1 enable row level security;
-alter table action_actions_v1 enable row level security;
-alter table action_measurement_plans_v1 enable row level security;
-alter table action_audit_events_v1 enable row level security;
-alter table action_comments_v1 enable row level security;
-alter table action_preferences_v1 enable row level security;
-alter table action_synthetic_outcomes_v1 enable row level security;
-
 create table if not exists action_comments_v1 (
   id uuid primary key default gen_random_uuid(),
   action_id uuid not null references action_actions_v1(id) on delete cascade,
@@ -147,9 +140,6 @@ create table if not exists action_comments_v1 (
   body text not null,
   created_at timestamptz not null default now()
 );
-
-create index if not exists idx_action_comments_action_created_at
-  on action_comments_v1(action_id, created_at asc);
 
 create table if not exists action_preferences_v1 (
   id uuid primary key default gen_random_uuid(),
@@ -162,11 +152,6 @@ create table if not exists action_preferences_v1 (
   unique(fingerprint)
 );
 
-drop trigger if exists trg_action_preferences_updated_at on action_preferences_v1;
-create trigger trg_action_preferences_updated_at
-before update on action_preferences_v1
-for each row execute function set_updated_at();
-
 create table if not exists action_synthetic_outcomes_v1 (
   id uuid primary key default gen_random_uuid(),
   action_id uuid not null references action_actions_v1(id) on delete cascade,
@@ -175,5 +160,51 @@ create table if not exists action_synthetic_outcomes_v1 (
   created_at timestamptz not null default now()
 );
 
+-- 2) Indexes and triggers only after tables exist.
+create index if not exists idx_action_evidence_snapshots_fingerprint_created_at
+  on action_evidence_snapshots_v1(fingerprint, created_at desc);
+
+create index if not exists idx_action_actions_status_updated_at
+  on action_actions_v1(status, updated_at desc);
+create index if not exists idx_action_actions_level_status
+  on action_actions_v1(current_level, status);
+
+-- Prevent duplicate active actions for the same recommendation fingerprint.
+create unique index if not exists idx_action_actions_fingerprint_active_unique
+  on action_actions_v1(recommendation_fingerprint)
+  where status in ('detected','analyzed','recommended','draft_prepared','awaiting_approval','approved','rejected','snoozed','needs_revalidation','execution_blocked','executing','measuring');
+
+create index if not exists idx_action_audit_events_action_created_at
+  on action_audit_events_v1(action_id, created_at asc);
+
+create index if not exists idx_action_comments_action_created_at
+  on action_comments_v1(action_id, created_at asc);
+
 create index if not exists idx_action_synth_outcomes_action_created_at
   on action_synthetic_outcomes_v1(action_id, created_at asc);
+
+drop trigger if exists trg_action_actions_updated_at on action_actions_v1;
+create trigger trg_action_actions_updated_at
+before update on action_actions_v1
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_action_measurement_plans_updated_at on action_measurement_plans_v1;
+create trigger trg_action_measurement_plans_updated_at
+before update on action_measurement_plans_v1
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_action_preferences_updated_at on action_preferences_v1;
+create trigger trg_action_preferences_updated_at
+before update on action_preferences_v1
+for each row execute function set_updated_at();
+
+-- 3) Enable RLS only after all seven tables exist.
+alter table action_evidence_snapshots_v1 enable row level security;
+alter table action_actions_v1 enable row level security;
+alter table action_measurement_plans_v1 enable row level security;
+alter table action_audit_events_v1 enable row level security;
+alter table action_comments_v1 enable row level security;
+alter table action_preferences_v1 enable row level security;
+alter table action_synthetic_outcomes_v1 enable row level security;
+
+commit;
