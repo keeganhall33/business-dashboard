@@ -702,9 +702,13 @@ export async function GET(request: Request) {
       return ok(sanitizeDashboardPayloadForHtml(fixture.overview));
     }
 
-    // Local dev fallback: load a seed snapshot from JSON instead of Supabase.
-    // This is intentionally temporary so the UI can render without env/network.
-    if ((process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed") {
+    const hasSupabaseEnv = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const seededRequested = (process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed";
+    const seedFallbackEnabled = process.env.NODE_ENV !== "production" && !hasSupabaseEnv;
+
+    // Local/dev fallback: load a seed snapshot from JSON instead of Supabase.
+    // This keeps the executive BI vertical slice usable without credentials.
+    if (seededRequested || seedFallbackEnabled) {
       // NOTE: dynamic import to prevent Next/Turbopack from tracing node:fs into the
       // default (Supabase) runtime path.
       const { loadDashboardOverviewFromSeed } = await import("@/lib/dashboard/seed");

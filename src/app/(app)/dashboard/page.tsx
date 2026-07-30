@@ -1,7 +1,6 @@
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
-import { getAgentDashboard, getDashboardOverview } from "@/lib/api/dashboard";
+import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
-import { agentKeys } from "@/lib/types/requests";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,14 +15,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
-  const stagingEnabled = process.env.DASHBOARD_STAGING_FIXTURES === "1";
-  const flyApp = process.env.FLY_APP_NAME ?? "";
-  const isStagingApp = flyApp === "keegan-dashboard-preview";
-
-  const [overview, agents] = await Promise.all([
-    getDashboardOverview({ preset, startDate: start, endDate: end }),
-    stagingEnabled && isStagingApp ? Promise.resolve([]) : Promise.all(agentKeys.map((key) => getAgentDashboard(key)))
-  ]);
+  const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
+  const agents = [];
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
   const sanitizedOverview = sanitizeDashboardPayloadForHtml(overview);

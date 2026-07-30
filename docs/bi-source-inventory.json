@@ -217,7 +217,7 @@
         "type": "server_compute",
         "paths": [
           "src/app/api/dashboard/overview/route.ts",
-          "src/app/dashboard/page.tsx"
+          "src/app/(app)/dashboard/page.tsx"
         ]
       },
       "storage": {
@@ -250,7 +250,7 @@
       ],
       "evidence_files": [
         "src/app/api/dashboard/overview/route.ts",
-        "src/app/dashboard/page.tsx",
+        "src/app/(app)/dashboard/page.tsx",
         "src/lib/api/dashboard.ts",
         "src/lib/auth/dashboard.ts"
       ]
