@@ -402,6 +402,12 @@ export type WooSummary = {
   shippingTotal: number | null;
   taxTotal: number | null;
   items: number | null;
+  grossRevenue?: number | null;
+  refundedTotal?: number | null;
+  netRevenue?: number | null;
+  definitionVersion?: string | null;
+  coverageStart?: string | null;
+  coverageEnd?: string | null;
   hasData?: boolean;
   source?: "selected_range_telemetry" | "snapshot_recent_orders";
   note?: string | null;
