@@ -204,7 +204,49 @@ This section is fully enumerated in `docs/bi-source-inventory.json`. This doc li
 4. **Action engine is not fully formalized** (levels 0–5 + audit trail + outcome learning loop).
 5. **Source inventory lacks machine-readable truth/coverage guarantees** per metric/capability.
 
-## 10) Evidence references (audit anchor list)
+## 10) 10/10 dashboard scorecard (Milestone 2)
+
+> **Scoring artifact:** `docs/bi-dashboard-scorecard.json`
+>
+> **Weighted overall score formula:**
+> \( overall = \sum_{d \in dimensions} weight(d) * score(d) / 100 \)
+> where `weight(d)` totals **100**.
+>
+> **Summary (current):**
+> - **Overall weighted score:** **4.06 / 10**
+> - **Reporting-dashboard score:** **6.09 / 10**
+> - **Intelligence-engine score:** **2.00 / 10**
+> - **Action-engine score:** **2.56 / 10**
+> - **Strongest dimension:** Security
+> - **Weakest dimension:** Forecasting
+> - **Five blockers to 10/10:** Cross-channel integration, Attribution, Explanation quality, Recommendation quality, Outcome measurement
+
+### Scorecard dimensions (25)
+
+The complete per-dimension rubric + evidence is tracked in `docs/bi-dashboard-scorecard.json`.
+
+## 11) Milestone 3 — Unified Business Event + Knowledge Model (started)
+
+### Initial canonical entities (draft)
+
+- **BusinessEvent** (canonical timeline row)
+  - `event_id`, `occurred_at`, `source_system`, `channel`, `event_type`, `confidence`
+  - optional joins: `campaign_id`, `ad_id`, `email_id`, `post_id`, `product_id`, `customer_id`, `geo`, `utm`
+  - outcomes: `traffic`, `leads`, `carts`, `orders`, `revenue_cents`, `refund_cents`
+  - provenance: `source_record_ref`, `attribution_window`, `freshness_as_of`, `coverage_bounds`
+
+- **Product**
+  - `product_id`, `type` (original/print/edition), `edition_size`, `availability`, `price`
+
+- **Campaign**
+  - `campaign_id`, `platform` (meta/email/social), `objective`, `audience`, `creative_refs`
+
+- **Customer / Collector**
+  - `customer_id`, `segment`, `lifetime_value`, `first_seen_at`, `last_seen_at`
+
+> This is a placeholder schema draft; the next milestone expands it with exact mappings to existing storage + ingestion.
+
+## 12) Evidence references (audit anchor list)
 
 - Workflows: `.github/workflows/dashboard-scheduler.yml`
 - CI templates: `.env.website.ci`, `.env.meta.ci`, `.env.leads.ci`, `.env.cloudflare.ci`, `.env.woo.ci`

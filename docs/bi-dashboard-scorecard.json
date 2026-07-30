@@ -1,0 +1,635 @@
+{
+  "generated_at": "2026-07-29T17:40:00-07:00",
+  "scope": "milestone_2_scorecard",
+  "weights": {
+    "data_accuracy": 8,
+    "cross_channel_integration": 6,
+    "explanation_quality": 6,
+    "recommendation_quality": 6,
+    "action_preparation": 5,
+    "outcome_measurement": 5,
+    "reliability": 5,
+    "data_completeness": 4,
+    "data_freshness": 3,
+    "data_provenance": 4,
+    "historical_depth": 4,
+    "attribution_quality": 5,
+    "causal_reasoning": 5,
+    "forecasting": 3,
+    "recommendation_specificity": 3,
+    "opportunity_detection": 3,
+    "approval_controls": 4,
+    "execution_capability": 3,
+    "learning_feedback_loop": 3,
+    "executive_usefulness": 3,
+    "ux_hierarchy": 2,
+    "mobile_experience": 2,
+    "speed_responsiveness": 2,
+    "security": 4,
+    "auditability": 2,
+    "total": 100
+  },
+  "scores": {
+    "data_completeness": {
+      "score": 5,
+      "status": "partially_proven",
+      "definition": "Coverage across all business channels required for decisions (commerce, website, ads, email, social, leads, finance, operations).",
+      "strengths": [
+        "Woo selected-range telemetry exists and is completeness/coverage gated."
+      ],
+      "deficiencies": [
+        "Many panels are snapshot or connected_incomplete; email + profit/margin sources not integrated."
+      ],
+      "required_for_10": [
+        "All key channels connected with validated coverage/freshness per range + per metric."
+      ],
+      "dependencies": [
+        "Unified event model",
+        "integration-gap work"
+      ],
+      "risk": "Decisions made on partial data",
+      "priority": "high",
+      "evidence_files": [
+        "src/lib/data-confidence.ts",
+        "src/app/api/dashboard/overview/route.ts",
+        "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"
+      ],
+      "earliest_roadmap_milestone": 1
+    },
+    "data_accuracy": {
+      "score": 7.5,
+      "status": "proven",
+      "definition": "Correctness of key business totals/metrics relative to source-of-truth systems.",
+      "strengths": [
+        "Woo paid-date net revenue definition is explicitly implemented + parity tested.",
+        "Timezone bug fixed (UTC vs local parsing)."
+      ],
+      "deficiencies": [
+        "Non-Woo sources accuracy not yet proven with parity checks."
+      ],
+      "required_for_10": [
+        "Parity/contract tests for each connected channel; automated drift detection."
+      ],
+      "dependencies": [
+        "Source inventory + per-source parity harness"
+      ],
+      "risk": "Silent drift in non-Woo metrics",
+      "priority": "high",
+      "evidence_files": [
+        "scripts/run-woo-telemetry.mjs",
+        "src/lib/woo/woo-ingestion.ts",
+        "test/woo-parity.test.ts",
+        "test/woo-ingestion.test.ts"
+      ],
+      "earliest_roadmap_milestone": 1
+    },
+    "data_freshness": {
+      "score": 6.5,
+      "status": "partially_proven",
+      "definition": "How current the data is, with visible as-of timestamps and stale detection.",
+      "strengths": [
+        "Woo telemetry includes as-of and coverage; confidence system flags stale."
+      ],
+      "deficiencies": [
+        "Other sources freshness varies; not uniformly enforced across panels."
+      ],
+      "required_for_10": [
+        "Unified freshness SLAs; consistent stale detection and suppression rules."
+      ],
+      "dependencies": [
+        "Confidence model expansion"
+      ],
+      "risk": "Stale sources mistaken as current",
+      "priority": "high",
+      "evidence_files": [
+        "src/lib/data-confidence.ts",
+        "supabase/schema.sql"
+      ],
+      "earliest_roadmap_milestone": 1
+    },
+    "data_provenance": {
+      "score": 6,
+      "status": "partially_proven",
+      "definition": "Ability to trace each metric to its source, definition, completeness, and limitations.",
+      "strengths": [
+        "Commerce telemetry summary returns definitionVersion/source/completeness/asOf/coverage."
+      ],
+      "deficiencies": [
+        "Not all metrics show provenance; mixed-source derivations exist."
+      ],
+      "required_for_10": [
+        "Every KPI + recommendation includes provenance + evidence links."
+      ],
+      "dependencies": [
+        "Unified event model; evidence schema"
+      ],
+      "risk": "Trust erosion",
+      "priority": "high",
+      "evidence_files": [
+        "supabase/schema.sql",
+        "src/components/dashboard/DataConfidencePanel.tsx",
+        "src/components/dashboard/DataSourceMatrixPanel.tsx"
+      ],
+      "earliest_roadmap_milestone": 2
+    },
+    "cross_channel_integration": {
+      "score": 2.5,
+      "status": "inferred",
+      "definition": "Joining signals from commerce, website, ads, email, social, press, leads into one coherent model.",
+      "strengths": [
+        "Multiple sources are present in the UI and scheduler."
+      ],
+      "deficiencies": [
+        "No canonical event timeline; limited join keys and attribution logic."
+      ],
+      "required_for_10": [
+        "Canonical business-event model + joins (campaign/product/utm/customer) + cross-channel timelines."
+      ],
+      "dependencies": [
+        "Milestone 3 event model"
+      ],
+      "risk": "Wrong causal narratives",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/dashboard/events.ts",
+        "src/app/api/dashboard/overview/route.ts",
+        ".github/workflows/dashboard-scheduler.yml"
+      ],
+      "earliest_roadmap_milestone": 3
+    },
+    "historical_depth": {
+      "score": 4,
+      "status": "unknown",
+      "definition": "How far back the system has consistent historical data per channel.",
+      "strengths": [
+        "Woo telemetry coverage is explicit once ingested."
+      ],
+      "deficiencies": [
+        "Historical depth for GA4/meta/leads/social unclear until table mapping is audited."
+      ],
+      "required_for_10": [
+        "Declared history windows per source; backfills where valuable."
+      ],
+      "dependencies": [
+        "Supabase schema crosswalk per source"
+      ],
+      "risk": "Misleading trend conclusions",
+      "priority": "medium",
+      "evidence_files": [
+        "supabase/schema.sql",
+        "src/lib/supabase/queries.ts"
+      ],
+      "earliest_roadmap_milestone": 1
+    },
+    "attribution_quality": {
+      "score": 2,
+      "status": "inferred",
+      "definition": "Ability to attribute outcomes to channels/actions with explicit windows and confound handling.",
+      "strengths": [
+        "Some comparison scaffolding exists in UI logic."
+      ],
+      "deficiencies": [
+        "No explicit attribution model across Meta/Email/Social to Woo outcomes."
+      ],
+      "required_for_10": [
+        "Attribution engine with evidence-grade claims + configurable windows; assisted conversion model."
+      ],
+      "dependencies": [
+        "Event model + knowledge model"
+      ],
+      "risk": "Scaling wrong campaigns",
+      "priority": "highest",
+      "evidence_files": [
+        "src/components/dashboard/ExecutiveRangeHeader.tsx",
+        "src/lib/dashboard/performance-baseline.ts"
+      ],
+      "earliest_roadmap_milestone": 4
+    },
+    "explanation_quality": {
+      "score": 3,
+      "status": "inferred",
+      "definition": "Quality of answers to 'why did it happen?' with quantified drivers + evidence.",
+      "strengths": [
+        "Change insights/top drivers panels exist."
+      ],
+      "deficiencies": [
+        "Explanations appear mostly heuristic/correlational; no explicit hypothesis/evidence taxonomy."
+      ],
+      "required_for_10": [
+        "Explanation engine that outputs: change → candidate causes → evidence → confidence → alternatives."
+      ],
+      "dependencies": [
+        "Event model; confidence model; attribution"
+      ],
+      "risk": "False certainty",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/dashboard/change-insights.ts",
+        "src/components/dashboard/TopDriversPanel.tsx"
+      ],
+      "earliest_roadmap_milestone": 5
+    },
+    "causal_reasoning": {
+      "score": 1.5,
+      "status": "inferred",
+      "definition": "Ability to distinguish causation from correlation and show confounds/alternatives.",
+      "strengths": [
+        "Some partial/unknown gating exists."
+      ],
+      "deficiencies": [
+        "No causal graph / model; no counterfactual framing."
+      ],
+      "required_for_10": [
+        "Causal explanation architecture with explicit confidence + confound handling."
+      ],
+      "dependencies": [
+        "Milestone 5 causal engine"
+      ],
+      "risk": "Misallocated effort/budget",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/data-confidence.ts"
+      ],
+      "earliest_roadmap_milestone": 5
+    },
+    "forecasting": {
+      "score": 1,
+      "status": "unknown",
+      "definition": "Ability to predict likely next outcomes with calibrated uncertainty.",
+      "strengths": [],
+      "deficiencies": [
+        "No forecast model surfaces or backtesting."
+      ],
+      "required_for_10": [
+        "Forecasting with baselines + confidence bands + eval."
+      ],
+      "dependencies": [
+        "Historical depth + event model"
+      ],
+      "risk": "Overconfidence",
+      "priority": "medium",
+      "evidence_files": [
+        "src/lib/dashboard/performance-baseline.ts"
+      ],
+      "earliest_roadmap_milestone": 6
+    },
+    "recommendation_quality": {
+      "score": 2,
+      "status": "inferred",
+      "definition": "Recommendations are evidence-based, high-impact, and aligned with constraints.",
+      "strengths": [
+        "Some action queue and opportunity scaffolding exists."
+      ],
+      "deficiencies": [
+        "No unified recommendation engine with expected impact + confidence."
+      ],
+      "required_for_10": [
+        "Recommendation engine with ranking, expected value, effort, risk, prerequisites."
+      ],
+      "dependencies": [
+        "Opportunity model + action model"
+      ],
+      "risk": "Busywork",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/opportunity-approval-pipeline.ts",
+        "src/components/dashboard/OpportunityRadarPanel.tsx"
+      ],
+      "earliest_roadmap_milestone": 7
+    },
+    "recommendation_specificity": {
+      "score": 2,
+      "status": "inferred",
+      "definition": "Recommendations are specific, not generic; tied to entities/campaigns/products.",
+      "strengths": [],
+      "deficiencies": [
+        "Prepared actions are not yet systematically generated."
+      ],
+      "required_for_10": [
+        "Per-action templates and entity linking."
+      ],
+      "dependencies": [
+        "Knowledge model"
+      ],
+      "risk": "Low adoption",
+      "priority": "high",
+      "evidence_files": [
+        "src/lib/executive-actions.ts"
+      ],
+      "earliest_roadmap_milestone": 7
+    },
+    "opportunity_detection": {
+      "score": 2.5,
+      "status": "inferred",
+      "definition": "Ability to detect and rank revenue opportunities with evidence.",
+      "strengths": [
+        "Opportunity routes/panels exist."
+      ],
+      "deficiencies": [
+        "No continuous ranked opportunity engine across channels."
+      ],
+      "required_for_10": [
+        "Opportunity center with scoring + evidence + status tracking."
+      ],
+      "dependencies": [
+        "Event model + recommendation engine"
+      ],
+      "risk": "Missed upside",
+      "priority": "highest",
+      "evidence_files": [
+        "src/app/api/opportunities/route.ts",
+        "src/components/dashboard/OpportunityRadarPanel.tsx"
+      ],
+      "earliest_roadmap_milestone": 8
+    },
+    "action_preparation": {
+      "score": 2,
+      "status": "inferred",
+      "definition": "System prepares execution-ready drafts (ads/emails/posts/outreach) for approval.",
+      "strengths": [
+        "Some automation and agent scaffolding exists."
+      ],
+      "deficiencies": [
+        "No standardized prepared-action artifacts per channel."
+      ],
+      "required_for_10": [
+        "Action preparation layer with editable drafts + previews + diffs."
+      ],
+      "dependencies": [
+        "Action model + integrations"
+      ],
+      "risk": "No leverage",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/automation/evaluateRules.ts"
+      ],
+      "earliest_roadmap_milestone": 9
+    },
+    "approval_controls": {
+      "score": 6,
+      "status": "partially_proven",
+      "definition": "Approval gating exists for consequential actions, with audit trail.",
+      "strengths": [
+        "Task approval endpoints exist; scheduler auth exists."
+      ],
+      "deficiencies": [
+        "Need unified L0–L5 policy and explicit external side-effect map."
+      ],
+      "required_for_10": [
+        "Formal approval/execution policy; enforced in code; complete audit trail."
+      ],
+      "dependencies": [
+        "Action system audit"
+      ],
+      "risk": "Accidental execution",
+      "priority": "high",
+      "evidence_files": [
+        "src/app/api/tasks/[id]/approve/route.ts",
+        "src/lib/scheduler/auth.ts"
+      ],
+      "earliest_roadmap_milestone": 8
+    },
+    "execution_capability": {
+      "score": 3,
+      "status": "unknown",
+      "definition": "System can execute approved actions via integrations.",
+      "strengths": [
+        "Scheduler + automation endpoints exist."
+      ],
+      "deficiencies": [
+        "External execution (Meta/email/social) not proven as implemented."
+      ],
+      "required_for_10": [
+        "Least-privilege connectors + idempotent execution + rollback."
+      ],
+      "dependencies": [
+        "Integrations"
+      ],
+      "risk": "Overclaiming capabilities",
+      "priority": "high",
+      "evidence_files": [
+        "src/app/api/automation/run-job/route.ts"
+      ],
+      "earliest_roadmap_milestone": 10
+    },
+    "outcome_measurement": {
+      "score": 2,
+      "status": "inferred",
+      "definition": "Measures whether executed actions worked against baseline.",
+      "strengths": [],
+      "deficiencies": [
+        "No formal outcome model tied to approvals/executions."
+      ],
+      "required_for_10": [
+        "Outcome tracking entities + evaluation windows + reporting."
+      ],
+      "dependencies": [
+        "Action model + event model"
+      ],
+      "risk": "No learning",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/opportunity-approval-pipeline.ts"
+      ],
+      "earliest_roadmap_milestone": 14
+    },
+    "learning_feedback_loop": {
+      "score": 1,
+      "status": "unknown",
+      "definition": "System improves recommendations based on outcomes and rejections.",
+      "strengths": [],
+      "deficiencies": [
+        "No learning loop data model or reuse logic."
+      ],
+      "required_for_10": [
+        "Recommendation outcome store + reuse prevention rules + evaluation."
+      ],
+      "dependencies": [
+        "Outcome measurement"
+      ],
+      "risk": "Repeated bad suggestions",
+      "priority": "highest",
+      "evidence_files": [],
+      "earliest_roadmap_milestone": 14
+    },
+    "executive_usefulness": {
+      "score": 6,
+      "status": "partially_proven",
+      "definition": "Helps Keegan decide what to do today with clarity, speed, and trust.",
+      "strengths": [
+        "Many panels exist; commerce telemetry now trustworthy when complete."
+      ],
+      "deficiencies": [
+        "Too much reporting; not enough explanation/recommendation/action readiness."
+      ],
+      "required_for_10": [
+        "Summary → explanation → evidence → action loop."
+      ],
+      "dependencies": [
+        "Milestones 3–7"
+      ],
+      "risk": "Low usage",
+      "priority": "highest",
+      "evidence_files": [
+        "src/components/dashboard/DashboardShell.tsx"
+      ],
+      "earliest_roadmap_milestone": 16
+    },
+    "ux_hierarchy": {
+      "score": 6,
+      "status": "partially_proven",
+      "definition": "Information hierarchy, progressive disclosure, and clarity.",
+      "strengths": [
+        "DashboardShell organizes sections; range controls exist."
+      ],
+      "deficiencies": [
+        "Hierarchy optimized for many panels vs executive loop; explanations buried."
+      ],
+      "required_for_10": [
+        "Executive-first hierarchy: summary → why → what now."
+      ],
+      "dependencies": [
+        "UX blueprint"
+      ],
+      "risk": "Cognitive overload",
+      "priority": "medium",
+      "evidence_files": [
+        "src/components/dashboard/DashboardShell.tsx",
+        "src/components/dashboard/DateRangeControls.tsx"
+      ],
+      "earliest_roadmap_milestone": 16
+    },
+    "mobile_experience": {
+      "score": 6.5,
+      "status": "partially_proven",
+      "definition": "Usability on mobile browsers.",
+      "strengths": [
+        "Recent production browser validation passed (no overflow)."
+      ],
+      "deficiencies": [
+        "No explicit mobile-first KPI loop or performance budget."
+      ],
+      "required_for_10": [
+        "Mobile-first UX plus measured performance + tests."
+      ],
+      "dependencies": [
+        "UX work"
+      ],
+      "risk": "Low adoption",
+      "priority": "medium",
+      "evidence_files": [
+        "src/components/dashboard/DashboardShell.tsx"
+      ],
+      "earliest_roadmap_milestone": 16
+    },
+    "speed_responsiveness": {
+      "score": 5,
+      "status": "unknown",
+      "definition": "Latency and responsiveness across ranges.",
+      "strengths": [
+        "Server route exists; caching disabled for correctness."
+      ],
+      "deficiencies": [
+        "No performance budgets/benchmarks; potential heavy compute in overview route."
+      ],
+      "required_for_10": [
+        "Perf budgets + tracing + load tests; fast-path caches with provenance."
+      ],
+      "dependencies": [
+        "Observability"
+      ],
+      "risk": "Slow dashboard",
+      "priority": "high",
+      "evidence_files": [
+        "src/app/api/dashboard/overview/route.ts"
+      ],
+      "earliest_roadmap_milestone": 15
+    },
+    "reliability": {
+      "score": 7,
+      "status": "partially_proven",
+      "definition": "Resilience to partial sources with correct fallbacks and clear state.",
+      "strengths": [
+        "Confidence model distinguishes unknown vs complete; Woo now stable."
+      ],
+      "deficiencies": [
+        "Need source-by-source SLAs + alerts + automated remediation."
+      ],
+      "required_for_10": [
+        "Reliability contract per source; automated monitoring + backfill."
+      ],
+      "dependencies": [
+        "Operations hardening"
+      ],
+      "risk": "Silent partial data",
+      "priority": "highest",
+      "evidence_files": [
+        "src/lib/data-confidence.ts",
+        "src/app/api/scheduler/alerts/route.ts"
+      ],
+      "earliest_roadmap_milestone": 15
+    },
+    "security": {
+      "score": 8,
+      "status": "partially_proven",
+      "definition": "Least-privilege secrets, server-only auth, separation of prod vs staging.",
+      "strengths": [
+        "Dashboard API auth is server-only; secrets not in client; 1Password references used."
+      ],
+      "deficiencies": [
+        "Need explicit connector scoping + audit logs for execution actions."
+      ],
+      "required_for_10": [
+        "Full least-privilege connector model + rotation + audit."
+      ],
+      "dependencies": [
+        "Execution system"
+      ],
+      "risk": "Credential sprawl",
+      "priority": "high",
+      "evidence_files": [
+        "src/lib/auth/dashboard.ts",
+        ".env.woo.ci"
+      ],
+      "earliest_roadmap_milestone": 15
+    },
+    "auditability": {
+      "score": 5.5,
+      "status": "inferred",
+      "definition": "Audit trail for ingestions, derived metrics, recommendations, approvals, executions.",
+      "strengths": [
+        "Woo ingestion runs table exists."
+      ],
+      "deficiencies": [
+        "No end-to-end audit trail across recommendations and outcomes."
+      ],
+      "required_for_10": [
+        "Canonical audit log events across all actions and model outputs."
+      ],
+      "dependencies": [
+        "Event model"
+      ],
+      "risk": "No accountability",
+      "priority": "high",
+      "evidence_files": [
+        "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"
+      ],
+      "earliest_roadmap_milestone": 8
+    }
+  },
+  "derived": {
+    "reporting_dashboard_score": 6.09,
+    "intelligence_engine_score": 2,
+    "action_engine_score": 2.56,
+    "weighted_overall_score": 4.06,
+    "strongest_dimension": "security",
+    "weakest_dimension": "forecasting",
+    "top_5_blockers": [
+      "cross_channel_integration",
+      "attribution_quality",
+      "explanation_quality",
+      "recommendation_quality",
+      "outcome_measurement"
+    ]
+  }
+}
