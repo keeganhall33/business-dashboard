@@ -1,4 +1,4 @@
-import { ok, serverError } from "@/lib/api/responses";
+import { ok, badRequest, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { transitionAction } from "@/lib/actions/action-store";
 
@@ -26,7 +26,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     });
     return ok({ ok: true, action: updated });
   } catch (error) {
-    return serverError("Failed to unsnooze", { message: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Invalid transition")) {
+      return badRequest(message);
+    }
+    return serverError("Failed to unsnooze", { message });
   }
 }
-

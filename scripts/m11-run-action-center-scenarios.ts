@@ -629,6 +629,48 @@ async function fetchAuditEvents(input: {
   return { ok: true, audit, error: null };
 }
 
+async function listActions(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  stepName: string;
+}): Promise<{ ok: boolean; actions: JsonObject[]; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: input.stepName,
+    method: "GET",
+    path: "/api/actions",
+    expectedStatus: 200
+  });
+  input.steps.push(res.step);
+  if (!res.step.ok) return { ok: false, actions: [], error: res.step.errorMessage ?? "List actions failed" };
+  const env = coerceObject(res.json);
+  const arr = env && env["ok"] === true && Array.isArray(env["actions"]) ? (env["actions"] as unknown[]) : [];
+  const actions = arr.map((a) => coerceObject(a)).filter(Boolean) as JsonObject[];
+  return { ok: true, actions, error: null };
+}
+
+async function attemptInvalidUnsnoozeExpectedReject(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "invalid_transition",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/unsnooze`,
+    expectedStatus: 400,
+    idempotencyKey: input.idempotencyKey
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Expected invalid transition rejection") };
+}
+
 async function revalidateEvidence(input: {
   ctx: ScenarioRunnerContext;
   steps: StepRecord[];
@@ -1566,6 +1608,322 @@ export const SCENARIO_RUNNERS: ScenarioRunnerDef[] = [
         return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final.assert_status", first_failure_status: 200, first_failure_error: `Expected status=inconclusive, got ${String(fetched.action["status"] ?? "")}` };
       }
       return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "deduplication",
+    name: "14. Duplicate recommendation deduplication",
+    run: async (ctx) => {
+      const created1 = await createAction({
+        ctx,
+        recSlug: "deduplication",
+        title: `M11 Harness (${ctx.harness_run_id}) — Duplicate dedupe (1)`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { variant: 1 }
+      });
+      if ("action_id" in created1 === false) return created1.trace;
+
+      const steps = [...created1.trace.steps];
+      const fp = String(created1.action["recommendation_fingerprint"] ?? "");
+
+      // Equivalent create: same recommendation id (same recSlug) + same window => same fingerprint.
+      const created2 = await createAction({
+        ctx,
+        recSlug: "deduplication",
+        title: `M11 Harness (${ctx.harness_run_id}) — Duplicate dedupe (2)`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { variant: 2 }
+      });
+      // Merge steps
+      steps.push(...created2.trace.steps);
+      if ("action_id" in created2 === false) {
+        return { ...created1.trace, pass: false, steps, first_failure_step: created2.trace.first_failure_step, first_failure_status: created2.trace.first_failure_status, first_failure_error: created2.trace.first_failure_error };
+      }
+
+      if (created2.action_id !== created1.action_id) {
+        return { ...created1.trace, pass: false, steps, first_failure_step: "dedupe.assert_same_id", first_failure_status: 200, first_failure_error: `Expected deduped action id to match, got ${created1.action_id} vs ${created2.action_id}` };
+      }
+
+      const listed = await listActions({ ctx, steps, stepName: "list_actions" });
+      if (!listed.ok) {
+        return { ...created1.trace, pass: false, steps, first_failure_step: "list_actions", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: listed.error };
+      }
+      const active = listed.actions.filter((a) => String(a["recommendation_fingerprint"] ?? "") === fp && ["recommended", "draft_prepared", "awaiting_approval", "approved", "snoozed", "needs_revalidation"].includes(String(a["status"] ?? "")));
+      if (active.length !== 1) {
+        return { ...created1.trace, pass: false, steps, first_failure_step: "dedupe.assert_active_count", first_failure_status: 200, first_failure_error: `Expected exactly 1 active action for fingerprint, got ${active.length}` };
+      }
+
+      return { ...created1.trace, pass: true, steps, action_id: created1.action_id, final_status: String(active[0]?.["status"] ?? ""), final_approval_level: String(active[0]?.["current_level"] ?? "") };
+    }
+  },
+  {
+    id: "invalid_transition",
+    name: "15. Invalid transition rejection",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "invalid_transition",
+        title: `M11 Harness (${ctx.harness_run_id}) — Invalid transition rejection`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "invalid_transition" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+
+      const before = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_before", expectedStatus: 200 });
+      if (!before.ok || !before.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_before", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: before.error };
+
+      const invalid = await attemptInvalidUnsnoozeExpectedReject({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:15:invalid` });
+      if (!invalid.ok) return { ...created.trace, pass: false, steps, first_failure_step: "invalid_transition", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: invalid.error };
+
+      const after = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after", expectedStatus: 200 });
+      if (!after.ok || !after.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: after.error };
+
+      if (String(after.action["status"] ?? "") !== String(before.action["status"] ?? "")) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "assert_unchanged_status", first_failure_status: 200, first_failure_error: "Status changed after invalid transition" };
+      }
+      if (String(after.action["current_level"] ?? "") !== String(before.action["current_level"] ?? "")) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "assert_unchanged_level", first_failure_status: 200, first_failure_error: "Level changed after invalid transition" };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasAwaiting = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "awaiting_approval";
+      });
+      if (hasAwaiting) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "assert_no_invalid_audit", first_failure_status: 200, first_failure_error: "Unexpected audit event for invalid transition" };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(after.action["status"] ?? ""), final_approval_level: String(after.action["current_level"] ?? "") };
+    }
+  },
+  {
+    id: "agent_self_approval",
+    name: "16. Agent self-approval rejection",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "agent_self_approval",
+        title: `M11 Harness (${ctx.harness_run_id}) — Agent self-approval rejection`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "agent_self_approval" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "prepare",
+        method: "POST",
+        path: `/api/actions/${created.action_id}/prepare`,
+        expectedStatus: 200,
+        idempotencyKey: `${ctx.harness_run_id}:16:prepare`,
+        body: { actor: "agent", prepared_assets, execution_plan }
+      });
+      steps.push(prep.step);
+      if (!prep.step.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: prep.step.actualStatus, first_failure_error: prep.step.errorMessage };
+
+      const ready = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "ready",
+        method: "POST",
+        path: `/api/actions/${created.action_id}/ready`,
+        expectedStatus: 200,
+        idempotencyKey: `${ctx.harness_run_id}:16:ready`,
+        body: { actor: "agent", measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" } }
+      });
+      steps.push(ready.step);
+      if (!ready.step.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: ready.step.actualStatus, first_failure_error: ready.step.errorMessage };
+
+      const approve = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "approve_agent_blocked",
+        method: "POST",
+        path: `/api/actions/${created.action_id}/approve`,
+        expectedStatus: 400,
+        idempotencyKey: `${ctx.harness_run_id}:16:approve`,
+        body: { actor: "agent", confirm: true }
+      });
+      steps.push(approve.step);
+      if (!approve.step.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve_agent_blocked", first_failure_status: approve.step.actualStatus, first_failure_error: approve.step.errorMessage };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_block", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "awaiting_approval") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block.assert_status", first_failure_status: 200, first_failure_error: `Expected status to remain awaiting_approval, got ${String(fetched.action["status"] ?? "")}` };
+      }
+      if (fetched.action["approved_by"] || fetched.action["approved_at"]) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block.assert_no_approval", first_failure_status: 200, first_failure_error: "Expected approved_by/approved_at to remain unset" };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasApproved = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "approved";
+      });
+      if (hasApproved) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit.assert_no_approval_event", first_failure_status: 200, first_failure_error: "Unexpected approval audit event" };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["current_level"] ?? "") };
+    }
+  },
+  {
+    id: "missing_measurement_plan",
+    name: "17. Missing measurement-plan rejection",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "missing_measurement_plan",
+        title: `M11 Harness (${ctx.harness_run_id}) — Missing measurement plan rejection`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "missing_measurement" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:17:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+
+      // Mark ready with empty measurement_window object => should pass ready but fail approval (Missing measurement plan)
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: {}, idempotencyKey: `${ctx.harness_run_id}:17:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+
+      const approve = await approveActionExpectedReject({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        stepName: "approve_missing_measurement",
+        expectedStatus: 400,
+        actor: "ceo",
+        confirm: true,
+        idempotencyKey: `${ctx.harness_run_id}:17:approve`
+      });
+      if (!approve.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve_missing_measurement", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: approve.error };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_block", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "awaiting_approval") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block.assert_status", first_failure_status: 200, first_failure_error: `Expected status to remain awaiting_approval, got ${String(fetched.action["status"] ?? "")}` };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasApproved = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "approved";
+      });
+      if (hasApproved) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit.assert_no_approval_event", first_failure_status: 200, first_failure_error: "Unexpected approval audit event" };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["current_level"] ?? "") };
+    }
+  },
+  {
+    id: "idempotent_approval_replay",
+    name: "18. Idempotent approval replay",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "idempotent_approval_replay",
+        title: `M11 Harness (${ctx.harness_run_id}) — Idempotent approval replay`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "idempotent_approve" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:18:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:18:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+
+      const auditBefore = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_before" });
+      if (!auditBefore.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_before", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: auditBefore.error };
+      const beforeApprovedCount = auditBefore.audit.filter((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "approved";
+      }).length;
+
+      const idKey = `${ctx.harness_run_id}:18:approve`;
+      const approved = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "approve",
+        method: "POST",
+        path: `/api/actions/${created.action_id}/approve`,
+        expectedStatus: 200,
+        idempotencyKey: idKey,
+        body: { actor: "ceo", confirm: true }
+      });
+      steps.push(approved.step);
+      if (!approved.step.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve", first_failure_status: approved.step.actualStatus, first_failure_error: approved.step.errorMessage };
+
+      const fetched1 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_approve", expectedStatus: 200 });
+      if (!fetched1.ok || !fetched1.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched1.error };
+      const approvedAt = String(fetched1.action["approved_at"] ?? "");
+      if (!approvedAt) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve.assert_timestamp", first_failure_status: 200, first_failure_error: "Expected approved_at" };
+
+      const replay = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "approve_replay",
+        method: "POST",
+        path: `/api/actions/${created.action_id}/approve`,
+        expectedStatus: 200,
+        idempotencyKey: idKey,
+        body: { actor: "ceo", confirm: true }
+      });
+      steps.push(replay.step);
+      if (!replay.step.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve_replay", first_failure_status: replay.step.actualStatus, first_failure_error: replay.step.errorMessage };
+
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_replay", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_replay", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+      if (String(fetched2.action["approved_at"] ?? "") !== approvedAt) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_replay.assert_timestamp", first_failure_status: 200, first_failure_error: "approved_at changed on idempotent replay" };
+      }
+
+      const auditAfter = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_after" });
+      if (!auditAfter.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: auditAfter.error };
+      const afterApprovedCount = auditAfter.audit.filter((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "approved";
+      }).length;
+      if (afterApprovedCount !== beforeApprovedCount + 1) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after.assert_no_dupe", first_failure_status: 200, first_failure_error: `Expected exactly one new approved audit event (before ${beforeApprovedCount}, after ${afterApprovedCount})` };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["current_level"] ?? "") };
     }
   }
 ];
