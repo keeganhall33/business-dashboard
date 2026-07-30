@@ -77,6 +77,15 @@ export async function POST(request: Request) {
 
     return ok({ ok: true, action });
   } catch (error) {
-    return serverError("Failed to create action", { message: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    // Deterministic client-facing failures for known policy blocks.
+    if (
+      message.includes("permanently suppressed") ||
+      message.includes("rejected") ||
+      message.includes("evidence")
+    ) {
+      return badRequest(message);
+    }
+    return serverError("Failed to create action", { message });
   }
 }

@@ -1,7 +1,7 @@
 import { ok, badRequest, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { getAction, insertAuditEvent, transitionAction } from "@/lib/actions/action-store";
-import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import crypto from "node:crypto";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const changed = Boolean(action.evidence_snapshot_hash && newHash !== action.evidence_snapshot_hash);
 
     // Always store the new evidence separately so history remains intact.
-    const supabase = getSupabaseAdminClient();
+    const supabase = getSupabaseServerClient();
     const { data: snapRow, error: snapErr } = await supabase
       .from("action_evidence_snapshots_v1")
       .insert({ fingerprint: action.recommendation_fingerprint, snapshot_json: currentEvidence, snapshot_hash: newHash })

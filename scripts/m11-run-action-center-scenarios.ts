@@ -14,6 +14,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
+import { coerceObject, sanitizeErrorMessage, statusMatches, type StepRecord } from "@/lib/actions/harness-utils";
 
 type ScenarioResult = {
   name: string;
@@ -23,6 +24,8 @@ type ScenarioResult = {
   action_id?: string;
   final_status?: string;
   final_approval_level?: string;
+  steps?: StepRecord[];
+  first_failure_step?: string;
   rejected_transitions?: { step: string; status: number; error: string }[];
   notes?: string[];
 };
@@ -60,20 +63,37 @@ async function httpJson(input: {
   path: string;
   body?: unknown;
   idempotencyKey?: string;
-}): Promise<{ status: number; json: unknown }>
+  expectedStatus?: number | number[];
+  preferReturnRepresentation?: boolean;
+}): Promise<{ status: number; json: unknown; record: StepRecord }>
 {
   const url = new URL(input.path, input.baseUrl).toString();
+  const prefer = input.preferReturnRepresentation ? "return=representation" : undefined;
   const res = await fetch(url, {
     method: input.method,
     headers: {
       "content-type": "application/json",
       "x-dashboard-secret": input.token,
-      ...(input.idempotencyKey ? { "x-idempotency-key": input.idempotencyKey } : {})
+      ...(input.idempotencyKey ? { "x-idempotency-key": input.idempotencyKey } : {}),
+      ...(prefer ? { Prefer: prefer } : {})
     },
     body: input.body ? JSON.stringify(input.body) : undefined
   });
   const json: unknown = await res.json().catch(() => ({}));
-  return { status: res.status, json };
+  const expected = input.expectedStatus ?? 200;
+  const ok = statusMatches(expected, res.status);
+  const record: StepRecord = {
+    scenario: "",
+    step: input.path,
+    method: input.method,
+    path: input.path,
+    expectedStatus: expected,
+    actualStatus: res.status,
+    ok,
+    errorMessage: ok ? null : sanitizeErrorMessage((coerceObject(json) ?? {})["error"] ?? (coerceObject(json) ?? {})["message"] ?? json),
+    response: json
+  };
+  return { status: res.status, json, record };
 }
 
 function recTemplate(kind: string, overrides: Record<string, unknown> = {}) {

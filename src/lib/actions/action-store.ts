@@ -224,9 +224,19 @@ export async function transitionAction(input: {
   patch?: Partial<Pick<DurableAction, "prepared_assets" | "approval_requirements" | "execution_plan" | "measurement_window" | "snoozed_until" | "rejection_reason" | "approved_by" | "approved_at" | "rejected_by" | "rejected_at" | "expires_at">>;
 }): Promise<DurableAction> {
   requireWritesEnabled();
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const current = await getAction(input.actionId);
   if (!current) throw new Error("Action not found");
+
+  // Idempotency: if this idempotency key already applied and state matches, no-op.
+  if (
+    current.last_idempotency_key &&
+    current.last_idempotency_key === input.idempotencyKey &&
+    current.status === input.to_status &&
+    current.current_level === input.to_level
+  ) {
+    return current;
+  }
 
   const from_status = current.status;
   const from_level = current.current_level;

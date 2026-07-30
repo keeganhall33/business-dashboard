@@ -23,6 +23,12 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
     const current = await getAction(id);
     if (!current) return badRequest("Action not found");
+
+    // Idempotent replay: if already approved and idempotency matches, return success without new audit.
+    if (current.status === "approved" && current.last_idempotency_key === idempotencyKey) {
+      return ok({ ok: true, action: current, warning: "Approved for future execution. No external action has been performed." });
+    }
+
     if (current.status !== "awaiting_approval") return badRequest("Action not awaiting approval");
     if (!current.evidence_snapshot_id) return badRequest("Missing evidence snapshot");
     if (current.expires_at && new Date(current.expires_at).getTime() < Date.now()) return badRequest("Action evidence expired");
