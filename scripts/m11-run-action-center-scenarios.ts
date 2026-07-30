@@ -47,7 +47,7 @@ type CleanupReport = {
 
 type PhaseReport = {
   ok: boolean;
-  phase: "A";
+  phase: "A" | "B";
   harness_run_id: string;
   generated_at_utc: string;
   staging_host: string;
@@ -256,9 +256,9 @@ async function cleanupHarnessRun(input: {
   return report;
 }
 
-async function runPhaseA(): Promise<void> {
+async function runPhaseAOrB(phase: "A" | "B"): Promise<void> {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const outFile = path.join(OUT_DIR, "phase-a-report.json");
+  const outFile = path.join(OUT_DIR, phase === "A" ? "phase-a-report.json" : "phase-b-report.json");
 
   const baseUrl = process.env.M11_BASE_URL ?? "http://localhost:3456";
   const token = mustGet("DASHBOARD_ADMIN_TOKEN");
@@ -407,20 +407,211 @@ async function runPhaseA(): Promise<void> {
     };
   }
 
-  const trace = await runScenario1();
-  traces.push(trace);
-  externalSideEffects += trace.external_side_effect_count;
+  async function runScenarioExpectedRejectionWebsiteRollback(): Promise<ScenarioTrace> {
+    const name = "B2. Website approval missing rollback plan is rejected";
+    const steps: StepRecord[] = [];
+    let first_failure_step: string | null = null;
+    let first_failure_status: number | null = null;
+    let first_failure_error: string | null = null;
+
+    const window = { startDate: "2026-05-02", endDate: "2026-05-08" };
+    const fingerprint = stableHash({ kind: "website_conversion", window, harness_run_id });
+    const recId = `m11_harness:${harness_run_id}:rec_website_conversion`;
+    const title = `M11 Harness (${harness_run_id}) — Website conversion recommendation`;
+    const recommendation: JsonObject = {
+      id: recId,
+      title,
+      category: "website",
+      approval_level: "L3_READY_FOR_APPROVAL",
+      status: "recommended",
+      confidence: "possible",
+      expected_outcome: "Increase conversion",
+      reason: "Harness scenario",
+      affected_channels: ["website"],
+      affected_products: ["store"],
+      affected_audiences: ["all"],
+      priority_score: { overallScore: 70 },
+      estimated_incremental_revenue: { usd: 1500 },
+      estimated_cost: { usd: 0 },
+      estimated_effort: { hours: 4 },
+      risk: "high",
+      approval_requirements: {},
+      measurement_window: window,
+      data_missing: [],
+      limitations: []
+    };
+    const evidence_snapshot: JsonObject = { harness_run_id, fingerprint: `${fingerprint_prefix}${fingerprint}`, window };
+
+    const create = await httpStep({
+      baseUrl,
+      token,
+      scenario: name,
+      step: "create",
+      method: "POST",
+      path: "/api/actions",
+      expectedStatus: 200,
+      idempotencyKey: `${harness_run_id}:b2:create`,
+      body: { actor: "m11_harness", window, recommendation, evidence_snapshot }
+    });
+    create.step.scenario = name;
+    steps.push(create.step);
+    if (!create.step.ok) {
+      first_failure_step = "create";
+      first_failure_status = create.step.actualStatus;
+      first_failure_error = create.step.errorMessage;
+      return {
+        name,
+        pass: false,
+        external_side_effect_count: 0,
+        harness_run_id,
+        fingerprint_prefix,
+        steps,
+        first_failure_step,
+        first_failure_status,
+        first_failure_error,
+        action_id: null,
+        final_status: null,
+        final_approval_level: null
+      };
+    }
+
+    const action = getActionFromEnvelope(create.json);
+    const actionId = action ? String(action["id"] ?? "") : "";
+    if (!actionId) {
+      return {
+        name,
+        pass: false,
+        external_side_effect_count: 0,
+        harness_run_id,
+        fingerprint_prefix,
+        steps,
+        first_failure_step: "create.parse",
+        first_failure_status: 200,
+        first_failure_error: "Missing action id",
+        action_id: null,
+        final_status: null,
+        final_approval_level: null
+      };
+    }
+
+    const prepare = await httpStep({
+      baseUrl,
+      token,
+      scenario: name,
+      step: "prepare",
+      method: "POST",
+      path: `/api/actions/${actionId}/prepare`,
+      expectedStatus: 200,
+      idempotencyKey: `${harness_run_id}:b2:prepare`,
+      body: {
+        actor: "m11_harness",
+        prepared_assets: [{ type: "draft", body: "draft" }],
+        execution_plan: { preview: "preview" }
+      }
+    });
+    prepare.step.scenario = name;
+    steps.push(prepare.step);
+    if (!prepare.step.ok) {
+      return {
+        name,
+        pass: false,
+        external_side_effect_count: 0,
+        harness_run_id,
+        fingerprint_prefix,
+        steps,
+        first_failure_step: "prepare",
+        first_failure_status: prepare.step.actualStatus,
+        first_failure_error: prepare.step.errorMessage,
+        action_id: actionId,
+        final_status: null,
+        final_approval_level: null
+      };
+    }
+
+    const ready = await httpStep({
+      baseUrl,
+      token,
+      scenario: name,
+      step: "ready",
+      method: "POST",
+      path: `/api/actions/${actionId}/ready`,
+      expectedStatus: 200,
+      idempotencyKey: `${harness_run_id}:b2:ready`,
+      body: { actor: "m11_harness", measurement_window: window }
+    });
+    ready.step.scenario = name;
+    steps.push(ready.step);
+    if (!ready.step.ok) {
+      return {
+        name,
+        pass: false,
+        external_side_effect_count: 0,
+        harness_run_id,
+        fingerprint_prefix,
+        steps,
+        first_failure_step: "ready",
+        first_failure_status: ready.step.actualStatus,
+        first_failure_error: ready.step.errorMessage,
+        action_id: actionId,
+        final_status: null,
+        final_approval_level: null
+      };
+    }
+
+    const approve = await httpStep({
+      baseUrl,
+      token,
+      scenario: name,
+      step: "approve_missing_rollback",
+      method: "POST",
+      path: `/api/actions/${actionId}/approve`,
+      expectedStatus: 400,
+      idempotencyKey: `${harness_run_id}:b2:approve`,
+      body: { actor: "m11_harness", confirm: true }
+    });
+    approve.step.scenario = name;
+    steps.push(approve.step);
+    const pass = approve.step.ok;
+
+    return {
+      name,
+      pass,
+      external_side_effect_count: 0,
+      harness_run_id,
+      fingerprint_prefix,
+      steps,
+      first_failure_step: pass ? null : "approve_missing_rollback",
+      first_failure_status: pass ? null : approve.step.actualStatus,
+      first_failure_error: pass ? null : approve.step.errorMessage,
+      action_id: actionId,
+      final_status: null,
+      final_approval_level: null
+    };
+  }
+
+  if (phase === "A") {
+    const trace = await runScenario1();
+    traces.push(trace);
+    externalSideEffects += trace.external_side_effect_count;
+  } else {
+    const s1 = await runScenario1();
+    traces.push(s1);
+    externalSideEffects += s1.external_side_effect_count;
+    const s2 = await runScenarioExpectedRejectionWebsiteRollback();
+    traces.push(s2);
+    externalSideEffects += s2.external_side_effect_count;
+  }
 
   const cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id });
 
   const failures = traces.filter((t) => !t.pass).map((t) => t.name);
   const report: PhaseReport = {
     ok: failures.length === 0 && cleanup.ok && externalSideEffects === 0,
-    phase: "A",
+    phase,
     harness_run_id,
     generated_at_utc: nowUtcIso(),
     staging_host: stagingHost,
-    scenarios_executed: 1,
+    scenarios_executed: traces.length,
     scenarios_passed: traces.filter((t) => t.pass).length,
     scenarios_failed: failures.length,
     failures,
@@ -436,14 +627,13 @@ async function runPhaseA(): Promise<void> {
   process.exit(report.ok ? 0 : 1);
 }
 
-const mode = process.argv.includes("--phase") ? process.argv[process.argv.indexOf("--phase") + 1] : "A";
-if (mode !== "A") {
-  console.error("Only --phase A is implemented in this run");
+const mode = (process.argv.includes("--phase") ? process.argv[process.argv.indexOf("--phase") + 1] : "A") as "A" | "B";
+if (!(mode === "A" || mode === "B")) {
+  console.error("Only --phase A or B are supported");
   process.exit(2);
 }
 
-runPhaseA().catch((e) => {
+runPhaseAOrB(mode).catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
 });
-
