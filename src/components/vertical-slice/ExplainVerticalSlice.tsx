@@ -1,5 +1,7 @@
 import type { DashboardOverviewResponse, TrendComparison, TelemetryMetadata } from "@/lib/types/dashboard";
 import { VerticalSliceCard, Pill, DefinitionRow } from "./VerticalSliceCard";
+import { CausalExplanationPanel } from "./CausalExplanationPanel";
+import type { ExplainResponse } from "@/lib/intelligence/explanation-contract";
 
 function confidenceTone(value: string) {
   const v = value.toLowerCase();
@@ -48,7 +50,7 @@ function renderMetadata(meta: TelemetryMetadata | null | undefined) {
   );
 }
 
-export function ExplainVerticalSlice({ data }: { data: DashboardOverviewResponse }) {
+export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOverviewResponse; explanation: ExplainResponse | null }) {
   const brief = data.executiveInsights?.brief ?? null;
   const topChanges = brief?.topChanges ?? [];
   const missing = [
@@ -60,6 +62,8 @@ export function ExplainVerticalSlice({ data }: { data: DashboardOverviewResponse
 
   return (
     <div className="space-y-6">
+      <CausalExplanationPanel payload={explanation} />
+
       <VerticalSliceCard
         title="Summary → Explanation"
         subtitle="Read-only: what changed, likely contributors, and what we can and cannot claim from the current source stack."
