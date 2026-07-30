@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-07-29T22:55:00-07:00",
+  "milestone": "M7_integration_gap_analysis",
+  "version": "bi_integration_risk_register_v1",
+  "likelihood_vocab": ["low", "medium", "high"],
+  "impact_vocab": ["low", "medium", "high", "critical"],
+  "risks": [
+    {
+      "risk_id": "r_api_deprecation",
+      "category": "platform",
+      "description": "API deprecation / breaking changes (Meta/Google/email).",
+      "likelihood": "medium",
+      "impact": "high",
+      "detection": "monitor API changelogs + ingestion error rates",
+      "mitigation": "versioned connectors + schema contracts + alerts",
+      "owner": "engineering",
+      "rollback": "pin old version or disable connector",
+      "residual_risk": "medium"
+    },
+    {
+      "risk_id": "r_rate_limits",
+      "category": "platform",
+      "description": "Rate limits throttle backfills and daily pulls; partial data leads to wrong conclusions.",
+      "likelihood": "high",
+      "impact": "high",
+      "detection": "quota dashboards + ingestion run logs",
+      "mitigation": "paging, caching, incremental pulls, backfill windows",
+      "owner": "engineering",
+      "rollback": "pause backfill; switch to forward-only",
+      "residual_risk": "medium"
+    },
+    {
+      "risk_id": "r_attribution_bias",
+      "category": "analytics",
+      "description": "Platform attribution double counts and biases (Meta/GA/email).",
+      "likelihood": "high",
+      "impact": "high",
+      "detection": "compare multi-touch vs platform-attributed vs Woo truth",
+      "mitigation": "canonical AttributionTouch model + matchback joins",
+      "owner": "analytics",
+      "rollback": "suppress recommendations when divergence exceeds threshold",
+      "residual_risk": "medium"
+    },
+    {
+      "risk_id": "r_pii_exposure",
+      "category": "security",
+      "description": "PII exposure via email/CRM exports or identity joins.",
+      "likelihood": "medium",
+      "impact": "critical",
+      "detection": "PII scans + access audits",
+      "mitigation": "hash identifiers, minimize storage, strict scopes, encryption",
+      "owner": "security",
+      "rollback": "revoke tokens + purge datasets + incident response",
+      "residual_risk": "low"
+    },
+    {
+      "risk_id": "r_email_consent_violation",
+      "category": "compliance",
+      "description": "Email consent/suppression violations from wrong segmenting or exports.",
+      "likelihood": "medium",
+      "impact": "high",
+      "detection": "suppression rule tests + unsubscribe/complaint monitors",
+      "mitigation": "audience approval class + suppression rules required for execution",
+      "owner": "operations",
+      "rollback": "stop sends; disable flows",
+      "residual_risk": "medium"
+    },
+    {
+      "risk_id": "r_accidental_public_posting",
+      "category": "execution",
+      "description": "Accidental public posting / ad launches / budget changes.",
+      "likelihood": "low",
+      "impact": "critical",
+      "detection": "approval gates + preflight + audit",
+      "mitigation": "L4 requires exact approved hash + scoped executor credentials",
+      "owner": "engineering",
+      "rollback": "delete/archive content; pause ads; restore budgets",
+      "residual_risk": "low"
+    },
+    {
+      "risk_id": "r_timezone_currency_mismatch",
+      "category": "data_quality",
+      "description": "Timezone/currency mismatches distort daily metrics and ROAS.",
+      "likelihood": "medium",
+      "impact": "medium",
+      "detection": "cross-source reconciliation checks",
+      "mitigation": "canonical timezone (America/Los_Angeles) + currency normalization",
+      "owner": "analytics",
+      "rollback": "recompute derived tables",
+      "residual_risk": "low"
+    }
+  ]
+}

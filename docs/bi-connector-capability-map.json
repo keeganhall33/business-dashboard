@@ -1,0 +1,130 @@
+{
+  "generated_at": "2026-07-29T22:55:00-07:00",
+  "milestone": "M7_integration_gap_analysis",
+  "version": "bi_connector_capability_map_v1",
+  "status_vocab": [
+    "connected_reliable",
+    "connected_incomplete",
+    "manual_only",
+    "technically_connectable",
+    "placeholder_or_seed",
+    "unavailable",
+    "not_worth_connecting"
+  ],
+  "capability_vocab": ["none", "read_only", "draft_only", "execute_scoped", "admin"],
+  "connectors": [
+    {
+      "connector_id": "supabase",
+      "source_name": "Supabase Postgres",
+      "business_function": "primary warehouse + app data",
+      "status": "connected_reliable",
+      "evidence": { "paths": ["src/lib/supabase/server.ts", "supabase/schema.sql"], "note": "Core app uses Supabase as storage; dashboard reads from it." },
+      "auth_method": "service key (server-side)",
+      "env_evidence": [".env.* (not audited for values)", "src/lib/supabase/server.ts"],
+      "read_capabilities": ["tables", "rpc"],
+      "write_capabilities": ["tables"],
+      "credential_scope": { "read": "required", "write": "required for ingestion + action queue", "admin": "optional" },
+      "prod_vs_staging": "supported (separate envs)",
+      "used_in_recommendations": "not yet (architecture-only)",
+      "usable_for_action_execution": "yes (internal queue + audit)",
+      "notes": "Execution to external systems must still be approval-gated; Supabase writes are internal only."
+    },
+    {
+      "connector_id": "woocommerce_rest",
+      "source_name": "WooCommerce REST API",
+      "business_function": "orders, products, customers",
+      "status": "connected_reliable",
+      "evidence": { "paths": ["scripts/run-woo-telemetry.mjs", "src/lib/woo/woo-ingestion.ts"], "note": "Telemetry ingestion scripts present + scheduled." },
+      "auth_method": "Woo consumer key/secret (server-side)",
+      "read_capabilities": ["orders (selected-range)", "refund signals (via orders)"] ,
+      "write_capabilities": ["unknown/not implemented in repo"],
+      "historical_depth": "depends on backfill coverage",
+      "freshness": "daily + on-demand",
+      "rate_limit_risk": "moderate",
+      "prod_vs_staging": "staging parity scripts exist",
+      "used_in_recommendations": "not yet (architecture-only)",
+      "usable_for_action_execution": "not yet"
+    },
+    {
+      "connector_id": "ga4_reporting",
+      "source_name": "Google Analytics 4 Reporting (snapshot)",
+      "business_function": "traffic + conversion proxy",
+      "status": "connected_incomplete",
+      "evidence": { "paths": ["scripts/run-website-conversion.mjs"], "note": "Repo indicates daily snapshot-style conversion section; not selected-range truth." },
+      "auth_method": "Google service account / OAuth (unknown in repo)",
+      "read_capabilities": ["aggregate reports (snapshot)"] ,
+      "write_capabilities": ["none"],
+      "schema_gaps": ["no session-to-order linkage", "limited page/product funnel detail"],
+      "prod_vs_staging": "unknown",
+      "usable_for_action_execution": "no"
+    },
+    {
+      "connector_id": "meta_ads_reporting",
+      "source_name": "Meta Ads Insights (snapshot)",
+      "business_function": "paid spend + performance",
+      "status": "connected_incomplete",
+      "evidence": { "paths": ["scripts/run-meta-reporting.mjs"], "note": "Daily reporting snapshot panel exists; no matchback." },
+      "auth_method": "Meta access token (unknown scope; not audited)",
+      "read_capabilities": ["campaign performance (partial)"] ,
+      "write_capabilities": ["none in repo"],
+      "schema_gaps": ["creative metadata coverage unknown", "no hierarchy consistency", "no attribution settings captured"],
+      "usable_for_action_execution": "no (no write path; approval model exists only as architecture)"
+    },
+    {
+      "connector_id": "hubspot_read",
+      "source_name": "HubSpot CRM (read-only optional)",
+      "business_function": "leads/contacts/deals/tasks",
+      "status": "connected_incomplete",
+      "evidence": { "paths": ["scripts/run-lead-intelligence.mjs", ".env.leads.ci"], "note": "Script supports live read if token present, otherwise snapshot/manual." },
+      "auth_method": "Bearer token",
+      "read_capabilities": ["companies", "contacts", "deals", "tasks"],
+      "write_capabilities": ["none (explicitly avoids writes)"] ,
+      "prod_vs_staging": "unknown",
+      "usable_for_action_execution": "no"
+    },
+    {
+      "connector_id": "cloudflare_analytics",
+      "source_name": "Cloudflare Analytics",
+      "business_function": "ops/edge performance",
+      "status": "connected_incomplete",
+      "evidence": { "paths": ["scripts/run-cloudflare-telemetry.mjs"], "note": "Daily snapshot telemetry panel exists." },
+      "auth_method": "API token (unknown scope)",
+      "read_capabilities": ["traffic/ops aggregates"],
+      "write_capabilities": ["none in repo"],
+      "usable_for_action_execution": "no"
+    },
+    {
+      "connector_id": "wordpress",
+      "source_name": "WordPress",
+      "business_function": "site content / publishing",
+      "status": "technically_connectable",
+      "evidence": { "paths": [], "note": "No WordPress API client or content change history in this repo." },
+      "auth_method": "WP REST (application password/OAuth) (not configured)",
+      "read_capabilities": ["posts/pages"],
+      "write_capabilities": ["publish/edit"],
+      "usable_for_action_execution": "not yet (no connector + must be approval-gated)"
+    },
+    {
+      "connector_id": "email_platform",
+      "source_name": "Email platform (unknown vendor)",
+      "business_function": "newsletters, promos, flows, transactional",
+      "status": "placeholder_or_seed",
+      "evidence": { "paths": [], "note": "No vendor-specific code found; FunnelKit does not imply full email telemetry." },
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "usable_for_action_execution": "no"
+    },
+    {
+      "connector_id": "funnelkit",
+      "source_name": "FunnelKit",
+      "business_function": "funnels / carts / automations (Woo ecosystem)",
+      "status": "technically_connectable",
+      "evidence": { "paths": [], "note": "No FunnelKit connector code in this repo; only referenced as a business domain requirement." },
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "usable_for_action_execution": "no"
+    }
+  ]
+}

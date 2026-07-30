@@ -43,6 +43,12 @@ const preparedSchemas = readJson('docs/bi-prepared-action-schemas.json');
 const actionExamples = readJson('docs/bi-action-examples.json');
 const actionSecurity = readJson('docs/bi-action-security-model.json');
 
+const integrationGap = readJson('docs/bi-integration-gap-analysis.json');
+const integrationPriority = readJson('docs/bi-integration-priority-map.json');
+const coverageMatrix = readJson('docs/bi-data-coverage-matrix.json');
+const connectorCaps = readJson('docs/bi-connector-capability-map.json');
+const integrationRisks = readJson('docs/bi-integration-risk-register.json');
+
 // basic JSON structural checks
 assert(Array.isArray(model.entities?.list), 'model.entities.list missing');
 assert(model.entities.list.length > 0, 'model.entities.list empty');
@@ -200,6 +206,88 @@ for (const m of mappings.mappings) {
   assert(actionSecurity.pii_and_secrets?.no_plaintext_secrets === true, 'security model must forbid plaintext secrets');
 }
 
+// Integration gap analysis sanity (M7)
+{
+  assert(Array.isArray(integrationGap.integrations) && integrationGap.integrations.length >= 25, 'integrationGap.integrations missing/too small');
+  const statusVocab = new Set(integrationGap.status_vocab || []);
+  for (const s of allowedSourceStatuses) assert(statusVocab.has(s), `integration gap status_vocab missing ${s}`);
+
+  const ids = new Set();
+  for (const it of integrationGap.integrations) {
+    assert(typeof it.integration_id === 'string' && it.integration_id.length, 'integration missing integration_id');
+    assert(!ids.has(it.integration_id), `duplicate integration_id: ${it.integration_id}`);
+    ids.add(it.integration_id);
+    assert(allowedSourceStatuses.has(it.status), `integration uses invalid status: ${it.status} (${it.integration_id})`);
+    const paths = it.evidence?.paths || [];
+    for (const p of paths) assert(!String(p).includes('op://'), `integration evidence must not be secret reference: ${it.integration_id}`);
+  }
+
+  assert(Array.isArray(integrationGap.manual_fallback_workflows) && integrationGap.manual_fallback_workflows.length > 0, 'manual fallbacks missing');
+  assert(Array.isArray(integrationGap.worked_source_scenarios) && integrationGap.worked_source_scenarios.length >= 15, 'must include >= 15 worked source scenarios');
+  assert(Array.isArray(integrationGap.missing_source_recommendations) && integrationGap.missing_source_recommendations.length > 0, 'missing_source_recommendations missing');
+  const recVocab = new Set(integrationGap.integration_recommendation_vocab || []);
+  for (const r of integrationGap.missing_source_recommendations) {
+    assert(recVocab.has(r.recommendation), `missing source recommendation invalid: ${r.recommendation}`);
+  }
+}
+
+// Integration priority map sanity
+{
+  const weights = integrationPriority.scoring_model?.weights;
+  assert(weights && typeof weights === 'object', 'priority scoring weights missing');
+  let sum = 0;
+  for (const v of Object.values(weights)) sum += v;
+  assert(sum === 100, `priority weights must sum to 100, got ${sum}`);
+  assert(integrationPriority.scoring_model.weight_total === 100, 'priority scoring weight_total must be 100');
+  assert(Array.isArray(integrationPriority.candidates) && integrationPriority.candidates.length > 0, 'priority candidates missing');
+  const recVocab = new Set(integrationPriority.recommendation_vocab || []);
+  for (const c of integrationPriority.candidates) {
+    assert(typeof c.id === 'string' && c.id.length, 'candidate missing id');
+    assert(recVocab.has(c.recommended), `candidate recommended value not in vocab: ${c.recommended}`);
+    for (const [k, v] of Object.entries(c.scores || {})) {
+      assert(typeof v === 'number' && v >= 0 && v <= 5, `candidate score out of range: ${c.id}.${k}=${v}`);
+    }
+  }
+}
+
+// Coverage matrix sanity
+{
+  const stateVocab = new Set(coverageMatrix.coverage_state_vocab || []);
+  for (const s of ['exact', 'partial', 'snapshot', 'inferred', 'manual', 'unavailable']) {
+    assert(stateVocab.has(s), `coverage_state_vocab missing ${s}`);
+  }
+  const backfillVocab = new Set(coverageMatrix.backfill_vocab || []);
+  for (const b of ['full_backfill', 'limited_backfill', 'export_backfill', 'forward_only', 'unavailable']) {
+    assert(backfillVocab.has(b), `backfill_vocab missing ${b}`);
+  }
+  assert(Array.isArray(coverageMatrix.sources) && coverageMatrix.sources.length > 0, 'coverageMatrix.sources missing');
+  const ids = new Set();
+  for (const s of coverageMatrix.sources) {
+    assert(typeof s.source_id === 'string' && s.source_id.length, 'coverage source missing source_id');
+    assert(!ids.has(s.source_id), `duplicate coverage source_id: ${s.source_id}`);
+    ids.add(s.source_id);
+    assert(allowedSourceStatuses.has(s.status), `coverage source invalid status: ${s.status}`);
+    assert(backfillVocab.has(s.backfill?.classification), `coverage source invalid backfill classification: ${s.source_id}`);
+    for (const v of Object.values(s.coverage || {})) {
+      assert(stateVocab.has(v), `coverage state invalid: ${s.source_id} -> ${v}`);
+    }
+  }
+}
+
+// Risk register sanity
+{
+  assert(Array.isArray(integrationRisks.risks) && integrationRisks.risks.length > 0, 'integration risk register missing risks');
+  const ids = new Set();
+  for (const r of integrationRisks.risks) {
+    assert(typeof r.risk_id === 'string' && r.risk_id.length, 'risk missing risk_id');
+    assert(!ids.has(r.risk_id), `duplicate risk_id: ${r.risk_id}`);
+    ids.add(r.risk_id);
+    for (const f of ['description', 'likelihood', 'impact', 'detection', 'mitigation', 'owner', 'rollback', 'residual_risk']) {
+      assert(typeof r[f] === 'string' && r[f].length, `risk missing field ${f}: ${r.risk_id}`);
+    }
+  }
+}
+
 // examples sanity
 assert(Array.isArray(examples.examples), 'examples.examples missing');
 for (const ex of examples.examples) {
@@ -255,7 +343,12 @@ const scanned = [
   'docs/bi-source-event-mappings.json',
   'docs/bi-event-model-examples.json',
   'docs/bi-dashboard-scorecard.json',
-  'docs/bi-source-inventory.json'
+  'docs/bi-source-inventory.json',
+  'docs/bi-integration-gap-analysis.json',
+  'docs/bi-integration-priority-map.json',
+  'docs/bi-data-coverage-matrix.json',
+  'docs/bi-connector-capability-map.json',
+  'docs/bi-integration-risk-register.json'
 ];
 for (const p of scanned) {
   const bad = scanForSecrets(p);

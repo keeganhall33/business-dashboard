@@ -1,0 +1,188 @@
+{
+  "generated_at": "2026-07-29T22:55:00-07:00",
+  "milestone": "M7_integration_gap_analysis",
+  "version": "bi_integration_priority_map_v1",
+  "recommendation_vocab": [
+    "connect now",
+    "connect after prerequisite",
+    "manual workflow first",
+    "defer",
+    "do not connect"
+  ],
+  "scoring_model": {
+    "scale": "0-5 per factor; weighted to a 100-point total",
+    "weights": {
+      "revenue_impact": 14,
+      "explanation_value": 10,
+      "attribution_value": 14,
+      "recommendation_value": 10,
+      "action_preparation_value": 10,
+      "execution_value": 6,
+      "historical_availability": 6,
+      "time_to_value": 6,
+      "uniqueness": 6,
+      "dependency_value": 6,
+      "implementation_effort_inverse": 4,
+      "credential_complexity_inverse": 3,
+      "privacy_risk_inverse": 3,
+      "reliability_risk_inverse": 2
+    },
+    "weight_total": 100,
+    "formula": "total = sum(weight[f] * (score[f]/5))",
+    "notes": [
+      "Inverse factors: higher score means lower effort/complexity/risk.",
+      "Do not outrank core attribution + revenue sources with flashy low-value social feeds."
+    ]
+  },
+  "candidates": [
+    {
+      "id": "email_platform_vendor_identification_and_events",
+      "name": "Email platform identification + campaign/flow telemetry + exports",
+      "status": "placeholder_or_seed",
+      "recommended": "connect now",
+      "scores": {
+        "revenue_impact": 5,
+        "explanation_value": 5,
+        "attribution_value": 5,
+        "recommendation_value": 5,
+        "action_preparation_value": 4,
+        "execution_value": 3,
+        "historical_availability": 4,
+        "time_to_value": 4,
+        "uniqueness": 5,
+        "dependency_value": 5,
+        "implementation_effort_inverse": 3,
+        "credential_complexity_inverse": 3,
+        "privacy_risk_inverse": 2,
+        "reliability_risk_inverse": 3
+      }
+    },
+    {
+      "id": "meta_ads_full_fidelity",
+      "name": "Meta Ads full-fidelity ingestion (hierarchy, creative metadata, breakdowns, attribution settings)",
+      "status": "connected_incomplete",
+      "recommended": "connect after prerequisite",
+      "prerequisite": "Define canonical campaign/ad naming + UTM standards; decide matchback join keys",
+      "scores": {
+        "revenue_impact": 5,
+        "explanation_value": 4,
+        "attribution_value": 5,
+        "recommendation_value": 5,
+        "action_preparation_value": 4,
+        "execution_value": 3,
+        "historical_availability": 4,
+        "time_to_value": 3,
+        "uniqueness": 4,
+        "dependency_value": 4,
+        "implementation_effort_inverse": 2,
+        "credential_complexity_inverse": 2,
+        "privacy_risk_inverse": 3,
+        "reliability_risk_inverse": 2
+      }
+    },
+    {
+      "id": "ga4_event_level_export",
+      "name": "GA4 event-level export (or richer aggregates) incl. UTMs + page/product funnel",
+      "status": "connected_incomplete",
+      "recommended": "connect after prerequisite",
+      "prerequisite": "Define stable UTM + page taxonomy; ensure consent boundaries",
+      "scores": {
+        "revenue_impact": 4,
+        "explanation_value": 4,
+        "attribution_value": 5,
+        "recommendation_value": 4,
+        "action_preparation_value": 3,
+        "execution_value": 1,
+        "historical_availability": 4,
+        "time_to_value": 3,
+        "uniqueness": 4,
+        "dependency_value": 4,
+        "implementation_effort_inverse": 2,
+        "credential_complexity_inverse": 2,
+        "privacy_risk_inverse": 2,
+        "reliability_risk_inverse": 3
+      }
+    },
+    {
+      "id": "payment_processor_stripe_paypal",
+      "name": "Payment processor (Stripe/PayPal) payouts, fees, chargebacks",
+      "status": "technically_connectable",
+      "recommended": "defer",
+      "scores": {
+        "revenue_impact": 3,
+        "explanation_value": 3,
+        "attribution_value": 1,
+        "recommendation_value": 2,
+        "action_preparation_value": 1,
+        "execution_value": 0,
+        "historical_availability": 4,
+        "time_to_value": 2,
+        "uniqueness": 4,
+        "dependency_value": 2,
+        "implementation_effort_inverse": 2,
+        "credential_complexity_inverse": 2,
+        "privacy_risk_inverse": 2,
+        "reliability_risk_inverse": 4
+      }
+    },
+    {
+      "id": "inventory_and_availability_history",
+      "name": "Inventory + edition availability history (prints/originals)",
+      "status": "technically_connectable",
+      "recommended": "manual workflow first",
+      "scores": {
+        "revenue_impact": 4,
+        "explanation_value": 4,
+        "attribution_value": 2,
+        "recommendation_value": 4,
+        "action_preparation_value": 3,
+        "execution_value": 2,
+        "historical_availability": 3,
+        "time_to_value": 4,
+        "uniqueness": 4,
+        "dependency_value": 3,
+        "implementation_effort_inverse": 3,
+        "credential_complexity_inverse": 4,
+        "privacy_risk_inverse": 4,
+        "reliability_risk_inverse": 4
+      }
+    }
+  ],
+  "rankings": {
+    "highest_business_value": [
+      "email_platform_vendor_identification_and_events",
+      "meta_ads_full_fidelity",
+      "ga4_event_level_export",
+      "inventory_and_availability_history",
+      "payment_processor_stripe_paypal"
+    ],
+    "fastest_to_implement": [
+      "inventory_and_availability_history",
+      "email_platform_vendor_identification_and_events",
+      "payment_processor_stripe_paypal",
+      "meta_ads_full_fidelity",
+      "ga4_event_level_export"
+    ],
+    "highest_attribution_value": [
+      "email_platform_vendor_identification_and_events",
+      "ga4_event_level_export",
+      "meta_ads_full_fidelity"
+    ],
+    "highest_explanation_value": [
+      "email_platform_vendor_identification_and_events",
+      "meta_ads_full_fidelity",
+      "inventory_and_availability_history"
+    ],
+    "highest_action_enablement_value": [
+      "meta_ads_full_fidelity",
+      "email_platform_vendor_identification_and_events"
+    ],
+    "lowest_risk": [
+      "inventory_and_availability_history"
+    ],
+    "foundational_dependency": [
+      "email_platform_vendor_identification_and_events",
+      "ga4_event_level_export"
+    ]
+  }
+}

@@ -374,27 +374,71 @@ Encoded in `docs/bi-prepared-action-schemas.json` under `side_effect_matrix`.
 - `data_deletion` is **execution_never=true**.
 - email sends are irreversible (`cannot_unsend`), requiring publication approval.
 
-## 14) Milestone 7 — Integration Gap Analysis (started)
+## 14) Milestone 7 — Integration Gap Analysis (complete)
 
-### Integration-priority scoring model (draft)
+Durable artifacts:
+- `docs/bi-integration-gap-analysis.json`
+- `docs/bi-integration-priority-map.json`
+- `docs/bi-data-coverage-matrix.json`
+- `docs/bi-connector-capability-map.json`
+- `docs/bi-integration-risk-register.json`
 
-Score each missing integration by:
-- expected impact on explanation/recommendations (0–5)
-- ability to unlock cross-channel joins (0–5)
-- historical depth available (0–3)
-- implementation effort (inverted, 0–5)
-- risk/security complexity (inverted, 0–5)
+Highlights:
+- Explicit source-by-source classification using approved status vocabulary
+- 100-point weighted priority scoring model (weights sum to 100)
+- Coverage matrix with approved coverage/backfill vocab
+- Identity resolution + consent boundaries
+- Canonical campaign naming + UTM standards recommendation
+- Tier 1–4 minimum viable source stack
+- Manual fallback workflows + worked scenarios
 
-### Initial missing high-value integrations (draft list)
+## 15) Milestone 8 — UX Blueprint (started)
 
-- Email platform event telemetry (sends/opens/clicks/revenue attribution)
-- Product-level + line-item Woo telemetry (product mix, bundles, repeat purchase patterns)
-- Meta ↔ Woo matchback join keys / attribution touch model
-- GA4 raw-ish event exports (beyond snapshots) or more detailed aggregates
-- FunnelKit event feed (abandoned carts, recoveries)
-- Inventory / edition availability signals
+### Proposed navigation (draft)
 
-## 15) Evidence references (audit anchor list)
+- **Dashboard**
+  - Executive Summary
+  - Scorecard
+  - Evidence Explorer
+- **Explain**
+  - What happened
+  - Why (causal explanations)
+  - Evidence + confidence
+- **Recommend**
+  - Opportunities
+  - Recommendations
+  - Suppressions (why we are *not* acting)
+- **Act**
+  - Prepared Actions (L2/L3)
+  - Approvals (L3→L4)
+  - Executions + Rollbacks
+- **Learn**
+  - Outcomes
+  - Experiments
+  - What changed in the model
+- **Data & Integrations**
+  - Source status
+  - Coverage matrix
+  - Identity resolution
+  - Risk register
+
+### Executive-summary hierarchy (draft)
+
+1) Revenue + net orders (truth: Woo)
+2) Spend + efficiency (truth: Meta/Google where connected)
+3) Conversion funnel (truth: GA4 + Woo)
+4) Lifecycle + email (truth: email platform once connected)
+5) Pipeline (leads/collectors) (truth: CRM + manual)
+6) What to do next (only L1–L3 unless explicitly approved)
+
+### Summary → explanation → evidence → action flow (draft)
+
+- **Summary**: changes + deltas + confidence + freshness
+- **Explanation**: top causes + counterfactuals + assumptions
+- **Evidence**: source citations, joins, missingness, staleness
+- **Action**: L1 recommendation → L2 drafts → L3 execution-ready package → approval → (optional) L4 execution → L5 learning
+
+## 16) Evidence references (audit anchor list)
 
 - Workflows: `.github/workflows/dashboard-scheduler.yml`
 - CI templates: `.env.website.ci`, `.env.meta.ci`, `.env.leads.ci`, `.env.cloudflare.ci`, `.env.woo.ci`

@@ -1,0 +1,1598 @@
+{
+  "generated_at": "2026-07-29T22:55:00-07:00",
+  "milestone": "M7_integration_gap_analysis",
+  "version": "bi_integration_gap_analysis_v1",
+  "status_vocab": [
+    "connected_reliable",
+    "connected_incomplete",
+    "manual_only",
+    "technically_connectable",
+    "placeholder_or_seed",
+    "unavailable",
+    "not_worth_connecting"
+  ],
+  "coverage_state_vocab": [
+    "exact",
+    "partial",
+    "snapshot",
+    "inferred",
+    "manual",
+    "unavailable"
+  ],
+  "backfill_vocab": [
+    "full_backfill",
+    "limited_backfill",
+    "export_backfill",
+    "forward_only",
+    "unavailable"
+  ],
+  "integration_recommendation_vocab": [
+    "connect now",
+    "connect after prerequisite",
+    "manual workflow first",
+    "defer",
+    "do not connect"
+  ],
+  "integrations": [
+    {
+      "integration_id": "calendar",
+      "source_name": "Calendar",
+      "business_function": "events + deadlines",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No calendar integration in repo."
+      },
+      "limitation": "No calendar integration in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "cloudflare",
+      "source_name": "Cloudflare",
+      "business_function": "ops/traffic proxy",
+      "status": "connected_incomplete",
+      "auth_method": "API token",
+      "read_capabilities": [
+        "analytics aggregates"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "daily",
+      "ingestion_cadence": "daily",
+      "storage_destination": "snapshot",
+      "connector": "script",
+      "rate_limits": "unknown",
+      "reliability": "medium",
+      "completeness": "partial",
+      "schema_gaps": [
+        "no join to conversion impact"
+      ],
+      "attribution_gaps": [],
+      "operational_risks": [
+        "token scope"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-cloudflare-telemetry.mjs"
+        ],
+        "confidence": "likely"
+      },
+      "limitation": "ops signals not causal-linked",
+      "improve_condition": "add incident timeline + page speed/error metrics"
+    },
+    {
+      "integration_id": "crm_other",
+      "source_name": "CRM (if not HubSpot)",
+      "business_function": "sales pipeline",
+      "status": "placeholder_or_seed",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "HubSpot supported; other CRM not identified."
+      },
+      "limitation": "HubSpot supported; other CRM not identified.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "customer_support",
+      "source_name": "Support/inquiry channels",
+      "business_function": "support load + satisfaction",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No support tool integration in repo."
+      },
+      "limitation": "No support tool integration in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "email_platform",
+      "source_name": "Email platform (vendor unknown)",
+      "business_function": "campaigns, flows, transactional, segmentation",
+      "status": "placeholder_or_seed",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "unknown",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [
+        "vendor not identified"
+      ],
+      "attribution_gaps": [
+        "cannot explain email-driven sales"
+      ],
+      "operational_risks": [
+        "consent violations if integrated incorrectly"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence"
+      },
+      "limitation": "no telemetry",
+      "improve_condition": "identify vendor; start with read-only exports"
+    },
+    {
+      "integration_id": "external_financial",
+      "source_name": "External financial feeds",
+      "business_function": "profitability",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Sensitive; only if value justifies risk."
+      },
+      "limitation": "Sensitive; only if value justifies risk.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "facebook_instagram_organic",
+      "source_name": "Facebook/Instagram organic",
+      "business_function": "organic publishing/analytics",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No explicit Graph API connector/publishing path in repo."
+      },
+      "limitation": "No explicit Graph API connector/publishing path in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "fly_io",
+      "source_name": "Fly.io",
+      "business_function": "hosting/ops",
+      "status": "manual_only",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Not a BI driver; optional run-status ingestion only."
+      },
+      "limitation": "Not a BI driver; optional run-status ingestion only.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "funnelkit",
+      "source_name": "FunnelKit",
+      "business_function": "funnels/abandoned carts",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No FunnelKit API/exports wired in this repo."
+      },
+      "limitation": "No FunnelKit API/exports wired in this repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "ga4",
+      "source_name": "GA4",
+      "business_function": "traffic + sessions",
+      "status": "connected_incomplete",
+      "auth_method": "unknown",
+      "read_capabilities": [
+        "daily snapshot"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "daily",
+      "ingestion_cadence": "daily",
+      "storage_destination": "supabase_snapshot",
+      "connector": "script",
+      "rate_limits": "unknown",
+      "reliability": "medium",
+      "completeness": "snapshot",
+      "schema_gaps": [
+        "no event-level export"
+      ],
+      "attribution_gaps": [
+        "limited UTM + funnel mapping"
+      ],
+      "operational_risks": [
+        "sampling/quotas"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-website-conversion.mjs"
+        ],
+        "confidence": "likely"
+      },
+      "limitation": "not selected-range truth",
+      "improve_condition": "event export + UTM taxonomy + consent boundaries"
+    },
+    {
+      "integration_id": "github_ops",
+      "source_name": "GitHub",
+      "business_function": "ops/automation status",
+      "status": "manual_only",
+      "auth_method": "n/a",
+      "read_capabilities": [
+        "manual checks"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "n/a",
+      "freshness": "manual",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "n/a",
+      "reliability": "high",
+      "completeness": "n/a",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "n/a",
+      "prod_vs_staging": "n/a",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "likely"
+      },
+      "limitation": "not business intelligence",
+      "improve_condition": "optional: ingest scheduler run statuses"
+    },
+    {
+      "integration_id": "gmail",
+      "source_name": "Gmail",
+      "business_function": "inquiries/support",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No Gmail integration in repo."
+      },
+      "limitation": "No Gmail integration in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "google_ads",
+      "source_name": "Google Ads",
+      "business_function": "paid search",
+      "status": "technically_connectable",
+      "auth_method": "OAuth/service account",
+      "read_capabilities": [
+        "campaigns",
+        "spend",
+        "conversions"
+      ],
+      "write_capabilities": [
+        "campaign changes"
+      ],
+      "historical_depth": "good",
+      "freshness": "daily",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "moderate",
+      "reliability": "high",
+      "completeness": "unavailable (not integrated)",
+      "schema_gaps": [],
+      "attribution_gaps": [
+        "cannot compare search vs social"
+      ],
+      "operational_risks": [
+        "credential complexity"
+      ],
+      "credential_scope": "not present",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "possible"
+      },
+      "limitation": "no connector",
+      "improve_condition": "add read-only ingestion + naming standards"
+    },
+    {
+      "integration_id": "google_contacts",
+      "source_name": "Google Contacts",
+      "business_function": "identity/contact enrichment",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No Contacts integration in repo."
+      },
+      "limitation": "No Contacts integration in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "hubspot",
+      "source_name": "HubSpot",
+      "business_function": "leads/CRM",
+      "status": "connected_incomplete",
+      "auth_method": "bearer token (optional)",
+      "read_capabilities": [
+        "companies",
+        "contacts",
+        "deals",
+        "tasks"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "weekly",
+      "ingestion_cadence": "weekly (with snapshot fallback)",
+      "storage_destination": "snapshot/json",
+      "connector": "script",
+      "rate_limits": "unknown",
+      "reliability": "medium",
+      "completeness": "partial",
+      "schema_gaps": [
+        "lead→order linkage missing"
+      ],
+      "attribution_gaps": [
+        "lead source not unified"
+      ],
+      "operational_risks": [
+        "token absence -> snapshot mode"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-lead-intelligence.mjs"
+        ],
+        "confidence": "strongly_supported"
+      },
+      "limitation": "read-only design; no outreach engine",
+      "improve_condition": "decide CRM as system-of-record + add identity join + consent rules"
+    },
+    {
+      "integration_id": "inventory",
+      "source_name": "Inventory/availability",
+      "business_function": "stock/edition availability",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No inventory history connector; recommend manual first."
+      },
+      "limitation": "No inventory history connector; recommend manual first.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "linkedin",
+      "source_name": "LinkedIn",
+      "business_function": "social/partner analytics",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No LinkedIn connector in repo."
+      },
+      "limitation": "No LinkedIn connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "manual_finance",
+      "source_name": "Manual finance inputs",
+      "business_function": "margin/profit snapshots",
+      "status": "manual_only",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Required before profitability analytics; keep minimal + business-only."
+      },
+      "limitation": "Required before profitability analytics; keep minimal + business-only.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "media_press",
+      "source_name": "Media/press records",
+      "business_function": "external events",
+      "status": "manual_only",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Recommend manual log workflow; no automated ingestion in repo."
+      },
+      "limitation": "Recommend manual log workflow; no automated ingestion in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "meta_ads",
+      "source_name": "Meta Ads",
+      "business_function": "paid spend",
+      "status": "connected_incomplete",
+      "auth_method": "unknown",
+      "read_capabilities": [
+        "snapshot reporting"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "daily",
+      "ingestion_cadence": "daily",
+      "storage_destination": "supabase_snapshot",
+      "connector": "script",
+      "rate_limits": "unknown",
+      "reliability": "medium",
+      "completeness": "partial",
+      "schema_gaps": [
+        "creative metadata + attribution settings uncertain"
+      ],
+      "attribution_gaps": [
+        "no matchback to Woo"
+      ],
+      "operational_risks": [
+        "token expiry"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-meta-reporting.mjs"
+        ],
+        "confidence": "likely"
+      },
+      "limitation": "no write connector; incomplete read model",
+      "improve_condition": "full-fidelity ingestion + scoped executor credential (future)"
+    },
+    {
+      "integration_id": "onepassword",
+      "source_name": "1Password",
+      "business_function": "secret storage",
+      "status": "manual_only",
+      "auth_method": "desktop/cli",
+      "read_capabilities": [
+        "secrets retrieval"
+      ],
+      "write_capabilities": [
+        "vault admin"
+      ],
+      "historical_depth": "n/a",
+      "freshness": "n/a",
+      "ingestion_cadence": "n/a",
+      "storage_destination": "n/a",
+      "connector": "1Password CLI",
+      "rate_limits": "n/a",
+      "reliability": "high",
+      "completeness": "n/a",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [
+        "broad secret access if mis-scoped"
+      ],
+      "credential_scope": "n/a",
+      "prod_vs_staging": "supported",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "skills/1password/SKILL.md"
+        ],
+        "confidence": "possible"
+      },
+      "limitation": "not a BI source",
+      "improve_condition": "separate read-only and executor secrets"
+    },
+    {
+      "integration_id": "organic_social_platforms",
+      "source_name": "Facebook/Instagram organic + other social",
+      "business_function": "organic content performance",
+      "status": "connected_incomplete",
+      "auth_method": "unknown",
+      "read_capabilities": [
+        "weekly snapshot (unknown platforms)"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "weekly",
+      "ingestion_cadence": "weekly",
+      "storage_destination": "snapshot",
+      "connector": "script",
+      "rate_limits": "unknown",
+      "reliability": "medium",
+      "completeness": "partial",
+      "schema_gaps": [
+        "platform coverage unclear"
+      ],
+      "attribution_gaps": [
+        "post→traffic/order join missing"
+      ],
+      "operational_risks": [
+        "API restrictions"
+      ],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-social-intelligence.mjs"
+        ],
+        "confidence": "possible"
+      },
+      "limitation": "no publishing connector",
+      "improve_condition": "explicit platform list + analytics schema + manual post log fallback"
+    },
+    {
+      "integration_id": "payment_processors",
+      "source_name": "Payment processors",
+      "business_function": "fees/chargebacks",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No processor integration in repo; see priority map candidate."
+      },
+      "limitation": "No processor integration in repo; see priority map candidate.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "pinterest",
+      "source_name": "Pinterest",
+      "business_function": "social/referral analytics",
+      "status": "not_worth_connecting",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Low incremental value vs effort; no connector in repo."
+      },
+      "limitation": "Low incremental value vs effort; no connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "shipping_fulfillment",
+      "source_name": "Shipping/fulfillment",
+      "business_function": "delivery + cost",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No shipping provider integration in repo."
+      },
+      "limitation": "No shipping provider integration in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "supabase",
+      "source_name": "Supabase",
+      "business_function": "warehouse + app storage",
+      "status": "connected_reliable",
+      "auth_method": "service key (server-side)",
+      "read_capabilities": [
+        "tables",
+        "rpc"
+      ],
+      "write_capabilities": [
+        "tables"
+      ],
+      "historical_depth": "as stored",
+      "freshness": "near_real_time",
+      "ingestion_cadence": "continuous + scheduled jobs",
+      "storage_destination": "supabase_postgres",
+      "connector": "supabase-js",
+      "rate_limits": "unknown",
+      "reliability": "high",
+      "completeness": "depends on upstream ingestions",
+      "schema_gaps": [
+        "snapshot table mappings not enumerated"
+      ],
+      "attribution_gaps": [
+        "no canonical multi-touch join yet"
+      ],
+      "operational_risks": [
+        "service key scope too broad unless separated by role"
+      ],
+      "credential_scope": "unknown (not audited)",
+      "prod_vs_staging": "supported",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": true,
+      "evidence": {
+        "paths": [
+          "src/lib/supabase/server.ts",
+          "supabase/schema.sql"
+        ],
+        "confidence": "strongly_supported"
+      },
+      "limitation": "external execution connectors not implemented",
+      "improve_condition": "define roles: analytics_readonly vs executor_scoped"
+    },
+    {
+      "integration_id": "tax_accounting",
+      "source_name": "Tax/accounting system",
+      "business_function": "tax + bookkeeping",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "High sensitivity; connect later if needed."
+      },
+      "limitation": "High sensitivity; connect later if needed.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "threads",
+      "source_name": "Threads",
+      "business_function": "social analytics",
+      "status": "not_worth_connecting",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Low incremental value vs effort; no connector in repo."
+      },
+      "limitation": "Low incremental value vs effort; no connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "tiktok",
+      "source_name": "TikTok",
+      "business_function": "video/social analytics",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No TikTok connector in repo."
+      },
+      "limitation": "No TikTok connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "vercel",
+      "source_name": "Vercel",
+      "business_function": "deploy/ops",
+      "status": "manual_only",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Not a BI driver; optional run-status ingestion only."
+      },
+      "limitation": "Not a BI driver; optional run-status ingestion only.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "woo_products",
+      "source_name": "WooCommerce products",
+      "business_function": "catalog/products",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "Order telemetry exists; product catalog ingestion not implemented."
+      },
+      "limitation": "Order telemetry exists; product catalog ingestion not implemented.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "woocommerce",
+      "source_name": "WooCommerce",
+      "business_function": "orders",
+      "status": "connected_reliable",
+      "auth_method": "consumer key/secret (server-side)",
+      "read_capabilities": [
+        "orders selected-range"
+      ],
+      "write_capabilities": [],
+      "historical_depth": "API supports history; coverage depends on backfill",
+      "freshness": "daily",
+      "ingestion_cadence": "daily + on-demand",
+      "storage_destination": "supabase_postgres",
+      "connector": "custom script",
+      "rate_limits": "unknown",
+      "reliability": "medium-high",
+      "completeness": "order-level totals; missing product/customer dims",
+      "schema_gaps": [
+        "line-item details not modeled in telemetry v1"
+      ],
+      "attribution_gaps": [
+        "no ad/email matchback"
+      ],
+      "operational_risks": [
+        "API pagination/backfill costs"
+      ],
+      "credential_scope": "unknown (not audited)",
+      "prod_vs_staging": "staging parity tools exist",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [
+          "scripts/run-woo-telemetry.mjs"
+        ],
+        "confidence": "confirmed"
+      },
+      "limitation": "no product/customer identity resolution layer",
+      "improve_condition": "add product + customer + line-item telemetry + canonical ids"
+    },
+    {
+      "integration_id": "wordpress",
+      "source_name": "WordPress",
+      "business_function": "site content/publishing",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No WP connector or revision history tracked in this repo."
+      },
+      "limitation": "No WP connector or revision history tracked in this repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "x",
+      "source_name": "X (Twitter)",
+      "business_function": "social analytics",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No X connector in repo."
+      },
+      "limitation": "No X connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    },
+    {
+      "integration_id": "youtube",
+      "source_name": "YouTube",
+      "business_function": "video analytics",
+      "status": "technically_connectable",
+      "auth_method": "unknown",
+      "read_capabilities": [],
+      "write_capabilities": [],
+      "historical_depth": "unknown",
+      "freshness": "unknown",
+      "ingestion_cadence": "none",
+      "storage_destination": "none",
+      "connector": "none",
+      "rate_limits": "unknown",
+      "reliability": "unknown",
+      "completeness": "unavailable",
+      "schema_gaps": [],
+      "attribution_gaps": [],
+      "operational_risks": [],
+      "credential_scope": "unknown",
+      "prod_vs_staging": "unknown",
+      "used_in_recommendations": false,
+      "usable_for_action_execution": false,
+      "evidence": {
+        "paths": [],
+        "confidence": "insufficient_evidence",
+        "note": "No YouTube connector in repo."
+      },
+      "limitation": "No YouTube connector in repo.",
+      "improve_condition": "identify owner + connector + read-only scope"
+    }
+  ],
+  "identity_resolution": {
+    "deterministic_identifiers": [
+      "woo_customer_id",
+      "email_subscriber_id (vendor-specific)",
+      "hubspot_contact_id"
+    ],
+    "hashed_identifiers": [
+      "hashed_email",
+      "hashed_phone (if collected)"
+    ],
+    "probabilistic_matches": [
+      "device/browser fingerprint (prohibited without consent)",
+      "name+city (low confidence)"
+    ],
+    "prohibited_matches": [
+      "link anonymous GA4 sessions to named customers without explicit consent or deterministic join key"
+    ],
+    "consent_boundaries": [
+      "email consent must be preserved",
+      "suppression lists must be honored"
+    ],
+    "suppression_rules": [
+      "do-not-contact",
+      "unsubscribed",
+      "recently_contacted cooldown"
+    ]
+  },
+  "taxonomy_and_utm_gaps": {
+    "missing_canonical_ids": [
+      "campaign_id (cross-channel)",
+      "artwork_id",
+      "edition_id",
+      "event_id (media)"
+    ],
+    "naming_inconsistencies": [
+      "ad naming vs email naming not standardized",
+      "product variants not consistently tagged"
+    ],
+    "recommended_standards": {
+      "campaign_naming": "{YYYYMM}-{channel}-{theme}-{product_or_artwork}-{geo(optional)}-{objective}",
+      "utm": {
+        "utm_source": "meta|google|email|organic_social|press|partner",
+        "utm_medium": "cpc|email|social|referral",
+        "utm_campaign": "campaign slug",
+        "utm_content": "creative/ad/email variant"
+      }
+    }
+  },
+  "minimum_viable_source_stack": {
+    "tier_1_foundational": [
+      {
+        "source": "WooCommerce orders (selected-range)",
+        "reason": "revenue truth",
+        "effort": "already integrated",
+        "risk": "low"
+      },
+      {
+        "source": "Supabase warehouse",
+        "reason": "single store + audit",
+        "effort": "already integrated",
+        "risk": "medium"
+      },
+      {
+        "source": "Meta Ads spend (at least daily)",
+        "reason": "spend driver",
+        "effort": "partial",
+        "risk": "medium"
+      },
+      {
+        "source": "GA4 traffic snapshot",
+        "reason": "demand proxy",
+        "effort": "partial",
+        "risk": "medium"
+      }
+    ],
+    "tier_2_high_value": [
+      {
+        "source": "Email platform telemetry",
+        "reason": "explain email-driven revenue + enable lifecycle"
+      },
+      {
+        "source": "Meta creative + breakdowns",
+        "reason": "fatigue + scaling accuracy"
+      },
+      {
+        "source": "GA4 richer funnel + UTMs",
+        "reason": "landing/product conversion"
+      }
+    ],
+    "tier_3_action_enabling": [
+      {
+        "source": "Meta Ads write (scoped executor)",
+        "reason": "L4 execution after approvals"
+      },
+      {
+        "source": "Email draft/test/send APIs",
+        "reason": "approval-gated sends"
+      },
+      {
+        "source": "Website CMS revision history + deploy integration",
+        "reason": "reversible site changes"
+      }
+    ],
+    "tier_4_optional": [
+      {
+        "source": "YouTube/TikTok/X/LinkedIn analytics",
+        "reason": "brand lift signals"
+      },
+      {
+        "source": "Press/media database",
+        "reason": "explain spikes"
+      },
+      {
+        "source": "Accounting/tax systems",
+        "reason": "profitability"
+      }
+    ]
+  },
+  "score_impact_estimates": {
+    "assumptions": [
+      "uses Milestone 2 scorecard dimensions as qualitative ranges"
+    ],
+    "current": {
+      "data_completeness": "low-medium",
+      "attribution_quality": "low",
+      "explanation_quality": "medium",
+      "action_preparation": "architecture_only"
+    },
+    "after_tier_1": {
+      "data_completeness": "medium",
+      "attribution_quality": "low",
+      "explanation_quality": "medium",
+      "outcome_measurement": "medium"
+    },
+    "after_tier_2": {
+      "data_completeness": "medium-high",
+      "attribution_quality": "medium",
+      "explanation_quality": "high",
+      "recommendation_quality": "medium-high"
+    },
+    "after_tier_3": {
+      "execution_capability": "medium (approval gated)",
+      "action_preparation": "high"
+    },
+    "ceiling_without_email_and_utm": "Attribution remains low; email-driven causality remains speculative"
+  },
+  "manual_fallback_workflows": [
+    {
+      "workflow_id": "manual_media_event",
+      "name": "Manual media/press event log",
+      "required_fields": [
+        "source",
+        "timestamp",
+        "entered_by",
+        "confidence",
+        "evidence_url_or_attachment"
+      ],
+      "audit": "append-only + edit history"
+    },
+    {
+      "workflow_id": "manual_email_export",
+      "name": "Upload email campaign export",
+      "required_fields": [
+        "vendor",
+        "export_range",
+        "entered_by",
+        "evidence_file"
+      ],
+      "audit": "versioned imports"
+    },
+    {
+      "workflow_id": "manual_offline_sale",
+      "name": "Record offline original-art sale",
+      "required_fields": [
+        "timestamp",
+        "amount",
+        "product/artwork",
+        "entered_by",
+        "confidence"
+      ],
+      "audit": "append-only"
+    }
+  ],
+  "worked_source_scenarios": [
+    {
+      "scenario_id": "sc01",
+      "available_sources": [
+        "Woo"
+      ],
+      "missing_source": "Email",
+      "conclusion_allowed": "sales rose",
+      "conclusion_prohibited": "email caused it",
+      "confidence": "low",
+      "recommendation": "connect now"
+    },
+    {
+      "scenario_id": "sc02",
+      "available_sources": [
+        "Meta spend",
+        "Woo"
+      ],
+      "missing_source": "Meta creative",
+      "conclusion_allowed": "spend rose",
+      "conclusion_prohibited": "fatigue",
+      "confidence": "medium",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc03",
+      "available_sources": [
+        "GA4 snapshot"
+      ],
+      "missing_source": "media log",
+      "conclusion_allowed": "direct traffic spike",
+      "conclusion_prohibited": "celebrity share",
+      "confidence": "low",
+      "recommendation": "manual workflow first"
+    },
+    {
+      "scenario_id": "sc04",
+      "available_sources": [
+        "GA4"
+      ],
+      "missing_source": "inventory history",
+      "conclusion_allowed": "PDP views high",
+      "conclusion_prohibited": "sold out caused drop",
+      "confidence": "low",
+      "recommendation": "manual workflow first"
+    },
+    {
+      "scenario_id": "sc05",
+      "available_sources": [
+        "Woo",
+        "HubSpot"
+      ],
+      "missing_source": "identity joins",
+      "conclusion_allowed": "repeat buyers exist",
+      "conclusion_prohibited": "target exact collectors",
+      "confidence": "medium",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc06",
+      "available_sources": [
+        "Woo"
+      ],
+      "missing_source": "product taxonomy",
+      "conclusion_allowed": "revenue up",
+      "conclusion_prohibited": "which artwork drove it",
+      "confidence": "low",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc07",
+      "available_sources": [
+        "Meta"
+      ],
+      "missing_source": "Woo matchback",
+      "conclusion_allowed": "Meta attributed conversions",
+      "conclusion_prohibited": "true incremental",
+      "confidence": "low",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc08",
+      "available_sources": [
+        "manual media log",
+        "GA4"
+      ],
+      "missing_source": "none",
+      "conclusion_allowed": "press likely explains spike",
+      "conclusion_prohibited": "exact attribution",
+      "confidence": "medium",
+      "recommendation": "manual workflow first"
+    },
+    {
+      "scenario_id": "sc09",
+      "available_sources": [
+        "Gmail"
+      ],
+      "missing_source": "CRM linkage",
+      "conclusion_allowed": "inquiry exists",
+      "conclusion_prohibited": "pipeline value",
+      "confidence": "low",
+      "recommendation": "defer"
+    },
+    {
+      "scenario_id": "sc10",
+      "available_sources": [
+        "Funnel"
+      ],
+      "missing_source": "email vendor",
+      "conclusion_allowed": "carts abandoned",
+      "conclusion_prohibited": "send recovery",
+      "confidence": "low",
+      "recommendation": "connect now"
+    },
+    {
+      "scenario_id": "sc11",
+      "available_sources": [
+        "Woo"
+      ],
+      "missing_source": "consent rules",
+      "conclusion_allowed": "buyers list",
+      "conclusion_prohibited": "auto outreach",
+      "confidence": "low",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc12",
+      "available_sources": [
+        "Woo"
+      ],
+      "missing_source": "fees/cogs",
+      "conclusion_allowed": "gross revenue up",
+      "conclusion_prohibited": "profit up",
+      "confidence": "medium",
+      "recommendation": "defer"
+    },
+    {
+      "scenario_id": "sc13",
+      "available_sources": [
+        "social snapshot"
+      ],
+      "missing_source": "UTM standards",
+      "conclusion_allowed": "engagement up",
+      "conclusion_prohibited": "sales impact",
+      "confidence": "low",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc14",
+      "available_sources": [
+        "GA4"
+      ],
+      "missing_source": "site change history",
+      "conclusion_allowed": "conversion dropped",
+      "conclusion_prohibited": "site edit caused it",
+      "confidence": "low",
+      "recommendation": "connect after prerequisite"
+    },
+    {
+      "scenario_id": "sc15",
+      "available_sources": [
+        "any"
+      ],
+      "missing_source": "source freshness monitoring",
+      "conclusion_allowed": "recommendations suppressed",
+      "conclusion_prohibited": "act anyway",
+      "confidence": "high",
+      "recommendation": "connect now"
+    }
+  ],
+  "missing_source_recommendations": [
+    {
+      "source": "Email platform telemetry",
+      "recommendation": "connect now",
+      "reason": "largest attribution + revenue explanation gap"
+    },
+    {
+      "source": "Meta Ads full-fidelity",
+      "recommendation": "connect after prerequisite",
+      "reason": "needs naming+UTM+matchback design"
+    },
+    {
+      "source": "GA4 richer export",
+      "recommendation": "connect after prerequisite",
+      "reason": "consent + taxonomy required"
+    },
+    {
+      "source": "Press/media records",
+      "recommendation": "manual workflow first",
+      "reason": "high explanation value; low risk"
+    },
+    {
+      "source": "Accounting/tax",
+      "recommendation": "defer",
+      "reason": "high sensitivity; later once core attribution works"
+    },
+    {
+      "source": "Pinterest/Threads",
+      "recommendation": "do not connect",
+      "reason": "low expected incremental business value vs effort"
+    }
+  ]
+}

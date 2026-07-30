@@ -3,6 +3,50 @@
   "milestone": "M1_current_state_audit",
   "records": [
     {
+      "id": "model_bi_integration_gap_analysis_v1",
+      "name": "Integration gap analysis + priority map + coverage + risks (architecture)",
+      "category": "bi_architecture",
+      "status": "placeholder_or_seed",
+      "source_system": "internal",
+      "ingestion": {
+        "type": "discovery_artifact",
+        "paths": [
+          "docs/bi-integration-gap-analysis.json",
+          "docs/bi-integration-priority-map.json",
+          "docs/bi-data-coverage-matrix.json",
+          "docs/bi-connector-capability-map.json",
+          "docs/bi-integration-risk-register.json"
+        ]
+      },
+      "storage": {
+        "type": "not_implemented",
+        "locations": []
+      },
+      "api": {
+        "routes": []
+      },
+      "ui": {
+        "components": []
+      },
+      "scheduler": {
+        "type": "n/a"
+      },
+      "freshness": "n/a",
+      "history": "n/a",
+      "confidence": "confirmed",
+      "action_level": 0,
+      "gaps": [
+        "Defines integration audit, scoring, coverage, security requirements; not implemented yet"
+      ],
+      "evidence_files": [
+        "docs/bi-integration-gap-analysis.json",
+        "docs/bi-integration-priority-map.json",
+        "docs/bi-data-coverage-matrix.json",
+        "docs/bi-connector-capability-map.json",
+        "docs/bi-integration-risk-register.json"
+      ]
+    },
+    {
       "id": "model_bi_action_v1",
       "name": "Action preparation + approval + execution safety model (architecture)",
       "category": "bi_architecture",
