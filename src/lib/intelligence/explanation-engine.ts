@@ -75,6 +75,14 @@ export function explainRevenueChange(params: {
   if (!currentWoo || currentRevenueCents == null) missingSources.push("woo");
   if (!currentGa || currentSessions == null) missingSources.push("ga4");
 
+  const isAllZeroWindow =
+    currentRevenueCents === 0 &&
+    prevRevenueCents === 0 &&
+    (currentOrders ?? 0) === 0 &&
+    (prevOrders ?? 0) === 0 &&
+    (currentSessions ?? 0) === 0 &&
+    (prevSessions ?? 0) === 0;
+
   // Driver construction
   const driverMap: Record<string, ExplanationDriver> = {};
   for (const entry of decomposition.driverRanking) {
@@ -112,8 +120,8 @@ export function explainRevenueChange(params: {
   }
 
   const sortedDrivers = [driverMap.sessions, driverMap.conversion, driverMap.aov].filter(Boolean);
-  const primary = sortedDrivers[0] ?? null;
-  const contributing = sortedDrivers.slice(1);
+  const primary = isAllZeroWindow ? null : (sortedDrivers[0] ?? null);
+  const contributing = isAllZeroWindow ? [] : sortedDrivers.slice(1);
 
   const deltaCents = decomposition.revenue.deltaCents;
   const pctChange = decomposition.revenue.percent;
@@ -165,6 +173,10 @@ export function explainRevenueChange(params: {
   // Confidence: degrade if key sources missing.
   const confidenceReasons: string[] = [];
   let confScore = 0.7;
+  if (isAllZeroWindow) {
+    confScore = 0.15;
+    confidenceReasons.push("Both periods are all-zero for revenue/orders/sessions; no meaningful signal to explain.");
+  }
   if (missingSources.length) {
     confScore -= 0.25;
     confidenceReasons.push(`Missing sources: ${missingSources.join(", ")}`);
@@ -233,4 +245,3 @@ export function explainRevenueChange(params: {
     }
   };
 }
-
