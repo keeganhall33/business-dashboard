@@ -80,6 +80,7 @@ export type ScenarioRunnerContext = {
   token: string;
   harness_run_id: string;
   scenarioName: string;
+  cleanupPreferenceFingerprints?: string[];
 };
 
 function mustGet(name: string): string {
@@ -184,6 +185,7 @@ async function cleanupHarnessRun(input: {
   supabaseUrl: string;
   serviceKey: string;
   harness_run_id: string;
+  preferenceFingerprints?: string[];
 }): Promise<CleanupReport> {
   const supabase = createClient(input.supabaseUrl, input.serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false }
@@ -247,6 +249,13 @@ async function cleanupHarnessRun(input: {
     const snapDel = await supabase.from("action_evidence_snapshots_v1").delete().in("id", snapIds).select("id");
     if (snapDel.error) throw snapDel.error;
     deleted.evidence_snapshots = (snapDel.data ?? []).length;
+  }
+
+  const prefFingerprints = Array.from(new Set(input.preferenceFingerprints ?? [])).filter(Boolean);
+  if (prefFingerprints.length) {
+    const prefDel = await supabase.from("action_preferences_v1").delete().in("fingerprint", prefFingerprints).select("fingerprint");
+    if (prefDel.error) throw prefDel.error;
+    deleted.preferences = (prefDel.data ?? []).length;
   }
 
   const remainingActions = await supabase
@@ -437,6 +446,218 @@ async function createAction(input: {
   }
 
   return { action, action_id: trace.action_id, trace };
+}
+
+async function setSuppressionPreference(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  fingerprint: string;
+  suppressed: boolean;
+  reason: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "set_preference",
+    method: "POST",
+    path: "/api/actions/preferences",
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: {
+      fingerprint: input.fingerprint,
+      suppressed: input.suppressed,
+      reason: input.reason
+    }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Preference update failed") };
+}
+
+async function rejectAction(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  reason: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "reject",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/reject`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", reason: input.reason }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Reject failed") };
+}
+
+async function snoozeAction(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  untilIso: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "snooze",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/snooze`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", snoozed_until: input.untilIso }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Snooze failed") };
+}
+
+async function unsnoozeAction(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "unsnooze",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/unsnooze`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Unsnooze failed") };
+}
+
+async function prepareDraft(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  prepared_assets: unknown[];
+  execution_plan: Record<string, unknown>;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "prepare",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/prepare`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", prepared_assets: input.prepared_assets, execution_plan: input.execution_plan }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Prepare failed") };
+}
+
+async function markReady(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  measurement_window: Record<string, unknown>;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "ready",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/ready`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", measurement_window: input.measurement_window }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Ready failed") };
+}
+
+async function editDraft(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  prepared_assets: unknown[];
+  execution_plan: Record<string, unknown>;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "edit_draft",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/edit-draft`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", prepared_assets: input.prepared_assets, execution_plan: input.execution_plan }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Edit draft failed") };
+}
+
+async function fetchAuditEvents(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  stepName: string;
+}): Promise<{ ok: boolean; audit: unknown[]; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: input.stepName,
+    method: "GET",
+    path: `/api/actions/${input.actionId}/audit`,
+    expectedStatus: 200
+  });
+  input.steps.push(res.step);
+  if (!res.step.ok) return { ok: false, audit: [], error: res.step.errorMessage ?? "Audit fetch failed" };
+  const env = coerceObject(res.json);
+  const audit = env && env["ok"] === true && Array.isArray(env["audit"]) ? (env["audit"] as unknown[]) : [];
+  return { ok: true, audit, error: null };
+}
+
+async function revalidateEvidence(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  evidence_snapshot: Record<string, unknown>;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; changed: boolean | null; newEvidenceSnapshotId: string | null; newHash: string | null; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "revalidate",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/revalidate`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", evidence_snapshot: input.evidence_snapshot }
+  });
+  input.steps.push(res.step);
+  if (!res.step.ok) return { ok: false, changed: null, newEvidenceSnapshotId: null, newHash: null, error: res.step.errorMessage ?? "Revalidate failed" };
+  const env = coerceObject(res.json);
+  if (!env || env["ok"] !== true) return { ok: false, changed: null, newEvidenceSnapshotId: null, newHash: null, error: "Missing revalidate envelope" };
+  return {
+    ok: true,
+    changed: Boolean(env["changed"]),
+    newEvidenceSnapshotId: typeof env["newEvidenceSnapshotId"] === "string" ? (env["newEvidenceSnapshotId"] as string) : null,
+    newHash: typeof env["newHash"] === "string" ? (env["newHash"] as string) : null,
+    error: null
+  };
 }
 
 async function fetchAction(input: {
@@ -727,6 +948,331 @@ export const SCENARIO_RUNNERS: ScenarioRunnerDef[] = [
       };
     }
   }
+  ,
+  {
+    id: "rejected_suppression",
+    name: "6. Rejected recommendation suppression",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "rejected_suppression",
+        title: `M11 Harness (${ctx.harness_run_id}) — Rejected recommendation suppression`,
+        category: "measurement",
+        channel: "meta",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { metric: "roas", variant: "reject_then_suppress" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const actionFp = String(created.action["recommendation_fingerprint"] ?? "").trim();
+      if (!actionFp) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "create.assert_fingerprint", first_failure_status: 200, first_failure_error: "Missing recommendation_fingerprint" };
+      }
+
+      // Move to awaiting_approval boundary so reject transition is valid.
+      const prepared_assets = [{ id: "draft_meta_brief", label: "Meta brief", kind: "meta", content: { note: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:rejected_suppression:prepare` });
+      if (!prep.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+      }
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:rejected_suppression:ready` });
+      if (!ready.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+      }
+
+      const rejected = await rejectAction({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        reason: "Not relevant right now",
+        idempotencyKey: `${ctx.harness_run_id}:rejected_suppression:reject`
+      });
+      if (!rejected.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "reject", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: rejected.error };
+      }
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_reject", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_reject", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      }
+      if (String(fetched.action["status"] ?? "") !== "rejected") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_reject.assert_status", first_failure_status: 200, first_failure_error: `Expected status=rejected, got ${String(fetched.action["status"] ?? "")}` };
+      }
+
+      const auditRes = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit" });
+      if (!auditRes.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: auditRes.error };
+      }
+      const hasRejectedTransition = auditRes.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "rejected";
+      });
+      if (!hasRejectedTransition) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit.assert_reject_event", first_failure_status: 200, first_failure_error: "Expected audit event to_status=rejected" };
+      }
+
+      const pref = await setSuppressionPreference({
+        ctx,
+        steps,
+        fingerprint: actionFp,
+        suppressed: true,
+        reason: "Rejected in harness; suppress equivalent",
+        idempotencyKey: `${ctx.harness_run_id}:rejected_suppression:pref`
+      });
+      if (!pref.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "set_preference", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: pref.error };
+      }
+      (ctx.cleanupPreferenceFingerprints ?? []).push(actionFp);
+
+      // Attempt to create equivalent recommendation (same action_key via same recommendation id).
+      const retry = await httpStep({
+        baseUrl: ctx.baseUrl,
+        token: ctx.token,
+        scenario: ctx.scenarioName,
+        step: "create_equivalent_suppressed",
+        method: "POST",
+        path: "/api/actions",
+        expectedStatus: 400,
+        idempotencyKey: `${ctx.harness_run_id}:rejected_suppression:create_equiv`,
+        body: {
+          actor: "m11_harness",
+          window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+          recommendation: {
+            id: `m11_harness:${ctx.harness_run_id}:rec_rejected_suppression`,
+            title: `M11 Harness (${ctx.harness_run_id}) — Rejected recommendation suppression (equivalent)`,
+            category: "measurement",
+            approval_level: "L1_RECOMMENDATION",
+            status: "recommended",
+            confidence: "possible",
+            expected_outcome: "Harness",
+            reason: "Harness",
+            affected_channels: ["meta"],
+            affected_products: ["store"],
+            affected_audiences: ["all"],
+            priority_score: { overallScore: 55 },
+            estimated_incremental_revenue: { usd: 1000 },
+            estimated_cost: { usd: 0 },
+            estimated_effort: { hours: 1 },
+            risk: "medium",
+            approval_requirements: {},
+            measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+            data_missing: [],
+            limitations: []
+          },
+          evidence_snapshot: { harness_run_id: ctx.harness_run_id, variant: "equivalent", window: { startDate: "2026-05-02", endDate: "2026-05-08" } }
+        }
+      });
+      steps.push(retry.step);
+      if (!retry.step.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "create_equivalent_suppressed", first_failure_status: retry.step.actualStatus, first_failure_error: retry.step.errorMessage };
+      }
+
+      // Ensure original is still the only relevant action and remains rejected.
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_final", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "snoozed",
+    name: "7. Snoozed recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "snoozed",
+        title: `M11 Harness (${ctx.harness_run_id}) — Snoozed recommendation`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { missing_source: "email" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:snoozed:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+
+      const ready = await markReady({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        idempotencyKey: `${ctx.harness_run_id}:snoozed:ready`
+      });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+
+      const until = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const snooze = await snoozeAction({ ctx, steps, actionId: created.action_id, untilIso: until, idempotencyKey: `${ctx.harness_run_id}:snoozed:snooze` });
+      if (!snooze.ok) return { ...created.trace, pass: false, steps, first_failure_step: "snooze", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: snooze.error };
+
+      const fetched1 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_snoozed", expectedStatus: 200 });
+      if (!fetched1.ok || !fetched1.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_snoozed", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched1.error };
+      if (String(fetched1.action["status"] ?? "") !== "snoozed") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_snoozed.assert_status", first_failure_status: 200, first_failure_error: `Expected status=snoozed, got ${String(fetched1.action["status"] ?? "")}` };
+      }
+      const snoozedUntil = String(fetched1.action["snoozed_until"] ?? "");
+      if (!snoozedUntil) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_snoozed.assert_until", first_failure_status: 200, first_failure_error: "Expected snoozed_until to be persisted" };
+      }
+
+      const audit1 = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_after_snooze" });
+      if (!audit1.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after_snooze", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit1.error };
+
+      const uns = await unsnoozeAction({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:snoozed:unsnooze` });
+      if (!uns.ok) return { ...created.trace, pass: false, steps, first_failure_step: "unsnooze", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: uns.error };
+
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_unsnoozed", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_unsnoozed", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+      if (String(fetched2.action["status"] ?? "") !== "awaiting_approval") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_unsnoozed.assert_status", first_failure_status: 200, first_failure_error: `Expected status=awaiting_approval, got ${String(fetched2.action["status"] ?? "")}` };
+      }
+
+      const audit2 = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_after_unsnooze" });
+      if (!audit2.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after_unsnooze", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit2.error };
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "stale_revalidation",
+    name: "8. Stale recommendation requiring revalidation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "stale_revalidation",
+        title: `M11 Harness (${ctx.harness_run_id}) — Stale recommendation requiring revalidation`,
+        category: "website",
+        channel: "website",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { website: { page_url: "/", hypothesis: "Improve conversion" }, stale_marker: true }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+
+      const prepared_assets = [{ id: "draft_website_homepage", label: "Homepage draft", kind: "website", content: { page_url: "/", proposed_copy: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:stale:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:stale:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+
+      const before = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_before_revalidate", expectedStatus: 200 });
+      if (!before.ok || !before.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_before_revalidate", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: before.error };
+      const originalSnapId = String(before.action["evidence_snapshot_id"] ?? "");
+      const originalHash = String(before.action["evidence_snapshot_hash"] ?? "");
+
+      const reval = await revalidateEvidence({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        evidence_snapshot: { harness_run_id: ctx.harness_run_id, window: { startDate: "2026-05-02", endDate: "2026-05-08" }, website: { page_url: "/", hypothesis: "Improve conversion", updated: true } },
+        idempotencyKey: `${ctx.harness_run_id}:stale:revalidate`
+      });
+      if (!reval.ok) return { ...created.trace, pass: false, steps, first_failure_step: "revalidate", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: reval.error };
+      if (!reval.changed || !reval.newEvidenceSnapshotId || !reval.newHash) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "revalidate.assert_changed", first_failure_status: 200, first_failure_error: "Expected changed=true with newEvidenceSnapshotId/newHash" };
+      }
+      if (reval.newHash === originalHash) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "revalidate.assert_hash_change", first_failure_status: 200, first_failure_error: "Expected evidence hash to change" };
+      }
+
+      const after = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_revalidate", expectedStatus: 200 });
+      if (!after.ok || !after.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_revalidate", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: after.error };
+      const statusAfter = String(after.action["status"] ?? "");
+      if (statusAfter !== "needs_revalidation") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_revalidate.assert_status", first_failure_status: 200, first_failure_error: `Expected status=needs_revalidation, got ${statusAfter}` };
+      }
+      const snapIdAfter = String(after.action["evidence_snapshot_id"] ?? "");
+      if (snapIdAfter !== originalSnapId) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_revalidate.assert_immutable", first_failure_status: 200, first_failure_error: "Expected original evidence_snapshot_id to remain immutable" };
+      }
+
+      const blocked = await approveActionExpectedReject({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        stepName: "approve_blocked_stale",
+        expectedStatus: 400,
+        actor: "ceo",
+        confirm: true,
+        idempotencyKey: `${ctx.harness_run_id}:stale:approve`
+      });
+      if (!blocked.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve_blocked_stale", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: blocked.error };
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_revalidate" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_revalidate", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+
+      return { ...created.trace, pass: true, steps, final_status: statusAfter, final_approval_level: String(after.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "draft_prepared_and_edited",
+    name: "9. Draft prepared and edited",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "draft_prepared_and_edited",
+        title: `M11 Harness (${ctx.harness_run_id}) — Draft prepared and edited`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { missing_source: "email" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const prepared_assets1 = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft A", body: "Body A" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan1 = { preview: "Preview A", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets: prepared_assets1, execution_plan: execution_plan1, idempotencyKey: `${ctx.harness_run_id}:draft:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+
+      const fetched1 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_prepare", expectedStatus: 200 });
+      if (!fetched1.ok || !fetched1.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched1.error };
+      if (String(fetched1.action["status"] ?? "") !== "draft_prepared") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_prepare.assert_status", first_failure_status: 200, first_failure_error: `Expected status=draft_prepared, got ${String(fetched1.action["status"] ?? "")}` };
+      }
+
+      const prepared_assets2 = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft B", body: "Body B" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan2 = { preview: "Preview B", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const edit = await editDraft({ ctx, steps, actionId: created.action_id, prepared_assets: prepared_assets2, execution_plan: execution_plan2, idempotencyKey: `${ctx.harness_run_id}:draft:edit` });
+      if (!edit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "edit_draft", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: edit.error };
+
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_edit", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_edit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+      if (String(fetched2.action["status"] ?? "") !== "draft_prepared") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_edit.assert_status", first_failure_status: 200, first_failure_error: "Edit should not change lifecycle status" };
+      }
+      const assets = Array.isArray(fetched2.action["prepared_assets"]) ? (fetched2.action["prepared_assets"] as unknown[]) : [];
+      const asset0 = coerceObject(assets[0]);
+      const content = asset0 ? coerceObject(asset0["content"]) : null;
+      const subject = content ? String(content["subject"] ?? "") : "";
+      if (subject !== "Draft B") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_edit.assert_persist", first_failure_status: 200, first_failure_error: `Expected edited subject to persist (Draft B), got ${subject}` };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_draft" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_draft", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasEditEvent = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["event_type"] ?? "") === "draft_edited";
+      });
+      if (!hasEditEvent) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_draft.assert_edit", first_failure_status: 200, first_failure_error: "Expected draft_edited audit event" };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["approval_level"] ?? "") };
+    }
+  }
 ];
 
 async function runPhase(phase: Phase): Promise<void> {
@@ -768,15 +1314,16 @@ async function runPhase(phase: Phase): Promise<void> {
   const traces: ScenarioTrace[] = [];
   let externalSideEffects = 0;
   let cleanup: CleanupReport | null = null;
+  const preferenceFingerprints: string[] = [];
 
   try {
     for (const runner of selectedRunners) {
-      const trace = await runner.run({ baseUrl, token, harness_run_id, scenarioName: runner.name });
+      const trace = await runner.run({ baseUrl, token, harness_run_id, scenarioName: runner.name, cleanupPreferenceFingerprints: preferenceFingerprints });
       traces.push(trace);
       externalSideEffects += trace.external_side_effect_count;
     }
   } finally {
-    cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id });
+    cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id, preferenceFingerprints });
   }
 
   const failures = traces.filter((t) => !t.pass).map((t) => t.name);
@@ -802,7 +1349,12 @@ async function runPhase(phase: Phase): Promise<void> {
   const outFile = path.join(
     OUT_DIR,
     scenariosArg
-      ? "batch-1-report.json"
+      ? (() => {
+          const nums = scenariosArg.split(",").map((s) => Number(String(s).trim())).filter((n) => Number.isFinite(n));
+          const min = Math.min(...nums);
+          const batch = Number.isFinite(min) ? Math.floor((min - 2) / 4) + 1 : 0;
+          return batch > 0 ? `batch-${batch}-report.json` : "batch-report.json";
+        })()
       : phase === "A"
         ? "phase-a-report.json"
         : phase === "B"
