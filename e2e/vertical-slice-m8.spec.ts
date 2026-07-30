@@ -80,5 +80,11 @@ test.describe("Milestone 8 vertical slice proof", () => {
     await page.goto("/recommend?range=custom&start=2099-01-01&end=2099-01-07");
     await page.waitForLoadState("networkidle");
     await snap("08-recommend-empty-state", page);
+
+    // Narrow-screen proof.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/dashboard?range=7d");
+    await page.waitForLoadState("networkidle");
+    await snap("09-dashboard-mobile", page);
   });
 });
