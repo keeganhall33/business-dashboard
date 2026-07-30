@@ -225,26 +225,96 @@ This section is fully enumerated in `docs/bi-source-inventory.json`. This doc li
 
 The complete per-dimension rubric + evidence is tracked in `docs/bi-dashboard-scorecard.json`.
 
-## 11) Milestone 3 — Unified Business Event + Knowledge Model (started)
+## 11) Milestone 3 — Unified Business Event + Knowledge Model (complete)
 
-### Initial canonical entities (draft)
+### Durable artifacts
 
-- **BusinessEvent** (canonical timeline row)
-  - `event_id`, `occurred_at`, `source_system`, `channel`, `event_type`, `confidence`
-  - optional joins: `campaign_id`, `ad_id`, `email_id`, `post_id`, `product_id`, `customer_id`, `geo`, `utm`
-  - outcomes: `traffic`, `leads`, `carts`, `orders`, `revenue_cents`, `refund_cents`
-  - provenance: `source_record_ref`, `attribution_window`, `freshness_as_of`, `coverage_bounds`
+- `docs/bi-business-event-model.json` (canonical entities, event taxonomy, confidence + attribution, storage direction)
+- `docs/bi-source-event-mappings.json` (source→event mappings + gaps)
+- `docs/bi-event-model-examples.json` (10 end-to-end examples)
+- `docs/bi-business-event-model.md` (human-readable companion)
 
-- **Product**
-  - `product_id`, `type` (original/print/edition), `edition_size`, `availability`, `price`
+### Canonical entity set (required minimum)
 
-- **Campaign**
-  - `campaign_id`, `platform` (meta/email/social), `objective`, `audience`, `creative_refs`
+Defined in `docs/bi-business-event-model.json`:
 
-- **Customer / Collector**
-  - `customer_id`, `segment`, `lifetime_value`, `first_seen_at`, `last_seen_at`
+- BusinessEvent
+- Product
+- Artwork
+- Edition
+- Campaign
+- Channel
+- Audience
+- Customer
+- Collector
+- Lead
+- Order
+- Refund
+- MarketingAsset
+- EmailCampaign
+- SocialPost
+- PaidAd
+- WebsiteSession
+- FunnelEvent
+- MediaAppearance
+- Partnership
+- Promotion
+- Coupon
+- CalendarEvent
+- Recommendation
+- PreparedAction
+- Approval
+- Execution
+- Outcome
+- DataSource
+- SourceRecord
+- AttributionTouch
+- BusinessMetric
 
-> This is a placeholder schema draft; the next milestone expands it with exact mappings to existing storage + ingestion.
+Each entity includes:
+- canonical ID strategy + source identifiers
+- required/optional fields
+- relationships + cardinality
+- timestamps
+- provenance/freshness/confidence fields
+- PII classification + retention expectations
+
+### Canonical event taxonomy
+
+Defined in `docs/bi-business-event-model.json` under `event_taxonomy.groups`.
+
+### Source mappings (coverage)
+
+Defined in `docs/bi-source-event-mappings.json` for:
+- WooCommerce telemetry (production-backed)
+- GA4 website conversion snapshot (connected_incomplete)
+- FunnelKit (technically_connectable / TBD)
+- Meta reporting (connected_incomplete)
+- Lead intelligence (connected_incomplete)
+- Collectors (connected_incomplete)
+- Social intelligence (connected_incomplete)
+- Cloudflare (connected_incomplete)
+- Industry pulse (connected_incomplete)
+- GitHub Actions scheduler (connected_reliable)
+- In-app scheduler (connected_reliable)
+- Manual finance snapshot (manual_only)
+- Opportunities/tasks/decisions/agent runs (connected_reliable)
+
+### Milestone 4 — Causal Explanation Architecture (started)
+
+Initial pipeline stages (draft):
+1. **Normalize**: convert source records → BusinessEvents (validated, deduped, time-normalized)
+2. **Detect**: identify meaningful deltas vs baseline windows (with coverage gates)
+3. **Candidate causes**: retrieve correlated events/touches + known patterns
+4. **Rank evidence**: score evidence by source reliability, freshness, and attribution model constraints
+5. **Explain**: generate explanations with confidence taxonomy + alternatives
+6. **Recommend**: generate ranked next actions with expected impact + risk
+
+Initial evidence-ranking rules (draft):
+- Prefer **confirmed** (exact telemetry + complete coverage) over snapshot/heuristic.
+- Never mix Woo exact revenue with platform-reported revenue in the same causal claim.
+- Require explicit attribution model + window to claim "attributed".
+- If coverage is partial/unknown, explanations must degrade to "insufficient evidence" or "possible".
 
 ## 12) Evidence references (audit anchor list)
 

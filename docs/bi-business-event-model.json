@@ -1,0 +1,941 @@
+{
+  "generated_at": "2026-07-29T20:05:00-07:00",
+  "milestone": "M3_unified_event_and_knowledge_model",
+  "version": "bi_event_model_v1",
+  "confidence_scale": {
+    "levels": [
+      {
+        "level": "confirmed",
+        "threshold": "Source-of-truth telemetry + deterministic definition + coverage complete; no known confounds for the claim scope.",
+        "ui_language": ["confirmed"],
+        "recommendations_allowed": true,
+        "preparation_allowed": true,
+        "approval_request_allowed": true
+      },
+      {
+        "level": "strongly_supported",
+        "threshold": "Multiple independent signals agree; minor confounds possible; completeness acceptable for the claim scope.",
+        "ui_language": ["strongly supported"],
+        "recommendations_allowed": true,
+        "preparation_allowed": true,
+        "approval_request_allowed": true
+      },
+      {
+        "level": "likely",
+        "threshold": "Evidence points in one direction but attribution/explanation has plausible alternatives.",
+        "ui_language": ["likely"],
+        "recommendations_allowed": true,
+        "preparation_allowed": true,
+        "approval_request_allowed": false
+      },
+      {
+        "level": "possible",
+        "threshold": "Correlation or partial evidence only; confounds significant.",
+        "ui_language": ["possible"],
+        "recommendations_allowed": true,
+        "preparation_allowed": false,
+        "approval_request_allowed": false
+      },
+      {
+        "level": "insufficient_evidence",
+        "threshold": "Missing or stale data; cannot support explanation or action.",
+        "ui_language": ["insufficient evidence"],
+        "recommendations_allowed": false,
+        "preparation_allowed": false,
+        "approval_request_allowed": false
+      }
+    ]
+  },
+  "attribution_models": {
+    "models": [
+      {
+        "model": "first_touch",
+        "when": "Lead-gen contexts and long funnels where initial acquisition matters.",
+        "requirements": ["Canonical touch timeline with deduped sessions/touches", "Customer/order linkage"],
+        "limitations": ["Over-credits first touch; ignores nurture effects"],
+        "language": "attributed (first touch)",
+        "double_count_prevention": "One order → at most one first-touch credit"
+      },
+      {
+        "model": "last_touch",
+        "when": "Direct-response contexts; short window between click and purchase.",
+        "requirements": ["Canonical touch timeline", "Attribution window"],
+        "limitations": ["Over-credits closing channel"],
+        "language": "attributed (last touch)",
+        "double_count_prevention": "One order → at most one last-touch credit"
+      },
+      {
+        "model": "linear",
+        "when": "Multi-touch journeys with multiple meaningful touches.",
+        "requirements": ["All touches in window", "Touch weighting"],
+        "limitations": ["Can dilute key drivers"],
+        "language": "assisted (linear)",
+        "double_count_prevention": "Order revenue split across touches; total sums to 100%"
+      },
+      {
+        "model": "position_based",
+        "when": "Journeys where first and last are most important.",
+        "requirements": ["Touch ordering", "Defined weighting scheme"],
+        "limitations": ["Heuristic weights"],
+        "language": "assisted (position-based)",
+        "double_count_prevention": "Fixed weight sum=100%"
+      },
+      {
+        "model": "time_decay",
+        "when": "Journeys where recency correlates with conversion.",
+        "requirements": ["Touch timestamps", "Decay half-life"],
+        "limitations": ["Still correlation"],
+        "language": "assisted (time-decay)",
+        "double_count_prevention": "Normalized weights"
+      },
+      {
+        "model": "platform_reported",
+        "when": "Using Meta/GA4 reported conversions when matchback is not possible.",
+        "requirements": ["Platform conversion definitions", "Window"],
+        "limitations": ["Modeling/black box; can disagree with Woo"],
+        "language": "platform-reported",
+        "double_count_prevention": "Never sum platform-reported revenue with Woo exact revenue"
+      },
+      {
+        "model": "direct_response",
+        "when": "Strict click→purchase within small window; minimal confounds.",
+        "requirements": ["Touch within narrow window", "Stable IDs"],
+        "limitations": ["Misses assisted effects"],
+        "language": "direct-response",
+        "double_count_prevention": "Exclusive assignment per order"
+      },
+      {
+        "model": "assisted",
+        "when": "Supporting role identification (awareness/consideration) without claiming causation.",
+        "requirements": ["Touch timeline", "Non-exclusive credit"],
+        "limitations": ["Not causal"],
+        "language": "assisted",
+        "double_count_prevention": "Report separately from attributed revenue"
+      },
+      {
+        "model": "unattributed",
+        "when": "No credible touch data exists.",
+        "requirements": [],
+        "limitations": ["No explanation"],
+        "language": "unattributed",
+        "double_count_prevention": "N/A"
+      },
+      {
+        "model": "inferred_influence",
+        "when": "External events (press/celebrity) plausibly explain spikes but cannot be proven.",
+        "requirements": ["Event timeline", "Correlated lift", "Alternative explanations tested"],
+        "limitations": ["Correlation only"],
+        "language": "possible influence",
+        "double_count_prevention": "Never counted as attributed revenue"
+      }
+    ],
+    "boundaries": [
+      "Do not claim causal attribution solely from temporal proximity.",
+      "Keep Woo exact revenue separate from platform-reported revenue.",
+      "Any attribution claim must include window, model, and confidence."
+    ]
+  },
+  "pii": {
+    "classes": [
+      {
+        "class": "none",
+        "examples": ["aggregated metrics", "campaign IDs", "product IDs"],
+        "handling": "OK to store long-term; ok in logs"
+      },
+      {
+        "class": "low",
+        "examples": ["hashed customer identifiers", "coarse geography"],
+        "handling": "store with retention; avoid logs"
+      },
+      {
+        "class": "medium",
+        "examples": ["email hash", "order IDs with timestamps"],
+        "handling": "restrict access; avoid UI leaks"
+      },
+      {
+        "class": "high",
+        "examples": ["names", "emails", "phone", "addresses", "message content"],
+        "handling": "store only if required; encrypt; strict access"
+      }
+    ]
+  },
+  "entities": {
+    "canonical_id_strategy": "ULID/UUID for internal canonical IDs; retain source IDs separately; use deterministic hash keys for dedupe where needed.",
+    "list": [
+      {
+        "entity": "BusinessEvent",
+        "canonical_id": "event_id (uuid/ulid)",
+        "source_identifiers": ["source_system", "source_record_id"],
+        "required_fields": ["event_id", "event_type", "occurred_at", "recorded_at", "source_system", "source_record_id", "channel"],
+        "optional_fields": [
+          "campaign_id",
+          "product_id",
+          "artwork_id",
+          "customer_id",
+          "lead_id",
+          "order_id",
+          "audience_id",
+          "geography",
+          "device",
+          "cost_cents",
+          "gross_revenue_cents",
+          "refunded_cents",
+          "net_revenue_cents",
+          "currency",
+          "reach",
+          "impressions",
+          "clicks",
+          "engagements",
+          "sessions",
+          "leads",
+          "orders",
+          "utm",
+          "attribution_window",
+          "attribution_role",
+          "confidence",
+          "confidence_reason",
+          "freshness_as_of",
+          "coverage_start",
+          "coverage_end",
+          "completeness",
+          "definition_version",
+          "metadata",
+          "pii_classification"
+        ],
+        "relationships": ["links to most other entities via *_id fields", "rolls up into BusinessMetric summaries"],
+        "timestamps": ["occurred_at", "recorded_at"],
+        "provenance": ["source_record_ref", "definition_version", "coverage_*", "freshness_as_of"],
+        "freshness": "freshness_as_of",
+        "confidence": "confidence + confidence_reason",
+        "pii_classification": "none/low/medium/high",
+        "retention": "append-only; retain raw events; version schema when breaking",
+        "evidence_files": ["docs/bi-action-engine-discovery.md", "src/lib/dashboard/events.ts"]
+      },
+      {
+        "entity": "Product",
+        "canonical_id": "product_id",
+        "source_identifiers": ["woo_product_id", "slug"],
+        "required_fields": ["product_id", "product_type", "title"],
+        "optional_fields": ["edition_id", "artwork_id", "price_cents", "currency", "availability", "category_ids"],
+        "relationships": ["Product→Edition", "Product→Order"],
+        "timestamps": ["created_at", "updated_at"],
+        "provenance": ["source_system", "source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "confirmed if sourced from Woo",
+        "pii_classification": "none",
+        "retention": "long-term",
+        "evidence_files": ["scripts/build-collectors-from-woocommerce.ts"]
+      },
+      {
+        "entity": "Artwork",
+        "canonical_id": "artwork_id",
+        "source_identifiers": ["internal_slug", "catalog_ref"],
+        "required_fields": ["artwork_id", "title", "subject"],
+        "optional_fields": ["athlete", "team", "university", "city", "sport", "tags"],
+        "relationships": ["Artwork→Product"],
+        "timestamps": ["created_at", "updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Edition",
+        "canonical_id": "edition_id",
+        "source_identifiers": ["woo_variation_id"],
+        "required_fields": ["edition_id", "product_id", "edition_type"],
+        "optional_fields": ["signed", "limited", "edition_size", "inventory_remaining"],
+        "relationships": ["Edition→Product"],
+        "timestamps": ["updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Campaign",
+        "canonical_id": "campaign_id",
+        "source_identifiers": ["meta_campaign_id", "email_campaign_id"],
+        "required_fields": ["campaign_id", "platform", "name"],
+        "optional_fields": ["objective", "start_at", "end_at", "budget_cents", "currency"],
+        "relationships": ["Campaign→PaidAd", "Campaign→EmailCampaign", "Campaign→SocialPost", "Campaign→Product"],
+        "timestamps": ["start_at", "end_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Channel",
+        "canonical_id": "channel_id",
+        "source_identifiers": ["system_name"],
+        "required_fields": ["channel_id", "family"],
+        "optional_fields": ["platform"],
+        "relationships": ["Channel is referenced by BusinessEvent.channel"],
+        "timestamps": [],
+        "provenance": [],
+        "freshness": null,
+        "confidence": "confirmed",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Audience",
+        "canonical_id": "audience_id",
+        "source_identifiers": ["meta_audience_id"],
+        "required_fields": ["audience_id", "name"],
+        "optional_fields": ["segment_rules", "geo"],
+        "relationships": ["Audience→Campaign"],
+        "timestamps": ["updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Customer",
+        "canonical_id": "customer_id",
+        "source_identifiers": ["woo_customer_id", "email_hash"],
+        "required_fields": ["customer_id"],
+        "optional_fields": ["first_purchase_at", "last_purchase_at", "lifetime_value_cents"],
+        "relationships": ["Customer→Order", "Customer→Collector"],
+        "timestamps": ["created_at", "updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "varies",
+        "pii_classification": "medium",
+        "retention": "limited; prefer hashes"
+      },
+      {
+        "entity": "Collector",
+        "canonical_id": "collector_id",
+        "source_identifiers": ["collector_identity_hash"],
+        "required_fields": ["collector_id"],
+        "optional_fields": ["segment", "notes"],
+        "relationships": ["Collector↔Customer"],
+        "timestamps": ["updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "varies",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "Lead",
+        "canonical_id": "lead_id",
+        "source_identifiers": ["crm_lead_id"],
+        "required_fields": ["lead_id", "created_at"],
+        "optional_fields": ["source_channel", "status", "value_estimate_cents"],
+        "relationships": ["Lead→Customer"],
+        "timestamps": ["created_at", "updated_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "high",
+        "retention": "restricted"
+      },
+      {
+        "entity": "Order",
+        "canonical_id": "order_id",
+        "source_identifiers": ["woo_order_id"],
+        "required_fields": ["order_id", "paid_at", "status"],
+        "optional_fields": ["gross_total_cents", "refunded_cents", "net_revenue_cents", "currency"],
+        "relationships": ["Order→Customer", "Order→Product"],
+        "timestamps": ["created_at", "paid_at", "modified_at"],
+        "provenance": ["definition_version", "source_record_ref"],
+        "freshness": "modified_at",
+        "confidence": "confirmed",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "Refund",
+        "canonical_id": "refund_id",
+        "source_identifiers": ["woo_refund_id"],
+        "required_fields": ["refund_id", "order_id", "refunded_at"],
+        "optional_fields": ["amount_cents"],
+        "relationships": ["Refund→Order"],
+        "timestamps": ["refunded_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "refunded_at",
+        "confidence": "confirmed",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "MarketingAsset",
+        "canonical_id": "asset_id",
+        "source_identifiers": ["meta_creative_id", "file_ref"],
+        "required_fields": ["asset_id", "asset_type"],
+        "optional_fields": ["hook", "caption", "product_id"],
+        "relationships": ["MarketingAsset→PaidAd", "MarketingAsset→SocialPost"],
+        "timestamps": ["created_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "created_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "EmailCampaign",
+        "canonical_id": "email_campaign_id",
+        "source_identifiers": ["platform_campaign_id"],
+        "required_fields": ["email_campaign_id", "sent_at"],
+        "optional_fields": ["subject", "segment_id"],
+        "relationships": ["EmailCampaign→Campaign"],
+        "timestamps": ["created_at", "sent_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "sent_at",
+        "confidence": "varies",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "SocialPost",
+        "canonical_id": "social_post_id",
+        "source_identifiers": ["platform_post_id"],
+        "required_fields": ["social_post_id", "published_at"],
+        "optional_fields": ["caption", "link_url", "asset_id"],
+        "relationships": ["SocialPost→Campaign", "SocialPost→MarketingAsset"],
+        "timestamps": ["published_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "published_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "PaidAd",
+        "canonical_id": "paid_ad_id",
+        "source_identifiers": ["meta_ad_id"],
+        "required_fields": ["paid_ad_id", "campaign_id"],
+        "optional_fields": ["adset_id", "status"],
+        "relationships": ["PaidAd→Campaign", "PaidAd→MarketingAsset", "PaidAd→Audience"],
+        "timestamps": ["created_at", "started_at", "stopped_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "WebsiteSession",
+        "canonical_id": "session_id",
+        "source_identifiers": ["ga4_session_id"],
+        "required_fields": ["session_id", "started_at"],
+        "optional_fields": ["landing_page", "utm", "device", "geo"],
+        "relationships": ["WebsiteSession→AttributionTouch"],
+        "timestamps": ["started_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "source_as_of",
+        "confidence": "varies",
+        "pii_classification": "low",
+        "retention": "limited"
+      },
+      {
+        "entity": "FunnelEvent",
+        "canonical_id": "funnel_event_id",
+        "source_identifiers": ["funnelkit_event_id"],
+        "required_fields": ["funnel_event_id", "occurred_at", "event_type"],
+        "optional_fields": ["cart_id", "email_hash"],
+        "relationships": ["FunnelEvent→Lead", "FunnelEvent→Order"],
+        "timestamps": ["occurred_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "occurred_at",
+        "confidence": "varies",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "MediaAppearance",
+        "canonical_id": "media_id",
+        "source_identifiers": ["url", "slug"],
+        "required_fields": ["media_id", "published_at", "type"],
+        "optional_fields": ["title", "partner", "linked_artwork_ids"],
+        "relationships": ["MediaAppearance→Artwork", "MediaAppearance→Campaign"],
+        "timestamps": ["published_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "published_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Partnership",
+        "canonical_id": "partner_id",
+        "source_identifiers": ["partner_name"],
+        "required_fields": ["partner_id", "name"],
+        "optional_fields": ["status", "start_at", "end_at"],
+        "relationships": ["Partnership→Campaign", "Partnership→MediaAppearance"],
+        "timestamps": ["start_at", "end_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Promotion",
+        "canonical_id": "promotion_id",
+        "source_identifiers": ["coupon_code", "internal_ref"],
+        "required_fields": ["promotion_id", "type"],
+        "optional_fields": ["start_at", "end_at", "product_ids"],
+        "relationships": ["Promotion→Coupon", "Promotion→Campaign"],
+        "timestamps": ["start_at", "end_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Coupon",
+        "canonical_id": "coupon_id",
+        "source_identifiers": ["woo_coupon_id", "code"],
+        "required_fields": ["coupon_id", "code"],
+        "optional_fields": ["discount_type", "amount"],
+        "relationships": ["Coupon→Order"],
+        "timestamps": ["created_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "confirmed if sourced",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "CalendarEvent",
+        "canonical_id": "calendar_event_id",
+        "source_identifiers": ["google_calendar_event_id"],
+        "required_fields": ["calendar_event_id", "start_at", "title"],
+        "optional_fields": ["end_at", "type"],
+        "relationships": ["CalendarEvent→Campaign", "CalendarEvent→MediaAppearance"],
+        "timestamps": ["start_at", "end_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "updated_at",
+        "confidence": "varies",
+        "pii_classification": "medium",
+        "retention": "restricted"
+      },
+      {
+        "entity": "Recommendation",
+        "canonical_id": "recommendation_id",
+        "source_identifiers": ["internal"],
+        "required_fields": ["recommendation_id", "created_at", "title", "confidence"],
+        "optional_fields": ["expected_impact", "evidence_refs"],
+        "relationships": ["Recommendation→PreparedAction", "Recommendation→Outcome"],
+        "timestamps": ["created_at"],
+        "provenance": ["evidence_refs"],
+        "freshness": "created_at",
+        "confidence": "confidence",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "PreparedAction",
+        "canonical_id": "prepared_action_id",
+        "source_identifiers": ["internal"],
+        "required_fields": ["prepared_action_id", "created_at", "action_type"],
+        "optional_fields": ["draft_payload", "risk", "rollback_plan"],
+        "relationships": ["PreparedAction→Approval", "PreparedAction→Execution"],
+        "timestamps": ["created_at"],
+        "provenance": ["evidence_refs"],
+        "freshness": "created_at",
+        "confidence": "inherited",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Approval",
+        "canonical_id": "approval_id",
+        "source_identifiers": ["internal"],
+        "required_fields": ["approval_id", "requested_at", "status"],
+        "optional_fields": ["approved_by", "approved_at", "rejected_at"],
+        "relationships": ["Approval→Execution"],
+        "timestamps": ["requested_at", "approved_at", "rejected_at"],
+        "provenance": ["request_context"],
+        "freshness": "requested_at",
+        "confidence": "confirmed",
+        "pii_classification": "medium",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Execution",
+        "canonical_id": "execution_id",
+        "source_identifiers": ["platform_execution_id"],
+        "required_fields": ["execution_id", "executed_at", "status"],
+        "optional_fields": ["platform", "diff"],
+        "relationships": ["Execution→Outcome"],
+        "timestamps": ["executed_at"],
+        "provenance": ["platform_receipt"],
+        "freshness": "executed_at",
+        "confidence": "confirmed",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "Outcome",
+        "canonical_id": "outcome_id",
+        "source_identifiers": ["internal"],
+        "required_fields": ["outcome_id", "measured_at", "window_start", "window_end"],
+        "optional_fields": ["delta_revenue_cents", "delta_orders", "notes"],
+        "relationships": ["Outcome→Recommendation"],
+        "timestamps": ["measured_at"],
+        "provenance": ["baseline_refs"],
+        "freshness": "measured_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "DataSource",
+        "canonical_id": "data_source_id",
+        "source_identifiers": ["system"],
+        "required_fields": ["data_source_id", "name", "status"],
+        "optional_fields": ["owner", "sla"],
+        "relationships": ["DataSource→SourceRecord", "DataSource→BusinessEvent"],
+        "timestamps": ["last_verified_at"],
+        "provenance": ["credential_location"],
+        "freshness": "last_verified_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      },
+      {
+        "entity": "SourceRecord",
+        "canonical_id": "source_record_ref",
+        "source_identifiers": ["source_system", "source_record_id"],
+        "required_fields": ["source_system", "source_record_id"],
+        "optional_fields": ["raw_payload_ref", "checksum"],
+        "relationships": ["SourceRecord→BusinessEvent"],
+        "timestamps": ["source_created_at", "source_updated_at"],
+        "provenance": ["raw_payload_ref"],
+        "freshness": "source_updated_at",
+        "confidence": "varies",
+        "pii_classification": "varies",
+        "retention": "bounded"
+      },
+      {
+        "entity": "AttributionTouch",
+        "canonical_id": "touch_id",
+        "source_identifiers": ["session_id", "click_id"],
+        "required_fields": ["touch_id", "occurred_at", "channel"],
+        "optional_fields": ["utm", "campaign_id", "paid_ad_id"],
+        "relationships": ["AttributionTouch→Order"],
+        "timestamps": ["occurred_at"],
+        "provenance": ["source_record_ref"],
+        "freshness": "occurred_at",
+        "confidence": "varies",
+        "pii_classification": "low",
+        "retention": "bounded"
+      },
+      {
+        "entity": "BusinessMetric",
+        "canonical_id": "metric_key",
+        "source_identifiers": ["metric_key"],
+        "required_fields": ["metric_key", "measured_at", "value"],
+        "optional_fields": ["range", "confidence", "provenance"],
+        "relationships": ["BusinessMetric can be derived from BusinessEvent aggregates"],
+        "timestamps": ["measured_at"],
+        "provenance": ["definition_version", "coverage_*"],
+        "freshness": "measured_at",
+        "confidence": "varies",
+        "pii_classification": "none",
+        "retention": "long-term"
+      }
+    ]
+  },
+  "event_taxonomy": {
+    "groups": {
+      "commerce": [
+        "order_created",
+        "order_paid",
+        "order_completed",
+        "order_refunded",
+        "refund_partial",
+        "refund_full",
+        "product_purchased",
+        "coupon_used",
+        "customer_first_purchase",
+        "customer_repeat_purchase"
+      ],
+      "website_funnel": [
+        "session_started",
+        "landing_page_viewed",
+        "product_viewed",
+        "add_to_cart",
+        "begin_checkout",
+        "checkout_abandoned",
+        "purchase_completed",
+        "form_submitted",
+        "lead_captured"
+      ],
+      "paid_media": [
+        "campaign_started",
+        "campaign_stopped",
+        "budget_changed",
+        "ad_created",
+        "ad_launched",
+        "ad_paused",
+        "impression_recorded",
+        "click_recorded",
+        "attributed_purchase",
+        "creative_changed",
+        "audience_changed"
+      ],
+      "email": [
+        "email_campaign_created",
+        "email_campaign_sent",
+        "email_opened",
+        "email_clicked",
+        "email_unsubscribed",
+        "email_attributed_purchase",
+        "automated_email_triggered"
+      ],
+      "organic_social": [
+        "social_post_published",
+        "social_post_updated",
+        "social_impression",
+        "social_engagement",
+        "social_link_click",
+        "follower_count_changed",
+        "celebrity_or_partner_share"
+      ],
+      "media_external": [
+        "interview_aired",
+        "article_published",
+        "podcast_published",
+        "press_mention",
+        "partnership_announced",
+        "athlete_or_celebrity_posted",
+        "product_launch",
+        "project_announcement",
+        "charity_campaign_started"
+      ],
+      "sales_ops": [
+        "lead_created",
+        "lead_contacted",
+        "lead_qualified",
+        "proposal_sent",
+        "sale_won",
+        "sale_lost",
+        "collector_contacted",
+        "commission_inquiry_received",
+        "original_art_inquiry_received",
+        "follow_up_due"
+      ],
+      "system_quality": [
+        "ingestion_started",
+        "ingestion_completed",
+        "ingestion_failed",
+        "source_stale",
+        "coverage_partial",
+        "schema_changed",
+        "anomaly_detected",
+        "recommendation_generated",
+        "action_prepared",
+        "action_approved",
+        "action_rejected",
+        "action_executed",
+        "outcome_measured"
+      ]
+    },
+    "event_type_spec": {
+      "ingestion_completed": {
+        "required_fields": ["occurred_at", "source_system", "definition_version", "coverage_start", "coverage_end", "freshness_as_of"],
+        "optional_fields": ["metadata"],
+        "source_systems": ["github_actions", "in_app_scheduler"],
+        "meaning": "A source ingestion completed successfully.",
+        "metric_effects": ["updates freshness and potentially expands coverage"],
+        "eligible_attribution_roles": ["none"],
+        "confidence_rules": "confirmed if written by scheduler and verified",
+        "dedup_key": "source_system + source_record_id + occurred_at (rounded)",
+        "idempotency": "idempotent by dedup_key"
+      },
+      "order_paid": {
+        "required_fields": ["occurred_at", "order_id", "net_revenue_cents", "currency"],
+        "optional_fields": ["gross_revenue_cents", "refunded_cents", "customer_id", "product_id"],
+        "source_systems": ["woocommerce"],
+        "meaning": "Order was paid (canonical paid-date definition).",
+        "metric_effects": ["increases orders and revenue"],
+        "eligible_attribution_roles": ["conversion"],
+        "confidence_rules": "confirmed if paid timestamp present and status eligible",
+        "dedup_key": "woocommerce:order_id:paid_date",
+        "idempotency": "idempotent by order_id"
+      },
+      "campaign_started": {
+        "required_fields": ["occurred_at", "campaign_id"],
+        "optional_fields": ["budget_cents", "currency", "audience_id"],
+        "source_systems": ["meta_ads"],
+        "meaning": "Campaign transitioned to active.",
+        "metric_effects": ["may increase impressions/clicks"],
+        "eligible_attribution_roles": ["touch"],
+        "confidence_rules": "confirmed if platform status transitions",
+        "dedup_key": "platform:campaign_id:started",
+        "idempotency": "idempotent"
+      }
+    }
+  },
+  "business_event_schema": {
+    "required": [
+      "event_id",
+      "event_type",
+      "occurred_at",
+      "recorded_at",
+      "source_system",
+      "source_record_id",
+      "source_record_ref",
+      "channel",
+      "confidence",
+      "pii_classification"
+    ],
+    "nullable": [
+      "campaign_id",
+      "product_id",
+      "artwork_id",
+      "customer_id",
+      "lead_id",
+      "order_id",
+      "audience_id",
+      "geography",
+      "device",
+      "cost_cents",
+      "gross_revenue_cents",
+      "refunded_cents",
+      "net_revenue_cents",
+      "currency",
+      "reach",
+      "impressions",
+      "clicks",
+      "engagements",
+      "sessions",
+      "leads",
+      "orders",
+      "utm",
+      "attribution_window",
+      "attribution_role",
+      "confidence_reason",
+      "freshness_as_of",
+      "coverage_start",
+      "coverage_end",
+      "completeness",
+      "definition_version",
+      "metadata"
+    ],
+    "validation_rules": [
+      "occurred_at must be parseable ISO timestamp",
+      "recorded_at must be >= occurred_at (except clock skew with justification)",
+      "currency required if any *_cents is present",
+      "net_revenue_cents must equal gross - refunded when all present",
+      "confidence must be one of confidence_scale levels",
+      "completeness must be one of: complete|partial|unknown",
+      "definition_version required for commerce revenue events"
+    ]
+  },
+  "relationship_model": {
+    "relationships": [
+      { "from": "Artwork", "to": "Product", "cardinality": "1_to_many", "join": "artwork_id" },
+      { "from": "Product", "to": "Edition", "cardinality": "1_to_many", "join": "product_id" },
+      { "from": "Product", "to": "Order", "cardinality": "many_to_many", "join": "order_line_items" },
+      { "from": "Campaign", "to": "PaidAd", "cardinality": "1_to_many", "join": "campaign_id" },
+      { "from": "Campaign", "to": "EmailCampaign", "cardinality": "1_to_many", "join": "campaign_id" },
+      { "from": "Campaign", "to": "SocialPost", "cardinality": "1_to_many", "join": "campaign_id" },
+      { "from": "Campaign", "to": "Product", "cardinality": "many_to_many", "join": "campaign_product_links" },
+      { "from": "MarketingAsset", "to": "PaidAd", "cardinality": "1_to_many", "join": "asset_id" },
+      { "from": "MarketingAsset", "to": "SocialPost", "cardinality": "1_to_many", "join": "asset_id" },
+      { "from": "Customer", "to": "Order", "cardinality": "1_to_many", "join": "customer_id" },
+      { "from": "Customer", "to": "Collector", "cardinality": "0_or_1", "join": "collector_id" },
+      { "from": "Lead", "to": "Customer", "cardinality": "0_or_1", "join": "customer_id" },
+      { "from": "MediaAppearance", "to": "Product", "cardinality": "many_to_many", "join": "linked_product_ids" },
+      { "from": "AttributionTouch", "to": "Order", "cardinality": "many_to_many", "join": "order_id" },
+      { "from": "Recommendation", "to": "PreparedAction", "cardinality": "1_to_many", "join": "recommendation_id" },
+      { "from": "PreparedAction", "to": "Approval", "cardinality": "1_to_1", "join": "prepared_action_id" },
+      { "from": "Approval", "to": "Execution", "cardinality": "1_to_0_or_1", "join": "approval_id" },
+      { "from": "Execution", "to": "Outcome", "cardinality": "1_to_1", "join": "execution_id" }
+    ]
+  },
+  "knowledge_model": {
+    "structures": {
+      "Subject": {
+        "required_fields": ["subject_id", "name", "type"],
+        "types": ["athlete", "celebrity", "team", "university", "city", "moment"],
+        "provenance": ["source", "confidence", "effective_from", "effective_to", "last_updated"],
+        "rules": ["no hardcoded assumptions without provenance"],
+        "retention": "long-term"
+      },
+      "BusinessRule": {
+        "required_fields": ["rule_id", "statement", "scope"],
+        "categories": ["pricing", "inventory", "licensing", "scarcity"],
+        "provenance": ["source", "confidence", "effective_dates"],
+        "overrides": "recorded",
+        "retention": "long-term"
+      },
+      "LearnedPattern": {
+        "required_fields": ["pattern_id", "description", "evidence_refs", "confidence"],
+        "provenance": ["model_version", "computed_at", "data_window"],
+        "retention": "versioned"
+      },
+      "Hypothesis": {
+        "required_fields": ["hypothesis_id", "statement", "status"],
+        "statuses": ["proposed", "testing", "supported", "rejected"],
+        "provenance": ["proposed_by", "proposed_at"],
+        "retention": "long-term"
+      },
+      "UserPreference": {
+        "required_fields": ["preference_id", "statement"],
+        "provenance": ["captured_at"],
+        "retention": "long-term"
+      },
+      "OperationalConstraint": {
+        "required_fields": ["constraint_id", "statement", "severity"],
+        "provenance": ["source"],
+        "retention": "long-term"
+      }
+    }
+  },
+  "storage_direction": {
+    "recommended_tables": [
+      {
+        "table": "business_events_v1",
+        "strategy": "append-only",
+        "primary_key": "event_id",
+        "dedup_key": "(source_system, source_record_id, event_type)",
+        "indexes": ["occurred_at", "event_type", "campaign_id", "product_id", "order_id", "customer_id"],
+        "pii": "store pii_classification + restricted columns"
+      },
+      {
+        "table": "entities_products_v1",
+        "strategy": "slowly changing dimension",
+        "primary_key": "product_id",
+        "indexes": ["source identifiers"],
+        "pii": "none"
+      },
+      {
+        "table": "recommendations_v1 / prepared_actions_v1 / approvals_v1 / executions_v1 / outcomes_v1",
+        "strategy": "event-sourced with immutable receipts",
+        "primary_key": "*_id",
+        "indexes": ["created_at", "status"],
+        "pii": "restricted where needed"
+      },
+      {
+        "table": "source_records_v1",
+        "strategy": "optional raw payload references",
+        "primary_key": "source_record_ref",
+        "indexes": ["source_system", "source_record_id"],
+        "pii": "depends on source"
+      }
+    ],
+    "materialization": [
+      "Materialized views for daily metrics per channel",
+      "Precomputed driver candidates per range",
+      "Do not mix exact Woo revenue with platform-reported revenue in the same aggregate"
+    ],
+    "retention": ["Keep BusinessEvent long-term", "Bound raw payload retention", "Keep derived summaries regeneratable"],
+    "versioning": ["Include definition_version and schema version per event type"],
+    "reconciliation_jobs": ["Per-source backfill + dedup", "Parity checks where possible"],
+    "no_prod_changes_in_discovery": true
+  }
+}
