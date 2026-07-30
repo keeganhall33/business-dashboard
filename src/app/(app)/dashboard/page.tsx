@@ -1,6 +1,7 @@
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
+import type { AgentDashboardResponse } from "@/lib/types/agent";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,7 +17,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
-  const agents = [];
+  const agents: AgentDashboardResponse[] = [];
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
   const sanitizedOverview = sanitizeDashboardPayloadForHtml(overview);
