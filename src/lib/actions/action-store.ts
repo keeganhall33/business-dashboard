@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DurableAction } from "./action-contract";
 import { isValidTransition } from "./action-transitions";
 import {
@@ -20,7 +20,7 @@ function requireWritesEnabled() {
 }
 
 export async function listActions(): Promise<DurableAction[]> {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("action_actions_v1")
     .select(
@@ -33,7 +33,7 @@ export async function listActions(): Promise<DurableAction[]> {
 }
 
 export async function getAction(actionId: string): Promise<DurableAction | null> {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("action_actions_v1")
     .select(
@@ -81,7 +81,7 @@ export async function createActionFromRecommendation(input: {
   actor: string;
 }): Promise<DurableAction> {
   requireWritesEnabled();
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
 
   // Idempotency: store idempotency key as part of snapshot hash.
   const snapshotBytes = Buffer.from(JSON.stringify(input.evidence_snapshot));
@@ -282,7 +282,7 @@ export async function recordSyntheticOutcome(input: {
   outcome_json: Record<string, unknown>;
 }): Promise<void> {
   requireWritesEnabled();
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const { error } = await supabase.from("action_synthetic_outcomes_v1").insert({
     action_id: input.actionId,
     outcome_status: input.outcome_status,
@@ -315,7 +315,7 @@ export async function insertAuditEvent(event: {
   note?: string | null;
   metadata?: Record<string, unknown>;
 }) {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const { error } = await supabase.from("action_audit_events_v1").insert({
     action_id: event.action_id,
     event_type: event.event_type,
@@ -332,7 +332,7 @@ export async function insertAuditEvent(event: {
 }
 
 export async function listAuditEvents(actionId: string) {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("action_audit_events_v1")
     .select("id,action_id,event_type,from_status,to_status,from_level,to_level,actor,note,metadata,created_at")
@@ -350,7 +350,7 @@ export async function updateDraftAssets(input: {
   execution_plan: Record<string, unknown>;
 }): Promise<DurableAction> {
   requireWritesEnabled();
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseServerClient();
   const current = await getAction(input.actionId);
   if (!current) throw new Error("Action not found");
   if (current.status !== "draft_prepared") {
