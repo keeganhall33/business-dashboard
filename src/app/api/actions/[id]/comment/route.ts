@@ -1,6 +1,6 @@
 import { ok, badRequest, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
-import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { insertAuditEvent } from "@/lib/actions/action-store";
 
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const idempotencyKey = String(request.headers.get("x-idempotency-key") ?? "").trim();
     if (!idempotencyKey) return badRequest("Missing x-idempotency-key");
 
-    const supabase = getSupabaseAdminClient();
+    const supabase = getSupabaseServerClient();
     const { error } = await supabase.from("action_comments_v1").insert({
       action_id: id,
       author: actor,
@@ -46,4 +46,3 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return serverError("Failed to add comment", { message: error instanceof Error ? error.message : String(error) });
   }
 }
-

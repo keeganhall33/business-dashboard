@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -25,7 +26,6 @@ import {
   statusMatches,
   type StepRecord
 } from "@/lib/actions/harness-utils";
-import { M11_SCENARIOS } from "@/lib/actions/m11-scenarios";
 
 type JsonObject = Record<string, unknown>;
 
@@ -74,6 +74,13 @@ type PhaseReport = {
 };
 
 const OUT_DIR = path.join(process.cwd(), ".artifacts", "milestone-11-action-center");
+
+export type ScenarioRunnerContext = {
+  baseUrl: string;
+  token: string;
+  harness_run_id: string;
+  scenarioName: string;
+};
 
 function mustGet(name: string): string {
   const v = process.env[name];
@@ -272,6 +279,7 @@ async function runScenarioCreateOnly(input: {
   title: string;
   category: string;
   channel: string;
+  confidence?: string;
   window: { startDate: string; endDate: string };
   evidenceExtra?: JsonObject;
 }): Promise<ScenarioTrace> {
@@ -285,7 +293,7 @@ async function runScenarioCreateOnly(input: {
     category: input.category,
     approval_level: "L1_RECOMMENDATION",
     status: "recommended",
-    confidence: "possible",
+    confidence: input.confidence ?? "possible",
     expected_outcome: "Harness",
     reason: "Harness",
     affected_channels: [input.channel],
@@ -387,6 +395,340 @@ async function runScenarioCreateOnly(input: {
   };
 }
 
+async function createAction(input: {
+  ctx: ScenarioRunnerContext;
+  recSlug: string;
+  title: string;
+  category: string;
+  channel: string;
+  confidence?: string;
+  window: { startDate: string; endDate: string };
+  evidenceExtra?: JsonObject;
+}): Promise<{ action: JsonObject; action_id: string; trace: ScenarioTrace } | { trace: ScenarioTrace }> {
+  const trace = await runScenarioCreateOnly({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    harness_run_id: input.ctx.harness_run_id,
+    scenarioName: input.ctx.scenarioName,
+    recSlug: input.recSlug,
+    title: input.title,
+    category: input.category,
+    channel: input.channel,
+    confidence: input.confidence,
+    window: input.window,
+    evidenceExtra: input.evidenceExtra
+  });
+
+  // NOTE: runScenarioCreateOnly returns a pre-filled ScenarioTrace on failure.
+  if (!trace.pass || !trace.action_id) return { trace };
+
+  const firstResponse = coerceObject(trace.steps[0]?.response);
+  const createEnvelope = firstResponse ? firstResponse["body"] : null;
+  const action = coerceObject(coerceObject(createEnvelope)?.["action"]);
+  if (!action) {
+    return {
+      trace: {
+        ...trace,
+        pass: false,
+        first_failure_step: "create.parse",
+        first_failure_error: "Missing action envelope"
+      }
+    };
+  }
+
+  return { action, action_id: trace.action_id, trace };
+}
+
+async function fetchAction(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  stepName: string;
+  expectedStatus: number | number[];
+}): Promise<{ ok: boolean; action: JsonObject | null; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: input.stepName,
+    method: "GET",
+    path: `/api/actions/${input.actionId}`,
+    expectedStatus: input.expectedStatus
+  });
+  input.steps.push(res.step);
+  if (!res.step.ok) return { ok: false, action: null, error: res.step.errorMessage ?? "Fetch failed" };
+  const env = coerceObject(res.json);
+  const action = env && env["ok"] === true ? coerceObject(env["action"]) : null;
+  if (!action) return { ok: false, action: null, error: "Missing action payload" };
+  return { ok: true, action, error: null };
+}
+
+async function approveActionExpectedReject(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  stepName: string;
+  expectedStatus: number | number[];
+  actor: string;
+  confirm: boolean;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: input.stepName,
+    method: "POST",
+    path: `/api/actions/${input.actionId}/approve`,
+    expectedStatus: input.expectedStatus,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: input.actor, confirm: input.confirm }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Expected rejection did not match") };
+}
+
+export type ScenarioRunnerDef = {
+  id: string;
+  name: string;
+  run: (ctx: ScenarioRunnerContext) => Promise<ScenarioTrace>;
+};
+
+export const SCENARIO_RUNNERS: ScenarioRunnerDef[] = [
+  {
+    id: "meta_measurement",
+    name: "1. Meta measurement recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "meta_measurement",
+        title: `M11 Harness (${ctx.harness_run_id}) — Meta measurement recommendation`,
+        category: "measurement",
+        channel: "meta",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { metric: "roas" }
+      });
+      return created.trace;
+    }
+  },
+  {
+    id: "email_integration",
+    name: "2. Email integration recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "email_integration",
+        title: `M11 Harness (${ctx.harness_run_id}) — Email integration recommendation`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { missing_source: "email" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const fetched = await fetchAction({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        stepName: "fetch",
+        expectedStatus: 200
+      });
+      if (!fetched.ok || !fetched.action) {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch",
+          first_failure_status: steps.at(-1)?.actualStatus ?? null,
+          first_failure_error: fetched.error
+        };
+      }
+
+      const channel = String(fetched.action["channel"] ?? "");
+      if (channel !== "email") {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch.assert_channel",
+          first_failure_status: 200,
+          first_failure_error: `Expected channel=email, got ${channel}`,
+          final_status: String(fetched.action["status"] ?? ""),
+          final_approval_level: String(fetched.action["approval_level"] ?? "")
+        };
+      }
+
+      return {
+        ...created.trace,
+        pass: true,
+        steps,
+        final_status: String(fetched.action["status"] ?? ""),
+        final_approval_level: String(fetched.action["approval_level"] ?? "")
+      };
+    }
+  },
+  {
+    id: "website_conversion",
+    name: "3. Website conversion recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "website_conversion",
+        title: `M11 Harness (${ctx.harness_run_id}) — Website conversion recommendation`,
+        category: "website",
+        channel: "website",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: {
+          website: {
+            page_url: "/",
+            hypothesis: "Improve hero CTA clarity",
+            rollback_plan: "restore previous revision"
+          }
+        }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch",
+          first_failure_status: steps.at(-1)?.actualStatus ?? null,
+          first_failure_error: fetched.error
+        };
+      }
+      const category = String(fetched.action["category"] ?? "");
+      const channel = String(fetched.action["channel"] ?? "");
+      if (category !== "website" || channel !== "website") {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch.assert_website",
+          first_failure_status: 200,
+          first_failure_error: `Expected category/channel website, got ${category}/${channel}`,
+          final_status: String(fetched.action["status"] ?? ""),
+          final_approval_level: String(fetched.action["approval_level"] ?? "")
+        };
+      }
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "bundle",
+    name: "4. Bundle recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "bundle",
+        title: `M11 Harness (${ctx.harness_run_id}) — Bundle recommendation`,
+        category: "bundle",
+        channel: "store",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { bundle: { sku_a: "print_small", sku_b: "print_large", discount_pct: 10 } }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      }
+      const category = String(fetched.action["category"] ?? "");
+      if (category !== "bundle") {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch.assert_bundle",
+          first_failure_status: 200,
+          first_failure_error: `Expected category=bundle, got ${category}`
+        };
+      }
+      const evidenceSnapshotId = fetched.action["evidence_snapshot_id"];
+      if (!evidenceSnapshotId) {
+        return {
+          ...created.trace,
+          pass: false,
+          steps,
+          first_failure_step: "fetch.assert_evidence_link",
+          first_failure_status: 200,
+          first_failure_error: "Expected evidence_snapshot_id to be present"
+        };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "insufficient_evidence",
+    name: "5. Insufficient-evidence recommendation",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "insufficient_evidence",
+        title: `M11 Harness (${ctx.harness_run_id}) — Insufficient-evidence recommendation`,
+        category: "do_nothing",
+        channel: "data_ops",
+        confidence: "insufficient_evidence",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { reason: "Missing required telemetry" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const fetched1 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_before_block", expectedStatus: 200 });
+      if (!fetched1.ok || !fetched1.action) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_before_block", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched1.error };
+      }
+      const conf = String(fetched1.action["confidence"] ?? "");
+      if (conf !== "insufficient_evidence") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_before_block.assert_confidence", first_failure_status: 200, first_failure_error: `Expected confidence=insufficient_evidence, got ${conf}` };
+      }
+
+      // Policy: cannot approve while not awaiting_approval (deterministic 400).
+      const blocked = await approveActionExpectedReject({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        stepName: "approve_blocked",
+        expectedStatus: 400,
+        actor: "ceo",
+        confirm: true,
+        idempotencyKey: `${ctx.harness_run_id}:insufficient_evidence:approve_blocked`
+      });
+      if (!blocked.ok) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "approve_blocked", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: blocked.error };
+      }
+
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_block", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+      }
+      const statusAfter = String(fetched2.action["status"] ?? "");
+      if (statusAfter !== "recommended") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_block.assert_state", first_failure_status: 200, first_failure_error: `Expected status to remain recommended, got ${statusAfter}` };
+      }
+
+      // Expected policy rejection counts as pass.
+      return {
+        ...created.trace,
+        pass: true,
+        steps,
+        first_failure_step: null,
+        first_failure_status: null,
+        first_failure_error: null,
+        final_status: statusAfter,
+        final_approval_level: String(fetched2.action["approval_level"] ?? "")
+      };
+    }
+  }
+];
+
 async function runPhase(phase: Phase): Promise<void> {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -399,62 +741,53 @@ async function runPhase(phase: Phase): Promise<void> {
 
   const harness_run_id = `m11-harness-${nowUtcIso().replace(/[:.]/g, "-")}-${randomSuffix(6)}`;
 
-  const selected =
-    phase === "A"
-      ? M11_SCENARIOS.slice(0, 1)
-      : phase === "B"
-        ? [M11_SCENARIOS[0], M11_SCENARIOS[19]]
-        : M11_SCENARIOS;
+  const scenariosArgIndex = process.argv.indexOf("--scenarios");
+  const scenariosArg = scenariosArgIndex !== -1 ? String(process.argv[scenariosArgIndex + 1] ?? "").trim() : "";
+
+  const selectedRunners: ScenarioRunnerDef[] = (() => {
+    if (scenariosArg) {
+      const nums = scenariosArg.split(",").map((s) => Number(String(s).trim())).filter((n) => Number.isFinite(n));
+      const unique = Array.from(new Set(nums));
+      const picked: ScenarioRunnerDef[] = [];
+      for (const n of unique) {
+        const runner = SCENARIO_RUNNERS[n - 1];
+        if (!runner) {
+          console.error(`Invalid scenario number: ${n}`);
+          process.exit(2);
+        }
+        picked.push(runner);
+      }
+      return picked;
+    }
+
+    if (phase === "A") return [SCENARIO_RUNNERS[0]];
+    if (phase === "B") return [SCENARIO_RUNNERS[0], SCENARIO_RUNNERS[1]];
+    return SCENARIO_RUNNERS;
+  })();
 
   const traces: ScenarioTrace[] = [];
   let externalSideEffects = 0;
+  let cleanup: CleanupReport | null = null;
 
-  // Only scenario 1 is fully implemented here; the rest are TODO.
-  for (const s of selected) {
-    if (s.id !== "meta_measurement") {
-      traces.push({
-        name: s.name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        steps: [],
-        first_failure_step: "not_implemented",
-        first_failure_status: null,
-        first_failure_error: "Scenario not implemented",
-        action_id: null,
-        final_status: null,
-        final_approval_level: null
-      });
-      continue;
+  try {
+    for (const runner of selectedRunners) {
+      const trace = await runner.run({ baseUrl, token, harness_run_id, scenarioName: runner.name });
+      traces.push(trace);
+      externalSideEffects += trace.external_side_effect_count;
     }
-
-    const trace = await runScenarioCreateOnly({
-      baseUrl,
-      token,
-      harness_run_id,
-      scenarioName: s.name,
-      recSlug: "meta_measurement",
-      title: `M11 Harness (${harness_run_id}) — Meta measurement recommendation`,
-      category: "measurement",
-      channel: "meta",
-      window: { startDate: "2026-05-02", endDate: "2026-05-08" },
-      evidenceExtra: { metric: "roas" }
-    });
-    traces.push(trace);
-    externalSideEffects += trace.external_side_effect_count;
+  } finally {
+    cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id });
   }
-
-  const cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id });
 
   const failures = traces.filter((t) => !t.pass).map((t) => t.name);
   const report: PhaseReport = {
-    ok: failures.length === 0 && cleanup.ok && externalSideEffects === 0,
+    ok: failures.length === 0 && (cleanup?.ok ?? false) && externalSideEffects === 0,
     phase,
     harness_run_id,
     generated_at_utc: nowUtcIso(),
     staging_host: stagingHost,
     production_request_count: 0,
-    scenarios_selected: selected.length,
+    scenarios_selected: selectedRunners.length,
     scenarios_executed: traces.length,
     scenarios_passed: traces.filter((t) => t.pass).length,
     scenarios_failed: failures.length,
@@ -462,13 +795,19 @@ async function runPhase(phase: Phase): Promise<void> {
     failures,
     external_side_effect_count: externalSideEffects,
     traces,
-    cleanup,
+    cleanup: cleanup as CleanupReport,
     no_production_requests: !supabaseUrl.includes("ibjsjosplgbqevmnvvpf")
   };
 
   const outFile = path.join(
     OUT_DIR,
-    phase === "A" ? "phase-a-report.json" : phase === "B" ? "phase-b-report.json" : "phase-c-report.json"
+    scenariosArg
+      ? "batch-1-report.json"
+      : phase === "A"
+        ? "phase-a-report.json"
+        : phase === "B"
+          ? "phase-b-report.json"
+          : "phase-c-report.json"
   );
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ ok: report.ok, outFile }, null, 2));
@@ -483,7 +822,10 @@ if (!(phase === "A" || phase === "B" || phase === "C")) {
   process.exit(2);
 }
 
-runPhase(phase).catch((e) => {
-  console.error(e instanceof Error ? e.message : String(e));
-  process.exit(1);
-});
+const isEntrypoint = import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isEntrypoint) {
+  runPhase(phase).catch((e) => {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  });
+}

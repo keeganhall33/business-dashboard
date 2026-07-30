@@ -34,7 +34,12 @@ export async function POST(request: Request) {
     const recommendation = (recommendationUnknown && typeof recommendationUnknown === "object")
       ? (recommendationUnknown as Record<string, unknown>)
       : null;
-    if (!recommendation || !evidence_snapshot) return badRequest("Missing recommendation or evidence_snapshot");
+    if (!recommendation || !evidence_snapshot || typeof evidence_snapshot !== "object") {
+      return badRequest("Missing recommendation or evidence_snapshot");
+    }
+    const evidenceSnapshot = evidence_snapshot as Record<string, unknown>;
+
+    const windowObj = (body["window"] && typeof body["window"] === "object") ? (body["window"] as Record<string, unknown>) : {};
 
     const fingerprint = computeRecommendationFingerprint({
       category: String(recommendation["category"] ?? "unknown"),
@@ -43,8 +48,8 @@ export async function POST(request: Request) {
       affected_audiences: Array.isArray(recommendation["affected_audiences"]) ? (recommendation["affected_audiences"] as string[]) : [],
       action_key: String(recommendation["id"] ?? "unknown"),
       evidence_window: {
-        startDate: String(body.window?.startDate ?? ""),
-        endDate: String(body.window?.endDate ?? "")
+        startDate: String(windowObj["startDate"] ?? ""),
+        endDate: String(windowObj["endDate"] ?? "")
       }
     });
 
@@ -61,16 +66,16 @@ export async function POST(request: Request) {
       channel: String((Array.isArray(recommendation["affected_channels"]) ? (recommendation["affected_channels"] as unknown[])[0] : "unknown") ?? "unknown"),
       affected_products: (Array.isArray(recommendation["affected_products"]) ? (recommendation["affected_products"] as string[]) : []),
       affected_audiences: (Array.isArray(recommendation["affected_audiences"]) ? (recommendation["affected_audiences"] as string[]) : []),
-      priority_score: (recommendation["priority_score"] as Record<string, unknown>) ?? {},
+      priority_score: ((recommendation["priority_score"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
       confidence: (recommendation["confidence"] as string) ?? "possible",
       expected_outcome: (recommendation["expected_outcome"] as string) ?? "",
-      estimated_impact: (recommendation["estimated_incremental_revenue"] as Record<string, unknown>) ?? {},
-      estimated_cost: (recommendation["estimated_cost"] as Record<string, unknown>) ?? {},
-      estimated_effort: (recommendation["estimated_effort"] as Record<string, unknown>) ?? {},
+      estimated_impact: ((recommendation["estimated_incremental_revenue"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
+      estimated_cost: ((recommendation["estimated_cost"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
+      estimated_effort: ((recommendation["estimated_effort"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
       risk: ((recommendation["risk"] as "low" | "medium" | "high") ?? "medium"),
-      evidence_snapshot,
-      approval_requirements: (recommendation["approval_requirements"] as Record<string, unknown>) ?? {},
-      measurement_window: (recommendation["measurement_window"] as Record<string, unknown>) ?? {},
+      evidence_snapshot: evidenceSnapshot,
+      approval_requirements: ((recommendation["approval_requirements"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
+      measurement_window: ((recommendation["measurement_window"] as Record<string, unknown>) ?? ({} as Record<string, unknown>)),
       idempotencyKey,
       actor
     });

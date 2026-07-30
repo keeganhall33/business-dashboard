@@ -25,7 +25,7 @@ async function postJson(url: string, body: unknown, idempotencyKey?: string) {
   return json;
 }
 
-export function ActionCenterClient({ window, recommendations, actions }: Props) {
+export function ActionCenterClient({ window: measurementWindow, recommendations, actions }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -60,7 +60,7 @@ export function ActionCenterClient({ window, recommendations, actions }: Props) 
           key
         );
       } else if (kind === "ready") {
-        await postJson(`/api/actions/${actionId}/ready`, { actor: "ceo", measurement_window: window }, key);
+        await postJson(`/api/actions/${actionId}/ready`, { actor: "ceo", measurement_window: measurementWindow }, key);
       } else if (kind === "reject") {
         const reason = prompt("Rejection reason?");
         if (!reason) return;
@@ -69,7 +69,7 @@ export function ActionCenterClient({ window, recommendations, actions }: Props) 
         const until = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         await postJson(`/api/actions/${actionId}/snooze`, { actor: "ceo", snoozed_until: until }, key);
       }
-      window.location.reload();
+      globalThis.window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -85,10 +85,10 @@ export function ActionCenterClient({ window, recommendations, actions }: Props) 
         "/api/actions",
         {
           actor: "ceo",
-          window,
+          window: measurementWindow,
           recommendation: rec,
           evidence_snapshot: {
-            window,
+            window: measurementWindow,
             recommendation_id: rec.id,
             score: rec.priority_score,
             confidence: rec.confidence,
@@ -96,10 +96,10 @@ export function ActionCenterClient({ window, recommendations, actions }: Props) 
             limitations: rec.limitations
           }
         },
-        `create-${rec.id}-${window.startDate}-${window.endDate}`
+        `create-${rec.id}-${measurementWindow.startDate}-${measurementWindow.endDate}`
       );
       // Reload hard; simplest for now.
-      window.location.reload();
+      globalThis.window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

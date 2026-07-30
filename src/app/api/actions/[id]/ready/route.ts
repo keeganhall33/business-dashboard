@@ -15,6 +15,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const actor = String(body["actor"] ?? "ceo");
     const measurement_plan = body["measurement_window"];
     if (!measurement_plan || typeof measurement_plan !== "object") return badRequest("measurement_window required");
+    const measurementWindow = measurement_plan as Record<string, unknown>;
 
     const idempotencyKey = String(request.headers.get("x-idempotency-key") ?? "").trim();
     if (!idempotencyKey) return badRequest("Missing x-idempotency-key");
@@ -26,7 +27,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       actor,
       idempotencyKey,
       note: "Marked ready for approval",
-      patch: { measurement_window: measurement_plan }
+      patch: { measurement_window: measurementWindow }
     });
     return ok({ ok: true, action: updated });
   } catch (error) {

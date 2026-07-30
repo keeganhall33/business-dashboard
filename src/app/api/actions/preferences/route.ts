@@ -1,6 +1,6 @@
 import { ok, badRequest, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
-import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const idempotencyKey = String(request.headers.get("x-idempotency-key") ?? "").trim();
     if (!idempotencyKey) return badRequest("Missing x-idempotency-key");
 
-    const supabase = getSupabaseAdminClient();
+    const supabase = getSupabaseServerClient();
     const { error } = await supabase
       .from("action_preferences_v1")
       .upsert({ fingerprint, suppressed, suppress_reason: reason || null })
