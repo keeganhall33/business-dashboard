@@ -341,3 +341,45 @@ export async function listAuditEvents(actionId: string) {
   if (error) throw error;
   return data ?? [];
 }
+
+export async function updateDraftAssets(input: {
+  actionId: string;
+  actor: string;
+  idempotencyKey: string;
+  prepared_assets: unknown[];
+  execution_plan: Record<string, unknown>;
+}): Promise<DurableAction> {
+  requireWritesEnabled();
+  const supabase = getSupabaseAdminClient();
+  const current = await getAction(input.actionId);
+  if (!current) throw new Error("Action not found");
+  if (current.status !== "draft_prepared") {
+    throw new Error("Only draft_prepared actions can be edited");
+  }
+  const { error } = await supabase
+    .from("action_actions_v1")
+    .update({
+      prepared_assets: input.prepared_assets,
+      execution_plan: input.execution_plan,
+      last_idempotency_key: input.idempotencyKey
+    })
+    .eq("id", input.actionId);
+  if (error) throw error;
+
+  await insertAuditEvent({
+    action_id: input.actionId,
+    event_type: "draft_edited",
+    from_status: current.status,
+    to_status: current.status,
+    from_level: current.current_level,
+    to_level: current.current_level,
+    actor: input.actor,
+    idempotency_key: input.idempotencyKey,
+    note: "Edited prepared assets / execution preview",
+    metadata: {}
+  });
+
+  const updated = await getAction(input.actionId);
+  if (!updated) throw new Error("Failed to load updated action");
+  return updated;
+}

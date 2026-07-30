@@ -184,6 +184,12 @@ function Section(props: {
                 <div className="mt-1 text-xs text-zinc-500">
                   {a.category} • {a.channel} • confidence {a.confidence} • approval {a.approval_level} • level {a.current_level}
                 </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-zinc-500">
+                  {a.affected_products?.length ? <span>products: {a.affected_products.join(", ")}</span> : null}
+                  {a.affected_audiences?.length ? <span>audience: {a.affected_audiences.join(", ")}</span> : null}
+                  {a.risk ? <span>risk: {a.risk}</span> : null}
+                  {a.expires_at ? <span>expires: {new Date(a.expires_at).toISOString().slice(0, 10)}</span> : null}
+                </div>
                 {a.evidence_snapshot_hash ? <div className="mt-2 text-[11px] text-zinc-500">Evidence hash: {a.evidence_snapshot_hash.slice(0, 12)}…</div> : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
