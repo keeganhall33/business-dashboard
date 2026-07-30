@@ -46,30 +46,40 @@ async function fetchOverview({ start, end }) {
   return { status: res.status, json };
 }
 
-function pickWooFields(overview) {
+function pickOverviewFields(overview) {
   const woo = overview?.commerceTelemetry?.woo?.summary ?? null;
+  const ga4 = overview?.commerceTelemetry?.ga4?.summary ?? null;
+  const funnel = overview?.commerceTelemetry?.funnel?.summary ?? null;
+  const meta = overview?.metaAds?.summary ?? null;
+
   return {
     dataMode: overview?.dataMode ?? null,
     dataModeReason: overview?.dataModeReason ?? null,
     resolvedRange: overview?.range ?? null,
-    woo: woo
-      ? {
-          revenue: woo.revenue ?? null,
-          refundedTotal: woo.refundedTotal ?? null,
-          grossRevenue: woo.grossRevenue ?? null,
-          netRevenue: woo.netRevenue ?? null,
-          orders: woo.orders ?? null,
-          avgOrderValue: woo.avgOrderValue ?? null,
-          source: woo.source ?? null,
-          completeness: woo.completeness ?? null,
-          asOf: woo.asOf ?? null,
-          definitionVersion: woo.definitionVersion ?? null,
-          coverageStart: woo.coverageStart ?? null,
-          coverageEnd: woo.coverageEnd ?? null,
-          comparisonAvailable: woo.comparisonAvailable ?? null
-        }
-      : null,
-    telemetryMetadata: overview?.telemetryMetadata?.woo ?? null
+    telemetryHealth: overview?.telemetryHealth ?? null,
+    telemetryMetadata: overview?.telemetryMetadata ?? null,
+    commerceTelemetry: {
+      woo: woo
+        ? {
+            revenue: woo.revenue ?? null,
+            refundedTotal: woo.refundedTotal ?? null,
+            grossRevenue: woo.grossRevenue ?? null,
+            netRevenue: woo.netRevenue ?? null,
+            orders: woo.orders ?? null,
+            avgOrderValue: woo.avgOrderValue ?? null,
+            source: woo.source ?? null,
+            completeness: woo.completeness ?? null,
+            asOf: woo.asOf ?? null,
+            definitionVersion: woo.definitionVersion ?? null,
+            coverageStart: woo.coverageStart ?? null,
+            coverageEnd: woo.coverageEnd ?? null,
+            comparisonAvailable: woo.comparisonAvailable ?? null
+          }
+        : null,
+      ga4: ga4 ?? null,
+      funnel: funnel ?? null
+    },
+    metaAdsSummary: meta ?? null
   };
 }
 
@@ -220,7 +230,7 @@ async function main() {
   // Live-mode proof: use the prev 7d window as the initial proof.
   const proofFetch = await fetchOverview({ start: prev7Start, end: yesterday });
   assert(proofFetch.status === 200, `overview http ${proofFetch.status}`);
-  const proofFields = pickWooFields(proofFetch.json);
+  const proofFields = pickOverviewFields(proofFetch.json);
   safeWriteJson("live-mode-proof.json", proofFields);
 
   if (proofFields.dataMode === "SEED_DATA") {
@@ -242,7 +252,7 @@ async function main() {
 
   for (const r of ranges) {
     const api = await fetchOverview({ start: r.start, end: r.end });
-    const apiFields = pickWooFields(api.json);
+    const apiFields = pickOverviewFields(api.json);
 
     let sourceAgg = null;
     try {
@@ -253,7 +263,7 @@ async function main() {
 
     const row = evaluateRange(
       { label: r.key, expected: { requested: { start: r.start, end: r.end }, http_status: api.status } },
-      { ...apiFields, dataMode: apiFields.dataMode ?? null },
+      { ...apiFields, dataMode: apiFields.dataMode ?? null, woo: apiFields.commerceTelemetry?.woo ?? null, telemetryMetadata: apiFields.telemetryMetadata?.woo ?? null },
       sourceAgg && !sourceAgg.error ? sourceAgg : null
     );
 
