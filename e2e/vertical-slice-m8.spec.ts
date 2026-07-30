@@ -1,14 +1,19 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
 function artifactsDir() {
-  const dir = path.join(process.cwd(), ".artifacts", "milestone-8");
+  const override = process.env.M8_ARTIFACT_DIR?.trim();
+  const dir = override
+    ? path.isAbsolute(override)
+      ? override
+      : path.join(process.cwd(), override)
+    : path.join(process.cwd(), ".artifacts", "milestone-8");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-async function snap(pageName: string, page: any) {
+async function snap(pageName: string, page: Page) {
   const file = path.join(artifactsDir(), `${pageName}.png`);
   await page.screenshot({ path: file, fullPage: true });
   return file;
@@ -24,6 +29,11 @@ test.describe("Milestone 8 vertical slice proof", () => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
+    // Must be live or partial live; seed is not acceptable for reconciliation proof.
+    const mode = page.getByTestId("data-mode-indicator");
+    await expect(mode).toBeVisible();
+    await expect(mode).not.toHaveText(/seed data/i);
+
     // Navigation visible (mobile grid may be used in CI viewport; check by link text).
     await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Explain" })).toBeVisible();
@@ -38,12 +48,14 @@ test.describe("Milestone 8 vertical slice proof", () => {
     await page.getByTestId("range-preset-7d").click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\brange=7d\b/i);
+    await expect(mode).not.toHaveText(/seed data/i);
     await snap("02-dashboard-7d", page);
 
     // Explain.
     await page.getByRole("link", { name: "Explain" }).click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\/explain/);
+    await expect(mode).not.toHaveText(/seed data/i);
     await expect(page.getByText("Summary → Explanation")).toBeVisible();
     await snap("03-explain", page);
 
@@ -54,6 +66,7 @@ test.describe("Milestone 8 vertical slice proof", () => {
     await page.getByRole("link", { name: "Recommend" }).click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\/recommend/);
+    await expect(mode).not.toHaveText(/seed data/i);
     await expect(page.getByText(/Recommendations \(read-only\)/i)).toBeVisible();
     await snap("04-recommend", page);
 
@@ -61,17 +74,20 @@ test.describe("Milestone 8 vertical slice proof", () => {
     await page.getByRole("link", { name: "Data & Integrations" }).click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\/data/);
+    await expect(mode).not.toHaveText(/seed data/i);
     await expect(page.getByText(/Live telemetry health/i)).toBeVisible();
     await snap("05-data-integrations", page);
 
     // Act + Learn minimal views.
     await page.getByRole("link", { name: "Act" }).click();
     await page.waitForLoadState("networkidle");
+    await expect(mode).not.toHaveText(/seed data/i);
     await expect(page.getByText(/Act \(no execution\)/i)).toBeVisible();
     await snap("06-act", page);
 
     await page.getByRole("link", { name: "Learn" }).click();
     await page.waitForLoadState("networkidle");
+    await expect(mode).not.toHaveText(/seed data/i);
     await expect(page.locator("h1", { hasText: "Learn" })).toBeVisible();
     await snap("07-learn", page);
 

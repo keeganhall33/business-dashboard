@@ -50,7 +50,6 @@ function renderMetadata(meta: TelemetryMetadata | null | undefined) {
 
 export function ExplainVerticalSlice({ data }: { data: DashboardOverviewResponse }) {
   const brief = data.executiveInsights?.brief ?? null;
-  const trends = data.executiveInsights?.trends ?? [];
   const topChanges = brief?.topChanges ?? [];
   const missing = [
     "Email platform is not identified/connected",

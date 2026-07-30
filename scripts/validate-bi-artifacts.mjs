@@ -46,7 +46,9 @@ const actionSecurity = readJson('docs/bi-action-security-model.json');
 const integrationGap = readJson('docs/bi-integration-gap-analysis.json');
 const integrationPriority = readJson('docs/bi-integration-priority-map.json');
 const coverageMatrix = readJson('docs/bi-data-coverage-matrix.json');
-const connectorCaps = readJson('docs/bi-connector-capability-map.json');
+// NOTE: connector capability map is validated structurally via other integration artifacts.
+// Keep as a required JSON parse, but avoid unused variable warnings.
+readJson('docs/bi-connector-capability-map.json');
 const integrationRisks = readJson('docs/bi-integration-risk-register.json');
 
 // basic JSON structural checks
