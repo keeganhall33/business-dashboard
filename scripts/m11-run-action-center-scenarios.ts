@@ -709,6 +709,96 @@ async function approveActionExpectedReject(input: {
   return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Expected rejection did not match") };
 }
 
+async function approveAction(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; action: JsonObject | null; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "approve",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/approve`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", confirm: true }
+  });
+  input.steps.push(res.step);
+  if (!res.step.ok) return { ok: false, action: null, error: res.step.errorMessage ?? "Approve failed" };
+  const env = coerceObject(res.json);
+  const action = env && env["ok"] === true ? coerceObject(env["action"]) : null;
+  return { ok: true, action, error: null };
+}
+
+async function startMeasuringSynthetic(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "measure",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/measure`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo" }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Measure failed") };
+}
+
+async function recordSyntheticOutcomeStep(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  outcome_status: "successful" | "unsuccessful" | "inconclusive";
+  outcome_json: Record<string, unknown>;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "record_outcome",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/outcome`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", outcome_status: input.outcome_status, outcome_json: input.outcome_json }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Outcome record failed") };
+}
+
+async function completeMeasuringSynthetic(input: {
+  ctx: ScenarioRunnerContext;
+  steps: StepRecord[];
+  actionId: string;
+  result: "successful" | "unsuccessful" | "inconclusive";
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const res = await httpStep({
+    baseUrl: input.ctx.baseUrl,
+    token: input.ctx.token,
+    scenario: input.ctx.scenarioName,
+    step: "complete_measuring",
+    method: "POST",
+    path: `/api/actions/${input.actionId}/complete`,
+    expectedStatus: 200,
+    idempotencyKey: input.idempotencyKey,
+    body: { actor: "ceo", result: input.result }
+  });
+  input.steps.push(res.step);
+  return { ok: res.step.ok, error: res.step.ok ? null : (res.step.errorMessage ?? "Complete failed") };
+}
+
 export type ScenarioRunnerDef = {
   id: string;
   name: string;
@@ -1271,6 +1361,211 @@ export const SCENARIO_RUNNERS: ScenarioRunnerDef[] = [
       }
 
       return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "internal_l4_approval",
+    name: "10. Internal L4 approval with zero external execution",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "internal_l4_approval",
+        title: `M11 Harness (${ctx.harness_run_id}) — Internal L4 approval (no execution)`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "approval_only" }
+      });
+      if ("action_id" in created === false) return created.trace;
+
+      const steps = [...created.trace.steps];
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft", body: "Draft body" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = {
+        preview: "Internal-only preview. No external execution.",
+        steps: [{ type: "manual", note: "(Disabled) external execution" }]
+      };
+
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:10:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:10:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+
+      const approved = await approveAction({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:10:approve` });
+      if (!approved.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: approved.error };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_after_approve", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "approved") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve.assert_status", first_failure_status: 200, first_failure_error: `Expected status=approved, got ${String(fetched.action["status"] ?? "")}` };
+      }
+      if (String(fetched.action["current_level"] ?? "") !== "L4_APPROVED_FOR_EXECUTION") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve.assert_level", first_failure_status: 200, first_failure_error: `Expected current_level=L4_APPROVED_FOR_EXECUTION, got ${String(fetched.action["current_level"] ?? "")}` };
+      }
+      if (!String(fetched.action["approved_by"] ?? "") || !String(fetched.action["approved_at"] ?? "")) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve.assert_approved_fields", first_failure_status: 200, first_failure_error: "Expected approved_by and approved_at" };
+      }
+      if (fetched.action["executed_at"]) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_after_approve.assert_not_executed", first_failure_status: 200, first_failure_error: "Expected executed_at to be null" };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit_after_approve" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after_approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasApproved = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["to_status"] ?? "") === "approved";
+      });
+      if (!hasApproved) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit_after_approve.assert_event", first_failure_status: 200, first_failure_error: "Expected approval audit event" };
+      }
+
+      // Final read should remain approved/unexecuted.
+      const fetched2 = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_final", expectedStatus: 200 });
+      if (!fetched2.ok || !fetched2.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched2.error };
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched2.action["status"] ?? ""), final_approval_level: String(fetched2.action["current_level"] ?? "") };
+    }
+  },
+  {
+    id: "synthetic_success",
+    name: "11. Synthetic successful outcome",
+    run: async (ctx) => {
+      // Reuse scenario 10 approval flow, then measure + outcome + complete.
+      const created = await createAction({
+        ctx,
+        recSlug: "synthetic_success",
+        title: `M11 Harness (${ctx.harness_run_id}) — Synthetic successful outcome`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "synthetic_success" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft", body: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:11:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:11:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+      const approved = await approveAction({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:11:approve` });
+      if (!approved.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: approved.error };
+
+      const measure = await startMeasuringSynthetic({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:11:measure` });
+      if (!measure.ok) return { ...created.trace, pass: false, steps, first_failure_step: "measure", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: measure.error };
+
+      const outcome = await recordSyntheticOutcomeStep({
+        ctx,
+        steps,
+        actionId: created.action_id,
+        outcome_status: "successful",
+        outcome_json: { synthetic: true, result: "successful" },
+        idempotencyKey: `${ctx.harness_run_id}:11:outcome`
+      });
+      if (!outcome.ok) return { ...created.trace, pass: false, steps, first_failure_step: "record_outcome", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: outcome.error };
+
+      const complete = await completeMeasuringSynthetic({ ctx, steps, actionId: created.action_id, result: "successful", idempotencyKey: `${ctx.harness_run_id}:11:complete` });
+      if (!complete.ok) return { ...created.trace, pass: false, steps, first_failure_step: "complete_measuring", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: complete.error };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_final", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "successful") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final.assert_status", first_failure_status: 200, first_failure_error: `Expected status=successful, got ${String(fetched.action["status"] ?? "")}` };
+      }
+
+      const audit = await fetchAuditEvents({ ctx, steps, actionId: created.action_id, stepName: "fetch_audit" });
+      if (!audit.ok) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: audit.error };
+      const hasOutcomeAudit = audit.audit.some((e) => {
+        const obj = coerceObject(e);
+        return obj && String(obj["event_type"] ?? "") === "synthetic_outcome_recorded";
+      });
+      if (!hasOutcomeAudit) {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_audit.assert_outcome", first_failure_status: 200, first_failure_error: "Expected synthetic_outcome_recorded audit event" };
+      }
+
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "synthetic_failure",
+    name: "12. Synthetic unsuccessful outcome",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "synthetic_failure",
+        title: `M11 Harness (${ctx.harness_run_id}) — Synthetic unsuccessful outcome`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "synthetic_unsuccessful" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft", body: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:12:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:12:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+      const approved = await approveAction({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:12:approve` });
+      if (!approved.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: approved.error };
+
+      const measure = await startMeasuringSynthetic({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:12:measure` });
+      if (!measure.ok) return { ...created.trace, pass: false, steps, first_failure_step: "measure", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: measure.error };
+
+      const outcome = await recordSyntheticOutcomeStep({ ctx, steps, actionId: created.action_id, outcome_status: "unsuccessful", outcome_json: { synthetic: true, result: "unsuccessful", reason: "Harness" }, idempotencyKey: `${ctx.harness_run_id}:12:outcome` });
+      if (!outcome.ok) return { ...created.trace, pass: false, steps, first_failure_step: "record_outcome", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: outcome.error };
+
+      const complete = await completeMeasuringSynthetic({ ctx, steps, actionId: created.action_id, result: "unsuccessful", idempotencyKey: `${ctx.harness_run_id}:12:complete` });
+      if (!complete.ok) return { ...created.trace, pass: false, steps, first_failure_step: "complete_measuring", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: complete.error };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_final", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "unsuccessful") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final.assert_status", first_failure_status: 200, first_failure_error: `Expected status=unsuccessful, got ${String(fetched.action["status"] ?? "")}` };
+      }
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
+    }
+  },
+  {
+    id: "synthetic_inconclusive",
+    name: "13. Synthetic inconclusive outcome",
+    run: async (ctx) => {
+      const created = await createAction({
+        ctx,
+        recSlug: "synthetic_inconclusive",
+        title: `M11 Harness (${ctx.harness_run_id}) — Synthetic inconclusive outcome`,
+        category: "email",
+        channel: "email",
+        window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+        evidenceExtra: { lane: "synthetic_inconclusive" }
+      });
+      if ("action_id" in created === false) return created.trace;
+      const steps = [...created.trace.steps];
+      const prepared_assets = [{ id: "draft_email_campaign", label: "Email draft", kind: "email", content: { subject: "Draft", body: "Draft" }, watermark: "DRAFT_NOT_APPROVED" }];
+      const execution_plan = { preview: "Internal-only preview. No external execution.", steps: [{ type: "manual", note: "(Disabled)" }] };
+      const prep = await prepareDraft({ ctx, steps, actionId: created.action_id, prepared_assets, execution_plan, idempotencyKey: `${ctx.harness_run_id}:13:prepare` });
+      if (!prep.ok) return { ...created.trace, pass: false, steps, first_failure_step: "prepare", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: prep.error };
+      const ready = await markReady({ ctx, steps, actionId: created.action_id, measurement_window: { startDate: "2026-05-02", endDate: "2026-05-08" }, idempotencyKey: `${ctx.harness_run_id}:13:ready` });
+      if (!ready.ok) return { ...created.trace, pass: false, steps, first_failure_step: "ready", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: ready.error };
+      const approved = await approveAction({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:13:approve` });
+      if (!approved.ok) return { ...created.trace, pass: false, steps, first_failure_step: "approve", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: approved.error };
+
+      const measure = await startMeasuringSynthetic({ ctx, steps, actionId: created.action_id, idempotencyKey: `${ctx.harness_run_id}:13:measure` });
+      if (!measure.ok) return { ...created.trace, pass: false, steps, first_failure_step: "measure", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: measure.error };
+
+      const outcome = await recordSyntheticOutcomeStep({ ctx, steps, actionId: created.action_id, outcome_status: "inconclusive", outcome_json: { synthetic: true, result: "inconclusive", note: "Not enough time" }, idempotencyKey: `${ctx.harness_run_id}:13:outcome` });
+      if (!outcome.ok) return { ...created.trace, pass: false, steps, first_failure_step: "record_outcome", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: outcome.error };
+
+      const complete = await completeMeasuringSynthetic({ ctx, steps, actionId: created.action_id, result: "inconclusive", idempotencyKey: `${ctx.harness_run_id}:13:complete` });
+      if (!complete.ok) return { ...created.trace, pass: false, steps, first_failure_step: "complete_measuring", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: complete.error };
+
+      const fetched = await fetchAction({ ctx, steps, actionId: created.action_id, stepName: "fetch_final", expectedStatus: 200 });
+      if (!fetched.ok || !fetched.action) return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final", first_failure_status: steps.at(-1)?.actualStatus ?? null, first_failure_error: fetched.error };
+      if (String(fetched.action["status"] ?? "") !== "inconclusive") {
+        return { ...created.trace, pass: false, steps, first_failure_step: "fetch_final.assert_status", first_failure_status: 200, first_failure_error: `Expected status=inconclusive, got ${String(fetched.action["status"] ?? "")}` };
+      }
+      return { ...created.trace, pass: true, steps, final_status: String(fetched.action["status"] ?? ""), final_approval_level: String(fetched.action["approval_level"] ?? "") };
     }
   }
 ];
