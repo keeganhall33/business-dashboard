@@ -300,21 +300,31 @@ Defined in `docs/bi-source-event-mappings.json` for:
 - Manual finance snapshot (manual_only)
 - Opportunities/tasks/decisions/agent runs (connected_reliable)
 
-### Milestone 4 — Causal Explanation Architecture (started)
+### Milestone 4 — Causal Explanation Architecture (complete)
 
-Initial pipeline stages (draft):
-1. **Normalize**: convert source records → BusinessEvents (validated, deduped, time-normalized)
-2. **Detect**: identify meaningful deltas vs baseline windows (with coverage gates)
-3. **Candidate causes**: retrieve correlated events/touches + known patterns
-4. **Rank evidence**: score evidence by source reliability, freshness, and attribution model constraints
-5. **Explain**: generate explanations with confidence taxonomy + alternatives
-6. **Recommend**: generate ranked next actions with expected impact + risk
+Durable artifacts:
+- `docs/bi-causal-explanation-model.json`
+- `docs/bi-explanation-examples.json`
 
-Initial evidence-ranking rules (draft):
+Explanation pipeline stages (v1):
+1. **Normalize** source records → BusinessEvents (validate, dedupe, time-normalize, attach provenance)
+2. **Select window**: resolve analysis range + required-source coverage gates
+3. **Baseline selection**: previous-period / week-over-week / seasonal anchor (only when history supports)
+4. **Change detection**: detect meaningful deltas (revenue/orders/AOV/refunds/sessions/conversion)
+5. **Anomaly detection**: robust outlier detection + single-order outlier segmentation
+6. **Candidate-cause generation**: traffic, conversion, marketing, external events, commerce mechanics, data quality
+7. **Evidence ranking**: rank evidence by reliability + freshness + completeness + attribution validity + confound penalties
+8. **Alternative testing + confounders**: overlap, seasonality, outliers, refunds, inventory constraints, partial coverage
+9. **Confidence assignment**: confirmed/strongly_supported/likely/possible/insufficient_evidence
+10. **Explanation rendering**: allowed wording by confidence + mandatory provenance + missing-data disclosure
+11. **Recommendation handoff**: produce recommendation inputs; if insufficient evidence, only remediation recommendations
+
+Evidence-ranking rules (non-negotiable):
 - Prefer **confirmed** (exact telemetry + complete coverage) over snapshot/heuristic.
-- Never mix Woo exact revenue with platform-reported revenue in the same causal claim.
+- Never mix **Woo exact revenue** with platform-reported revenue in the same causal claim.
 - Require explicit attribution model + window to claim "attributed".
-- If coverage is partial/unknown, explanations must degrade to "insufficient evidence" or "possible".
+- If coverage is partial/unknown for required sources, downgrade confidence (often to insufficient evidence).
+- Overlapping campaigns force multi-cause reporting unless a validated touch model exists.
 
 ## 12) Evidence references (audit anchor list)
 
