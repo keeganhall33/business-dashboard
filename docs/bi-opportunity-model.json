@@ -1,0 +1,277 @@
+{
+  "generated_at": "2026-07-29T21:35:00-07:00",
+  "milestone": "M5_opportunity_architecture",
+  "version": "bi_opportunity_model_v1",
+  "types": [
+    {
+      "type": "high_conversion_low_traffic",
+      "detection": "conversion high relative to baseline while sessions low",
+      "min_data": ["Woo complete", "GA4 sessions (at least likely)"],
+      "exclusions": ["inventory constrained", "product unavailable"],
+      "confidence_gate": "likely",
+      "expected_value": "traffic_needed * conversion * aov",
+      "expiration": "7d",
+      "recommended_actions": ["feature_product", "scale_campaign", "redirect_traffic_to_product_page"]
+    },
+    {
+      "type": "high_traffic_low_conversion",
+      "detection": "sessions up but orders flat/down",
+      "min_data": ["GA4 sessions", "Woo complete"],
+      "exclusions": ["checkout outage", "data stale"],
+      "confidence_gate": "likely",
+      "expected_value": "sessions * potential_conversion_lift * aov",
+      "expiration": "7d",
+      "recommended_actions": ["fix_landing_page_before_scaling", "reduce_page_friction", "fix_checkout_issue"]
+    },
+    {
+      "type": "profitable_campaign_scaling",
+      "detection": "profit proxy positive and stable; frequency not rising materially",
+      "min_data": ["Meta aggregates", "Woo complete or matchback"],
+      "exclusions": ["attribution contradiction", "audience saturation"],
+      "confidence_gate": "possible",
+      "expected_value": "confidence_adjusted_incremental_revenue - incremental_cost",
+      "expiration": "3d",
+      "recommended_actions": ["scale_campaign", "duplicate_winning_ad"]
+    },
+    {
+      "type": "creative_fatigue",
+      "detection": "CTR stable/down; CVR down; frequency up",
+      "min_data": ["Meta frequency", "Woo orders"],
+      "exclusions": ["landing page change", "pricing change"],
+      "confidence_gate": "possible",
+      "expected_value": "prevented_revenue_loss",
+      "expiration": "3d",
+      "recommended_actions": ["refresh_creative", "create_new_hook_variations", "reduce_frequency"]
+    },
+    {
+      "type": "retargeting_gap",
+      "detection": "viewed product audience exists but no active retargeting",
+      "min_data": ["GA4/product views", "Meta audiences"],
+      "exclusions": ["privacy limits"],
+      "confidence_gate": "possible",
+      "expected_value": "audience_size * expected_cvr * aov",
+      "expiration": "14d",
+      "recommended_actions": ["create_retargeting_audience", "expand_prospecting"]
+    },
+    {
+      "type": "abandoned_cart_recovery",
+      "detection": "abandoned carts with high value",
+      "min_data": ["FunnelKit events"],
+      "exclusions": ["no email capture"],
+      "confidence_gate": "possible",
+      "expected_value": "cart_value * expected_recovery_rate",
+      "expiration": "7d",
+      "recommended_actions": ["recover_abandoned_cart"]
+    },
+    {
+      "type": "repeat_buyer_cross_sell",
+      "detection": "repeat buyer cohort with adjacent product affinity",
+      "min_data": ["Woo customer/order history"],
+      "exclusions": ["PII constraints"],
+      "confidence_gate": "possible",
+      "expected_value": "cohort_size * expected_take_rate * aov",
+      "expiration": "30d",
+      "recommended_actions": ["reactivate_past_buyers", "promote_related_product"]
+    },
+    {
+      "type": "collector_follow_up",
+      "detection": "high-value collector not contacted recently",
+      "min_data": ["collector records"],
+      "exclusions": ["do-not-contact"],
+      "confidence_gate": "possible",
+      "expected_value": "qualitative_high",
+      "expiration": "30d",
+      "recommended_actions": ["contact_collector", "prepare_personalized_outreach"]
+    },
+    {
+      "type": "stale_lead_reactivation",
+      "detection": "lead not touched within SLA",
+      "min_data": ["lead intelligence"],
+      "exclusions": ["lost"],
+      "confidence_gate": "possible",
+      "expected_value": "lead_value_estimate",
+      "expiration": "14d",
+      "recommended_actions": ["follow_up_lead", "close_stale_lead"]
+    },
+    {
+      "type": "underpromoted_best_seller",
+      "detection": "product has durable organic demand but low promotion",
+      "min_data": ["Woo product mix (future)", "social/meta activity"],
+      "exclusions": ["licensing limits"],
+      "confidence_gate": "possible",
+      "expected_value": "incremental_lift",
+      "expiration": "30d",
+      "recommended_actions": ["promote_underexposed_product", "send_campaign"]
+    },
+    {
+      "type": "seasonal_product_match",
+      "detection": "upcoming calendar moment aligns with known subject",
+      "min_data": ["knowledge model + calendar"],
+      "exclusions": ["no asset available"],
+      "confidence_gate": "possible",
+      "expected_value": "historical_anchor",
+      "expiration": "event_date",
+      "recommended_actions": ["align_product_with_current_event", "create_launch_sequence"]
+    },
+    {
+      "type": "geographic_demand",
+      "detection": "geo segment shows higher conversion",
+      "min_data": ["GA4 geo", "Woo geo (future)"],
+      "exclusions": ["insufficient sample"],
+      "confidence_gate": "possible",
+      "expected_value": "geo uplift",
+      "expiration": "14d",
+      "recommended_actions": ["change_audience", "feature_local_market_subject"]
+    },
+    {
+      "type": "local_sports_moment",
+      "detection": "team news spike correlates with demand",
+      "min_data": ["external events + sales"],
+      "exclusions": ["confounds"],
+      "confidence_gate": "possible",
+      "expected_value": "moment uplift",
+      "expiration": "72h",
+      "recommended_actions": ["promote_media_appearance", "post_at_recommended_time"]
+    },
+    {
+      "type": "media_amplification",
+      "detection": "press mention with traffic spike",
+      "min_data": ["industry pulse", "GA4 sessions"],
+      "exclusions": ["no traffic change"],
+      "confidence_gate": "possible",
+      "expected_value": "short-term uplift",
+      "expiration": "7d",
+      "recommended_actions": ["promote_media_appearance", "feature_product"]
+    },
+    {
+      "type": "partner_amplification",
+      "detection": "celebrity/partner share",
+      "min_data": ["social events"],
+      "exclusions": [],
+      "confidence_gate": "possible",
+      "expected_value": "assisted demand",
+      "expiration": "72h",
+      "recommended_actions": ["create_retargeting_audience", "send_campaign"]
+    },
+    {
+      "type": "email_segment_gap",
+      "detection": "high intent cohort not emailed",
+      "min_data": ["email platform events (future)", "Woo"],
+      "exclusions": ["over-emailing constraint"],
+      "confidence_gate": "possible",
+      "expected_value": "segment lift",
+      "expiration": "7d",
+      "recommended_actions": ["segment_campaign", "send_campaign"]
+    },
+    {
+      "type": "content_reuse",
+      "detection": "winning content exists; cadence gap",
+      "min_data": ["social performance history"],
+      "exclusions": [],
+      "confidence_gate": "possible",
+      "expected_value": "effort leverage",
+      "expiration": "30d",
+      "recommended_actions": ["reuse_winning_content", "publish_process_video"]
+    },
+    {
+      "type": "bundle_opportunity",
+      "detection": "products frequently bought together",
+      "min_data": ["Woo line items (future)"],
+      "exclusions": ["inventory"],
+      "confidence_gate": "possible",
+      "expected_value": "aov lift",
+      "expiration": "30d",
+      "recommended_actions": ["create_bundle"]
+    },
+    {
+      "type": "pricing_experiment",
+      "detection": "high demand; conversion stable; margin unknown",
+      "min_data": ["Woo", "finance (future)"],
+      "exclusions": ["premium positioning risk"],
+      "confidence_gate": "possible",
+      "expected_value": "profit lift",
+      "expiration": "30d",
+      "recommended_actions": ["test_price"]
+    },
+    {
+      "type": "scarcity_opportunity",
+      "detection": "signed/limited inventory nearing depletion",
+      "min_data": ["inventory (future)"],
+      "exclusions": ["no inventory data"],
+      "confidence_gate": "possible",
+      "expected_value": "conversion urgency",
+      "expiration": "inventory_depletion",
+      "recommended_actions": ["emphasize_scarcity"]
+    },
+    {
+      "type": "product_page_friction",
+      "detection": "high traffic to PDP; low add-to-cart",
+      "min_data": ["GA4 ecommerce events (future)"],
+      "exclusions": [],
+      "confidence_gate": "possible",
+      "expected_value": "conversion lift",
+      "expiration": "7d",
+      "recommended_actions": ["update_product_page", "add_social_proof"]
+    },
+    {
+      "type": "checkout_friction",
+      "detection": "begin checkout up; purchases flat",
+      "min_data": ["funnel events"],
+      "exclusions": [],
+      "confidence_gate": "possible",
+      "expected_value": "conversion lift",
+      "expiration": "7d",
+      "recommended_actions": ["fix_checkout_issue", "reduce_page_friction"]
+    },
+    {
+      "type": "organic_demand_without_promotion",
+      "detection": "sales continue for product with no active promotion",
+      "min_data": ["Woo product-level sales (future)"],
+      "exclusions": [],
+      "confidence_gate": "possible",
+      "expected_value": "scale opportunity",
+      "expiration": "30d",
+      "recommended_actions": ["promote_underexposed_product"]
+    },
+    {
+      "type": "high_engagement_low_sales",
+      "detection": "social engagement high; sales flat",
+      "min_data": ["social", "Woo"],
+      "exclusions": ["traffic not increased"],
+      "confidence_gate": "possible",
+      "expected_value": "fix conversion",
+      "expiration": "7d",
+      "recommended_actions": ["redirect_traffic_to_product_page", "create_landing_page"]
+    },
+    {
+      "type": "channel_assist_opportunity",
+      "detection": "assisted touches rise but direct attribution absent",
+      "min_data": ["touch model (future)"],
+      "exclusions": [],
+      "confidence_gate": "insufficient_evidence",
+      "expected_value": "unknown",
+      "expiration": "n/a",
+      "recommended_actions": ["reconcile_attribution", "improve_tracking"]
+    },
+    {
+      "type": "attribution_repair",
+      "detection": "platform-reported revenue diverges from Woo; missing join keys",
+      "min_data": ["Woo", "Meta/GA4"],
+      "exclusions": [],
+      "confidence_gate": "confirmed",
+      "expected_value": "higher decision quality",
+      "expiration": "n/a",
+      "recommended_actions": ["reconcile_attribution", "improve_tracking"]
+    },
+    {
+      "type": "data_quality_remediation",
+      "detection": "stale/failed ingestion or partial coverage",
+      "min_data": ["ingestion run logs"],
+      "exclusions": [],
+      "confidence_gate": "confirmed",
+      "expected_value": "restore trust",
+      "expiration": "n/a",
+      "recommended_actions": ["repair_data_source", "refresh_stale_source", "wait_for_more_data"]
+    }
+  ]
+}

@@ -3,6 +3,82 @@
   "milestone": "M1_current_state_audit",
   "records": [
     {
+      "id": "model_bi_opportunity_v1",
+      "name": "Opportunity taxonomy + detection gates (architecture)",
+      "category": "bi_architecture",
+      "status": "placeholder_or_seed",
+      "source_system": "internal",
+      "ingestion": {
+        "type": "discovery_artifact",
+        "paths": [
+          "docs/bi-opportunity-model.json"
+        ]
+      },
+      "storage": {
+        "type": "not_implemented",
+        "locations": []
+      },
+      "api": {
+        "routes": []
+      },
+      "ui": {
+        "components": []
+      },
+      "scheduler": {
+        "type": "n/a"
+      },
+      "freshness": "n/a",
+      "history": "n/a",
+      "confidence": "confirmed",
+      "action_level": 0,
+      "gaps": [
+        "Not implemented yet; defines opportunity detection"
+      ],
+      "evidence_files": [
+        "docs/bi-opportunity-model.json"
+      ]
+    },
+    {
+      "id": "model_bi_recommendation_v1",
+      "name": "Recommendation lifecycle + schema + gates (architecture)",
+      "category": "bi_architecture",
+      "status": "placeholder_or_seed",
+      "source_system": "internal",
+      "ingestion": {
+        "type": "discovery_artifact",
+        "paths": [
+          "docs/bi-recommendation-model.json",
+          "docs/bi-recommendation-evaluation.json",
+          "docs/bi-recommendation-examples.json"
+        ]
+      },
+      "storage": {
+        "type": "not_implemented",
+        "locations": []
+      },
+      "api": {
+        "routes": []
+      },
+      "ui": {
+        "components": []
+      },
+      "scheduler": {
+        "type": "n/a"
+      },
+      "freshness": "n/a",
+      "history": "n/a",
+      "confidence": "confirmed",
+      "action_level": 0,
+      "gaps": [
+        "Not implemented yet; defines recommendation engine and Action Center handoff"
+      ],
+      "evidence_files": [
+        "docs/bi-recommendation-model.json",
+        "docs/bi-recommendation-evaluation.json",
+        "docs/bi-recommendation-examples.json"
+      ]
+    },
+    {
       "id": "model_bi_event_model_v1",
       "name": "Canonical Business Event + Knowledge Model",
       "category": "bi_architecture",

@@ -32,6 +32,11 @@ const examples = readJson('docs/bi-event-model-examples.json');
 const scorecard = readJson('docs/bi-dashboard-scorecard.json');
 const inventory = readJson('docs/bi-source-inventory.json');
 
+const recModel = readJson('docs/bi-recommendation-model.json');
+const oppModel = readJson('docs/bi-opportunity-model.json');
+const recExamples = readJson('docs/bi-recommendation-examples.json');
+const recEval = readJson('docs/bi-recommendation-evaluation.json');
+
 // basic JSON structural checks
 assert(Array.isArray(model.entities?.list), 'model.entities.list missing');
 assert(model.entities.list.length > 0, 'model.entities.list empty');
@@ -69,10 +74,59 @@ for (const m of mappings.mappings) {
   for (const ce of m.canonical_events || []) {
     assert(eventTypes.has(ce.event_type), `mapping references undefined event_type: ${ce.event_type}`);
     if (ce.confidence) {
-      // allow these freeform mappings but if present, enforce vocabulary
       assert(allowedConfidence.has(ce.confidence), `mapping confidence out of vocab: ${ce.confidence}`);
     }
   }
+}
+
+// Recommendation model sanity
+{
+  assert(Array.isArray(recModel.lifecycle) && recModel.lifecycle.length > 0, 'recModel.lifecycle missing');
+  assert(typeof recModel.schema === 'object', 'recModel.schema missing');
+  // ensure wait_for_more_data and take_no_action exist
+  const ops = recModel.categories?.data_operations || [];
+  assert(ops.includes('wait_for_more_data'), 'recModel must include wait_for_more_data');
+  assert(ops.includes('take_no_action'), 'recModel must include take_no_action');
+}
+
+// Opportunity model sanity
+{
+  assert(Array.isArray(oppModel.types) && oppModel.types.length > 0, 'oppModel.types missing');
+  const typeSet = new Set();
+  for (const t of oppModel.types) {
+    assert(typeof t.type === 'string' && t.type.length, 'opportunity type missing');
+    assert(!typeSet.has(t.type), `duplicate opportunity type: ${t.type}`);
+    typeSet.add(t.type);
+    assert(Array.isArray(t.recommended_actions), `opportunity ${t.type} missing recommended_actions`);
+    for (const a of t.recommended_actions) {
+      // action should exist as a recommendation type in some category
+      const allRecTypes = Object.values(recModel.categories || {}).flat();
+      assert(allRecTypes.includes(a), `opportunity action ${a} not in recommendation categories`);
+    }
+  }
+}
+
+// Recommendation examples sanity
+{
+  assert(Array.isArray(recExamples.examples), 'recExamples.examples missing');
+  assert(recExamples.examples.length >= 20, 'must have at least 20 recommendation examples');
+  const allRecTypes = new Set(Object.values(recModel.categories || {}).flat());
+  const oppTypes = new Set((oppModel.types || []).map((t) => t.type));
+  const ids = new Set();
+  for (const ex of recExamples.examples) {
+    assert(typeof ex.id === 'string' && ex.id.length, 'rec example missing id');
+    assert(!ids.has(ex.id), `duplicate rec example id: ${ex.id}`);
+    ids.add(ex.id);
+    assert(allRecTypes.has(ex.recommendation_type), `rec example uses undefined recommendation_type: ${ex.recommendation_type}`);
+    assert(oppTypes.has(ex.opportunity), `rec example uses undefined opportunity type: ${ex.opportunity}`);
+    assert(allowedConfidence.has(ex.confidence), `rec example uses invalid confidence: ${ex.confidence}`);
+  }
+}
+
+// Recommendation evaluation sanity
+{
+  assert(Array.isArray(recEval.methods) && recEval.methods.length > 0, 'recEval.methods missing');
+  assert(Array.isArray(recEval.learning_rules) && recEval.learning_rules.length > 0, 'recEval.learning_rules missing');
 }
 
 // examples sanity

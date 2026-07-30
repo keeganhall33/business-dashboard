@@ -326,7 +326,49 @@ Evidence-ranking rules (non-negotiable):
 - If coverage is partial/unknown for required sources, downgrade confidence (often to insufficient evidence).
 - Overlapping campaigns force multi-cause reporting unless a validated touch model exists.
 
-## 12) Evidence references (audit anchor list)
+## 12) Milestone 5 — Recommendation + Opportunity Architecture (complete)
+
+Durable artifacts:
+- `docs/bi-recommendation-model.json`
+- `docs/bi-opportunity-model.json`
+- `docs/bi-recommendation-examples.json` (20 examples)
+- `docs/bi-recommendation-evaluation.json`
+
+Key outputs:
+- full recommendation lifecycle (signal → explanation → opportunity → recommendation → prepared action → approval → execution → outcome → evaluation)
+- canonical recommendation schema + status transitions + dedup/idempotency + expiration
+- categories covering paid ads, email, website, social, sales/collectors, product/merchandising, and data/ops (includes wait_for_more_data + take_no_action)
+- opportunity taxonomy with detection conditions + minimum data requirements + exclusions + confidence gates
+- transparent gates + "why this recommendation" evidence packet requirements
+- impact estimation tiers with range-based estimates (no false precision)
+- conflict detection + precedence rules
+- memory rules preventing repeated rejected or conflicting advice
+
+## 13) Milestone 6 — Action Preparation + Approval Model (started)
+
+### L0–L5 action levels
+
+- **L0 Insight only:** explain what happened (no recommendation)
+- **L1 Recommendation:** propose a specific next action
+- **L2 Draft prepared:** generate editable draft (copy/brief/config diff), no approval requested
+- **L3 Ready for approval:** show exact diff, expected impact, risks, rollback plan, measurement plan
+- **L4 Approved execution:** execute only after explicit approval; record immutable receipt
+- **L5 Measurement + learning:** evaluate outcomes; store lessons; update ranking/memory
+
+### Approval state model (draft)
+
+States: `draft_prepared` → `approval_requested` → (`approved` | `rejected`) → (`executed` | `expired`) → (`measuring` → `evaluated`).
+
+### Side-effect boundaries (non-negotiable)
+
+Never auto-execute without explicit approval:
+- ad budget increases / new campaigns
+- emails or public posts
+- customer contact
+- price/discount/coupon changes
+- production DB mutations beyond ingestion runbooks
+
+## 14) Evidence references (audit anchor list)
 
 - Workflows: `.github/workflows/dashboard-scheduler.yml`
 - CI templates: `.env.website.ci`, `.env.meta.ci`, `.env.leads.ci`, `.env.cloudflare.ci`, `.env.woo.ci`
