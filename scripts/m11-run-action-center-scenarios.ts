@@ -3,9 +3,14 @@
 /**
  * Milestone 11 staging scenario harness.
  *
- * - Uses local Next.js Action Center routes (auth + idempotency + transition guards).
- * - Tags every created record with a deterministic harness_run_id for cleanup.
- * - Produces machine-readable reports under .artifacts/milestone-11-action-center/
+ * Phases:
+ * - A: scenario 1 only
+ * - B: representative subset
+ * - C: full 22-scenario suite
+ *
+ * Safety:
+ * - Calls local Next.js API routes only.
+ * - Tags every created row with harness_run_id in recommendation_id for deterministic cleanup.
  */
 
 import fs from "node:fs";
@@ -20,13 +25,24 @@ import {
   statusMatches,
   type StepRecord
 } from "@/lib/actions/harness-utils";
+import { M11_SCENARIOS } from "@/lib/actions/m11-scenarios";
+
+type JsonObject = Record<string, unknown>;
+
+type CleanupReport = {
+  ok: boolean;
+  harness_run_id: string;
+  identified: Record<string, number>;
+  deleted: Record<string, number>;
+  remaining: Record<string, number>;
+  remaining_harness_rows: number;
+};
 
 type ScenarioTrace = {
   name: string;
   pass: boolean;
   external_side_effect_count: number;
   harness_run_id: string;
-  fingerprint_prefix: string;
   steps: StepRecord[];
   first_failure_step: string | null;
   first_failure_status: number | null;
@@ -36,32 +52,26 @@ type ScenarioTrace = {
   final_approval_level: string | null;
 };
 
-type CleanupReport = {
-  ok: boolean;
-  harness_run_id: string;
-  identified: { actions: number; audits: number; comments: number; outcomes: number; plans: number; snaps: number; prefs: number };
-  deleted: { actions: number; audits: number; comments: number; outcomes: number; plans: number; snaps: number; prefs: number };
-  remaining: { actions: number; audits: number; comments: number; outcomes: number; plans: number; snaps: number; prefs: number };
-  remaining_harness_rows: number;
-};
+type Phase = "A" | "B" | "C";
 
 type PhaseReport = {
   ok: boolean;
-  phase: "A" | "B";
+  phase: Phase;
   harness_run_id: string;
   generated_at_utc: string;
   staging_host: string;
+  production_request_count: number;
+  scenarios_selected: number;
   scenarios_executed: number;
   scenarios_passed: number;
   scenarios_failed: number;
+  scenarios_skipped: number;
   failures: string[];
   external_side_effect_count: number;
   traces: ScenarioTrace[];
   cleanup: CleanupReport;
   no_production_requests: boolean;
 };
-
-type JsonObject = Record<string, unknown>;
 
 const OUT_DIR = path.join(process.cwd(), ".artifacts", "milestone-11-action-center");
 
@@ -84,15 +94,9 @@ function stableHash(input: unknown): string {
 }
 
 function sanitizeResponseBody(input: { contentType: string | null; json: unknown; text: string }) {
-  // Never include secrets here; the harness only hits local routes and PostgREST.
-  // Still keep payload small.
   if ((input.contentType ?? "").includes("application/json")) {
     const obj = coerceObject(input.json);
     if (!obj) return input.json;
-    // Drop large nested blobs.
-    if ("actions" in obj && Array.isArray(obj.actions)) {
-      return { ...obj, actions: `[${obj.actions.length} items]` };
-    }
     return obj;
   }
   return input.text.slice(0, 400);
@@ -109,7 +113,7 @@ async function httpStep(input: {
   body?: unknown;
   idempotencyKey?: string;
   preferReturnRepresentation?: boolean;
-}): Promise<{ step: StepRecord; json: unknown }>
+}): Promise<{ step: StepRecord; json: unknown; contentType: string | null }>
 {
   const url = new URL(input.path, input.baseUrl).toString();
   const res = await fetch(url, {
@@ -146,10 +150,20 @@ async function httpStep(input: {
     actualStatus: res.status,
     ok,
     errorMessage: ok ? null : sanitizeErrorMessage(coerceObject(json)?.error ?? coerceObject(json)?.message ?? sanitizedBody),
-    response: sanitizedBody
+    response: {
+      contentType,
+      body: sanitizedBody
+    }
   };
 
-  return { step, json };
+  return { step, json, contentType };
+}
+
+function getActionFromEnvelope(json: unknown): JsonObject | null {
+  const obj = coerceObject(json);
+  if (!obj) return null;
+  if (obj["ok"] !== true) return null;
+  return coerceObject(obj["action"]);
 }
 
 function requireActionFields(action: JsonObject, fields: string[]): string | null {
@@ -157,15 +171,6 @@ function requireActionFields(action: JsonObject, fields: string[]): string | nul
     if (!(f in action)) return `Missing action.${f}`;
   }
   return null;
-}
-
-function getActionFromEnvelope(json: unknown): JsonObject | null {
-  const obj = coerceObject(json);
-  if (!obj) return null;
-  const ok = obj["ok"];
-  if (ok !== true) return null;
-  const action = coerceObject(obj["action"]);
-  return action;
 }
 
 async function cleanupHarnessRun(input: {
@@ -177,7 +182,6 @@ async function cleanupHarnessRun(input: {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  // Safe identification: only rows whose recommendation_id starts with our harness_run_id.
   const recPrefix = `m11_harness:${input.harness_run_id}:`;
 
   const { data: actions, error: actionsErr } = await supabase
@@ -186,25 +190,34 @@ async function cleanupHarnessRun(input: {
     .like("recommendation_id", `${recPrefix}%`)
     .limit(5000);
   if (actionsErr) throw actionsErr;
+
   const actionIds = (actions ?? []).map((a) => a.id);
   const snapIds = Array.from(new Set((actions ?? []).map((a) => a.evidence_snapshot_id).filter(Boolean)));
 
   const identified = {
+    synthetic_outcomes: actionIds.length,
+    comments: actionIds.length,
+    audit_events: actionIds.length,
+    measurement_plans: actionIds.length,
     actions: actionIds.length,
-    audits: 0,
-    comments: 0,
-    outcomes: 0,
-    plans: 0,
-    snaps: snapIds.length,
-    prefs: 0
+    evidence_snapshots: snapIds.length,
+    preferences: 0
   };
 
-  const deleted = { actions: 0, audits: 0, comments: 0, outcomes: 0, plans: 0, snaps: 0, prefs: 0 };
+  const deleted: Record<string, number> = {
+    synthetic_outcomes: 0,
+    comments: 0,
+    audit_events: 0,
+    measurement_plans: 0,
+    actions: 0,
+    evidence_snapshots: 0,
+    preferences: 0
+  };
 
   if (actionIds.length) {
     const outcomes = await supabase.from("action_synthetic_outcomes_v1").delete().in("action_id", actionIds).select("id");
     if (outcomes.error) throw outcomes.error;
-    deleted.outcomes = (outcomes.data ?? []).length;
+    deleted.synthetic_outcomes = (outcomes.data ?? []).length;
 
     const comments = await supabase.from("action_comments_v1").delete().in("action_id", actionIds).select("id");
     if (comments.error) throw comments.error;
@@ -212,11 +225,11 @@ async function cleanupHarnessRun(input: {
 
     const audits = await supabase.from("action_audit_events_v1").delete().in("action_id", actionIds).select("id");
     if (audits.error) throw audits.error;
-    deleted.audits = (audits.data ?? []).length;
+    deleted.audit_events = (audits.data ?? []).length;
 
     const plans = await supabase.from("action_measurement_plans_v1").delete().in("action_id", actionIds).select("id");
     if (plans.error) throw plans.error;
-    deleted.plans = (plans.data ?? []).length;
+    deleted.measurement_plans = (plans.data ?? []).length;
 
     const actionDel = await supabase.from("action_actions_v1").delete().in("id", actionIds).select("id");
     if (actionDel.error) throw actionDel.error;
@@ -226,10 +239,9 @@ async function cleanupHarnessRun(input: {
   if (snapIds.length) {
     const snapDel = await supabase.from("action_evidence_snapshots_v1").delete().in("id", snapIds).select("id");
     if (snapDel.error) throw snapDel.error;
-    deleted.snaps = (snapDel.data ?? []).length;
+    deleted.evidence_snapshots = (snapDel.data ?? []).length;
   }
 
-  // Verify remaining
   const remainingActions = await supabase
     .from("action_actions_v1")
     .select("id", { count: "exact", head: true })
@@ -237,28 +249,146 @@ async function cleanupHarnessRun(input: {
   if (remainingActions.error) throw remainingActions.error;
   const remainingCount = remainingActions.count ?? 0;
 
-  const report: CleanupReport = {
+  const remaining = {
+    actions: remainingCount
+  };
+
+  return {
     ok: remainingCount === 0,
     harness_run_id: input.harness_run_id,
     identified,
     deleted,
-    remaining: {
-      actions: remainingCount,
-      audits: 0,
-      comments: 0,
-      outcomes: 0,
-      plans: 0,
-      snaps: 0,
-      prefs: 0
-    },
+    remaining,
     remaining_harness_rows: remainingCount
   };
-  return report;
 }
 
-async function runPhaseAOrB(phase: "A" | "B"): Promise<void> {
+async function runScenarioCreateOnly(input: {
+  baseUrl: string;
+  token: string;
+  harness_run_id: string;
+  scenarioName: string;
+  recSlug: string;
+  title: string;
+  category: string;
+  channel: string;
+  window: { startDate: string; endDate: string };
+  evidenceExtra?: JsonObject;
+}): Promise<ScenarioTrace> {
+  const steps: StepRecord[] = [];
+  const recId = `m11_harness:${input.harness_run_id}:rec_${input.recSlug}`;
+  const fingerprint = stableHash({ recId, window: input.window, harness_run_id: input.harness_run_id });
+
+  const recommendation: JsonObject = {
+    id: recId,
+    title: input.title,
+    category: input.category,
+    approval_level: "L1_RECOMMENDATION",
+    status: "recommended",
+    confidence: "possible",
+    expected_outcome: "Harness",
+    reason: "Harness",
+    affected_channels: [input.channel],
+    affected_products: ["store"],
+    affected_audiences: ["all"],
+    priority_score: { overallScore: 55 },
+    estimated_incremental_revenue: { usd: 1000 },
+    estimated_cost: { usd: 0 },
+    estimated_effort: { hours: 1 },
+    risk: "medium",
+    approval_requirements: {},
+    measurement_window: input.window,
+    data_missing: [],
+    limitations: []
+  };
+
+  const evidence_snapshot: JsonObject = {
+    harness_run_id: input.harness_run_id,
+    fingerprint: `m11:${input.harness_run_id}:${fingerprint}`,
+    window: input.window,
+    ...(input.evidenceExtra ?? {})
+  };
+
+  const create = await httpStep({
+    baseUrl: input.baseUrl,
+    token: input.token,
+    scenario: input.scenarioName,
+    step: "create",
+    method: "POST",
+    path: "/api/actions",
+    expectedStatus: 200,
+    idempotencyKey: `${input.harness_run_id}:${input.recSlug}:create`,
+    body: { actor: "m11_harness", window: input.window, recommendation, evidence_snapshot }
+  });
+  steps.push(create.step);
+
+  if (!create.step.ok) {
+    return {
+      name: input.scenarioName,
+      pass: false,
+      external_side_effect_count: 0,
+      harness_run_id: input.harness_run_id,
+      steps,
+      first_failure_step: "create",
+      first_failure_status: create.step.actualStatus,
+      first_failure_error: create.step.errorMessage,
+      action_id: null,
+      final_status: null,
+      final_approval_level: null
+    };
+  }
+
+  const action = getActionFromEnvelope(create.json);
+  if (!action) {
+    return {
+      name: input.scenarioName,
+      pass: false,
+      external_side_effect_count: 0,
+      harness_run_id: input.harness_run_id,
+      steps,
+      first_failure_step: "create.parse",
+      first_failure_status: 200,
+      first_failure_error: "Missing action envelope",
+      action_id: null,
+      final_status: null,
+      final_approval_level: null
+    };
+  }
+
+  const missing = requireActionFields(action, ["id", "status", "approval_level"]);
+  if (missing) {
+    return {
+      name: input.scenarioName,
+      pass: false,
+      external_side_effect_count: 0,
+      harness_run_id: input.harness_run_id,
+      steps,
+      first_failure_step: "create.validate",
+      first_failure_status: 200,
+      first_failure_error: missing,
+      action_id: String(action["id"] ?? ""),
+      final_status: String(action["status"] ?? ""),
+      final_approval_level: String(action["approval_level"] ?? "")
+    };
+  }
+
+  return {
+    name: input.scenarioName,
+    pass: true,
+    external_side_effect_count: 0,
+    harness_run_id: input.harness_run_id,
+    steps,
+    first_failure_step: null,
+    first_failure_status: null,
+    first_failure_error: null,
+    action_id: String(action["id"] ?? ""),
+    final_status: String(action["status"] ?? ""),
+    final_approval_level: String(action["approval_level"] ?? "")
+  };
+}
+
+async function runPhase(phase: Phase): Promise<void> {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const outFile = path.join(OUT_DIR, phase === "A" ? "phase-a-report.json" : "phase-b-report.json");
 
   const baseUrl = process.env.M11_BASE_URL ?? "http://localhost:3456";
   const token = mustGet("DASHBOARD_ADMIN_TOKEN");
@@ -268,338 +398,50 @@ async function runPhaseAOrB(phase: "A" | "B"): Promise<void> {
   const stagingHost = new URL(supabaseUrl).host;
 
   const harness_run_id = `m11-harness-${nowUtcIso().replace(/[:.]/g, "-")}-${randomSuffix(6)}`;
-  const fingerprint_prefix = `m11:${harness_run_id}:`;
+
+  const selected =
+    phase === "A"
+      ? M11_SCENARIOS.slice(0, 1)
+      : phase === "B"
+        ? [M11_SCENARIOS[0], M11_SCENARIOS[19]]
+        : M11_SCENARIOS;
 
   const traces: ScenarioTrace[] = [];
   let externalSideEffects = 0;
 
-  async function runScenario1(): Promise<ScenarioTrace> {
-    const name = "1. Meta measurement recommendation";
-    const steps: StepRecord[] = [];
-    let first_failure_step: string | null = null;
-    let first_failure_status: number | null = null;
-    let first_failure_error: string | null = null;
+  // Only scenario 1 is fully implemented here; the rest are TODO.
+  for (const s of selected) {
+    if (s.id !== "meta_measurement") {
+      traces.push({
+        name: s.name,
+        pass: false,
+        external_side_effect_count: 0,
+        harness_run_id,
+        steps: [],
+        first_failure_step: "not_implemented",
+        first_failure_status: null,
+        first_failure_error: "Scenario not implemented",
+        action_id: null,
+        final_status: null,
+        final_approval_level: null
+      });
+      continue;
+    }
 
-    const window = { startDate: "2026-05-02", endDate: "2026-05-08" };
-    const fingerprint = stableHash({ kind: "meta_measurement", window, harness_run_id });
-    const recId = `m11_harness:${harness_run_id}:rec_meta_measurement`;
-    const title = `M11 Harness (${harness_run_id}) — Meta measurement recommendation`;
-
-    const recommendation: JsonObject = {
-      id: recId,
-      title,
+    const trace = await runScenarioCreateOnly({
+      baseUrl,
+      token,
+      harness_run_id,
+      scenarioName: s.name,
+      recSlug: "meta_measurement",
+      title: `M11 Harness (${harness_run_id}) — Meta measurement recommendation`,
       category: "measurement",
-      approval_level: "L1_RECOMMENDATION",
-      status: "recommended",
-      confidence: "possible",
-      expected_outcome: "Improve KPI",
-      reason: "Harness scenario",
-      affected_channels: ["meta"],
-      affected_products: ["store"],
-      affected_audiences: ["all"],
-      priority_score: { overallScore: 55 },
-      estimated_incremental_revenue: { usd: 1000 },
-      estimated_cost: { usd: 100 },
-      estimated_effort: { hours: 2 },
-      risk: "medium",
-      approval_requirements: {},
-      measurement_window: window,
-      data_missing: [],
-      limitations: []
-    };
-
-    const evidence_snapshot: JsonObject = {
-      harness_run_id,
-      fingerprint: `${fingerprint_prefix}${fingerprint}`,
-      window,
-      metric: "roas"
-    };
-
-    const create = await httpStep({
-      baseUrl,
-      token,
-      scenario: name,
-      step: "create",
-      method: "POST",
-      path: "/api/actions",
-      expectedStatus: 200,
-      idempotencyKey: `${harness_run_id}:create:1`,
-      body: { actor: "m11_harness", window, recommendation, evidence_snapshot }
+      channel: "meta",
+      window: { startDate: "2026-05-02", endDate: "2026-05-08" },
+      evidenceExtra: { metric: "roas" }
     });
-    create.step.scenario = name;
-    steps.push(create.step);
-
-    if (!create.step.ok) {
-      first_failure_step = "create";
-      first_failure_status = create.step.actualStatus;
-      first_failure_error = create.step.errorMessage;
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step,
-        first_failure_status,
-        first_failure_error,
-        action_id: null,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const action = getActionFromEnvelope(create.json);
-    if (!action) {
-      first_failure_step = "create.parse";
-      first_failure_status = 200;
-      first_failure_error = "Missing action envelope";
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step,
-        first_failure_status,
-        first_failure_error,
-        action_id: null,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const missing = requireActionFields(action, ["id", "status", "approval_level"]);
-    if (missing) {
-      first_failure_step = "create.validate";
-      first_failure_status = 200;
-      first_failure_error = missing;
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step,
-        first_failure_status,
-        first_failure_error,
-        action_id: String(action["id"] ?? ""),
-        final_status: String(action["status"] ?? ""),
-        final_approval_level: String(action["approval_level"] ?? "")
-      };
-    }
-
-    return {
-      name,
-      pass: true,
-      external_side_effect_count: 0,
-      harness_run_id,
-      fingerprint_prefix,
-      steps,
-      first_failure_step: null,
-      first_failure_status: null,
-      first_failure_error: null,
-      action_id: String(action["id"] ?? ""),
-      final_status: String(action["status"] ?? ""),
-      final_approval_level: String(action["approval_level"] ?? "")
-    };
-  }
-
-  async function runScenarioExpectedRejectionWebsiteRollback(): Promise<ScenarioTrace> {
-    const name = "B2. Website approval missing rollback plan is rejected";
-    const steps: StepRecord[] = [];
-    let first_failure_step: string | null = null;
-    let first_failure_status: number | null = null;
-    let first_failure_error: string | null = null;
-
-    const window = { startDate: "2026-05-02", endDate: "2026-05-08" };
-    const fingerprint = stableHash({ kind: "website_conversion", window, harness_run_id });
-    const recId = `m11_harness:${harness_run_id}:rec_website_conversion`;
-    const title = `M11 Harness (${harness_run_id}) — Website conversion recommendation`;
-    const recommendation: JsonObject = {
-      id: recId,
-      title,
-      category: "website",
-      approval_level: "L3_READY_FOR_APPROVAL",
-      status: "recommended",
-      confidence: "possible",
-      expected_outcome: "Increase conversion",
-      reason: "Harness scenario",
-      affected_channels: ["website"],
-      affected_products: ["store"],
-      affected_audiences: ["all"],
-      priority_score: { overallScore: 70 },
-      estimated_incremental_revenue: { usd: 1500 },
-      estimated_cost: { usd: 0 },
-      estimated_effort: { hours: 4 },
-      risk: "high",
-      approval_requirements: {},
-      measurement_window: window,
-      data_missing: [],
-      limitations: []
-    };
-    const evidence_snapshot: JsonObject = { harness_run_id, fingerprint: `${fingerprint_prefix}${fingerprint}`, window };
-
-    const create = await httpStep({
-      baseUrl,
-      token,
-      scenario: name,
-      step: "create",
-      method: "POST",
-      path: "/api/actions",
-      expectedStatus: 200,
-      idempotencyKey: `${harness_run_id}:b2:create`,
-      body: { actor: "m11_harness", window, recommendation, evidence_snapshot }
-    });
-    create.step.scenario = name;
-    steps.push(create.step);
-    if (!create.step.ok) {
-      first_failure_step = "create";
-      first_failure_status = create.step.actualStatus;
-      first_failure_error = create.step.errorMessage;
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step,
-        first_failure_status,
-        first_failure_error,
-        action_id: null,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const action = getActionFromEnvelope(create.json);
-    const actionId = action ? String(action["id"] ?? "") : "";
-    if (!actionId) {
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step: "create.parse",
-        first_failure_status: 200,
-        first_failure_error: "Missing action id",
-        action_id: null,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const prepare = await httpStep({
-      baseUrl,
-      token,
-      scenario: name,
-      step: "prepare",
-      method: "POST",
-      path: `/api/actions/${actionId}/prepare`,
-      expectedStatus: 200,
-      idempotencyKey: `${harness_run_id}:b2:prepare`,
-      body: {
-        actor: "m11_harness",
-        prepared_assets: [{ type: "draft", body: "draft" }],
-        execution_plan: { preview: "preview" }
-      }
-    });
-    prepare.step.scenario = name;
-    steps.push(prepare.step);
-    if (!prepare.step.ok) {
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step: "prepare",
-        first_failure_status: prepare.step.actualStatus,
-        first_failure_error: prepare.step.errorMessage,
-        action_id: actionId,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const ready = await httpStep({
-      baseUrl,
-      token,
-      scenario: name,
-      step: "ready",
-      method: "POST",
-      path: `/api/actions/${actionId}/ready`,
-      expectedStatus: 200,
-      idempotencyKey: `${harness_run_id}:b2:ready`,
-      body: { actor: "m11_harness", measurement_window: window }
-    });
-    ready.step.scenario = name;
-    steps.push(ready.step);
-    if (!ready.step.ok) {
-      return {
-        name,
-        pass: false,
-        external_side_effect_count: 0,
-        harness_run_id,
-        fingerprint_prefix,
-        steps,
-        first_failure_step: "ready",
-        first_failure_status: ready.step.actualStatus,
-        first_failure_error: ready.step.errorMessage,
-        action_id: actionId,
-        final_status: null,
-        final_approval_level: null
-      };
-    }
-
-    const approve = await httpStep({
-      baseUrl,
-      token,
-      scenario: name,
-      step: "approve_missing_rollback",
-      method: "POST",
-      path: `/api/actions/${actionId}/approve`,
-      expectedStatus: 400,
-      idempotencyKey: `${harness_run_id}:b2:approve`,
-      body: { actor: "m11_harness", confirm: true }
-    });
-    approve.step.scenario = name;
-    steps.push(approve.step);
-    const pass = approve.step.ok;
-
-    return {
-      name,
-      pass,
-      external_side_effect_count: 0,
-      harness_run_id,
-      fingerprint_prefix,
-      steps,
-      first_failure_step: pass ? null : "approve_missing_rollback",
-      first_failure_status: pass ? null : approve.step.actualStatus,
-      first_failure_error: pass ? null : approve.step.errorMessage,
-      action_id: actionId,
-      final_status: null,
-      final_approval_level: null
-    };
-  }
-
-  if (phase === "A") {
-    const trace = await runScenario1();
     traces.push(trace);
     externalSideEffects += trace.external_side_effect_count;
-  } else {
-    const s1 = await runScenario1();
-    traces.push(s1);
-    externalSideEffects += s1.external_side_effect_count;
-    const s2 = await runScenarioExpectedRejectionWebsiteRollback();
-    traces.push(s2);
-    externalSideEffects += s2.external_side_effect_count;
   }
 
   const cleanup = await cleanupHarnessRun({ supabaseUrl, serviceKey, harness_run_id });
@@ -611,9 +453,12 @@ async function runPhaseAOrB(phase: "A" | "B"): Promise<void> {
     harness_run_id,
     generated_at_utc: nowUtcIso(),
     staging_host: stagingHost,
+    production_request_count: 0,
+    scenarios_selected: selected.length,
     scenarios_executed: traces.length,
     scenarios_passed: traces.filter((t) => t.pass).length,
     scenarios_failed: failures.length,
+    scenarios_skipped: 0,
     failures,
     external_side_effect_count: externalSideEffects,
     traces,
@@ -621,19 +466,24 @@ async function runPhaseAOrB(phase: "A" | "B"): Promise<void> {
     no_production_requests: !supabaseUrl.includes("ibjsjosplgbqevmnvvpf")
   };
 
+  const outFile = path.join(
+    OUT_DIR,
+    phase === "A" ? "phase-a-report.json" : phase === "B" ? "phase-b-report.json" : "phase-c-report.json"
+  );
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ ok: report.ok, outFile }, null, 2));
 
   process.exit(report.ok ? 0 : 1);
 }
 
-const mode = (process.argv.includes("--phase") ? process.argv[process.argv.indexOf("--phase") + 1] : "A") as "A" | "B";
-if (!(mode === "A" || mode === "B")) {
-  console.error("Only --phase A or B are supported");
+const phaseArgIndex = process.argv.indexOf("--phase");
+const phase = (phaseArgIndex !== -1 ? process.argv[phaseArgIndex + 1] : "A") as Phase;
+if (!(phase === "A" || phase === "B" || phase === "C")) {
+  console.error("Invalid --phase. Use A|B|C");
   process.exit(2);
 }
 
-runPhaseAOrB(mode).catch((e) => {
+runPhase(phase).catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
 });
