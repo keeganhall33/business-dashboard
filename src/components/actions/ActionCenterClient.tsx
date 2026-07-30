@@ -178,7 +178,9 @@ function Section(props: {
           <div key={a.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-white">{a.title}</div>
+                <div className="text-sm font-semibold text-white">
+                  <a className="underline decoration-white/20 hover:decoration-white/60" href={`/act/actions/${a.id}`}>{a.title}</a>
+                </div>
                 <div className="mt-1 text-xs text-zinc-500">
                   {a.category} • {a.channel} • confidence {a.confidence} • approval {a.approval_level} • level {a.current_level}
                 </div>
