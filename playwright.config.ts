@@ -51,8 +51,16 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] }
+      name: "desktop-chromium",
+      use: { ...devices["Desktop Chrome"], browserName: "chromium" }
+    },
+    {
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 5"], browserName: "chromium" }
+    },
+    {
+      name: "mobile-webkit",
+      use: { ...devices["iPhone 13"], browserName: "webkit" }
     }
   ]
 });

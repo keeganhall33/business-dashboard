@@ -38,6 +38,67 @@ Key constraints:
 
 ## Transition matrix
 
+## Verification (staging-safe)
+
+All Milestone 11 verification is designed to produce **zero external execution** and **zero production requests**.
+
+### Phase C: 22-scenario harness
+
+Run (staging env + 1Password):
+
+```bash
+OP_SERVICE_ACCOUNT_TOKEN="$SERVICE_TOKEN" \
+  /opt/homebrew/bin/op run \
+  --env-file .env.actions-staging.local \
+  -- pnpm -s tsx scripts/m11-run-action-center-scenarios.ts --phase C
+```
+
+Artifact:
+
+- `.artifacts/milestone-11-action-center/phase-c-report.json`
+
+Expected invariants:
+
+- selected/executed/passed: **22/22/22**
+- failed/skipped: **0/0**
+- `external_side_effect_count: 0`
+- `production_request_count: 0`
+- cleanup ok with `remaining_harness_rows: 0`
+
+### Authenticated API integration probe
+
+Run:
+
+```bash
+OP_SERVICE_ACCOUNT_TOKEN="$SERVICE_TOKEN" \
+  /opt/homebrew/bin/op run \
+  --env-file .env.actions-staging.local \
+  -- pnpm -s tsx scripts/m11-action-center-api-integration.ts
+```
+
+Artifact:
+
+- `.artifacts/milestone-11-action-center/api-integration-report.json`
+
+### Playwright (UI smoke across desktop + mobile)
+
+Local dev server (staging env, but API auth disabled for browser-origin requests):
+
+```bash
+OP_SERVICE_ACCOUNT_TOKEN="$SERVICE_TOKEN" \
+  /opt/homebrew/bin/op run \
+  --env-file .env.actions-staging.local \
+  -- bash -lc 'DASHBOARD_ADMIN_TOKEN= ACTIONS_ENABLE_WRITES=1 ACTIONS_ENABLE_SYNTHETIC_OUTCOMES=1 pnpm -s dev --port 3456'
+```
+
+Run:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://localhost:3456 \
+  pnpm exec playwright test --config playwright.config.local.ts e2e/m11-action-center.spec.ts --reporter=json \
+  > .artifacts/milestone-11-action-center/playwright-report.json
+```
+
 Validated in `src/lib/actions/action-transitions.ts` and tested in `test/actions/action-transitions.test.tsx`.
 
 Minimum supported transitions:
