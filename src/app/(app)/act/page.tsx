@@ -23,7 +23,7 @@ export default async function ActPage({ searchParams }: PageProps) {
         <h1 className="text-2xl font-semibold text-white">Act</h1>
         <p className="text-sm text-zinc-400">Action prep + approvals (execution disabled for this milestone).</p>
       </header>
-      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} />
+      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <ActVerticalSlice data={sanitized} />
     </div>
   );

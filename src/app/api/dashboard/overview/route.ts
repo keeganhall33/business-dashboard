@@ -705,6 +705,7 @@ export async function GET(request: Request) {
     const hasSupabaseEnv = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
     const seededRequested = (process.env.DASHBOARD_DATA_SOURCE ?? "").toLowerCase() === "seed";
     const seedFallbackEnabled = process.env.NODE_ENV !== "production" && !hasSupabaseEnv;
+    const readOnly = (process.env.DASHBOARD_READONLY ?? "").toLowerCase() === "1" || (process.env.DASHBOARD_READONLY ?? "").toLowerCase() === "true";
 
     // Local/dev fallback: load a seed snapshot from JSON instead of Supabase.
     // This keeps the executive BI vertical slice usable without credentials.
@@ -716,6 +717,10 @@ export async function GET(request: Request) {
       const artifacts = await loadLocalDashboardArtifacts();
       return ok(
         sanitizeDashboardPayloadForHtml({
+          dataMode: "SEED_DATA",
+          dataModeReason: seededRequested
+            ? "DASHBOARD_DATA_SOURCE=seed"
+            : "Supabase env not present; using seed fallback in non-production",
           ...seeded,
           websiteConversion: artifacts.websiteSnapshot,
           metaAds: artifacts.metaSnapshot,
@@ -1249,10 +1254,10 @@ export async function GET(request: Request) {
     };
 
     const [warRoomThread, agentUpdateBuckets] = await Promise.all([
-      getOrCreateAgentThread({ agentKey: "avery", threadType: "war_room", title: "Executive War Room" }),
+      readOnly ? Promise.resolve(null) : getOrCreateAgentThread({ agentKey: "avery", threadType: "war_room", title: "Executive War Room" }),
       Promise.all(agentKeys.map((key) => getAgentUpdates(key, 5)))
     ]);
-    const warRoomMessages = await getAgentMessages(warRoomThread.id, 5);
+    const warRoomMessages = warRoomThread ? await getAgentMessages(warRoomThread.id, 5) : [];
 
     const metricByKey = new Map(metrics.map((m) => [m.metric_key, { ...m }]));
     metricByKey.delete("active_brand_conversations");
@@ -1983,9 +1988,15 @@ export async function GET(request: Request) {
           })
         : null;
 
+    // Data mode: when Supabase env exists, we are live from the warehouse, even if some source snapshots are missing.
+    const dataMode = "LIVE_DATA" as const;
+    const dataModeReason = readOnly ? "DASHBOARD_READONLY=1 (no DB writes; war room thread creation disabled)" : null;
+
     return ok({
       ok: true,
       timestamp: new Date().toISOString(),
+      dataMode,
+      dataModeReason,
       range: responseRange,
       headerMetrics,
       executiveCommand,

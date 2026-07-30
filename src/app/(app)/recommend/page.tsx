@@ -23,7 +23,7 @@ export default async function RecommendPage({ searchParams }: PageProps) {
         <h1 className="text-2xl font-semibold text-white">Recommend</h1>
         <p className="text-sm text-zinc-400">Read-only prioritized next steps. Nothing is executed from here.</p>
       </header>
-      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} />
+      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <RecommendVerticalSlice data={sanitized} />
     </div>
   );

@@ -23,7 +23,7 @@ export default async function ExplainPage({ searchParams }: PageProps) {
         <h1 className="text-2xl font-semibold text-white">Explain</h1>
         <p className="text-sm text-zinc-400">Read-only explanations with visible evidence and uncertainty.</p>
       </header>
-      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} />
+      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <ExplainVerticalSlice data={sanitized} />
     </div>
   );

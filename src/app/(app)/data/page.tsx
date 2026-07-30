@@ -23,7 +23,7 @@ export default async function DataPage({ searchParams }: PageProps) {
         <h1 className="text-2xl font-semibold text-white">Data & Integrations</h1>
         <p className="text-sm text-zinc-400">Source status, freshness, coverage, and known limitations.</p>
       </header>
-      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} />
+      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <DataIntegrationsVerticalSlice data={sanitized} />
     </div>
   );

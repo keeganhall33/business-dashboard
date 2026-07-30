@@ -23,7 +23,7 @@ export default async function LearnPage({ searchParams }: PageProps) {
         <h1 className="text-2xl font-semibold text-white">Learn</h1>
         <p className="text-sm text-zinc-400">Outcomes + feedback loop (minimal in Milestone 8).</p>
       </header>
-      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} />
+      <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <LearnVerticalSlice data={sanitized} />
     </div>
   );

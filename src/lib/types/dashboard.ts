@@ -1021,6 +1021,8 @@ export type LuxuryCollectibleKpis = {
 export type DashboardOverviewResponse = {
   ok: boolean;
   timestamp: string;
+  dataMode?: "LIVE_DATA" | "PARTIAL_LIVE_DATA" | "SEED_DATA" | "UNAVAILABLE";
+  dataModeReason?: string | null;
   range: {
     preset: RangePreset;
     startDate: string;
