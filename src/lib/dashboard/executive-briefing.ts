@@ -126,7 +126,7 @@ function pickNextMove(actions: ExecutiveActionPlan[], confidence: ConfidenceSumm
       return {
         title: "Recommended next move",
         tone: "amber",
-        lines: [top.recommendedAction, top.decisionImpact ? summarizeWhy(top.decisionImpact) : null].filter(Boolean).slice(0, 2)
+        lines: [top.recommendedAction, top.decisionImpact ? summarizeWhy(top.decisionImpact) : ""].filter(Boolean).slice(0, 2)
       };
     }
 
