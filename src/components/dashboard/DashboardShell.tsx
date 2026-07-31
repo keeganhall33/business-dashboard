@@ -3,9 +3,7 @@ import { buildExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { BusinessStatusPanel } from "./BusinessStatusPanel";
 import { ExecutiveKpiPanel } from "./ExecutiveKpiPanel";
-import { TopDriversPanel } from "./TopDriversPanel";
 import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
 import { DataConfidencePanel } from "./DataConfidencePanel";
 import { DashboardSection } from "./ui/DashboardSection";
@@ -19,6 +17,7 @@ import { PerformanceBaselinePanel } from "./PerformanceBaselinePanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
+import { ExecutiveBriefingPanel } from "./ExecutiveBriefingPanel";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
@@ -72,10 +71,9 @@ export function DashboardShell({ data }: Props) {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <BusinessStatusPanel summary={executiveSummary} />
+        <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} />
         <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
-        <TopDriversPanel summary={executiveSummary} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
       </div>
 
