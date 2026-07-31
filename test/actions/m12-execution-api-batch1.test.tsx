@@ -5,15 +5,15 @@ import { getExecutionActor } from "@/lib/actions/execution/api-actor";
 import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
 import { executionError } from "@/lib/api/execution-responses";
 
-test("api actor: harness override allowed only with x-m12-harness=1 and blocks agent identities", () => {
+test("api actor: request headers cannot control actor identity", () => {
   const req = new Request("https://local.invalid", {
     method: "POST",
     headers: {
-      "x-m12-harness": "1",
-      "x-m12-harness-actor": "agent test"
+      "x-m12-harness": "1"
     }
   });
-  assert.throws(() => getExecutionActor(req));
+  const actor = getExecutionActor(req);
+  assert.deepEqual(actor, { actor: "dashboard", synthetic: false });
 });
 
 test("executionError maps domain codes to stable API codes and non-500 status", async () => {
@@ -26,4 +26,3 @@ test("executionError maps domain codes to stable API codes and non-500 status", 
   assert.equal(json.error.code, "dry_run_required");
   assert.equal(res.status, 400);
 });
-
