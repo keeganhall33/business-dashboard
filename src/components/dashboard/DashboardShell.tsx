@@ -174,8 +174,6 @@ export function DashboardShell({ data }: Props) {
           title="Diagnostics"
           subtitle="Operational and diagnostic detail"
           storageKey="dashboard-section-diagnostics"
-          defaultOpen={false}
-          density="compact"
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
