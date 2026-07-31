@@ -2,6 +2,7 @@ import type { ExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import { getMaterialMovements } from "@/lib/dashboard/executive-summary";
 import type { ConfidenceSummary, ConfidenceEntry } from "@/lib/data-confidence";
 import type { ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import type { DashboardTruthState } from "@/lib/dashboard/truth-state";
 
 export type ExecutiveBriefingBlock = {
   title: string;
@@ -51,6 +52,8 @@ function pickHealth(summary: ExecutiveSummary | null): ExecutiveBriefingBlock {
 }
 
 function pickChanges(summary: ExecutiveSummary | null): ExecutiveBriefingBlock {
+  // If the dashboard is in degraded mode, we must not claim verified change.
+  // The caller should short-circuit this, but keep it defensive.
   if (!summary) {
     return {
       title: "What changed",
@@ -166,7 +169,25 @@ export function buildExecutiveBriefingModel(input: {
   summary: ExecutiveSummary | null;
   confidence: ConfidenceSummary;
   actions: ExecutiveActionPlan[];
+  truth: DashboardTruthState;
 }): ExecutiveBriefingModel {
+  if (input.truth.degraded.active) {
+    return {
+      health: {
+        title: "Business health",
+        tone: "amber",
+        lines: ["Limited reporting", input.truth.degraded.consequence.summary]
+      },
+      changed: {
+        title: "What changed",
+        tone: "zinc",
+        lines: ["Unable to verify changes for this period."]
+      },
+      attention: pickAttention(input.summary, input.confidence),
+      nextMove: pickNextMove(input.actions, input.confidence)
+    };
+  }
+
   return {
     health: pickHealth(input.summary),
     changed: pickChanges(input.summary),

@@ -32,10 +32,11 @@ export function ExecutiveRangeHeader({
             <p className="text-2xl font-semibold text-white">{rangeLabel}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <p className="text-sm text-zinc-400">Pacific Time · Comparison window {comparisonLabel}</p>
-              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold ${modeTone}`}
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold ${modeTone}`}
                 data-testid="data-mode-indicator"
               >
-                {modeLabel.replace(/_/g, " ")}
+                {(modeLabel === "UNAVAILABLE" ? "LIMITED REPORTING" : modeLabel.replace(/_/g, " "))}
               </span>
             </div>
           </div>

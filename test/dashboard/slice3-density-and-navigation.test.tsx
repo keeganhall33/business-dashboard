@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { ExecutiveNav } from "@/components/dashboard/ExecutiveNav";
 import { DataConfidencePanel } from "@/components/dashboard/DataConfidencePanel";
+import { DataLimitationsBanner } from "@/components/dashboard/DataLimitationsBanner";
 
 import type { ConfidenceSummary } from "@/lib/data-confidence";
 
@@ -67,4 +68,27 @@ test("Data Confidence compact summary renders counts and retains details", () =>
   assert.match(html, /Next: Restore GA4 ingestion/);
   // Details are still available with one interaction.
   assert.match(html, /Show full confidence breakdown/);
+});
+
+test("Data limitations banner renders only in degraded mode", () => {
+  const degraded = {
+    degraded: {
+      active: true,
+      reason: "Limited reporting",
+      unavailableDomains: [{ domainId: "woo", label: "Woo", coverage: "unavailable", freshness: "unavailable", confidence: "unavailable", consequence: { summary: "", decisionsAffected: [] } }],
+      stillWorks: [],
+      consequence: { summary: "Revenue decisions cannot be verified.", decisionsAffected: [] },
+      nextAction: { title: "Restore Woo data feed", href: "/data" }
+    },
+    domains: {},
+    metrics: {}
+  };
+
+  const html = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: degraded }));
+  assert.match(html, /Limited reporting/);
+  assert.match(html, /Restore Woo data feed/);
+
+  const healthy = { ...degraded, degraded: { ...degraded.degraded, active: false } };
+  const html2 = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: healthy }));
+  assert.equal(html2, "");
 });

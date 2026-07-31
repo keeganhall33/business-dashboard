@@ -2,17 +2,20 @@ import type { ExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import type { ConfidenceSummary } from "@/lib/data-confidence";
 import type { ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { buildExecutiveBriefingModel } from "@/lib/dashboard/executive-briefing";
+import type { DashboardTruthState } from "@/lib/dashboard/truth-state";
 
 export function ExecutiveBriefingPanel({
   summary,
   confidence,
-  actions
+  actions,
+  truth
 }: {
   summary: ExecutiveSummary | null;
   confidence: ConfidenceSummary;
   actions: ExecutiveActionPlan[];
+  truth: DashboardTruthState;
 }) {
-  const model = buildExecutiveBriefingModel({ summary, confidence, actions });
+  const model = buildExecutiveBriefingModel({ summary, confidence, actions, truth });
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 shadow-2xl shadow-black/40">

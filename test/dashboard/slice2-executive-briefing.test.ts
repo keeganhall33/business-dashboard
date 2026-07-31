@@ -5,6 +5,7 @@ import { buildExecutiveBriefingModel } from "@/lib/dashboard/executive-briefing"
 import type { ExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import type { ConfidenceSummary } from "@/lib/data-confidence";
 import type { ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
+import type { DashboardTruthState } from "@/lib/dashboard/truth-state";
 
 function summaryWithMovements(movements: Array<{ label: string; deltaPercent: number }>) {
   const base: ExecutiveSummary = {
@@ -41,6 +42,29 @@ function confidenceWithIssues(labels: string[]) {
   return summary as unknown as ConfidenceSummary;
 }
 
+function healthyTruth(): DashboardTruthState {
+  return {
+    degraded: { active: false, reason: "", unavailableDomains: [], stillWorks: [], consequence: { summary: "", decisionsAffected: [] } },
+    domains: {},
+    metrics: {}
+  };
+}
+
+function degradedTruth(): DashboardTruthState {
+  return {
+    degraded: {
+      active: true,
+      reason: "Limited reporting",
+      unavailableDomains: [],
+      stillWorks: [],
+      consequence: { summary: "Revenue decisions cannot be verified.", decisionsAffected: [] },
+      nextAction: { title: "Restore Woo data feed", href: "/data" }
+    },
+    domains: {},
+    metrics: {}
+  };
+}
+
 test("briefing: shows max 3 changes", () => {
   const model = buildExecutiveBriefingModel({
     summary: summaryWithMovements([
@@ -50,7 +74,8 @@ test("briefing: shows max 3 changes", () => {
       { label: "AOV", deltaPercent: 0.15 }
     ]),
     confidence: confidenceWithIssues([]),
-    actions: []
+    actions: [],
+    truth: healthyTruth()
   });
 
   assert.ok(model.changed.lines.length <= 3);
@@ -60,7 +85,8 @@ test("briefing: attention shows max 3 items", () => {
   const model = buildExecutiveBriefingModel({
     summary: null,
     confidence: confidenceWithIssues(["Woo", "GA4", "Meta", "Funnel"]),
-    actions: []
+    actions: [],
+    truth: healthyTruth()
   });
 
   assert.ok(model.attention.lines.length <= 3);
@@ -82,7 +108,8 @@ test("briefing: next move is one primary recommendation", () => {
         due: null,
         weight: 10
       } as unknown as ExecutiveActionPlan
-    ]
+    ],
+    truth: healthyTruth()
   });
 
   assert.ok(model.nextMove.lines.length >= 1);
@@ -94,9 +121,21 @@ test("briefing: when no actions, next move becomes a single data prerequisite", 
   const model = buildExecutiveBriefingModel({
     summary: null,
     confidence: confidenceWithIssues(["Meta"]),
-    actions: []
+    actions: [],
+    truth: healthyTruth()
   });
 
   assert.equal(model.nextMove.title, "Recommended next move");
   assert.equal(model.nextMove.lines[0], "Restore data confidence");
+});
+
+test("briefing: degraded mode forces 'Unable to verify changes'", () => {
+  const model = buildExecutiveBriefingModel({
+    summary: summaryWithMovements([{ label: "Revenue", deltaPercent: 0.2 }]),
+    confidence: confidenceWithIssues(["Woo"]),
+    actions: [],
+    truth: degradedTruth()
+  });
+
+  assert.equal(model.changed.lines[0], "Unable to verify changes for this period.");
 });

@@ -22,6 +22,8 @@ import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
 import { ExecutiveNav } from "./ExecutiveNav";
+import { buildDashboardTruthState } from "@/lib/dashboard/truth-state";
+import { DataLimitationsBanner } from "./DataLimitationsBanner";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -41,6 +43,7 @@ export function DashboardShell({ data }: Props) {
   const executiveSummary = buildExecutiveSummary(data);
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
+  const truthState = buildDashboardTruthState({ data, confidence: dataConfidence });
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
@@ -82,8 +85,9 @@ export function DashboardShell({ data }: Props) {
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
         <ExecutiveNav items={navItems} />
+        <DataLimitationsBanner truth={truthState} />
         <div id="executive" className="space-y-6">
-        <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} />
+        <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} truth={truthState} />
         <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
@@ -288,17 +292,26 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
     status: meta?.status ? `Meta ${meta.status}` : "Meta pending",
     tone,
     metrics: [
-      spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
-      roas != null
-        ? `ROAS ${roas.toFixed(1)}x`
-        : deliveryAvailable && !attributionAvailable
-          ? "ROAS Not attributable"
-          : null,
-      conversions != null
-        ? `Conv ${formatCount(conversions)}`
-        : deliveryAvailable && !attributionAvailable
-          ? "Conv Unavailable"
+      // Canonical truth-state rule: never render misleading numeric KPIs when Meta is pending/unverified.
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? spend != null
+          ? `Spend ${formatCurrencyShort(spend)}`
           : null
+        : null,
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? roas != null
+          ? `ROAS ${roas.toFixed(1)}x`
+          : deliveryAvailable && !attributionAvailable
+            ? "ROAS Not attributable"
+            : null
+        : null,
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? conversions != null
+          ? `Conv ${formatCount(conversions)}`
+          : deliveryAvailable && !attributionAvailable
+            ? "Conv Unavailable"
+            : null
+        : null
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("marketing-")).length

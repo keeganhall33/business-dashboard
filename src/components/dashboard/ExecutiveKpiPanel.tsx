@@ -9,7 +9,7 @@ export function ExecutiveKpiPanel({ summary, confidence }: { summary: ExecutiveS
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Executive KPI Summary</div>
 
       {!summary ? (
-        <p className="mt-3 text-sm text-zinc-400">Executive KPIs unavailable until a comparable prior window is available.</p>
+        <p className="mt-3 text-sm text-zinc-400">Unable to verify executive KPIs for this period (data incomplete).</p>
       ) : (
         <>
           <div className="mt-2 text-xs text-zinc-500">Selected-period performance · {summary.rangeLabel}</div>
