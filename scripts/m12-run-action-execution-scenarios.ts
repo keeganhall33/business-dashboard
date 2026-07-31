@@ -348,6 +348,15 @@ async function main() {
     select("15. rollback failure");
   }
 
+  // Batch 4: scenarios 16–20
+  if (batch === "4" || batch === "full") {
+    select("16. irreversible action requires stronger approval");
+    select("17. missing rollback plan is blocked");
+    select("18. stale evidence is blocked");
+    select("19. changed payload invalidates confirmation");
+    select("20. changed action state invalidates confirmation");
+  }
+
   // Scenario helpers
   async function apiRequestExecution(payload: Record<string, unknown>, idem: string, expiresAtUtc: string) {
     const req = makeRequest({
@@ -368,6 +377,18 @@ async function main() {
   }
   async function apiConfirm(executionRequestId: string, idem: string, input?: { actor?: string }) {
     const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/confirm`, idempotencyKey: idem, json: { executionRequestId, irreversibleAcknowledged: false, approvalSnapshot: { note: "harness" } }, actor: input?.actor ?? actor });
+    const res = await confirmExecution(req);
+    return { res, json: await readJson(res as Response) };
+  }
+
+  async function apiConfirmWithAck(executionRequestId: string, idem: string, irreversibleAcknowledged: boolean) {
+    const req = makeRequest({
+      method: "POST",
+      url: `${baseUrl}/api/actions/${actionId}/execution/confirm`,
+      idempotencyKey: idem,
+      json: { executionRequestId, irreversibleAcknowledged, approvalSnapshot: { note: "harness" } },
+      actor
+    });
     const res = await confirmExecution(req);
     return { res, json: await readJson(res as Response) };
   }
@@ -402,8 +423,11 @@ async function main() {
   }
 
   function domainCode(json: Record<string, unknown>): string {
+    const top = String(json["domain_code"] ?? "");
+    if (top) return top;
     const err = (json["error"] && typeof json["error"] === "object") ? (json["error"] as Record<string, unknown>) : {};
-    return String(err["domain_code"] ?? "");
+    const nested = String(err["domain_code"] ?? "");
+    return nested;
   }
 
   // Run selected scenarios
@@ -752,6 +776,162 @@ async function main() {
     });
   }
 
+  if (selectedNames.has("16. irreversible action requires stronger approval")) {
+    await scenario("16. irreversible action requires stronger approval", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const requested = await apiRequestExecution(
+        {
+          adapterId: "mock",
+          reversibility: "irreversible",
+          irreversibleReason: "irreversible test",
+          payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: { ok: true } } }
+        },
+        "req-16",
+        expiresAtUtc
+      );
+      const executionRequestId = String(requested.json.requestId);
+
+      await apiDryRun(executionRequestId, "dry-16");
+
+      const noAck = await apiConfirmWithAck(executionRequestId, "conf-16a", false);
+      if (noAck.json.ok !== false || domainCode(noAck.json) !== "EXECUTION_IRREVERSIBLE_ACK_REQUIRED") {
+        throw new Error(`Expected EXECUTION_IRREVERSIBLE_ACK_REQUIRED, got ${JSON.stringify(noAck.json["error"])}`);
+      }
+
+      const ack = await apiConfirmWithAck(executionRequestId, "conf-16b", true);
+      if (ack.json.ok !== true) throw new Error("Expected confirmed with acknowledgement");
+    });
+  }
+
+  if (selectedNames.has("17. missing rollback plan is blocked")) {
+    await scenario("17. missing rollback plan is blocked", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const requested = await apiRequestExecution(
+        {
+          adapterId: "mock",
+          reversibility: "reversible",
+          payload: { mock: { mode: "success" } }
+        },
+        "req-17",
+        expiresAtUtc
+      );
+      const executionRequestId = String(requested.json.requestId);
+
+      const dry = await apiDryRun(executionRequestId, "dry-17");
+      if (dry.json.ok !== false || domainCode(dry.json) !== "EXECUTION_DRY_RUN_REQUIRED") {
+        throw new Error(`Expected dry run blocked, got ${JSON.stringify(dry.json["error"])}`);
+      }
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "blocked") throw new Error(`Expected blocked, got ${after.request_state}`);
+      if (after.attempt_count !== 0) throw new Error("No attempt allowed");
+    });
+  }
+
+  if (selectedNames.has("18. stale evidence is blocked")) {
+    await scenario("18. stale evidence is blocked", async () => {
+      // Create a separate stale action + evidence.
+      const { actionId: staleActionId, evidenceId: staleEvidenceId } = await createHarnessAction(`${harness_run_id}-stale`);
+      const supabase = getSupabaseServerClient();
+      const { error } = await supabase
+        .from("action_actions_v1")
+        .update({ expires_at: new Date(Date.now() - 60_000).toISOString() })
+        .eq("id", staleActionId);
+      if (error) throw error;
+
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const req = makeRequest({
+        method: "POST",
+        url: `${baseUrl}/api/actions/${staleActionId}/execution/request`,
+        idempotencyKey: "req-18",
+        json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
+        actor,
+        harnessRunId: harness_run_id
+      });
+      const res = await requestExecution(req, { params: Promise.resolve({ id: staleActionId }) } as unknown as { params: Promise<{ id: string }> });
+      const json = await readJson(res as Response);
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_EVIDENCE_STALE") {
+        throw new Error(`Expected EXECUTION_EVIDENCE_STALE, got ${JSON.stringify(json["error"])}`);
+      }
+
+      // Cleanup stale action fixture.
+      await supabase.from("action_actions_v1").delete().eq("id", staleActionId);
+      await supabase.from("action_evidence_snapshots_v1").delete().eq("id", staleEvidenceId);
+    });
+  }
+
+  if (selectedNames.has("19. changed payload invalidates confirmation")) {
+    await scenario("19. changed payload invalidates confirmation", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const requested = await apiRequestExecution(
+        {
+          adapterId: "mock",
+          reversibility: "reversible",
+          payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: { ok: true } }, payload_version: "A" }
+        },
+        "req-19",
+        expiresAtUtc
+      );
+      const executionRequestId = String(requested.json.requestId);
+      await apiDryRun(executionRequestId, "dry-19");
+      await apiConfirm(executionRequestId, "conf-19");
+
+      // Mutate payload_json + payload_hash (not confirmation row), preserving dry_run.
+      const supabase = getSupabaseServerClient();
+      const cur = await supabase.from("action_execution_requests_v1").select("payload_json").eq("id", executionRequestId).maybeSingle();
+      if (cur.error) throw cur.error;
+      const curPayload = (cur.data && typeof cur.data === "object") ? (cur.data as Record<string, unknown>)["payload_json"] : null;
+      const curObj = (curPayload && typeof curPayload === "object") ? (curPayload as Record<string, unknown>) : {};
+      const newPayload = { ...curObj, payload_version: "B" };
+      const newHash = canonicalJsonSha256Hex(newPayload);
+      const { error } = await supabase
+        .from("action_execution_requests_v1")
+        .update({ payload_json: newPayload, payload_hash: newHash })
+        .eq("id", executionRequestId);
+      if (error) throw error;
+
+      const { json } = await apiExecute(executionRequestId, "exec-19");
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_PAYLOAD_CHANGED") {
+        throw new Error(`Expected EXECUTION_PAYLOAD_CHANGED, got ${JSON.stringify(json)}`);
+      }
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.attempt_count !== 0) throw new Error("No attempt allowed after payload change");
+    });
+  }
+
+  if (selectedNames.has("20. changed action state invalidates confirmation")) {
+    await scenario("20. changed action state invalidates confirmation", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const requested = await apiRequestExecution(
+        {
+          adapterId: "mock",
+          reversibility: "reversible",
+          payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: { ok: true } } }
+        },
+        "req-20",
+        expiresAtUtc
+      );
+      const executionRequestId = String(requested.json.requestId);
+      await apiDryRun(executionRequestId, "dry-20");
+      await apiConfirm(executionRequestId, "conf-20");
+
+      // Mutate the action state (harness-owned) after confirmation.
+      const supabase = getSupabaseServerClient();
+      // prepared_assets is included in the action-state hash test vector; mutate it deterministically.
+      const { error } = await supabase
+        .from("action_actions_v1")
+        .update({ prepared_assets: [{ k: randomUUID().slice(0, 8) }] })
+        .eq("id", actionId);
+      if (error) throw error;
+
+      const { json } = await apiExecute(executionRequestId, "exec-20");
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_ACTION_STATE_CHANGED") {
+        throw new Error(`Expected EXECUTION_ACTION_STATE_CHANGED, got ${JSON.stringify(json)}`);
+      }
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.attempt_count !== 0) throw new Error("No attempt allowed after action-state change");
+    });
+  }
+
   const executed = results.length;
   const passed = results.filter((r) => r.ok).length;
   const failed = executed - passed;
@@ -777,6 +957,8 @@ async function main() {
     ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-2-report.json"
     : batch === "3"
       ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-3-report.json"
+      : batch === "4"
+        ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-4-report.json"
       : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
 

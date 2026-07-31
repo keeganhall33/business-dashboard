@@ -3,6 +3,7 @@ import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
 import { isValidExecutionTransition } from "@/lib/actions/execution/execution-transitions";
 import { getExecutionRequestById, updateExecutionRequestState } from "@/lib/actions/execution/execution-repo";
 import { upsertIdempotencyRecord, computeRequestHash } from "@/lib/actions/execution/idempotency-service";
+import { hasRollbackPlan } from "@/lib/actions/execution/rollback-plan";
 
 export async function runExecutionDryRun(input: {
   executionRequestId: string;
@@ -67,6 +68,29 @@ export async function runExecutionDryRun(input: {
     irreversibilityExplanation: req.irreversible_reason,
     auditMetadata: {}
   };
+
+  // Phase 5: rollback plan is mandatory for any non-irreversible action.
+  // (deny-by-default; missing value cannot imply rollback readiness.)
+  if (req.reversibility !== "irreversible") {
+    const payloadJson = req.payload_json as Record<string, unknown>;
+    if (!hasRollbackPlan(payloadJson)) {
+      const stub = {
+        ok: false,
+        blockingReasons: ["Missing rollback plan"],
+        warnings: [],
+        validatedPayloadHash: req.payload_hash,
+        validatedActionStateHash: req.action_state_hash,
+        adapterCapabilities: input.adapter.capabilities(),
+        estimatedImpact: {},
+        estimatedCost: {},
+        rollbackReadiness: { ok: false, reasons: ["Missing rollback plan"] },
+        preview: { summary: "Rollback plan missing" },
+        expiresAtUtc: new Date().toISOString()
+      };
+      await updateExecutionRequestState({ id: req.id, execution_state: "blocked", payload_json_patch: { ...payloadJson, dry_run: stub } });
+      throw new ExecutionDomainError({ code: "EXECUTION_DRY_RUN_REQUIRED", message: "Missing rollback plan", httpStatus: 400 });
+    }
+  }
 
   const validated = await input.adapter.validate(ctx);
   if (!validated.ok) {
