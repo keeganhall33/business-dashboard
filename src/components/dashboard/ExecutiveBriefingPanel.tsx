@@ -16,7 +16,7 @@ export function ExecutiveBriefingPanel({
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 shadow-2xl shadow-black/40">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.4em] text-zinc-500">Executive Briefing</div>
+      <div className="text-xs font-semibold text-zinc-400">Executive briefing</div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <BriefCard title={model.health.title} tone={model.health.tone} lines={model.health.lines} />
         <BriefCard title={model.changed.title} tone={model.changed.tone} lines={model.changed.lines} />
@@ -47,7 +47,7 @@ function BriefCard({
 
   return (
     <article className={`rounded-2xl border p-4 ${toneClass}`}>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">{title}</div>
+      <div className="text-[11px] font-semibold text-zinc-400">{title}</div>
       <div className="mt-2 space-y-1">
         {lines.map((line, idx) => (
           <div

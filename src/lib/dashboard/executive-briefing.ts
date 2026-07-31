@@ -108,6 +108,10 @@ function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceS
   };
 }
 
+function summarizeWhy(impact: string): string {
+  return impact.replace(/; decisions relying on it are blocked\.?/gi, ".").trim();
+}
+
 function pickNextMove(actions: ExecutiveActionPlan[], confidence: ConfidenceSummary): ExecutiveBriefingBlock {
   const filtered = actions.filter((action) => {
     if (action.id === "scheduler" || action.id.startsWith("telemetry-")) return false;
@@ -122,7 +126,7 @@ function pickNextMove(actions: ExecutiveActionPlan[], confidence: ConfidenceSumm
       return {
         title: "Recommended next move",
         tone: "amber",
-        lines: [top.recommendedAction, top.decisionImpact].filter(Boolean).slice(0, 2)
+        lines: [top.recommendedAction, top.decisionImpact ? summarizeWhy(top.decisionImpact) : null].filter(Boolean).slice(0, 2)
       };
     }
 
@@ -131,7 +135,7 @@ function pickNextMove(actions: ExecutiveActionPlan[], confidence: ConfidenceSumm
       return {
         title: "Recommended next move",
         tone: "amber",
-        lines: ["Restore data confidence", firstIssue.decisionImpact || `${firstIssue.label} requires attention.`].slice(0, 2)
+        lines: [firstIssue.recommendedAction ?? "Restore data confidence", summarizeWhy(firstIssue.decisionImpact || `${firstIssue.label} requires attention.`)].slice(0, 2)
       };
     }
 
