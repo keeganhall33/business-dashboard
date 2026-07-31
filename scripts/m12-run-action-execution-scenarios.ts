@@ -357,6 +357,14 @@ async function main() {
     select("20. changed action state invalidates confirmation");
   }
 
+  // Batch 5: scenarios 21–24
+  if (batch === "5" || batch === "full") {
+    select("21. global kill switch blocks execution");
+    select("22. adapter kill switch blocks execution");
+    select("23. production execution is always blocked");
+    select("24. external side-effect count remains zero");
+  }
+
   // Scenario helpers
   async function apiRequestExecution(payload: Record<string, unknown>, idem: string, expiresAtUtc: string) {
     const req = makeRequest({
@@ -396,6 +404,12 @@ async function main() {
     const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/execute`, idempotencyKey: idem, json: { executionRequestId }, actor });
     const res = await executeExecution(req);
     return { res, json: await readJson(res as Response) };
+  }
+
+  function withHeader(req: Request, name: string, value: string): Request {
+    const next = new Request(req.url, req);
+    next.headers.set(name, value);
+    return next;
   }
 
   async function apiCancel(executionRequestId: string, idem: string) {
@@ -932,6 +946,85 @@ async function main() {
     });
   }
 
+  if (selectedNames.has("21. global kill switch blocks execution")) {
+    await scenario("21. global kill switch blocks execution", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const req = makeRequest({
+        method: "POST",
+        url: `${baseUrl}/api/actions/${actionId}/execution/request`,
+        idempotencyKey: "req-21",
+        json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
+        actor,
+        harnessRunId: harness_run_id
+      });
+      // Force boundary disabled via harness override header (server-side only).
+      const req2 = withHeader(req, "x-m12-execution-boundary-enabled", "0");
+      const res = await requestExecution(req2, { params: Promise.resolve({ id: actionId }) } as unknown as { params: Promise<{ id: string }> });
+      const json = await readJson(res as Response);
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_GLOBAL_DISABLED") {
+        throw new Error(`Expected EXECUTION_GLOBAL_DISABLED, got ${JSON.stringify(json)}`);
+      }
+    });
+  }
+
+  if (selectedNames.has("22. adapter kill switch blocks execution")) {
+    await scenario("22. adapter kill switch blocks execution", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const req = makeRequest({
+        method: "POST",
+        url: `${baseUrl}/api/actions/${actionId}/execution/request`,
+        idempotencyKey: "req-22",
+        json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
+        actor,
+        harnessRunId: harness_run_id
+      });
+      const req2 = withHeader(req, "x-m12-adapter-enabled", "0");
+      const res = await requestExecution(req2, { params: Promise.resolve({ id: actionId }) } as unknown as { params: Promise<{ id: string }> });
+      const json = await readJson(res as Response);
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_ADAPTER_DISABLED") {
+        throw new Error(`Expected EXECUTION_ADAPTER_DISABLED, got ${JSON.stringify(json)}`);
+      }
+    });
+  }
+
+  if (selectedNames.has("23. production execution is always blocked")) {
+    await scenario("23. production execution is always blocked", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      // Force production block via NODE_ENV=production only for this Request.
+      const req = makeRequest({
+        method: "POST",
+        url: `${baseUrl}/api/actions/${actionId}/execution/request`,
+        idempotencyKey: "req-23",
+        json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
+        actor,
+        harnessRunId: harness_run_id
+      });
+      const req2 = new Request(req.url, { method: req.method, headers: { ...Object.fromEntries(req.headers.entries()), "x-m12-force-node-env": "production" }, body: await req.text() });
+      const res = await requestExecution(req2, { params: Promise.resolve({ id: actionId }) } as unknown as { params: Promise<{ id: string }> });
+      const json = await readJson(res as Response);
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_PRODUCTION_BLOCKED") {
+        throw new Error(`Expected EXECUTION_PRODUCTION_BLOCKED, got ${JSON.stringify(json)}`);
+      }
+    });
+  }
+
+  if (selectedNames.has("24. external side-effect count remains zero")) {
+    await scenario("24. external side-effect count remains zero", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution(
+        { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: { ok: true } } } },
+        "req-24",
+        expiresAtUtc
+      );
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-24");
+      await apiConfirm(executionRequestId, "conf-24");
+      await apiExecute(executionRequestId, "exec-24");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.external_side_effect_count !== 0) throw new Error(`Expected 0 external side effects, got ${after.external_side_effect_count}`);
+    });
+  }
+
   const executed = results.length;
   const passed = results.filter((r) => r.ok).length;
   const failed = executed - passed;
@@ -959,6 +1052,8 @@ async function main() {
       ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-3-report.json"
       : batch === "4"
         ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-4-report.json"
+        : batch === "5"
+          ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-5-report.json"
       : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
