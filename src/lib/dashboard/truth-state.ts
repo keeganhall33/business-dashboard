@@ -146,13 +146,21 @@ function summarizeDegradedMode(input: {
 
   const nextAction = criticalUnavailable[0]?.nextAction;
 
+  const normalizedNextAction = nextAction?.href
+    ? {
+        title: "Restore WooCommerce connection",
+        href: nextAction.href,
+        detail: "Restores revenue, orders, conversion, and executive reporting."
+      }
+    : nextAction;
+
   return {
     active: true,
     reason,
     unavailableDomains,
     stillWorks,
     consequence,
-    nextAction
+    nextAction: normalizedNextAction
   };
 }
 

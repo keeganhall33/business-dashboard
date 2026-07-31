@@ -78,7 +78,7 @@ test("Data limitations banner renders only in degraded mode", () => {
       unavailableDomains: [{ domainId: "woo", label: "Woo", coverage: "unavailable", freshness: "unavailable", confidence: "unavailable", consequence: { summary: "", decisionsAffected: [] } }],
       stillWorks: [],
       consequence: { summary: "Revenue decisions cannot be verified.", decisionsAffected: [] },
-      nextAction: { title: "Restore Woo data feed", href: "/data" }
+      nextAction: { title: "Restore WooCommerce connection", href: "/data", detail: "Restores revenue, orders, conversion, and executive reporting." }
     },
     domains: {},
     metrics: {}
@@ -86,7 +86,10 @@ test("Data limitations banner renders only in degraded mode", () => {
 
   const html = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: degraded }));
   assert.match(html, /Limited reporting/);
-  assert.match(html, /Restore Woo data feed/);
+  assert.match(html, /Restore WooCommerce connection/);
+  assert.match(html, /Restores revenue, orders, conversion, and executive reporting\./);
+  // Exactly one CTA link to /data.
+  assert.equal((html.match(/href="\/data"/g) ?? []).length, 1);
 
   const healthy = { ...degraded, degraded: { ...degraded.degraded, active: false } };
   const html2 = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: healthy }));

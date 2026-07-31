@@ -34,6 +34,7 @@ export function DataLimitationsBanner({ truth }: { truth: DashboardTruthState })
 
       {next?.href ? (
         <div className="mt-4">
+          {next.detail ? <div className="mb-2 text-sm text-amber-100">{next.detail}</div> : null}
           <a
             href={next.href}
             className="inline-flex items-center rounded-full border border-amber-300/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/15"
