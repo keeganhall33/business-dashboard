@@ -68,19 +68,20 @@ export function DashboardShell({ data }: Props) {
   const shouldShowIndustry = Boolean(data.industryPulseSnapshot && (data.industryPulseSnapshot.alerts?.length ?? 0) > 0);
   const shouldShowChangeInsights = Boolean(changeInsights && (changeInsights.insights?.length ?? 0) > 0);
 
+  const navItems = [
+    { id: "executive", label: "Executive" },
+    { id: "commerce", label: "Commerce" },
+    { id: "marketing", label: "Marketing" },
+    { id: "confidence", label: "Confidence" },
+    { id: "diagnostics", label: "Diagnostics" },
+    ...(hasBrandSignals ? [{ id: "experimental", label: "Experimental" }] : [])
+  ];
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <ExecutiveNav
-          items={[
-            { id: "executive", label: "Executive" },
-            { id: "commerce", label: "Commerce" },
-            { id: "marketing", label: "Marketing" },
-            { id: "confidence", label: "Confidence" },
-            { id: "diagnostics", label: "Diagnostics" }
-          ]}
-        />
+        <ExecutiveNav items={navItems} />
         <div id="executive" className="space-y-6">
         <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} />
         <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
@@ -177,7 +178,13 @@ export function DashboardShell({ data }: Props) {
           {...SECTION_PROPS}
         >
           <div className="space-y-5">
-            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : <PanelAuditPlaceholder title="Revenue Engine unavailable" detail="Revenue Engine diagnostics missing for this window." />}
+            {data.revenueEngine ? (
+              <RevenueEnginePanel data={data.revenueEngine} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-zinc-400">
+                No verified diagnostics for this window.
+              </div>
+            )}
           </div>
         </DashboardSection>
 
@@ -194,6 +201,7 @@ export function DashboardShell({ data }: Props) {
 
         {hasBrandSignals ? (
           <DashboardSection
+            id="experimental"
             title="Experimental"
             subtitle="Prototype signals and non-production-grade metrics"
             storageKey="dashboard-section-experimental"
