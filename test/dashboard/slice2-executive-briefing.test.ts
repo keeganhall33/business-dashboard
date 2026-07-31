@@ -89,3 +89,14 @@ test("briefing: next move is one primary recommendation", () => {
   // First line should be the single action title.
   assert.equal(model.nextMove.lines[0], "Fix ads");
 });
+
+test("briefing: when no actions, next move becomes a single data prerequisite", () => {
+  const model = buildExecutiveBriefingModel({
+    summary: null,
+    confidence: confidenceWithIssues(["Meta"]),
+    actions: []
+  });
+
+  assert.equal(model.nextMove.title, "Recommended next move");
+  assert.equal(model.nextMove.lines[0], "Restore data confidence");
+});

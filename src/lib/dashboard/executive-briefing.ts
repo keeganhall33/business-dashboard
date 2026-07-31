@@ -107,7 +107,7 @@ function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceS
   };
 }
 
-function pickNextMove(actions: ExecutiveActionPlan[]): ExecutiveBriefingBlock {
+function pickNextMove(actions: ExecutiveActionPlan[], confidence: ConfidenceSummary): ExecutiveBriefingBlock {
   const filtered = actions.filter((action) => {
     if (action.id === "scheduler" || action.id.startsWith("telemetry-")) return false;
     if (action.sourceDomain === "operations") return false;
@@ -116,6 +116,24 @@ function pickNextMove(actions: ExecutiveActionPlan[]): ExecutiveBriefingBlock {
 
   const primary = filtered[0];
   if (!primary) {
+    const top = confidence.topRisk;
+    if (top?.recommendedAction) {
+      return {
+        title: "Recommended next move",
+        tone: "amber",
+        lines: [top.recommendedAction, top.decisionImpact].filter(Boolean).slice(0, 2)
+      };
+    }
+
+    const firstIssue = confidence.entries.find((e) => e.state !== "trusted");
+    if (firstIssue) {
+      return {
+        title: "Recommended next move",
+        tone: "amber",
+        lines: ["Restore data confidence", firstIssue.decisionImpact || `${firstIssue.label} requires attention.`].slice(0, 2)
+      };
+    }
+
     return {
       title: "Recommended next move",
       tone: "zinc",
@@ -148,6 +166,6 @@ export function buildExecutiveBriefingModel(input: {
     health: pickHealth(input.summary),
     changed: pickChanges(input.summary),
     attention: pickAttention(input.summary, input.confidence),
-    nextMove: pickNextMove(input.actions)
+    nextMove: pickNextMove(input.actions, input.confidence)
   };
 }
