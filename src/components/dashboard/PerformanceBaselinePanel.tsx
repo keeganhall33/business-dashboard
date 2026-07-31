@@ -133,6 +133,14 @@ export function formatPerformanceBaselinePrevious(metric: PerformanceBaselineMet
 export function formatPerformanceBaselineDelta(metric: PerformanceBaselineMetric): string {
   if (metric.current == null || metric.previous == null) return "Unavailable";
 
+  // Suppress misleading comparisons against a placeholder-zero baseline.
+  // A zero prior value can be a real business state, but for executive baselines it is
+  // usually more honest to suppress deltas than to imply explosive growth when coverage
+  // is missing or definitions are not comparable.
+  if ((metric.unit === "currency" || metric.unit === "count") && metric.previous === 0 && metric.current > 0) {
+    return "Comparison unavailable";
+  }
+
   if (metric.delta == null) {
     // Preserve the prior value internally, but do not claim an exact delta when commerce completeness is partial/unknown.
     const currentIncomplete = metric.currentCompleteness && metric.currentCompleteness !== "complete";
