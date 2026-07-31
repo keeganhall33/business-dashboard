@@ -230,6 +230,70 @@ async function cleanupHarness(input: { harnessRunId: string; actionId: string; e
   return { ok: remaining_harness_rows === 0, remaining_harness_rows, deleted };
 }
 
+async function fetchExecutionEvidence(executionRequestId: string) {
+  const supabase = getSupabaseServerClient();
+  const req = await supabase
+    .from("action_execution_requests_v1")
+    .select("id,execution_state")
+    .eq("id", executionRequestId)
+    .maybeSingle();
+  if (req.error) throw req.error;
+
+  const atts = await supabase
+    .from("action_execution_attempts_v1")
+    .select("id,execution_request_id,status,provider_execution_id,external_side_effect_count")
+    .eq("execution_request_id", executionRequestId)
+    .order("created_at", { ascending: true });
+  if (atts.error) throw atts.error;
+  const attemptIds = (atts.data ?? []).map((r) => String((r as Record<string, unknown>)["id"]));
+
+  let steps: Array<Record<string, unknown>> = [];
+  if (attemptIds.length) {
+    const st = await supabase
+      .from("action_execution_steps_v1")
+      .select("attempt_id,step_index,name,status")
+      .in("attempt_id", attemptIds)
+      .order("step_index", { ascending: true });
+    if (st.error) throw st.error;
+    steps = (st.data ?? []) as Array<Record<string, unknown>>;
+  }
+
+  const reqRow = (req.data && typeof req.data === "object") ? (req.data as Record<string, unknown>) : null;
+  return {
+    request_state: String(reqRow?.["execution_state"] ?? ""),
+    attempt_count: (atts.data ?? []).length,
+    step_count: steps.length,
+    steps: steps.map((s) => String(s["name"])),
+    external_side_effect_count: (atts.data ?? []).reduce((sum, r) => {
+      const row = (r && typeof r === "object") ? (r as Record<string, unknown>) : {};
+      return sum + Number(row["external_side_effect_count"] ?? 0);
+    }, 0)
+  };
+}
+
+function assertOrchestrationMilestonesOrdered(stepNames: string[]) {
+  const milestones = [
+    "preflight",
+    "lock_acquired",
+    "idempotency_checked",
+    "confirmation_verified",
+    "payload_verified",
+    "action_state_verified",
+    "queued",
+    "started",
+    "adapter_invoked",
+    "result_persisted",
+    "verification_completed",
+    "lock_released"
+  ];
+  let i = 0;
+  for (const name of stepNames) {
+    if (name === milestones[i]) i += 1;
+    if (i >= milestones.length) return;
+  }
+  throw new Error(`Missing ordered orchestration milestones (found ${i}/${milestones.length})`);
+}
+
 async function main() {
   const batch = (process.argv[2] as Batch | undefined) ?? "1";
   const stagingHost = assertStagingOnly();
@@ -262,6 +326,15 @@ async function main() {
     select("3. expired confirmation is rejected");
     select("4. agent self-confirmation is rejected");
     select("5. duplicate execution request is idempotent");
+  }
+
+  // Batch 2: scenarios 6–10
+  if (batch === "2" || batch === "full") {
+    select("6. concurrent execution request is locked");
+    select("7. stale lock recovery");
+    select("8. mock success");
+    select("9. mock failure");
+    select("10. mock timeout");
   }
 
   // Scenario helpers
@@ -370,6 +443,151 @@ async function main() {
     });
   }
 
+  if (selectedNames.has("6. concurrent execution request is locked")) {
+    await scenario("6. concurrent execution request is locked", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" } } }, "req-6", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-6");
+      await apiConfirm(executionRequestId, "conf-6");
+
+      // Hold a lock.
+      const supabase = getSupabaseServerClient();
+      const lockRes = await supabase
+        .from("action_execution_locks_v1")
+        .insert({
+          action_id: actionId,
+          execution_request_id: executionRequestId,
+          lock_owner: "harness-lock",
+          lock_reason: "scenario 6 hold",
+          lock_expires_at: new Date(Date.now() + 60_000).toISOString()
+        });
+      if (lockRes.error) throw lockRes.error;
+
+      const before = await fetchExecutionEvidence(executionRequestId);
+      const { json } = await apiExecute(executionRequestId, "exec-6");
+      if (json.ok !== false || domainCode(json) !== "EXECUTION_LOCKED") {
+        throw new Error(`Expected EXECUTION_LOCKED, got ${JSON.stringify(json["error"])}`);
+      }
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.attempt_count !== before.attempt_count) throw new Error("Unexpected attempt created under lock rejection");
+      if (after.step_count !== before.step_count) throw new Error("Unexpected step created under lock rejection");
+
+      // Release held lock.
+      const del = await supabase.from("action_execution_locks_v1").delete().eq("action_id", actionId);
+      if (del.error) throw del.error;
+    });
+  }
+
+  if (selectedNames.has("7. stale lock recovery")) {
+    await scenario("7. stale lock recovery", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" } } }, "req-7", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-7");
+      await apiConfirm(executionRequestId, "conf-7");
+
+      const supabase = getSupabaseServerClient();
+      // Insert an expired lock row.
+      const stale = await supabase
+        .from("action_execution_locks_v1")
+        .insert({
+          action_id: actionId,
+          execution_request_id: executionRequestId,
+          lock_owner: "stale-owner",
+          lock_reason: "scenario 7 stale",
+          lock_acquired_at: new Date(Date.now() - 120_000).toISOString(),
+          lock_expires_at: new Date(Date.now() - 60_000).toISOString()
+        });
+      if (stale.error) throw stale.error;
+
+      const { json } = await apiExecute(executionRequestId, "exec-7");
+      if (json.ok !== true) {
+        throw new Error(`Expected execution to proceed after stale recovery, got ${JSON.stringify(json["error"])}`);
+      }
+
+      const lock = await supabase.from("action_execution_locks_v1").select("action_id").eq("action_id", actionId);
+      if (lock.error) throw lock.error;
+      if ((lock.data ?? []).length !== 0) throw new Error("Expected no active lock after execution");
+
+      // Recovery audit event must exist.
+      const audit = await supabase.from("action_audit_events_v1").select("event_type").eq("action_id", actionId);
+      if (audit.error) throw audit.error;
+      const types = (audit.data ?? []).map((r) => {
+        const row = (r && typeof r === "object") ? (r as Record<string, unknown>) : {};
+        return String(row["event_type"] ?? "");
+      });
+      if (!types.includes("execution_lock_recovered")) throw new Error("Missing execution_lock_recovered audit event");
+    });
+  }
+
+  if (selectedNames.has("8. mock success")) {
+    await scenario("8. mock success", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" } } }, "req-8", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-8");
+      await apiConfirm(executionRequestId, "conf-8");
+
+      const before = await fetchExecutionEvidence(executionRequestId);
+      const exec1 = await apiExecute(executionRequestId, "exec-8");
+      if (exec1.json.ok !== true) throw new Error("Expected ok execute");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "succeeded") throw new Error(`Expected request succeeded, got ${after.request_state}`);
+      if (after.attempt_count !== 1) throw new Error("Expected exactly one attempt");
+      if (after.external_side_effect_count !== 0) throw new Error("Expected external side effects 0");
+      assertOrchestrationMilestonesOrdered(after.steps);
+
+      // Replay (same idempotency key) must not duplicate attempts/steps.
+      await apiExecute(executionRequestId, "exec-8");
+      const afterReplay = await fetchExecutionEvidence(executionRequestId);
+      if (afterReplay.attempt_count !== after.attempt_count) throw new Error("Replay created duplicate attempt");
+      if (afterReplay.step_count !== after.step_count) throw new Error("Replay created duplicate steps");
+      if (after.step_count < before.step_count) throw new Error("Invariant violated");
+    });
+  }
+
+  if (selectedNames.has("9. mock failure")) {
+    await scenario("9. mock failure", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "failure" } } }, "req-9", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-9");
+      await apiConfirm(executionRequestId, "conf-9");
+
+      const exec = await apiExecute(executionRequestId, "exec-9");
+      if (exec.json.ok !== true) throw new Error("Expected ok execute");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "failed") throw new Error(`Expected request failed, got ${after.request_state}`);
+      if (after.external_side_effect_count !== 0) throw new Error("Expected external side effects 0");
+      assertOrchestrationMilestonesOrdered(after.steps);
+    });
+  }
+
+  if (selectedNames.has("10. mock timeout")) {
+    await scenario("10. mock timeout", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "timeout" } } }, "req-10", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-10");
+      await apiConfirm(executionRequestId, "conf-10");
+
+      const exec = await apiExecute(executionRequestId, "exec-10");
+      if (exec.json.ok !== true) throw new Error("Expected ok execute");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "timeout") throw new Error(`Expected request timeout, got ${after.request_state}`);
+      if (after.external_side_effect_count !== 0) throw new Error("Expected external side effects 0");
+      assertOrchestrationMilestonesOrdered(after.steps);
+
+      // Replay must be idempotent.
+      const beforeReplay = { attempt: after.attempt_count, steps: after.step_count };
+      await apiExecute(executionRequestId, "exec-10");
+      const afterReplay = await fetchExecutionEvidence(executionRequestId);
+      if (afterReplay.attempt_count !== beforeReplay.attempt) throw new Error("Replay created duplicate attempt");
+      if (afterReplay.step_count !== beforeReplay.steps) throw new Error("Replay created duplicate steps");
+    });
+  }
+
   const executed = results.length;
   const passed = results.filter((r) => r.ok).length;
   const failed = executed - passed;
@@ -391,10 +609,10 @@ async function main() {
   };
 
   mkdirSync(".artifacts/milestone-12-execution-boundary", { recursive: true });
-  writeFileSync(
-    `.artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json`,
-    JSON.stringify(report, null, 2)
-  );
+  const reportPath = batch === "2"
+    ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-2-report.json"
+    : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
   if (failed !== 0) {
     throw new Error(`Batch ${batch} failed: ${passed}/${executed} passed`);
