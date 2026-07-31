@@ -10,6 +10,8 @@ import { MetaAdsPanel } from "@/components/dashboard/MetaAdsPanel";
 import type { ExecutiveMetric } from "@/lib/dashboard/executive-summary";
 import type { ConfidenceSummary, ConfidenceEntry, ConfidenceDomain, ConfidenceState } from "@/lib/data-confidence";
 import type { MetaAdsSnapshot } from "@/lib/types/dashboard";
+import { WebsiteConversionPanel } from "@/components/dashboard/WebsiteConversionPanel";
+import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 
 function confidenceSummary(stateById: Partial<Record<ConfidenceDomain, ConfidenceState>>): ConfidenceSummary {
   // Minimal ConfidenceSummary shape for metric-truth; only entries[].id/state are read.
@@ -144,4 +146,51 @@ test("Meta Ads: attribution missing does not show 0 ROAS", () => {
   const text = String(html);
   assert.match(text, /Not attributable/);
   assert.match(text, /Purchase attribution unavailable/);
+});
+
+test("snapshot vs selected range: both windows render and remain distinct", () => {
+  const snapshot: WebsiteConversionSnapshot = {
+    generatedAt: new Date().toISOString(),
+    ga4: { sessions: 10 },
+    wooCommerce: {
+      netRevenue: 100,
+      paidOrdersInWindow: 2,
+      observedPaidRange: { earliestPaid: "2026-07-21", latestPaid: "2026-07-23" },
+      topProducts: [],
+      recentOrders: []
+    }
+  } as unknown as WebsiteConversionSnapshot;
+
+  const html = renderToStaticMarkup(
+    React.createElement(WebsiteConversionPanel, {
+      snapshot,
+      range: { startDate: "2026-01-01", endDate: "2026-07-31" }
+    })
+  );
+
+  assert.match(html, /Selected range 2026-01-01 → 2026-07-31/);
+  assert.match(html, /Snapshot window 2026-07-21 → 2026-07-23/);
+});
+
+test("snapshot window degrades honestly when missing range metadata", () => {
+  const snapshot: WebsiteConversionSnapshot = {
+    generatedAt: new Date().toISOString(),
+    ga4: { sessions: 10 },
+    wooCommerce: {
+      netRevenue: 100,
+      paidOrdersInWindow: 2,
+      observedPaidRange: null,
+      topProducts: [],
+      recentOrders: []
+    }
+  } as unknown as WebsiteConversionSnapshot;
+
+  const html = renderToStaticMarkup(
+    React.createElement(WebsiteConversionPanel, {
+      snapshot,
+      range: { startDate: "2026-01-01", endDate: "2026-07-31" }
+    })
+  );
+
+  assert.match(html, /Snapshot window Unavailable/);
 });
