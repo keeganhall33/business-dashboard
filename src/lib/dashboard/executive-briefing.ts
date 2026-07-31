@@ -96,7 +96,8 @@ function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceS
     .sort((a, b) => confidenceSeverity(b) - confidenceSeverity(a))
     .map((e) => {
       // Keep plain-English; do not emit raw state names.
-      return e.decisionImpact || `${e.label} data requires review.`;
+      const impact = e.decisionImpact || `${e.label} data requires review.`;
+      return impact.replace(/; decisions relying on it are blocked\.?/gi, ".");
     });
 
   const lines = [...businessRisks, ...dataIssues].slice(0, 3);

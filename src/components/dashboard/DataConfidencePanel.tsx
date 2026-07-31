@@ -31,11 +31,13 @@ export function DataConfidencePanel({ summary }: { summary: ConfidenceSummary })
       </div>
 
       {topIssue ? (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Highest-priority issue</div>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">Highest-priority issue</div>
           <div className="mt-2 text-sm font-semibold text-white">{topIssue.label}</div>
-          <div className="mt-1 text-sm text-zinc-300">{topIssue.decisionImpact}</div>
-          <div className="mt-2 text-xs text-zinc-500">Last success {topIssue.lastSuccess ? formatRelative(topIssue.lastSuccess) : "Unknown"}</div>
+          <div className="mt-1 text-sm text-zinc-300 line-clamp-2">{topIssue.decisionImpact}</div>
+          {topIssue.recommendedAction ? (
+            <div className="mt-2 text-xs text-zinc-400">Next: {topIssue.recommendedAction}</div>
+          ) : null}
         </div>
       ) : null}
 

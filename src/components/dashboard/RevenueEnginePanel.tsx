@@ -1,6 +1,5 @@
 import { RevenueEngine } from "@/lib/types/dashboard";
 import { MetricCard } from "./MetricCard";
-import { EmptyState } from "./ui/EmptyState";
 
 type Props = {
   data: RevenueEngine;
@@ -17,8 +16,8 @@ export function RevenueEnginePanel({ data }: Props) {
       <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Revenue Engine</div>
 
       {nothingToShow ? (
-        <div className="mt-4">
-          <EmptyState title="Data unavailable" detail="Revenue diagnostics will appear once Supabase syncs live metrics." />
+        <div className="mt-4 rounded-2xl border border-dashed border-zinc-800/80 bg-zinc-950/40 p-4 text-sm text-zinc-400">
+          No verified revenue diagnostics for this window.
         </div>
       ) : (
         <>
@@ -26,7 +25,7 @@ export function RevenueEnginePanel({ data }: Props) {
             {hasMetrics ? (
               data.metrics.map((metric) => <MetricCard key={metric.metricKey} metric={metric} density="comfortable" />)
             ) : (
-              <EmptyState title="No metrics" detail="No KPI readings returned for this range." />
+              <div className="rounded-2xl border border-dashed border-zinc-800/80 bg-zinc-950/40 p-4 text-sm text-zinc-400">No KPI readings returned for this range.</div>
             )}
           </div>
 
@@ -40,9 +39,7 @@ export function RevenueEnginePanel({ data }: Props) {
                   ))}
                 </ul>
               ) : (
-                <div className="mt-3">
-                  <EmptyState title="No diagnostics" detail="No blockers reported for this period." />
-                </div>
+                <div className="mt-3 text-sm text-zinc-500">No blockers reported for this period.</div>
               )}
             </div>
 
@@ -58,9 +55,7 @@ export function RevenueEnginePanel({ data }: Props) {
                   ))}
                 </div>
               ) : (
-                <div className="mt-3">
-                  <EmptyState title="No playbook" detail="No evidence-backed recommendations available for this period." />
-                </div>
+                <div className="mt-3 text-sm text-zinc-500">No evidence-backed recommendations available for this period.</div>
               )}
             </div>
           </div>
