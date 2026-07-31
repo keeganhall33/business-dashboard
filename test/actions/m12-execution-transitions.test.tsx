@@ -15,6 +15,7 @@ test("execution transition matrix allows required transitions", () => {
     ["started", "failed"],
     ["started", "timeout"],
     ["queued", "cancel_requested"],
+    ["confirmed", "cancel_requested"],
     ["started", "cancel_requested"],
     ["cancel_requested", "cancelled"],
     ["failed", "rollback_requested"],
@@ -33,4 +34,3 @@ test("execution transition matrix rejects invalid transitions", () => {
   assert.equal(isValidExecutionTransition({ from: "requested", to: "confirmed" }), false);
   assert.equal(isValidExecutionTransition({ from: "confirmed", to: "succeeded" }), false);
 });
-

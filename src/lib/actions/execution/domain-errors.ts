@@ -18,7 +18,9 @@ export type ExecutionDomainErrorCode =
   | "EXECUTION_IRREVERSIBLE_ACK_REQUIRED"
   | "EXECUTION_LOCKED"
   | "EXECUTION_IDEMPOTENCY_CONFLICT"
-  | "EXECUTION_INVALID_TRANSITION";
+  | "EXECUTION_INVALID_TRANSITION"
+  | "EXECUTION_ROLLBACK_NOT_ALLOWED"
+  | "EXECUTION_EXTERNAL_SIDE_EFFECTS_NOT_ALLOWED";
 
 export class ExecutionDomainError extends Error {
   readonly code: ExecutionDomainErrorCode;
@@ -32,4 +34,3 @@ export class ExecutionDomainError extends Error {
     this.httpStatus = input.httpStatus ?? 400;
   }
 }
-

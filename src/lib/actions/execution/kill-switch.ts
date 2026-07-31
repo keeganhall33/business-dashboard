@@ -33,8 +33,15 @@ export function evaluateExecutionKillSwitches(input: {
   const nodeEnv = (input.nodeEnv ?? "").toLowerCase();
   if (nodeEnv === "production") reasons.push("NODE_ENV=production blocks execution");
 
-  const host = new URL(input.supabaseUrl).host;
-  if (isProdProjectRef(host)) reasons.push("Production Supabase project ref blocks execution");
+  let host = "";
+  try {
+    host = new URL(input.supabaseUrl).host;
+  } catch {
+    reasons.push("Invalid Supabase URL blocks execution");
+    host = "";
+  }
+
+  if (host && isProdProjectRef(host)) reasons.push("Production Supabase project ref blocks execution");
 
   const env = detectEnvFromSupabaseHost(host);
   if (env === "unknown") reasons.push("Unknown execution environment blocks execution");
@@ -54,4 +61,3 @@ export function evaluateExecutionKillSwitches(input: {
     flags: { enableExecutionBoundary: boundaryOn, enableMockExecution: mockOn }
   };
 }
-

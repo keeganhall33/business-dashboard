@@ -35,6 +35,16 @@ export type ExecutionContext = {
   timeoutMs: number;
   retryPolicy: { maxAttempts: number; backoffMs: number };
 
+  // Phase 4: adapters must enforce safety gates locally too.
+  // (No missing value may imply permission.)
+  env: {
+    supabaseUrl: string;
+    category: string;
+    adapterEnabled: boolean;
+    categoryEnabled: boolean;
+    emergencyStop: boolean;
+  };
+
   approval: { approvedAt: string; approvedBy: string; auditIds: string[] };
   evidence: { snapshotId: string; hash: string; expiresAt: string | null };
 
@@ -78,7 +88,18 @@ export interface ExecutionAdapter {
   id: ExecutionAdapterId;
   capabilities(): AdapterCapabilities;
   validate(ctx: ExecutionContext): Promise<{ ok: boolean; errors: string[] }>; 
+
+  // Phase 4+ contract: break dry-run into explicit deterministic operations.
+  // (Milestone 12 keeps a single mock adapter, but we keep DryRunResult for
+  // persistence + confirmation gating.)
+  preview(ctx: ExecutionContext): Promise<{ ok: boolean; summary: string; diff?: unknown; warnings: string[] }>;
+  estimateImpact(ctx: ExecutionContext): Promise<Record<string, unknown>>;
+  estimateCost(ctx: ExecutionContext): Promise<Record<string, unknown>>;
+
+  // Legacy convenience method used by Phase 3 dry-run service.
+  // Adapters may implement this by calling preview/estimate*.
   dryRun(ctx: ExecutionContext): Promise<DryRunResult>;
+
   execute(ctx: ExecutionContext): Promise<ExecuteResult>;
   verify(ctx: ExecutionContext): Promise<{ ok: boolean; details: Record<string, unknown> }>;
   getRollbackPreview(ctx: ExecutionContext): Promise<{ ok: boolean; summary: string; warnings: string[] }>;
@@ -86,4 +107,3 @@ export interface ExecutionAdapter {
   cancel(ctx: ExecutionContext): Promise<{ ok: boolean; status: "cancelled" | "not_cancellable"; details?: Record<string, unknown> }>;
   getStatus(input: { providerExecutionId: string }): Promise<{ status: string; details: Record<string, unknown> }>;
 }
-

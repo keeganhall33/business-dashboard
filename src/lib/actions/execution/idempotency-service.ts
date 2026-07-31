@@ -6,6 +6,9 @@ export type ExecutionOperationType =
   | "execution_request"
   | "execution_dry_run"
   | "execution_confirm"
+  | "execution_execute"
+  | "execution_cancel"
+  | "execution_rollback"
   | "execution_lock_acquire"
   | "execution_lock_release"
   | "execution_lock_recover";
@@ -84,3 +87,19 @@ export async function upsertIdempotencyRecord(input: {
   return { replay: false, record: data as unknown as IdempotencyRecord };
 }
 
+export async function completeIdempotencyRecord(input: {
+  id: string;
+  completionState: "completed" | "failed";
+  responseSnapshot: Record<string, unknown>;
+}): Promise<IdempotencyRecord> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("action_execution_idempotency_v1")
+    .update({ completion_state: input.completionState, response_snapshot: input.responseSnapshot })
+    .eq("id", input.id)
+    .select("id,operation_type,action_id,execution_request_id,idempotency_key,request_hash,response_snapshot,completion_state,created_at,updated_at")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Failed to update idempotency record");
+  return data as unknown as IdempotencyRecord;
+}

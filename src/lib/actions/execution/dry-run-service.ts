@@ -52,6 +52,13 @@ export async function runExecutionDryRun(input: {
     idempotencyKey: input.idempotencyKey,
     timeoutMs: 30_000,
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
+    env: {
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+      category: "unknown",
+      adapterEnabled: true,
+      categoryEnabled: true,
+      emergencyStop: false
+    },
     approval: { approvedAt: "", approvedBy: "", auditIds: [] },
     evidence: { snapshotId: "", hash: "", expiresAt: null },
     payload: { hash: req.payload_hash, summary: "", raw: req.payload_json },

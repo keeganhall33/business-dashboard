@@ -15,6 +15,7 @@ export const VALID_EXECUTION_TRANSITIONS: ExecutionTransition[] = [
   { from: "started", to: "failed" },
   { from: "started", to: "timeout" },
 
+  { from: "confirmed", to: "cancel_requested" },
   { from: "queued", to: "cancel_requested" },
   { from: "started", to: "cancel_requested" },
   { from: "cancel_requested", to: "cancelled" },
@@ -32,4 +33,3 @@ export function isValidExecutionTransition(input: { from: ExecutionState; to: Ex
   }
   return VALID_EXECUTION_TRANSITIONS.some((t) => t.from === input.from && t.to === input.to);
 }
-
