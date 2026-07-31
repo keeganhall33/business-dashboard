@@ -59,9 +59,13 @@ create index if not exists action_execution_requests_state_recency_v1 on action_
 
 alter table action_execution_requests_v1 enable row level security;
 
-create trigger action_execution_requests_set_updated_at_v1
-before update on action_execution_requests_v1
-for each row execute function action_execution_set_updated_at_v1();
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'action_execution_requests_set_updated_at_v1') then
+    execute 'create trigger action_execution_requests_set_updated_at_v1 before update on action_execution_requests_v1 for each row execute function action_execution_set_updated_at_v1()';
+  end if;
+end
+$$;
 
 -- 2) Confirmations
 create table if not exists action_execution_confirmations_v1 (
@@ -152,9 +156,13 @@ create index if not exists action_execution_locks_expiry_v1
 
 alter table action_execution_locks_v1 enable row level security;
 
-create trigger action_execution_locks_set_updated_at_v1
-before update on action_execution_locks_v1
-for each row execute function action_execution_set_updated_at_v1();
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'action_execution_locks_set_updated_at_v1') then
+    execute 'create trigger action_execution_locks_set_updated_at_v1 before update on action_execution_locks_v1 for each row execute function action_execution_set_updated_at_v1()';
+  end if;
+end
+$$;
 
 -- 6) Idempotency ledger
 create table if not exists action_execution_idempotency_v1 (
@@ -179,9 +187,13 @@ create index if not exists action_execution_idempotency_lookup_v1
 
 alter table action_execution_idempotency_v1 enable row level security;
 
-create trigger action_execution_idempotency_set_updated_at_v1
-before update on action_execution_idempotency_v1
-for each row execute function action_execution_set_updated_at_v1();
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'action_execution_idempotency_set_updated_at_v1') then
+    execute 'create trigger action_execution_idempotency_set_updated_at_v1 before update on action_execution_idempotency_v1 for each row execute function action_execution_set_updated_at_v1()';
+  end if;
+end
+$$;
 
 -- 7) Rollbacks
 create table if not exists action_execution_rollbacks_v1 (
@@ -213,8 +225,12 @@ create index if not exists action_execution_rollbacks_attempt_v1
 
 alter table action_execution_rollbacks_v1 enable row level security;
 
-create trigger action_execution_rollbacks_set_updated_at_v1
-before update on action_execution_rollbacks_v1
-for each row execute function action_execution_set_updated_at_v1();
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'action_execution_rollbacks_set_updated_at_v1') then
+    execute 'create trigger action_execution_rollbacks_set_updated_at_v1 before update on action_execution_rollbacks_v1 for each row execute function action_execution_set_updated_at_v1()';
+  end if;
+end
+$$;
 
 commit;
