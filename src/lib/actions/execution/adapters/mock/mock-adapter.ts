@@ -194,14 +194,15 @@ export class MockExecutionAdapter implements ExecutionAdapter {
         });
       case "rollback_success":
       case "rollback_failure":
-        // execute() still represents the forward attempt; rollback is exercised via rollback().
+        // These modes are used to exercise rollback orchestration deterministically.
+        // We fail the forward attempt so rollback is allowed.
         return buildMockExecuteResult({
-          ok: true,
-          status: "succeeded",
+          ok: false,
+          status: "failed",
           providerExecutionId,
-          steps,
+          steps: [...steps.slice(0, 2), { name: "apply", status: "failed" }, { name: "verify", status: "skipped" }],
           rollbackEligible: true,
-          result: { mode: parsed.mode, message: "Forward execution succeeded; rollback mode configured" }
+          result: { mode: parsed.mode, message: "Forward execution failed; rollback mode configured" }
         });
     }
   }

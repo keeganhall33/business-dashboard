@@ -29,7 +29,7 @@ export type RollbackOrchestratorDeps = {
       reversibility: "reversible" | "partially_reversible" | "irreversible";
       irreversible_reason: string | null;
     } | null>;
-    updateExecutionRequestState: (input: { id: string; execution_state: string }) => Promise<void>;
+    updateExecutionRequestState: (input: { id: string; execution_state: ExecutionState }) => Promise<void>;
     insertRollback: (row: {
       execution_request_id: string;
       execution_attempt_id: string | null;

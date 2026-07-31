@@ -21,6 +21,8 @@ import { POST as requestExecution } from "@/app/api/actions/[id]/execution/reque
 import { POST as dryRunExecution } from "@/app/api/actions/[id]/execution/dry-run/route";
 import { POST as confirmExecution } from "@/app/api/actions/[id]/execution/confirm/route";
 import { POST as executeExecution } from "@/app/api/actions/[id]/execution/execute/route";
+import { POST as cancelExecution } from "@/app/api/actions/[id]/execution/cancel/route";
+import { POST as rollbackExecution } from "@/app/api/actions/[id]/execution/rollback/route";
 
 type Batch = "1" | "2" | "3" | "4" | "5" | "full";
 
@@ -337,6 +339,15 @@ async function main() {
     select("10. mock timeout");
   }
 
+  // Batch 3: scenarios 11–15
+  if (batch === "3" || batch === "full") {
+    select("11. mock partial success");
+    select("12. cancellation before start");
+    select("13. cancellation during execution");
+    select("14. rollback success");
+    select("15. rollback failure");
+  }
+
   // Scenario helpers
   async function apiRequestExecution(payload: Record<string, unknown>, idem: string, expiresAtUtc: string) {
     const req = makeRequest({
@@ -363,6 +374,30 @@ async function main() {
   async function apiExecute(executionRequestId: string, idem: string) {
     const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/execute`, idempotencyKey: idem, json: { executionRequestId }, actor });
     const res = await executeExecution(req);
+    return { res, json: await readJson(res as Response) };
+  }
+
+  async function apiCancel(executionRequestId: string, idem: string) {
+    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/cancel`, idempotencyKey: idem, json: { executionRequestId, category: "email" }, actor });
+    const res = await cancelExecution(req);
+    return { res, json: await readJson(res as Response) };
+  }
+
+  async function apiRollback(executionRequestId: string, idem: string, input: { confirmed: boolean }) {
+    const req = makeRequest({
+      method: "POST",
+      url: `${baseUrl}/api/actions/${actionId}/execution/rollback`,
+      idempotencyKey: idem,
+      json: {
+        executionRequestId,
+        category: "email",
+        confirmed: input.confirmed,
+        rollbackPlan: { hash: "rb-plan", raw: { harness: true } },
+        rollbackPreview: { summary: "rollback preview", warnings: [] }
+      },
+      actor
+    });
+    const res = await rollbackExecution(req);
     return { res, json: await readJson(res as Response) };
   }
 
@@ -588,6 +623,135 @@ async function main() {
     });
   }
 
+  if (batch === "3" || batch === "full") {
+    // Selection happens at top of main; implement scenarios 11–15 below.
+  }
+
+  if (selectedNames.has("11. mock partial success")) {
+    await scenario("11. mock partial success", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "partial_success" } } }, "req-11", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-11");
+      await apiConfirm(executionRequestId, "conf-11");
+      const exec = await apiExecute(executionRequestId, "exec-11");
+      if (exec.json.ok !== true) throw new Error("Expected ok execute");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "partial_succeeded") throw new Error(`Expected partial_succeeded, got ${after.request_state}`);
+      if (after.attempt_count !== 1) throw new Error("Expected one attempt");
+      assertOrchestrationMilestonesOrdered(after.steps);
+      await apiExecute(executionRequestId, "exec-11");
+      const afterReplay = await fetchExecutionEvidence(executionRequestId);
+      if (afterReplay.attempt_count !== after.attempt_count) throw new Error("Replay duplicated attempt");
+      if (afterReplay.step_count !== after.step_count) throw new Error("Replay duplicated steps");
+    });
+  }
+
+  if (selectedNames.has("12. cancellation before start")) {
+    await scenario("12. cancellation before start", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" } } }, "req-12", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-12");
+      await apiConfirm(executionRequestId, "conf-12");
+
+      const before = await fetchExecutionEvidence(executionRequestId);
+      const cancelled = await apiCancel(executionRequestId, "cancel-12");
+      if (cancelled.json.ok !== true) throw new Error("Expected ok cancel");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "cancelled") throw new Error(`Expected cancelled, got ${after.request_state}`);
+      if (after.attempt_count !== 0) throw new Error("Expected no attempt created for cancel-before-start");
+      if (after.step_count !== before.step_count) throw new Error("Expected no steps created for cancel-before-start");
+
+      // replay
+      await apiCancel(executionRequestId, "cancel-12");
+      const afterReplay = await fetchExecutionEvidence(executionRequestId);
+      if (afterReplay.attempt_count !== after.attempt_count) throw new Error("Cancel replay duplicated attempt");
+      if (afterReplay.step_count !== after.step_count) throw new Error("Cancel replay duplicated steps");
+    });
+  }
+
+  if (selectedNames.has("13. cancellation during execution")) {
+    await scenario("13. cancellation during execution", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "cancel_during_execution" } } }, "req-13", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-13");
+      await apiConfirm(executionRequestId, "conf-13");
+
+      // Seed a started attempt and mark request started (deterministic, no timers).
+      const supabase = getSupabaseServerClient();
+      await supabase.from("action_execution_requests_v1").update({ execution_state: "started" }).eq("id", executionRequestId);
+      const att = await supabase
+        .from("action_execution_attempts_v1")
+        .insert({
+          execution_request_id: executionRequestId,
+          attempt_index: 1,
+          idempotency_key: "seed",
+          status: "started",
+          started_at: nowIso(),
+          ended_at: null,
+          provider_execution_id: null,
+          result_json: null,
+          external_side_effect_count: 0
+        })
+        .select("id")
+        .maybeSingle();
+      if (att.error) throw att.error;
+      const attRow = (att.data && typeof att.data === "object") ? (att.data as Record<string, unknown>) : null;
+      const attemptId = String(attRow?.["id"] ?? "");
+      if (attemptId) {
+        await supabase.from("action_execution_steps_v1").insert({ attempt_id: attemptId, step_index: 0, name: "started", status: "succeeded", details: null });
+      }
+
+      const cancelled = await apiCancel(executionRequestId, "cancel-13");
+      if (cancelled.json.ok !== true) throw new Error("Expected ok cancel");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "cancelled") throw new Error(`Expected cancelled, got ${after.request_state}`);
+      if (after.attempt_count !== 1) throw new Error("Expected exactly one attempt");
+
+      // replay
+      await apiCancel(executionRequestId, "cancel-13");
+      const afterReplay = await fetchExecutionEvidence(executionRequestId);
+      if (afterReplay.attempt_count !== after.attempt_count) throw new Error("Cancel replay duplicated attempt");
+      if (afterReplay.step_count !== after.step_count) throw new Error("Cancel replay duplicated steps");
+    });
+  }
+
+  if (selectedNames.has("14. rollback success")) {
+    await scenario("14. rollback success", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "partial_success" } } }, "req-14", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-14");
+      await apiConfirm(executionRequestId, "conf-14");
+      await apiExecute(executionRequestId, "exec-14");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (!(after.request_state === "partial_succeeded" || after.request_state === "failed")) throw new Error("Expected terminal state to allow rollback");
+      const rb = await apiRollback(executionRequestId, "rb-14", { confirmed: true });
+      if (rb.json.ok !== true) throw new Error("Expected ok rollback");
+      const rbReq = await fetchExecutionEvidence(executionRequestId);
+      if (rbReq.request_state !== "rolled_back") throw new Error(`Expected rolled_back, got ${rbReq.request_state}`);
+    });
+  }
+
+  if (selectedNames.has("15. rollback failure")) {
+    await scenario("15. rollback failure", async () => {
+      const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "rollback_failure" } } }, "req-15", expiresAtUtc);
+      const executionRequestId = String(requested.requestId);
+      await apiDryRun(executionRequestId, "dry-15");
+      await apiConfirm(executionRequestId, "conf-15");
+      await apiExecute(executionRequestId, "exec-15");
+      const after = await fetchExecutionEvidence(executionRequestId);
+      if (after.request_state !== "failed") throw new Error(`Expected failed, got ${after.request_state}`);
+      const rb = await apiRollback(executionRequestId, "rb-15", { confirmed: true });
+      if (rb.json.ok !== true) throw new Error("Expected ok rollback orchestration");
+      const rbReq = await fetchExecutionEvidence(executionRequestId);
+      if (rbReq.request_state !== "rollback_failed") throw new Error(`Expected rollback_failed, got ${rbReq.request_state}`);
+    });
+  }
+
   const executed = results.length;
   const passed = results.filter((r) => r.ok).length;
   const failed = executed - passed;
@@ -611,7 +775,9 @@ async function main() {
   mkdirSync(".artifacts/milestone-12-execution-boundary", { recursive: true });
   const reportPath = batch === "2"
     ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-2-report.json"
-    : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
+    : batch === "3"
+      ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-3-report.json"
+      : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
   if (failed !== 0) {
