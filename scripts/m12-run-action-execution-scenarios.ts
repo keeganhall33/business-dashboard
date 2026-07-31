@@ -16,6 +16,10 @@ import { randomUUID } from "node:crypto";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { canonicalJsonSha256Hex } from "@/lib/actions/execution/canonical-json";
+import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
+import { createExecutionRequest } from "@/lib/actions/execution/execution-request-service";
+import { createMilestone12AdapterRegistry } from "@/lib/actions/execution/adapters/mock/mock-adapter-registry";
+import { confirmExecutionRequest } from "@/lib/actions/execution/confirmation-service";
 
 import { POST as requestExecution } from "@/app/api/actions/[id]/execution/request/route";
 import { POST as dryRunExecution } from "@/app/api/actions/[id]/execution/dry-run/route";
@@ -75,6 +79,9 @@ function assertStagingOnly() {
   if (String(process.env.ACTIONS_ENABLE_MOCK_EXECUTION ?? "") !== "1") {
     throw new Error("ACTIONS_ENABLE_MOCK_EXECUTION=1 is required");
   }
+  if (String(process.env.ACTIONS_ENABLE_M12_HARNESS ?? "") !== "1") {
+    throw new Error("ACTIONS_ENABLE_M12_HARNESS=1 is required");
+  }
   return host;
 }
 
@@ -83,7 +90,6 @@ function makeRequest(input: {
   url: string;
   idempotencyKey: string;
   json: Record<string, unknown>;
-  actor?: string;
   harnessRunId?: string;
 }): Request {
   const headers: Record<string, string> = {
@@ -97,7 +103,6 @@ function makeRequest(input: {
     headers["x-dashboard-secret"] = dash;
   }
 
-  if (input.actor) headers["x-m12-harness-actor"] = input.actor;
   return new Request(input.url, {
     method: input.method,
     headers,
@@ -305,7 +310,7 @@ async function main() {
 
   const results: ScenarioResult[] = [];
   const baseUrl = "https://local.invalid";
-  const actor = "Keegan";
+  // Actor identity is derived server-side; harness must not spoof via headers.
 
   async function scenario(name: string, fn: () => Promise<void>) {
     try {
@@ -372,19 +377,18 @@ async function main() {
       url: `${baseUrl}/api/actions/${actionId}/execution/request`,
       idempotencyKey: idem,
       json: { ...payload, expiresAtUtc },
-      actor,
       harnessRunId: harness_run_id
     });
     const res = await requestExecution(req, { params: Promise.resolve({ id: actionId }) } as unknown as { params: Promise<{ id: string }> });
     return { res, json: await readJson(res as Response) };
   }
   async function apiDryRun(executionRequestId: string, idem: string) {
-    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/dry-run`, idempotencyKey: idem, json: { executionRequestId }, actor });
+    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/dry-run`, idempotencyKey: idem, json: { executionRequestId } });
     const res = await dryRunExecution(req);
     return { res, json: await readJson(res as Response) };
   }
-  async function apiConfirm(executionRequestId: string, idem: string, input?: { actor?: string }) {
-    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/confirm`, idempotencyKey: idem, json: { executionRequestId, irreversibleAcknowledged: false, approvalSnapshot: { note: "harness" } }, actor: input?.actor ?? actor });
+  async function apiConfirm(executionRequestId: string, idem: string) {
+    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/confirm`, idempotencyKey: idem, json: { executionRequestId, irreversibleAcknowledged: false, approvalSnapshot: { note: "harness" } } });
     const res = await confirmExecution(req);
     return { res, json: await readJson(res as Response) };
   }
@@ -394,14 +398,13 @@ async function main() {
       method: "POST",
       url: `${baseUrl}/api/actions/${actionId}/execution/confirm`,
       idempotencyKey: idem,
-      json: { executionRequestId, irreversibleAcknowledged, approvalSnapshot: { note: "harness" } },
-      actor
+      json: { executionRequestId, irreversibleAcknowledged, approvalSnapshot: { note: "harness" } }
     });
     const res = await confirmExecution(req);
     return { res, json: await readJson(res as Response) };
   }
   async function apiExecute(executionRequestId: string, idem: string) {
-    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/execute`, idempotencyKey: idem, json: { executionRequestId }, actor });
+    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/execute`, idempotencyKey: idem, json: { executionRequestId } });
     const res = await executeExecution(req);
     return { res, json: await readJson(res as Response) };
   }
@@ -413,7 +416,7 @@ async function main() {
   }
 
   async function apiCancel(executionRequestId: string, idem: string) {
-    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/cancel`, idempotencyKey: idem, json: { executionRequestId, category: "email" }, actor });
+    const req = makeRequest({ method: "POST", url: `${baseUrl}/api/actions/${actionId}/execution/cancel`, idempotencyKey: idem, json: { executionRequestId, category: "email" } });
     const res = await cancelExecution(req);
     return { res, json: await readJson(res as Response) };
   }
@@ -429,8 +432,7 @@ async function main() {
         confirmed: input.confirmed,
         rollbackPlan: { hash: "rb-plan", raw: { harness: true } },
         rollbackPreview: { summary: "rollback preview", warnings: [] }
-      },
-      actor
+      }
     });
     const res = await rollbackExecution(req);
     return { res, json: await readJson(res as Response) };
@@ -498,9 +500,19 @@ async function main() {
       const { json: requested } = await apiRequestExecution({ adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" } } }, "req-4", expiresAtUtc);
       const executionRequestId = String(requested.requestId);
       await apiDryRun(executionRequestId, "dry-4");
-      const { json } = await apiConfirm(executionRequestId, "conf-4", { actor: "agent test" });
-      if (json.ok !== false || domainCode(json) !== "EXECUTION_SELF_CONFIRMATION_BLOCKED") {
-        throw new Error(`Expected EXECUTION_SELF_CONFIRMATION_BLOCKED, got ${JSON.stringify(json["error"])}`);
+      try {
+        await confirmExecutionRequest({
+          executionRequestId,
+          operatorActor: "agent test",
+          idempotencyKey: "conf-4",
+          irreversibleAcknowledged: false,
+          approvalSnapshot: { note: "harness" }
+        });
+        throw new Error("Expected EXECUTION_SELF_CONFIRMATION_BLOCKED");
+      } catch (e) {
+        if (!(e instanceof ExecutionDomainError) || e.code !== "EXECUTION_SELF_CONFIRMATION_BLOCKED") {
+          throw new Error(`Expected EXECUTION_SELF_CONFIRMATION_BLOCKED, got ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     });
   }
@@ -858,7 +870,6 @@ async function main() {
         url: `${baseUrl}/api/actions/${staleActionId}/execution/request`,
         idempotencyKey: "req-18",
         json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
-        actor,
         harnessRunId: harness_run_id
       });
       const res = await requestExecution(req, { params: Promise.resolve({ id: staleActionId }) } as unknown as { params: Promise<{ id: string }> });
@@ -954,7 +965,6 @@ async function main() {
         url: `${baseUrl}/api/actions/${actionId}/execution/request`,
         idempotencyKey: "req-21",
         json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
-        actor,
         harnessRunId: harness_run_id
       });
       // Force boundary disabled via harness override header (server-side only).
@@ -975,7 +985,6 @@ async function main() {
         url: `${baseUrl}/api/actions/${actionId}/execution/request`,
         idempotencyKey: "req-22",
         json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
-        actor,
         harnessRunId: harness_run_id
       });
       const req2 = withHeader(req, "x-m12-adapter-enabled", "0");
@@ -990,20 +999,32 @@ async function main() {
   if (selectedNames.has("23. production execution is always blocked")) {
     await scenario("23. production execution is always blocked", async () => {
       const expiresAtUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      // Force production block via NODE_ENV=production only for this Request.
-      const req = makeRequest({
-        method: "POST",
-        url: `${baseUrl}/api/actions/${actionId}/execution/request`,
-        idempotencyKey: "req-23",
-        json: { adapterId: "mock", reversibility: "reversible", payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} } }, expiresAtUtc },
-        actor,
-        harnessRunId: harness_run_id
+      // Production simulation via trusted, request-scoped runtime seam (no request headers; no env mutation in handlers).
+      const registry = createMilestone12AdapterRegistry({
+        enabledAdapters: new Set(["mock"]),
+        enabledCategories: new Set(["email"]),
+        emergencyStopActionIds: new Set()
       });
-      const req2 = new Request(req.url, { method: req.method, headers: { ...Object.fromEntries(req.headers.entries()), "x-m12-force-node-env": "production" }, body: await req.text() });
-      const res = await requestExecution(req2, { params: Promise.resolve({ id: actionId }) } as unknown as { params: Promise<{ id: string }> });
-      const json = await readJson(res as Response);
-      if (json.ok !== false || domainCode(json) !== "EXECUTION_PRODUCTION_BLOCKED") {
-        throw new Error(`Expected EXECUTION_PRODUCTION_BLOCKED, got ${JSON.stringify(json)}`);
+      try {
+        await createExecutionRequest({
+          actionId,
+          adapterId: "mock",
+          operatorId: "dashboard",
+          idempotencyKey: "req-23",
+          supabaseUrl: String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""),
+          payload: { mock: { mode: "success" }, rollback_plan: { hash: "rp", raw: {} }, expiresAtUtc },
+          reversibility: "reversible",
+          irreversibleReason: null,
+          expiresAtUtc,
+          harnessRunId: harness_run_id,
+          registry,
+          runtime: { nodeEnv: "production" }
+        });
+        throw new Error("Expected EXECUTION_PRODUCTION_BLOCKED");
+      } catch (e) {
+        if (!(e instanceof ExecutionDomainError) || e.code !== "EXECUTION_PRODUCTION_BLOCKED") {
+          throw new Error(`Expected EXECUTION_PRODUCTION_BLOCKED, got ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     });
   }
@@ -1053,7 +1074,7 @@ async function main() {
       : batch === "4"
         ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-4-report.json"
         : batch === "5"
-          ? ".artifacts/milestone-12-execution-boundary/phase-5-batch-5-report.json"
+          ? `.artifacts/milestone-12-execution-boundary/phase-5-batch-5-report.${harness_run_id}.json`
       : ".artifacts/milestone-12-execution-boundary/phase-5-scenario-report.json";
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
