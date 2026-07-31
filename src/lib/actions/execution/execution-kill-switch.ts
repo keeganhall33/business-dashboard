@@ -18,6 +18,12 @@ export type ExecutionGateEvaluation = {
   };
 };
 
+export type ExecutionRuntimeOverrides = {
+  nodeEnv?: string;
+  enableExecutionBoundaryFlag?: string;
+  enableMockExecutionFlag?: string;
+};
+
 export function evaluateExecutionGates(input: {
   actionId: string;
   category: string;
@@ -26,12 +32,13 @@ export function evaluateExecutionGates(input: {
   emergencyStop: boolean;
   adapterEnabled: boolean;
   categoryEnabled: boolean;
+  runtime?: ExecutionRuntimeOverrides;
 }): ExecutionGateEvaluation {
   const base = evaluateExecutionKillSwitches({
-    nodeEnv: process.env.NODE_ENV,
+    nodeEnv: input.runtime?.nodeEnv ?? process.env.NODE_ENV,
     supabaseUrl: input.supabaseUrl,
-    enableExecutionBoundaryFlag: process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY,
-    enableMockExecutionFlag: process.env.ACTIONS_ENABLE_MOCK_EXECUTION
+    enableExecutionBoundaryFlag: input.runtime?.enableExecutionBoundaryFlag ?? process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY,
+    enableMockExecutionFlag: input.runtime?.enableMockExecutionFlag ?? process.env.ACTIONS_ENABLE_MOCK_EXECUTION
   });
 
   const reasons = [...base.reasons];
@@ -64,4 +71,3 @@ export function evaluateExecutionGates(input: {
     }
   };
 }
-

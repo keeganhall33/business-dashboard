@@ -1,5 +1,6 @@
 import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
 import { evaluateExecutionGates } from "@/lib/actions/execution/execution-kill-switch";
+import type { ExecutionRuntimeOverrides } from "@/lib/actions/execution/execution-kill-switch";
 import { executionActionStateHash } from "@/lib/actions/execution/action-state-hash";
 import type { ExecutionAdapter, ExecutionAdapterId, ExecutionContext, ExecuteResult, ExecutionState } from "@/lib/actions/execution/adapter-contract";
 import type { AdapterRegistry } from "@/lib/actions/execution/execution-request-service";
@@ -85,6 +86,7 @@ export async function orchestrateExecutionAttempt(input: {
   supabaseUrl: string;
   registry: AdapterRegistry;
   adapter: ExecutionAdapter;
+  runtime?: ExecutionRuntimeOverrides;
   deps: ExecutionOrchestratorDeps;
 }): Promise<{ ok: true; result: ExecuteResult }>
 {
@@ -154,7 +156,8 @@ export async function orchestrateExecutionAttempt(input: {
     supabaseUrl: input.supabaseUrl,
     emergencyStop: input.registry.isEmergencyStopEnabled(req.action_id),
     adapterEnabled: input.registry.isAdapterEnabled(req.adapter_id as ExecutionAdapterId),
-    categoryEnabled: input.registry.isCategoryEnabled(action.category)
+    categoryEnabled: input.registry.isCategoryEnabled(action.category),
+    runtime: input.runtime
   });
   if (!gates.allowed) {
     throw new ExecutionDomainError({ code: "EXECUTION_GLOBAL_DISABLED", message: gates.blockingReasons.join("; "), httpStatus: 403, details: gates });

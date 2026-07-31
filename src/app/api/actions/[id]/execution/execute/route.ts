@@ -1,6 +1,6 @@
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { executionError, ok } from "@/lib/api/execution-responses";
-import { getExecutionActor, getHarnessGateOverrides } from "@/lib/actions/execution/api-actor";
+import { applyM12HarnessOverrides, getExecutionActor, getHarnessGateOverrides } from "@/lib/actions/execution/api-actor";
 
 import { createMilestone12AdapterRegistry } from "@/lib/actions/execution/adapters/mock/mock-adapter-registry";
 import { orchestrateExecutionAttempt } from "@/lib/actions/execution/execution-orchestrator";
@@ -18,9 +18,6 @@ export async function POST(request: Request) {
   const authResponse = enforceDashboardAuth(request);
   if (authResponse) return authResponse;
 
-  const prevBoundary = process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY;
-  const prevMock = process.env.ACTIONS_ENABLE_MOCK_EXECUTION;
-
   try {
     const { actor } = getExecutionActor(request);
     const idempotencyKey = String(request.headers.get("x-idempotency-key") ?? "").trim();
@@ -36,8 +33,6 @@ export async function POST(request: Request) {
     if (!req) throw new Error("Execution request not found");
 
     const overrides = getHarnessGateOverrides(request);
-    if (overrides.executionBoundaryEnabled === false) process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY = "0";
-    if (overrides.mockExecutionEnabled === false) process.env.ACTIONS_ENABLE_MOCK_EXECUTION = "0";
 
     // More precise preconditions than the orchestrator's generic "must be confirmed".
     if (req.execution_state === "requested") {
@@ -55,14 +50,18 @@ export async function POST(request: Request) {
     const adapter = registry.getAdapter(req.adapter_id as ExecutionAdapterId);
     if (!adapter) throw new Error("Unknown adapter");
 
-    const adapterEnabled = overrides.adapterEnabled ?? registry.isAdapterEnabled("mock");
-    const categoryEnabled = overrides.categoryEnabled ?? registry.isCategoryEnabled("email");
-    const emergencyStop = overrides.emergencyStop ?? registry.isEmergencyStopEnabled(req.action_id);
+    const applied = applyM12HarnessOverrides({
+      registry,
+      actionId: req.action_id,
+      adapterId: "mock",
+      category: "email",
+      overrides
+    });
     const registryOverride = {
       ...registry,
-      isAdapterEnabled: () => adapterEnabled,
-      isCategoryEnabled: () => categoryEnabled,
-      isEmergencyStopEnabled: () => emergencyStop
+      isAdapterEnabled: () => applied.adapterEnabled,
+      isCategoryEnabled: () => applied.categoryEnabled,
+      isEmergencyStopEnabled: () => applied.emergencyStop
     };
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
@@ -74,6 +73,7 @@ export async function POST(request: Request) {
       supabaseUrl,
       registry: registryOverride,
       adapter,
+      runtime: applied.runtime,
       deps: {
         nowUtc: () => new Date().toISOString(),
         idempotency: {
@@ -161,8 +161,5 @@ export async function POST(request: Request) {
     return ok({ ok: true, result: result.result });
   } catch (error) {
     return executionError(error, "Failed to execute action");
-  } finally {
-    process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY = prevBoundary;
-    process.env.ACTIONS_ENABLE_MOCK_EXECUTION = prevMock;
   }
 }

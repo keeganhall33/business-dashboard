@@ -3,6 +3,7 @@ import { canonicalJsonSha256Hex } from "@/lib/actions/execution/canonical-json";
 import { executionActionStateHash } from "@/lib/actions/execution/action-state-hash";
 import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
 import { evaluateExecutionGates } from "@/lib/actions/execution/execution-kill-switch";
+import type { ExecutionRuntimeOverrides } from "@/lib/actions/execution/execution-kill-switch";
 import { getAction } from "@/lib/actions/action-store";
 import { getExecutionRequestByActionAndIdempotency, insertExecutionRequest } from "@/lib/actions/execution/execution-repo";
 import { upsertIdempotencyRecord, computeRequestHash } from "@/lib/actions/execution/idempotency-service";
@@ -26,6 +27,7 @@ export async function createExecutionRequest(input: {
   expiresAtUtc: string;
   harnessRunId?: string | null;
   registry: AdapterRegistry;
+  runtime?: ExecutionRuntimeOverrides;
 }): Promise<{ ok: true; requestId: string; execution_state: "requested"; payload_hash: string; action_state_hash: string }>
 {
   const action = await getAction(input.actionId);
@@ -58,7 +60,8 @@ export async function createExecutionRequest(input: {
     supabaseUrl: input.supabaseUrl,
     emergencyStop: input.registry.isEmergencyStopEnabled(input.actionId),
     adapterEnabled: input.registry.isAdapterEnabled(input.adapterId),
-    categoryEnabled: input.registry.isCategoryEnabled(action.category)
+    categoryEnabled: input.registry.isCategoryEnabled(action.category),
+    runtime: input.runtime
   });
   if (!gates.allowed) {
     // Map to deterministic codes.

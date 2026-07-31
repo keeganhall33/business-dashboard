@@ -1,6 +1,6 @@
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { executionError, ok } from "@/lib/api/execution-responses";
-import { getExecutionActor, getHarnessGateOverrides } from "@/lib/actions/execution/api-actor";
+import { applyM12HarnessOverrides, getExecutionActor, getHarnessGateOverrides } from "@/lib/actions/execution/api-actor";
 
 import { createExecutionRequest } from "@/lib/actions/execution/execution-request-service";
 import { createMilestone12AdapterRegistry } from "@/lib/actions/execution/adapters/mock/mock-adapter-registry";
@@ -11,10 +11,6 @@ export const runtime = "nodejs";
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const authResponse = enforceDashboardAuth(request);
   if (authResponse) return authResponse;
-
-  const prevBoundary = process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY;
-  const prevMock = process.env.ACTIONS_ENABLE_MOCK_EXECUTION;
-  const prevNodeEnv = process.env.NODE_ENV;
 
   try {
     const { id: actionId } = await ctx.params;
@@ -39,13 +35,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
 
     const overrides = getHarnessGateOverrides(request);
-    if (overrides.executionBoundaryEnabled === false) process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY = "0";
-    if (overrides.mockExecutionEnabled === false) process.env.ACTIONS_ENABLE_MOCK_EXECUTION = "0";
-
-    // Harness-only override to force the production hard-block without contacting production.
-    if (process.env.NODE_ENV !== "production" && String(request.headers.get("x-m12-force-node-env") ?? "") === "production") {
-      (process.env as unknown as Record<string, string | undefined>)["NODE_ENV"] = "production";
-    }
 
     const expiresAtUtc = String(body["expiresAtUtc"] ?? "").trim();
     if (!expiresAtUtc) {
@@ -57,15 +46,19 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       emergencyStopActionIds: new Set()
     });
 
-    const adapterEnabled = overrides.adapterEnabled ?? registry.isAdapterEnabled("mock");
-    const categoryEnabled = overrides.categoryEnabled ?? registry.isCategoryEnabled("email");
-    const emergencyStop = overrides.emergencyStop ?? registry.isEmergencyStopEnabled(actionId);
+    const applied = applyM12HarnessOverrides({
+      registry,
+      actionId,
+      adapterId: "mock",
+      category: "email",
+      overrides
+    });
 
     const registryOverride = {
       ...registry,
-      isAdapterEnabled: () => adapterEnabled,
-      isCategoryEnabled: () => categoryEnabled,
-      isEmergencyStopEnabled: () => emergencyStop
+      isAdapterEnabled: () => applied.adapterEnabled,
+      isCategoryEnabled: () => applied.categoryEnabled,
+      isEmergencyStopEnabled: () => applied.emergencyStop
     };
 
     const result = await createExecutionRequest({
@@ -79,15 +72,12 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       irreversibleReason,
       expiresAtUtc,
       harnessRunId: (body["harnessRunId"] as string | null) ?? null,
-      registry: registryOverride
+      registry: registryOverride,
+      runtime: applied.runtime
     });
 
     return ok({ ...result });
   } catch (error) {
     return executionError(error, "Failed to request execution");
-  } finally {
-    process.env.ACTIONS_ENABLE_EXECUTION_BOUNDARY = prevBoundary;
-    process.env.ACTIONS_ENABLE_MOCK_EXECUTION = prevMock;
-    (process.env as unknown as Record<string, string | undefined>)["NODE_ENV"] = prevNodeEnv;
   }
 }
