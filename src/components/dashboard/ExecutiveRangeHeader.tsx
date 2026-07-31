@@ -28,7 +28,7 @@ export function ExecutiveRangeHeader({
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Business window</p>
+            <p className="text-xs font-semibold text-zinc-400">Business window</p>
             <p className="text-2xl font-semibold text-white">{rangeLabel}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <p className="text-sm text-zinc-400">Pacific Time · Comparison window {comparisonLabel}</p>
