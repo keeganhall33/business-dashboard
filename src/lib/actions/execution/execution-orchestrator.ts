@@ -1,7 +1,7 @@
 import { ExecutionDomainError } from "@/lib/actions/execution/domain-errors";
 import { evaluateExecutionGates } from "@/lib/actions/execution/execution-kill-switch";
 import { executionActionStateHash } from "@/lib/actions/execution/action-state-hash";
-import type { ExecutionAdapter, ExecutionAdapterId, ExecutionContext, ExecuteResult } from "@/lib/actions/execution/adapter-contract";
+import type { ExecutionAdapter, ExecutionAdapterId, ExecutionContext, ExecuteResult, ExecutionState } from "@/lib/actions/execution/adapter-contract";
 import type { AdapterRegistry } from "@/lib/actions/execution/execution-request-service";
 import type { DurableAction } from "@/lib/actions/action-contract";
 import { sanitizeAuditMetadata } from "@/lib/actions/execution/audit-sanitize";
@@ -45,7 +45,7 @@ export type ExecutionOrchestratorDeps = {
       action_state_hash: string;
       irreversible_acknowledged: boolean;
     } | null>;
-    updateExecutionRequestState: (input: { id: string; execution_state: string; payload_json_patch?: Record<string, unknown> }) => Promise<void>;
+    updateExecutionRequestState: (input: { id: string; execution_state: ExecutionState; payload_json_patch?: Record<string, unknown> }) => Promise<void>;
 
     insertAttempt: (row: {
       execution_request_id: string;
