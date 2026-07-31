@@ -73,7 +73,7 @@ export function DashboardShell({ data }: Props) {
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
         <BusinessStatusPanel summary={executiveSummary} />
-        <ExecutiveKpiPanel summary={executiveSummary} />
+        <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
         <TopDriversPanel summary={executiveSummary} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
