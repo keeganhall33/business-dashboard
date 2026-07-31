@@ -145,7 +145,7 @@ export function formatPerformanceBaselineDelta(metric: PerformanceBaselineMetric
     // Preserve the prior value internally, but do not claim an exact delta when commerce completeness is partial/unknown.
     const currentIncomplete = metric.currentCompleteness && metric.currentCompleteness !== "complete";
     const previousIncomplete = metric.previousCompleteness && metric.previousCompleteness !== "complete";
-    if (currentIncomplete || previousIncomplete) return "Comparison unavailable";
+    if (currentIncomplete || previousIncomplete) return "Comparison unavailable · Historical coverage incomplete";
     return "Unavailable";
   }
 

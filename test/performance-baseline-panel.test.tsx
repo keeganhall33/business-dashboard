@@ -108,7 +108,7 @@ test("partial commerce values are labeled as At least and do not show exact delt
   };
 
   assert.equal(formatPerformanceBaselineValue(revenue), "At least $0.14");
-  assert.equal(formatPerformanceBaselineDelta(revenue), "Comparison unavailable");
+  assert.equal(formatPerformanceBaselineDelta(revenue), "Comparison unavailable · Historical coverage incomplete");
 });
 
 test("unavailable metrics render safely", () => {

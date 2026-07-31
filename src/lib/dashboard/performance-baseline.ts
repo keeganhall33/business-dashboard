@@ -18,19 +18,27 @@ export function buildPerformanceBaselineSnapshot(params: {
 }): PerformanceBaselineSnapshot | null {
   const current = params.currentTelemetry;
   const previous = params.previousTelemetry;
-  if (!current || !previous) return null;
+  if (!current) return null;
 
-  const previousRange = computePreviousInclusiveDateRange(params.range);
+  const previousRange =
+    params.range.preset === "year_to_date"
+      ? computePriorYearDateRange({ startDate: params.range.startDate, endDate: params.range.endDate })
+      : computePreviousInclusiveDateRange(params.range);
   if (!previousRange) return null;
 
+  // YTD comparisons must use the prior-year equivalent window. If we do not have
+  // a compatible prior-year telemetry input, suppress comparisons rather than
+  // comparing against an arbitrary equal-length prior window.
+  const previousComparable = params.range.preset === "year_to_date" ? null : previous;
+
   const wooCompletenessCurrent = normalizeCompleteness(current.woo?.summary?.completeness);
-  const wooCompletenessPrevious = normalizeCompleteness(previous.woo?.summary?.completeness);
+  const wooCompletenessPrevious = normalizeCompleteness(previousComparable?.woo?.summary?.completeness);
 
   const revenueCurrent = toFiniteNumber(current.woo?.summary?.revenue);
-  const revenuePrevious = toFiniteNumber(previous.woo?.summary?.revenue);
+  const revenuePrevious = toFiniteNumber(previousComparable?.woo?.summary?.revenue);
 
   const ordersCurrent = toFiniteNumber(current.woo?.summary?.orders);
-  const ordersPrevious = toFiniteNumber(previous.woo?.summary?.orders);
+  const ordersPrevious = toFiniteNumber(previousComparable?.woo?.summary?.orders);
 
   const aovCurrent =
     wooCompletenessCurrent === "complete"
@@ -43,14 +51,14 @@ export function buildPerformanceBaselineSnapshot(params: {
   const aovPrevious =
     wooCompletenessPrevious === "complete"
       ? computeAov({
-          direct: previous.woo?.summary?.avgOrderValue,
+          direct: previousComparable?.woo?.summary?.avgOrderValue,
           revenue: revenuePrevious,
           orders: ordersPrevious
         })
       : null;
 
   const sessionsCurrent = toFiniteNumber(current.ga4?.summary?.sessions);
-  const sessionsPrevious = toFiniteNumber(previous.ga4?.summary?.sessions);
+  const sessionsPrevious = toFiniteNumber(previousComparable?.ga4?.summary?.sessions);
 
   const purchaseConversionCurrent =
     ordersCurrent != null && sessionsCurrent != null && sessionsCurrent > 0
@@ -63,7 +71,7 @@ export function buildPerformanceBaselineSnapshot(params: {
 
   // FunnelKit conversionRate is already in 0–100 scale (percent).
   const funnelCompletionCurrent = toFiniteNumber(current.funnel?.summary?.conversionRate);
-  const funnelCompletionPrevious = toFiniteNumber(previous.funnel?.summary?.conversionRate);
+  const funnelCompletionPrevious = toFiniteNumber(previousComparable?.funnel?.summary?.conversionRate);
 
   const currentQualifier = wooCompletenessCurrent === "partial" ? ("at_least" as const) : undefined;
 
@@ -139,6 +147,19 @@ export function computePreviousInclusiveDateRange(range: { startDate: string; en
   const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() - 1));
   const prevStart = new Date(Date.UTC(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), prevEnd.getUTCDate() - (durationDays - 1)));
 
+  return {
+    startDate: formatUtcDate(prevStart),
+    endDate: formatUtcDate(prevEnd)
+  };
+}
+
+function computePriorYearDateRange(range: { startDate: string; endDate: string }): { startDate: string; endDate: string } | null {
+  const start = parseUtcDate(range.startDate);
+  const end = parseUtcDate(range.endDate);
+  if (!start || !end) return null;
+
+  const prevStart = new Date(Date.UTC(start.getUTCFullYear() - 1, start.getUTCMonth(), start.getUTCDate()));
+  const prevEnd = new Date(Date.UTC(end.getUTCFullYear() - 1, end.getUTCMonth(), end.getUTCDate()));
   return {
     startDate: formatUtcDate(prevStart),
     endDate: formatUtcDate(prevEnd)

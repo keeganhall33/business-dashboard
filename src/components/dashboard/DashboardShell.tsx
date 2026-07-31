@@ -253,6 +253,8 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
   const spend = meta?.summary?.spend ?? null;
   const roas = meta?.summary?.roas ?? null;
   const conversions = meta?.summary?.purchases ?? null;
+  const deliveryAvailable = Boolean(spend != null || meta?.summary?.impressions != null || meta?.summary?.clicks != null);
+  const attributionAvailable = Boolean(roas != null || conversions != null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
   let tone: SectionSummary["tone"] = "zinc";
   if (meta?.status === "LIVE") tone = "emerald";
@@ -262,8 +264,16 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
     tone,
     metrics: [
       spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
-      roas != null ? `ROAS ${(roas ?? 0).toFixed(1)}x` : null,
-      conversions != null ? `Conv ${formatCount(conversions)}` : null
+      roas != null
+        ? `ROAS ${roas.toFixed(1)}x`
+        : deliveryAvailable && !attributionAvailable
+          ? "ROAS Not attributable"
+          : null,
+      conversions != null
+        ? `Conv ${formatCount(conversions)}`
+        : deliveryAvailable && !attributionAvailable
+          ? "Conv Unavailable"
+          : null
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("marketing-")).length
