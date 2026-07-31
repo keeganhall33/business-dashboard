@@ -21,6 +21,7 @@ import { ExecutiveBriefingPanel } from "./ExecutiveBriefingPanel";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
+import { ExecutiveNav } from "./ExecutiveNav";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -71,14 +72,26 @@ export function DashboardShell({ data }: Props) {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
+        <ExecutiveNav
+          items={[
+            { id: "executive", label: "Executive" },
+            { id: "commerce", label: "Commerce" },
+            { id: "marketing", label: "Marketing" },
+            { id: "confidence", label: "Confidence" },
+            { id: "diagnostics", label: "Diagnostics" }
+          ]}
+        />
+        <div id="executive" className="space-y-6">
         <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} />
         <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
+        </div>
       </div>
 
       <div className="space-y-6">
         <DashboardSection
+          id="commerce"
           title="Commerce"
           subtitle="Sessions, conversion, orders, revenue, and product signals"
           storageKey="dashboard-section-commerce"
@@ -91,18 +104,11 @@ export function DashboardShell({ data }: Props) {
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            {data.revenueEngine ? (
-              <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <summary className="cursor-pointer select-none text-sm font-semibold text-zinc-200">Revenue Engine (diagnostics)</summary>
-                <div className="mt-4">
-                  <RevenueEnginePanel data={data.revenueEngine} />
-                </div>
-              </details>
-            ) : null}
           </div>
         </DashboardSection>
 
         <DashboardSection
+          id="marketing"
           title="Marketing"
           subtitle="Spend, ROAS, campaigns, and creative"
           storageKey="dashboard-section-marketing"
@@ -153,6 +159,7 @@ export function DashboardShell({ data }: Props) {
         ) : null}
 
         <DashboardSection
+          id="confidence"
           title="Data Confidence"
           subtitle="Source freshness, coverage, and telemetry warnings"
           storageKey="dashboard-section-data-confidence"
@@ -160,6 +167,20 @@ export function DashboardShell({ data }: Props) {
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
           <DataConfidencePanel summary={dataConfidence} />
+        </DashboardSection>
+
+        <DashboardSection
+          id="diagnostics"
+          title="Diagnostics"
+          subtitle="Operational and diagnostic detail"
+          storageKey="dashboard-section-diagnostics"
+          defaultOpen={false}
+          density="compact"
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {data.revenueEngine ? <RevenueEnginePanel data={data.revenueEngine} /> : <PanelAuditPlaceholder title="Revenue Engine unavailable" detail="Revenue Engine diagnostics missing for this window." />}
+          </div>
         </DashboardSection>
 
         {rangeIsMonthly ? (
