@@ -8,4 +8,3 @@ test("Phase C selects exactly 22 unique scenario names", () => {
   const names = M11_SCENARIOS.map((s) => s.name);
   assert.equal(new Set(names).size, 22);
 });
-

@@ -182,4 +182,3 @@ export type RecommendationsResponse = {
   guardrailsTriggered: string[];
   warnings: string[];
 };
-

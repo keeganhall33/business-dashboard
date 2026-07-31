@@ -73,4 +73,3 @@ export function buildEvidenceTimeline(input: {
 
   return { sources, events };
 }
-

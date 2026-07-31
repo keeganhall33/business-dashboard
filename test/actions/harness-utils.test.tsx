@@ -21,4 +21,3 @@ test("coerceObject returns null for non-objects", () => {
   assert.equal(coerceObject("x"), null);
   assert.deepEqual(coerceObject({ a: 1 }), { a: 1 });
 });
-

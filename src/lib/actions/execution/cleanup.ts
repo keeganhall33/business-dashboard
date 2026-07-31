@@ -73,4 +73,3 @@ export async function cleanupExecutionHarnessRun(harnessRunId: string): Promise<
 
   return { ok: remaining.requests === 0, deleted, remaining };
 }
-

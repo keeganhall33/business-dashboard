@@ -51,4 +51,3 @@ export const M11_SCENARIOS: ScenarioDef[] = [
   { id: "recipient_missing_preview_blocks_approval", name: "21. Recipient action without recipient-preview rejection" },
   { id: "budget_missing_amount_blocks_approval", name: "22. Budget action without explicit budget rejection" }
 ];
-

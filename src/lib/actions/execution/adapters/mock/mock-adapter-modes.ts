@@ -34,4 +34,3 @@ export function parseMockMode(payload: Record<string, unknown>): { ok: true; mod
   }
   return { ok: true, mode: mode as MockAdapterMode };
 }
-

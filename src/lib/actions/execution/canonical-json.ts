@@ -83,4 +83,3 @@ export function sha256Hex(input: string): string {
 export function canonicalJsonSha256Hex(input: unknown, opts: CanonicalizeOptions = {}): string {
   return sha256Hex(canonicalJsonString(input, opts));
 }
-

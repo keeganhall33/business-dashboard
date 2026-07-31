@@ -39,4 +39,3 @@ export function createMilestone12AdapterRegistry(config?: Partial<Milestone12Reg
 export function milestone12RegisteredAdapterIds(): ExecutionAdapterId[] {
   return ["mock"];
 }
-

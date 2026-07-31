@@ -83,4 +83,3 @@ export function OpportunityCenterPanel({ payload }: { payload: OpportunitiesResp
     </div>
   );
 }
-

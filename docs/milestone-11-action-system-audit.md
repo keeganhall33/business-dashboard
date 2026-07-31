@@ -84,4 +84,3 @@ Persistence work should be:
 - implemented with additive schema + constraints
 - verified against local/staging Supabase only
 - guarded by a server-side “writes enabled” gate
-

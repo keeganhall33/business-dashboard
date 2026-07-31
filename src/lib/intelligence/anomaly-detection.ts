@@ -29,4 +29,3 @@ export function detectOutliers(series: TimeseriesPoint[], { zThreshold = 3 }: { 
     .filter((p) => Math.abs(p.z) >= zThreshold)
     .map((p) => ({ date: p.date, value: p.value, z: p.z, reason: `Value deviates by ${p.z.toFixed(1)}σ from mean` }));
 }
-

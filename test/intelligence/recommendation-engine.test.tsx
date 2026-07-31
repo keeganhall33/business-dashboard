@@ -55,4 +55,3 @@ test("traffic driver yields a traffic-focused recommendation", () => {
   assert.equal(res.ok, true);
   assert.ok(res.recommendations.some((r) => r.title.toLowerCase().includes("traffic")));
 });
-

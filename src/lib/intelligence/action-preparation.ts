@@ -49,4 +49,3 @@ export function prepareDraftAssets(input: {
   const nextApprovalLevel: ApprovalLevel = assets.length ? "L2_DRAFT_PREPARED" : input.recommendation.approval_level;
   return { nextApprovalLevel, assets };
 }
-

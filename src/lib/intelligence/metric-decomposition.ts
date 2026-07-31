@@ -97,4 +97,3 @@ export function decomposeRevenue({ current, previous }: DecompositionInput): Rev
     caveats
   };
 }
-

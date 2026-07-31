@@ -87,7 +87,7 @@ export type ExecuteResult = {
 export interface ExecutionAdapter {
   id: ExecutionAdapterId;
   capabilities(): AdapterCapabilities;
-  validate(ctx: ExecutionContext): Promise<{ ok: boolean; errors: string[] }>; 
+  validate(ctx: ExecutionContext): Promise<{ ok: boolean; errors: string[] }>;
 
   // Phase 4+ contract: break dry-run into explicit deterministic operations.
   // (Milestone 12 keeps a single mock adapter, but we keep DryRunResult for

@@ -25,4 +25,3 @@ test("audit metadata sanitizer strips secret-like and personal keys", () => {
   assert.ok(!("recipientEmail" in out));
   assert.deepEqual(out.nested, { ok: 1 });
 });
-

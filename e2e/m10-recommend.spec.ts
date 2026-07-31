@@ -51,4 +51,3 @@ test.describe("Milestone 10 recommendation proof", () => {
     await snap(page, "m10-mobile-recommend.png");
   });
 });
-

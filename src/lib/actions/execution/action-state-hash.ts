@@ -22,4 +22,3 @@ export function executionActionStateHash(action: DurableAction): string {
   };
   return canonicalJsonSha256Hex(state);
 }
-

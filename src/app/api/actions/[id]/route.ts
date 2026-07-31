@@ -17,4 +17,3 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     return serverError("Failed to load action", { message: error instanceof Error ? error.message : String(error) });
   }
 }
-

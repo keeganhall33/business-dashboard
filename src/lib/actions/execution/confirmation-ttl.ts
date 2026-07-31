@@ -5,4 +5,3 @@ export function getConfirmationTtlSeconds(): number {
   const ttl = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CONFIRMATION_TTL_SECONDS;
   return Math.min(Math.max(ttl, 60), 3600);
 }
-

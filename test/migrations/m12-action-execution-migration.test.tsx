@@ -60,4 +60,3 @@ test("M12 execution migration rollback SQL drops all 7 tables in FK-safe order",
 
   assert.ok(!sql.includes("ibjsjosplgbqevmnvvpf"));
 });
-

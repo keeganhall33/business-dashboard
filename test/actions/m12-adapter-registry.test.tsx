@@ -22,4 +22,3 @@ test("guard: a second adapter registration would violate M12", () => {
   const ids = milestone12RegisteredAdapterIds();
   assert.equal(ids.length, 1);
 });
-

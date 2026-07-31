@@ -50,4 +50,3 @@ test.describe("Milestone 9 explanation proof", () => {
     await snap(page, "m9-mobile-explain.png");
   });
 });
-

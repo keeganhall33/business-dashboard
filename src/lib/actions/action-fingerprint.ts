@@ -19,4 +19,3 @@ export function computeRecommendationFingerprint(input: {
   const bytes = Buffer.from(JSON.stringify(normalized));
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
-

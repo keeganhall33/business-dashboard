@@ -139,4 +139,3 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
     </div>
   );
 }
-

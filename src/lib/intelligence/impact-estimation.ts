@@ -34,4 +34,3 @@ export function conservativeRevenueRange(input: {
     assumptions: input.assumptions
   };
 }
-

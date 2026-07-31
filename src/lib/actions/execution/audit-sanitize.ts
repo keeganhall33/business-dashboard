@@ -42,4 +42,3 @@ export function assertAuditMetadataSanitized(input: Record<string, unknown>): vo
     }
   }
 }
-

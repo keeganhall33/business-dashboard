@@ -111,4 +111,3 @@ export async function confirmExecutionRequest(input: {
 
   return { ok: true, confirmationId: inserted.id, confirmation_expires_at };
 }
-

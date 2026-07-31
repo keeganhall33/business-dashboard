@@ -23,4 +23,3 @@ export function requireHumanOperatorId(raw: string): string {
   }
   return operatorId;
 }
-

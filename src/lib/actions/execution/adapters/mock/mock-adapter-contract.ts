@@ -33,4 +33,3 @@ export function buildMockExecuteResult(input: {
     result: input.result
   };
 }
-

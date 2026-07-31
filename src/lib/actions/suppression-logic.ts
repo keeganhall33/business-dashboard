@@ -23,4 +23,3 @@ export function shouldBlockReconsiderationAfterRejection(input: {
   if (!input.previousRejectedEvidenceHash) return false;
   return input.previousRejectedEvidenceHash === input.newEvidenceHash;
 }
-

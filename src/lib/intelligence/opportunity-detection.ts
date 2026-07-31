@@ -159,4 +159,3 @@ export function detectOpportunities(input: {
 
   return opportunities;
 }
-

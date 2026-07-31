@@ -102,4 +102,3 @@ export function RecommendationCenterPanel({ payload }: { payload: Recommendation
     </div>
   );
 }
-

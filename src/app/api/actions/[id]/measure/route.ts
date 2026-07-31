@@ -40,4 +40,3 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return serverError("Failed to start measuring", { message: error instanceof Error ? error.message : String(error) });
   }
 }
-

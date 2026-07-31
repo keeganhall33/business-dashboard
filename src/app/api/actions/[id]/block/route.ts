@@ -28,4 +28,3 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return serverError("Failed to block", { message: error instanceof Error ? error.message : String(error) });
   }
 }
-
