@@ -300,16 +300,20 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
           : null
         : null,
       meta?.status === "LIVE" || meta?.status === "PARTIAL"
-        ? roas != null
-          ? `ROAS ${roas.toFixed(1)}x`
-          : deliveryAvailable && !attributionAvailable
+        ? attributionAvailable
+          ? roas != null
+            ? `ROAS ${roas.toFixed(1)}x`
+            : null
+          : deliveryAvailable
             ? "ROAS Not attributable"
             : null
         : null,
       meta?.status === "LIVE" || meta?.status === "PARTIAL"
-        ? conversions != null
-          ? `Conv ${formatCount(conversions)}`
-          : deliveryAvailable && !attributionAvailable
+        ? attributionAvailable
+          ? conversions != null
+            ? `Conv ${formatCount(conversions)}`
+            : null
+          : deliveryAvailable
             ? "Conv Unavailable"
             : null
         : null
