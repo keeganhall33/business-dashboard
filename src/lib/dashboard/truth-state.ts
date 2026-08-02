@@ -1,5 +1,6 @@
 import type { DashboardOverviewResponse, MetaAdsSnapshot } from "@/lib/types/dashboard";
 import type { ConfidenceEntry, ConfidenceSummary, ConfidenceState } from "@/lib/data-confidence";
+import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
 
 export type CoverageState = "complete" | "partial" | "unavailable";
 export type ConfidenceLevel = "high" | "moderate" | "low" | "unavailable";
@@ -144,13 +145,15 @@ function summarizeDegradedMode(input: {
     decisionsAffected: unavailableDomains.flatMap((d) => d.consequence.decisionsAffected).slice(0, 5)
   };
 
-  const nextAction = criticalUnavailable[0]?.nextAction;
+  const primaryBlocked = criticalUnavailable[0];
+  const nextAction = primaryBlocked?.nextAction;
 
   const normalizedNextAction = nextAction?.href
     ? {
-        title: "Restore WooCommerce connection",
+        title: nextAction.title,
         href: nextAction.href,
-        detail: "Restores revenue, orders, conversion, and executive reporting."
+        // Concise business benefit line: use the blocked domain's consequence summary.
+        detail: primaryBlocked?.consequence?.summary || undefined
       }
     : nextAction;
 
@@ -226,9 +229,9 @@ export function buildDashboardTruthState(input: {
       label: "Meta purchase attribution",
       reportingPeriod: "snapshot",
       source: "Meta",
-      coverage: input.data.metaAds?.summary?.purchases != null || input.data.metaAds?.summary?.roas != null ? "partial" : "unavailable",
-      confidence: input.data.metaAds?.summary?.purchases != null || input.data.metaAds?.summary?.roas != null ? "low" : "unavailable",
-      hasDefensibleValue: Boolean(input.data.metaAds?.summary?.purchases != null || input.data.metaAds?.summary?.roas != null),
+      coverage: hasDefensibleMetaAttribution(input.data.metaAds ?? null) ? "partial" : "unavailable",
+      confidence: hasDefensibleMetaAttribution(input.data.metaAds ?? null) ? "low" : "unavailable",
+      hasDefensibleValue: hasDefensibleMetaAttribution(input.data.metaAds ?? null),
       consequence: {
         summary: "Advertising efficiency decisions cannot be verified without purchase attribution.",
         decisionsAffected: []

@@ -3,6 +3,7 @@
 import type { MetaAdsSnapshot } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const decimalCurrency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -25,7 +26,7 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
     snapshot.summary.spend != null ||
     snapshot.summary.impressions != null ||
     snapshot.summary.clicks != null;
-  const attributionAvailable = snapshot.summary.purchases != null || snapshot.summary.roas != null;
+  const attributionAvailable = hasDefensibleMetaAttribution(snapshot);
 
   const purchases = snapshot.summary.purchases;
   const purchaseCopy = !attributionAvailable
@@ -131,6 +132,7 @@ function formatRoas(value?: number | null) {
 
 function getCtr(summary: MetaAdsSnapshot["summary"]) {
   if (!summary.impressions) return null;
+  if (summary.clicks == null) return null;
   return (summary.clicks / summary.impressions) * 100;
 }
 

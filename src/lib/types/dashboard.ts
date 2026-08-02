@@ -623,11 +623,11 @@ export type MetaAdsSnapshot = {
   range: number; // days
   campaigns: MetaAdsCampaign[];
   summary: {
-    spend: number;
-    impressions: number;
-    clicks: number;
-    purchases: number;
-    purchaseValue: number;
+    spend: number | null;
+    impressions: number | null;
+    clicks: number | null;
+    purchases: number | null;
+    purchaseValue: number | null;
     roas: number | null;
   };
   status?: "LIVE" | "PARTIAL" | "FALLBACK" | "BROKEN";

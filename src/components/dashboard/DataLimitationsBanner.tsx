@@ -11,7 +11,7 @@ export function DataLimitationsBanner({ truth }: { truth: DashboardTruthState })
 
   return (
     <section className="rounded-3xl border border-amber-400/25 bg-amber-500/5 p-5 sm:p-6">
-      <div className="text-xs font-semibold text-amber-200">Limited reporting</div>
+      <div className="text-xs font-semibold text-amber-200">Data Limitations</div>
 
       <div className="mt-2 space-y-2 text-sm text-zinc-200">
         <div>

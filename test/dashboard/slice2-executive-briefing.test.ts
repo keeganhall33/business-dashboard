@@ -138,4 +138,17 @@ test("briefing: degraded mode forces 'Unable to verify changes'", () => {
   });
 
   assert.equal(model.changed.lines[0], "Unable to verify changes for this period.");
+  assert.ok(!model.health.lines.join(" ").includes("No material verified changes"));
+  assert.ok(!model.changed.lines.join(" ").includes("No material verified changes"));
+});
+
+test("briefing: healthy comparable mode can render 'No material verified changes'", () => {
+  const model = buildExecutiveBriefingModel({
+    summary: summaryWithMovements([]),
+    confidence: confidenceWithIssues([]),
+    actions: [],
+    truth: healthyTruth()
+  });
+
+  assert.match(model.health.lines.join(" "), /No material verified changes/);
 });

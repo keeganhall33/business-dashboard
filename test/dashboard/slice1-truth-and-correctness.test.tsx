@@ -137,8 +137,8 @@ test("Meta Ads: attribution missing does not show 0 ROAS", () => {
     generatedAt: new Date().toISOString(),
     range: 7,
     accountId: "act_123",
-    status: "OK",
-    summary: { spend: 123, impressions: 1000, clicks: 25, purchases: null, roas: null },
+    status: "LIVE",
+    summary: { spend: 123, impressions: 1000, clicks: 25, purchases: null, purchaseValue: null, roas: null },
     campaigns: []
   };
 
@@ -146,6 +146,34 @@ test("Meta Ads: attribution missing does not show 0 ROAS", () => {
   const text = String(html);
   assert.match(text, /Not attributable/);
   assert.match(text, /Purchase attribution unavailable/);
+});
+
+test("Meta Ads: true attributable zero may still render 0", () => {
+  const snap: MetaAdsSnapshot = {
+    generatedAt: new Date().toISOString(),
+    range: 7,
+    accountId: "act_123",
+    status: "LIVE",
+    summary: { spend: 123, impressions: 1000, clicks: 25, purchases: 0, purchaseValue: 0, roas: 0 },
+    campaigns: [{
+      campaignId: "cmp_1",
+      campaignName: "Test",
+      spend: 10,
+      impressions: 100,
+      clicks: 2,
+      ctr: null,
+      cpc: null,
+      cpm: null,
+      purchases: 0,
+      purchaseValue: 0,
+      roas: 0
+    }]
+  };
+
+  const html = renderToStaticMarkup(React.createElement(MetaAdsPanel, { snapshot: snap }));
+  const text = String(html);
+  assert.match(text, /ROAS/);
+  assert.ok(/0(\.0+)?x/.test(text) || /0\.00x/.test(text));
 });
 
 test("snapshot vs selected range: both windows render and remain distinct", () => {

@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ExecutiveNav } from "@/components/dashboard/ExecutiveNav";
 import { DataConfidencePanel } from "@/components/dashboard/DataConfidencePanel";
 import { DataLimitationsBanner } from "@/components/dashboard/DataLimitationsBanner";
+import { ExecutiveRangeHeader } from "@/components/dashboard/ExecutiveRangeHeader";
 
 import type { ConfidenceSummary } from "@/lib/data-confidence";
 
@@ -78,20 +79,34 @@ test("Data limitations banner renders only in degraded mode", () => {
       unavailableDomains: [{ domainId: "woo", label: "Woo", coverage: "unavailable", freshness: "unavailable", confidence: "unavailable", consequence: { summary: "", decisionsAffected: [] } }],
       stillWorks: [],
       consequence: { summary: "Revenue decisions cannot be verified.", decisionsAffected: [] },
-      nextAction: { title: "Restore WooCommerce connection", href: "/data", detail: "Restores revenue, orders, conversion, and executive reporting." }
+      nextAction: { title: "Restore GA4 ingestion", href: "/data", detail: "Restores session and conversion verification." }
     },
     domains: {},
     metrics: {}
   };
 
   const html = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: degraded }));
-  assert.match(html, /Limited reporting/);
-  assert.match(html, /Restore WooCommerce connection/);
-  assert.match(html, /Restores revenue, orders, conversion, and executive reporting\./);
+  assert.match(html, /Data Limitations/);
+  assert.match(html, /Restore GA4 ingestion/);
+  assert.match(html, /Restores session and conversion verification\./);
   // Exactly one CTA link to /data.
   assert.equal((html.match(/href="\/data"/g) ?? []).length, 1);
 
   const healthy = { ...degraded, degraded: { ...degraded.degraded, active: false } };
   const html2 = renderToStaticMarkup(React.createElement(DataLimitationsBanner, { truth: healthy }));
   assert.equal(html2, "");
+});
+
+test("header limited-reporting indicator aligns with degraded flag", () => {
+  const range = { preset: "month_to_date", startDate: "2026-08-01", endDate: "2026-08-02" } as const;
+
+  const degradedHtml = renderToStaticMarkup(
+    React.createElement(ExecutiveRangeHeader, { range, degraded: true, showControls: false })
+  );
+  assert.match(degradedHtml, /LIMITED REPORTING/);
+
+  const healthyHtml = renderToStaticMarkup(
+    React.createElement(ExecutiveRangeHeader, { range, degraded: false, showControls: false })
+  );
+  assert.ok(!/LIMITED REPORTING/.test(healthyHtml));
 });
