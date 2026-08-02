@@ -1,4 +1,5 @@
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
 
 type WebsiteGaSnapshot = {
   ga4?: {
@@ -346,7 +347,7 @@ function evaluateMeta(data: DashboardOverviewResponse, timestamp: number, confli
       meta?.summary?.clicks != null ||
       (meta?.campaigns?.length ?? 0) > 0
   );
-  const attributionAvailable = Boolean(meta?.summary?.purchases != null || meta?.summary?.roas != null);
+  const attributionAvailable = hasDefensibleMetaAttribution(meta ?? null);
 
   const warnings = [...(conflicts.meta ?? [])];
   if (deliveryAvailable && !attributionAvailable) {

@@ -5,18 +5,23 @@ import { formatRangeLabel, getPreviousRange } from "@/lib/date/range";
 export function ExecutiveRangeHeader({
   range,
   insights,
-  dataMode
+  dataMode,
+  degraded
+  ,showControls
 }: {
   range: { preset: RangePreset; startDate: string; endDate: string };
   insights?: ExecutiveInsightsPayload | null;
   dataMode?: "LIVE_DATA" | "PARTIAL_LIVE_DATA" | "SEED_DATA" | "UNAVAILABLE";
+  degraded?: boolean;
+  showControls?: boolean;
 }) {
   const comparisonRange = getPreviousRange(range);
   const rangeLabel = formatRangeLabel(range, { includeYear: true });
   const comparisonLabel = formatRangeLabel(comparisonRange, { includeYear: true });
   const includesPartialDay = insights?.brief?.pacificWindow?.includesPartialDay ?? false;
+  const controlsEnabled = showControls ?? true;
 
-  const modeLabel = dataMode ?? "UNAVAILABLE";
+  const modeLabel = degraded ? "UNAVAILABLE" : (dataMode ?? "LIVE_DATA");
   const modeTone =
     modeLabel === "LIVE_DATA" ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" :
     modeLabel === "PARTIAL_LIVE_DATA" ? "border-amber-400/40 bg-amber-500/10 text-amber-100" :
@@ -48,9 +53,11 @@ export function ExecutiveRangeHeader({
           ) : null}
         </div>
 
-        <div className="w-full max-w-xl">
-          <DateRangeControls preset={range.preset} startDate={range.startDate} endDate={range.endDate} />
-        </div>
+        {controlsEnabled ? (
+          <div className="w-full max-w-xl">
+            <DateRangeControls preset={range.preset} startDate={range.startDate} endDate={range.endDate} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

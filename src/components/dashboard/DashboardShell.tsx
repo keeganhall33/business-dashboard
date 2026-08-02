@@ -24,6 +24,7 @@ import { buildOperationsIntel } from "@/lib/operations-intelligence";
 import { ExecutiveNav } from "./ExecutiveNav";
 import { buildDashboardTruthState } from "@/lib/dashboard/truth-state";
 import { DataLimitationsBanner } from "./DataLimitationsBanner";
+import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -83,7 +84,7 @@ export function DashboardShell({ data }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
-        <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
+        <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} degraded={truthState.degraded.active} />
         <ExecutiveNav items={navItems} />
         <DataLimitationsBanner truth={truthState} />
         <div id="executive" className="space-y-6">
@@ -283,7 +284,7 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
   const roas = meta?.summary?.roas ?? null;
   const conversions = meta?.summary?.purchases ?? null;
   const deliveryAvailable = Boolean(spend != null || meta?.summary?.impressions != null || meta?.summary?.clicks != null);
-  const attributionAvailable = Boolean(roas != null || conversions != null);
+  const attributionAvailable = hasDefensibleMetaAttribution(meta ?? null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
   let tone: SectionSummary["tone"] = "zinc";
   if (meta?.status === "LIVE") tone = "emerald";
