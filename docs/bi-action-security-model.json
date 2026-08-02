@@ -1,0 +1,60 @@
+{
+  "generated_at": "2026-07-29T22:25:00-07:00",
+  "milestone": "M6_action_preparation_and_approval",
+  "version": "bi_action_security_model_v1",
+  "principles": [
+    "Least privilege by default",
+    "Separate read-only analytics credentials from execution credentials",
+    "No secrets in client code",
+    "No secrets in logs",
+    "All executions require explicit approval and must be auditable",
+    "Production/staging isolation"
+  ],
+  "permission_layers": {
+    "read_only": "analytics and reporting scopes",
+    "draft": "ability to draft content/config without publishing",
+    "execute": "ability to publish/send/spend",
+    "admin": "credential rotation, config, migrations"
+  },
+  "credential_classes": [
+    {
+      "class": "analytics_readonly",
+      "allowed": ["read metrics", "read campaigns"],
+      "forbidden": ["create/update/delete", "publish", "send"]
+    },
+    {
+      "class": "draft_creator",
+      "allowed": ["create drafts", "create audiences in draft state"],
+      "forbidden": ["publish", "send", "budget increase"]
+    },
+    {
+      "class": "executor_scoped",
+      "allowed": ["apply approved diff"],
+      "forbidden": ["broaden scope", "execute without approval"]
+    },
+    {
+      "class": "admin",
+      "allowed": ["rotate credentials", "configure integrations"],
+      "forbidden": []
+    }
+  ],
+  "execution_preflight": [
+    "Load exact approved PreparedAction version",
+    "Verify Approval not expired",
+    "Verify content_hash matches",
+    "Verify target system/account/object ids",
+    "Verify permissions for action",
+    "Verify budget constraints",
+    "Verify source freshness within threshold",
+    "Verify no conflicting actions/locks",
+    "Dry-run when supported",
+    "Write audit record before and after"
+  ],
+  "pii_and_secrets": {
+    "no_plaintext_secrets": true,
+    "no_pii_in_examples": true,
+    "pii_redaction_required": ["emails", "names", "addresses", "phone"],
+    "safe_ids": ["hashed identifiers", "platform object IDs"],
+    "retention": "audit logs retained; sensitive payload references stored encrypted"
+  }
+}

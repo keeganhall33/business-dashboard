@@ -3,9 +3,7 @@ import { buildExecutiveSummary } from "@/lib/dashboard/executive-summary";
 import { buildDataConfidenceModel } from "@/lib/data-confidence";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
-import { BusinessStatusPanel } from "./BusinessStatusPanel";
 import { ExecutiveKpiPanel } from "./ExecutiveKpiPanel";
-import { TopDriversPanel } from "./TopDriversPanel";
 import { ExecutiveActionsPanel } from "./ExecutiveActionsPanel";
 import { DataConfidencePanel } from "./DataConfidencePanel";
 import { DashboardSection } from "./ui/DashboardSection";
@@ -19,9 +17,13 @@ import { PerformanceBaselinePanel } from "./PerformanceBaselinePanel";
 import { IndustryPulsePanel } from "./IndustryPulsePanel";
 import { PanelAuditPlaceholder } from "./ui/PanelAuditPlaceholder";
 import { ExecutiveRangeHeader } from "./ExecutiveRangeHeader";
+import { ExecutiveBriefingPanel } from "./ExecutiveBriefingPanel";
 import { ForwardStrategyPanel } from "./ForwardStrategyPanel";
 import { OperationsReliabilityPanel } from "./OperationsReliabilityPanel";
 import { buildOperationsIntel } from "@/lib/operations-intelligence";
+import { ExecutiveNav } from "./ExecutiveNav";
+import { buildDashboardTruthState } from "@/lib/dashboard/truth-state";
+import { DataLimitationsBanner } from "./DataLimitationsBanner";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -41,6 +43,7 @@ export function DashboardShell({ data }: Props) {
   const executiveSummary = buildExecutiveSummary(data);
   const dataConfidence = buildDataConfidenceModel(data);
   const executiveActions = buildExecutiveActions(data, 5, dataConfidence);
+  const truthState = buildDashboardTruthState({ data, confidence: dataConfidence });
   const commerceSummary = buildCommerceSummary(data, executiveActions);
   const marketingSummary = buildMarketingSummary(data, executiveActions);
   const operationsSummary = buildOperationsSummary(data, executiveActions);
@@ -68,19 +71,32 @@ export function DashboardShell({ data }: Props) {
   const shouldShowIndustry = Boolean(data.industryPulseSnapshot && (data.industryPulseSnapshot.alerts?.length ?? 0) > 0);
   const shouldShowChangeInsights = Boolean(changeInsights && (changeInsights.insights?.length ?? 0) > 0);
 
+  const navItems = [
+    { id: "executive", label: "Executive" },
+    { id: "commerce", label: "Commerce" },
+    { id: "marketing", label: "Marketing" },
+    { id: "confidence", label: "Confidence" },
+    { id: "diagnostics", label: "Diagnostics" },
+    ...(hasBrandSignals ? [{ id: "experimental", label: "Experimental" }] : [])
+  ];
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8 sm:px-6">
       <div className="space-y-6">
         <ExecutiveRangeHeader range={data.range} insights={data.executiveInsights} />
-        <BusinessStatusPanel summary={executiveSummary} />
-        <ExecutiveKpiPanel summary={executiveSummary} />
+        <ExecutiveNav items={navItems} />
+        <DataLimitationsBanner truth={truthState} />
+        <div id="executive" className="space-y-6">
+        <ExecutiveBriefingPanel summary={executiveSummary} confidence={dataConfidence} actions={executiveActions} truth={truthState} />
+        <ExecutiveKpiPanel summary={executiveSummary} confidence={dataConfidence} />
         <PerformanceBaselinePanel snapshot={performanceBaseline} range={data.range} />
-        <TopDriversPanel summary={executiveSummary} />
         <ExecutiveActionsPanel data={data} actions={executiveActions} confidence={dataConfidence} />
+        </div>
       </div>
 
       <div className="space-y-6">
         <DashboardSection
+          id="commerce"
           title="Commerce"
           subtitle="Sessions, conversion, orders, revenue, and product signals"
           storageKey="dashboard-section-commerce"
@@ -93,18 +109,11 @@ export function DashboardShell({ data }: Props) {
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
             )}
-            {data.revenueEngine ? (
-              <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <summary className="cursor-pointer select-none text-sm font-semibold text-zinc-200">Revenue Engine (diagnostics)</summary>
-                <div className="mt-4">
-                  <RevenueEnginePanel data={data.revenueEngine} />
-                </div>
-              </details>
-            ) : null}
           </div>
         </DashboardSection>
 
         <DashboardSection
+          id="marketing"
           title="Marketing"
           subtitle="Spend, ROAS, campaigns, and creative"
           storageKey="dashboard-section-marketing"
@@ -155,6 +164,7 @@ export function DashboardShell({ data }: Props) {
         ) : null}
 
         <DashboardSection
+          id="confidence"
           title="Data Confidence"
           subtitle="Source freshness, coverage, and telemetry warnings"
           storageKey="dashboard-section-data-confidence"
@@ -162,6 +172,24 @@ export function DashboardShell({ data }: Props) {
           meta={<SectionMeta summary={dataConfidenceSummary} />}
         >
           <DataConfidencePanel summary={dataConfidence} />
+        </DashboardSection>
+
+        <DashboardSection
+          id="diagnostics"
+          title="Diagnostics"
+          subtitle="Operational and diagnostic detail"
+          storageKey="dashboard-section-diagnostics"
+          {...SECTION_PROPS}
+        >
+          <div className="space-y-5">
+            {data.revenueEngine ? (
+              <RevenueEnginePanel data={data.revenueEngine} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-zinc-400">
+                No verified diagnostics for this window.
+              </div>
+            )}
+          </div>
         </DashboardSection>
 
         {rangeIsMonthly ? (
@@ -177,6 +205,7 @@ export function DashboardShell({ data }: Props) {
 
         {hasBrandSignals ? (
           <DashboardSection
+            id="experimental"
             title="Experimental"
             subtitle="Prototype signals and non-production-grade metrics"
             storageKey="dashboard-section-experimental"
@@ -253,6 +282,8 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
   const spend = meta?.summary?.spend ?? null;
   const roas = meta?.summary?.roas ?? null;
   const conversions = meta?.summary?.purchases ?? null;
+  const deliveryAvailable = Boolean(spend != null || meta?.summary?.impressions != null || meta?.summary?.clicks != null);
+  const attributionAvailable = Boolean(roas != null || conversions != null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
   let tone: SectionSummary["tone"] = "zinc";
   if (meta?.status === "LIVE") tone = "emerald";
@@ -261,9 +292,26 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
     status: meta?.status ? `Meta ${meta.status}` : "Meta pending",
     tone,
     metrics: [
-      spend != null ? `Spend ${formatCurrencyShort(spend)}` : null,
-      roas != null ? `ROAS ${(roas ?? 0).toFixed(1)}x` : null,
-      conversions != null ? `Conv ${formatCount(conversions)}` : null
+      // Canonical truth-state rule: never render misleading numeric KPIs when Meta is pending/unverified.
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? spend != null
+          ? `Spend ${formatCurrencyShort(spend)}`
+          : null
+        : null,
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? roas != null
+          ? `ROAS ${roas.toFixed(1)}x`
+          : deliveryAvailable && !attributionAvailable
+            ? "ROAS Not attributable"
+            : null
+        : null,
+      meta?.status === "LIVE" || meta?.status === "PARTIAL"
+        ? conversions != null
+          ? `Conv ${formatCount(conversions)}`
+          : deliveryAvailable && !attributionAvailable
+            ? "Conv Unavailable"
+            : null
+        : null
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("marketing-")).length

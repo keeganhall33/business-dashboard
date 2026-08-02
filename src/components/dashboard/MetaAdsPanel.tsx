@@ -20,8 +20,19 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
   const updatedLabel = formatRelativeTimeFromNow(snapshot.generatedAt);
   const campaigns = snapshot.campaigns ?? [];
   const topCampaigns = campaigns.slice(0, 5);
-  const purchases = snapshot.summary.purchases ?? 0;
-  const purchaseCopy = purchases > 0 ? `${formatNumber(purchases)} Meta-reported purchases` : "No Meta-reported purchases in this window.";
+
+  const deliveryAvailable =
+    snapshot.summary.spend != null ||
+    snapshot.summary.impressions != null ||
+    snapshot.summary.clicks != null;
+  const attributionAvailable = snapshot.summary.purchases != null || snapshot.summary.roas != null;
+
+  const purchases = snapshot.summary.purchases;
+  const purchaseCopy = !attributionAvailable
+    ? "Purchase attribution unavailable for this window."
+    : purchases && purchases > 0
+      ? `${formatNumber(purchases)} Meta-reported purchases`
+      : "No Meta-reported purchases in this window.";
 
   return (
     <section className="ui-glass rounded-3xl p-5">
@@ -43,16 +54,16 @@ export function MetaAdsPanel({ snapshot }: { snapshot?: MetaAdsSnapshot | null }
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Kpi label="Spend" value={currency.format(snapshot.summary.spend ?? 0)} tone="emerald" />
-        <Kpi label="Impressions" value={formatNumber(snapshot.summary.impressions)} />
-        <Kpi label="Clicks" value={formatNumber(snapshot.summary.clicks)} />
-        <Kpi label="CTR" value={formatPercent(getCtr(snapshot.summary))} tone="sky" />
-        <Kpi label="CPC" value={decimalCurrency.format(getCpc(snapshot.summary))} />
-        <Kpi label="ROAS" value={formatRoas(snapshot.summary.roas)} tone="sky" />
+        <Kpi label="Spend" value={deliveryAvailable ? currency.format(snapshot.summary.spend ?? 0) : "Unavailable"} tone="emerald" />
+        <Kpi label="Impressions" value={deliveryAvailable ? formatNumber(snapshot.summary.impressions) : "Unavailable"} />
+        <Kpi label="Clicks" value={deliveryAvailable ? formatNumber(snapshot.summary.clicks) : "Unavailable"} />
+        <Kpi label="CTR" value={deliveryAvailable ? formatPercent(getCtr(snapshot.summary)) : "Unavailable"} tone="sky" />
+        <Kpi label="CPC" value={deliveryAvailable ? formatCurrencyMaybe(getCpc(snapshot.summary)) : "Unavailable"} />
+        <Kpi label="ROAS" value={attributionAvailable ? formatRoas(snapshot.summary.roas) : "Not attributable"} tone="sky" />
       </div>
 
       <div className="mt-3 rounded-2xl border border-dashed border-white/10 bg-black/20 p-3 text-xs text-zinc-400">
-        {purchaseCopy} Meta ROAS is reported as-is from Meta Ads Manager and may differ from GA4 or WooCommerce attribution.
+        {purchaseCopy} Delivery metrics may be live while attribution is unavailable. Meta ROAS is reported as-is from Meta Ads Manager and may differ from GA4 or WooCommerce attribution.
       </div>
 
       <div className="mt-5">
@@ -124,6 +135,12 @@ function getCtr(summary: MetaAdsSnapshot["summary"]) {
 }
 
 function getCpc(summary: MetaAdsSnapshot["summary"]) {
-  if (!summary.clicks) return 0;
+  if (summary.clicks == null || summary.clicks <= 0) return null;
+  if (summary.spend == null) return null;
   return summary.spend / summary.clicks;
+}
+
+function formatCurrencyMaybe(value: number | null) {
+  if (value == null) return "–";
+  return decimalCurrency.format(value);
 }

@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-07-29T20:05:00-07:00",
+  "milestone": "M3_examples",
+  "examples": [
+    {
+      "id": "ex_meta_ad_launch_to_orders",
+      "scenario": "Meta ad launched → product views rise → orders rise",
+      "source_events": ["meta_reporting.impression_recorded", "ga4.session_started", "woocommerce.order_paid"],
+      "canonical_events": ["campaign_started", "click_recorded", "session_started", "product_viewed", "order_paid"],
+      "entities": ["Campaign", "PaidAd", "WebsiteSession", "Order", "Product"],
+      "attribution": { "model": "assisted", "window": "7d", "confidence": "possible" },
+      "explanation": { "claim": "Meta likely contributed to increased sessions and orders", "confidence": "possible" },
+      "recommendation": { "action": "Scale winning ad set", "confidence": "possible" }
+    },
+    {
+      "id": "ex_email_sent_to_purchases",
+      "scenario": "Email sent → clicks → purchases",
+      "source_events": ["email.email_campaign_sent", "email.email_clicked", "woocommerce.order_paid"],
+      "canonical_events": ["email_campaign_sent", "email_clicked", "order_paid"],
+      "entities": ["EmailCampaign", "Customer", "Order"],
+      "attribution": { "model": "last_touch", "window": "48h", "confidence": "likely" },
+      "explanation": { "claim": "Email drove incremental conversions within 48h", "confidence": "likely" },
+      "recommendation": { "action": "Prepare follow-up email", "confidence": "likely" }
+    },
+    {
+      "id": "ex_media_interview_direct_traffic",
+      "scenario": "Interview aired → direct traffic increase → product sales",
+      "source_events": ["industry_pulse.press_mention", "ga4.session_started", "woocommerce.order_paid"],
+      "canonical_events": ["interview_aired", "session_started", "order_paid"],
+      "entities": ["MediaAppearance", "WebsiteSession", "Order"],
+      "attribution": { "model": "inferred_influence", "window": "24h", "confidence": "possible" },
+      "explanation": { "claim": "Media appearance possibly influenced demand", "confidence": "possible" },
+      "recommendation": { "action": "Pin product + publish behind-the-scenes", "confidence": "possible" }
+    },
+    {
+      "id": "ex_instagram_post_views_no_sales",
+      "scenario": "Instagram post → product views without sales",
+      "source_events": ["social_intelligence.social_post_published", "ga4.session_started"],
+      "canonical_events": ["social_post_published", "product_viewed"],
+      "entities": ["SocialPost", "MarketingAsset", "WebsiteSession"],
+      "attribution": { "model": "assisted", "window": "24h", "confidence": "possible" },
+      "explanation": { "claim": "Traffic up but conversion unchanged; landing page or offer mismatch", "confidence": "likely" },
+      "recommendation": { "action": "Prepare landing page test", "confidence": "likely" }
+    },
+    {
+      "id": "ex_celebrity_share_spike",
+      "scenario": "Celebrity share → traffic spike",
+      "source_events": ["organic_social.celebrity_or_partner_share", "ga4.session_started"],
+      "canonical_events": ["celebrity_or_partner_share", "session_started"],
+      "entities": ["SocialPost", "Partnership"],
+      "attribution": { "model": "inferred_influence", "window": "6h", "confidence": "possible" },
+      "explanation": { "claim": "Spike likely influenced by share", "confidence": "possible" },
+      "recommendation": { "action": "Prepare retargeting audience", "confidence": "possible" }
+    },
+    {
+      "id": "ex_original_art_outlier",
+      "scenario": "Original-art sale excluded from normal print trend",
+      "source_events": ["woocommerce.order_paid"],
+      "canonical_events": ["order_paid"],
+      "entities": ["Order", "Product", "Artwork"],
+      "attribution": { "model": "unattributed", "window": null, "confidence": "insufficient_evidence" },
+      "explanation": { "claim": "Exclude outlier for print trend analysis", "confidence": "strongly_supported" },
+      "recommendation": { "action": "Segment original vs print reporting", "confidence": "confirmed" }
+    },
+    {
+      "id": "ex_partial_refund_net_change",
+      "scenario": "Partial refund changes net revenue",
+      "source_events": ["woocommerce.order_refunded"],
+      "canonical_events": ["refund_partial"],
+      "entities": ["Refund", "Order"],
+      "attribution": { "model": "unattributed", "window": null, "confidence": "confirmed" },
+      "explanation": { "claim": "Net revenue down due to refunds", "confidence": "confirmed" },
+      "recommendation": { "action": "Investigate refund reason", "confidence": "likely" }
+    },
+    {
+      "id": "ex_processing_to_completed",
+      "scenario": "Processing order later completed",
+      "source_events": ["woocommerce.order_paid", "woocommerce.order_completed"],
+      "canonical_events": ["order_paid", "order_completed"],
+      "entities": ["Order"],
+      "attribution": { "model": "unattributed", "window": null, "confidence": "confirmed" },
+      "explanation": { "claim": "Status transitions do not change paid-date revenue", "confidence": "confirmed" },
+      "recommendation": { "action": "None", "confidence": "confirmed" }
+    },
+    {
+      "id": "ex_abandoned_cart_recovered",
+      "scenario": "Abandoned cart recovered",
+      "source_events": ["funnelkit.checkout_abandoned", "email.automated_email_triggered", "woocommerce.order_paid"],
+      "canonical_events": ["checkout_abandoned", "automated_email_triggered", "order_paid"],
+      "entities": ["FunnelEvent", "EmailCampaign", "Order"],
+      "attribution": { "model": "position_based", "window": "7d", "confidence": "possible" },
+      "explanation": { "claim": "Recovery flow likely contributed", "confidence": "possible" },
+      "recommendation": { "action": "Prepare cart-recovery copy test", "confidence": "possible" }
+    },
+    {
+      "id": "ex_collector_outreach_sale",
+      "scenario": "Collector outreach produces a sale",
+      "source_events": ["collectors.collector_contacted", "woocommerce.order_paid"],
+      "canonical_events": ["collector_contacted", "order_paid"],
+      "entities": ["Collector", "Customer", "Order"],
+      "attribution": { "model": "assisted", "window": "14d", "confidence": "possible" },
+      "explanation": { "claim": "Outreach possibly influenced conversion", "confidence": "possible" },
+      "recommendation": { "action": "Prepare outreach drafts for similar collectors", "confidence": "possible" }
+    }
+  ]
+}

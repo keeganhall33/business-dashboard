@@ -1,0 +1,310 @@
+{
+  "generated_at": "2026-07-29T20:05:00-07:00",
+  "milestone": "M3_source_to_event_mappings",
+  "model_version": "bi_event_model_v1",
+  "mappings": [
+    {
+      "source": "woocommerce_telemetry_v1",
+      "status": "production_backed",
+      "source_records": ["public.woo_order_telemetry_v1", "public.woo_ingestion_runs_v1"],
+      "canonical_events": [
+        {
+          "event_type": "order_paid",
+          "record": "woo_order_telemetry_v1",
+          "id_strategy": "order_id = woo_order_id",
+          "timestamp": { "occurred_at": "date_paid_gmt (treated as UTC) → occurred_at", "bucket": "paid_pacific_date" },
+          "field_map": {
+            "order_id": "woo_order_id",
+            "currency": "currency",
+            "gross_revenue_cents": "gross_total_cents",
+            "refunded_cents": "refunded_cents",
+            "net_revenue_cents": "net_revenue_cents",
+            "source_system": "woocommerce",
+            "definition_version": "woo_paid_net_v1",
+            "completeness": "derived from latest successful run coverage + freshness"
+          },
+          "dedup": "PK on woo_order_id",
+          "freshness": "ingested_at + latest run source_as_of_gmt",
+          "history": "coverage_start/coverage_end from ingestion runs",
+          "confidence": "confirmed",
+          "reconciliation_required": false,
+          "known_gaps": ["No line-item/product dimension yet in telemetry table"],
+          "evidence_files": ["scripts/run-woo-telemetry.mjs", "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql", "supabase/schema.sql"]
+        },
+        {
+          "event_type": "ingestion_completed",
+          "record": "woo_ingestion_runs_v1",
+          "id_strategy": "event_id derived from run_id",
+          "timestamp": { "occurred_at": "completed_at" },
+          "field_map": {
+            "source_system": "github_actions_or_manual",
+            "source_record_id": "run_id",
+            "coverage_start": "proven_coverage_start",
+            "coverage_end": "proven_coverage_end",
+            "freshness_as_of": "source_as_of_gmt",
+            "metadata": "rows_inserted/updated/unchanged/failed"
+          },
+          "dedup": "run_id unique",
+          "freshness": "source_as_of_gmt",
+          "history": "run log",
+          "confidence": "confirmed",
+          "reconciliation_required": false,
+          "known_gaps": [],
+          "evidence_files": ["supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"]
+        }
+      ]
+    },
+    {
+      "source": "ga4_website_conversion_snapshot",
+      "status": "connected_incomplete",
+      "source_records": ["scripts/run-website-conversion.mjs", "dashboard snapshot storage (TBD mapping)"] ,
+      "canonical_events": [
+        {
+          "event_type": "session_started",
+          "record": "GA4 aggregated snapshot",
+          "id_strategy": "event_id = hash(date_bucket + channel)",
+          "timestamp": { "occurred_at": "snapshot window start", "recorded_at": "snapshot generated_at" },
+          "field_map": { "sessions": "ga4.sessions", "utm": "traffic source aggregates" },
+          "dedup": "per snapshot bucket",
+          "freshness": "snapshot generated_at",
+          "history": "unknown",
+          "confidence": "likely",
+          "reconciliation_required": true,
+          "known_gaps": ["Not per-session raw events", "Attribution limited"],
+          "evidence_files": ["scripts/run-website-conversion.mjs", "src/lib/dashboard/normalize-website-snapshot.ts"]
+        }
+      ]
+    },
+    {
+      "source": "funnelkit",
+      "status": "technically_connectable",
+      "source_records": ["commerceTelemetry.funnel placeholder in overview payload"],
+      "canonical_events": [
+        {
+          "event_type": "begin_checkout",
+          "record": "FunnelKit event feed (TBD)",
+          "id_strategy": "funnel_event_id",
+          "timestamp": { "occurred_at": "event time" },
+          "field_map": {},
+          "dedup": "TBD",
+          "freshness": "TBD",
+          "history": "TBD",
+          "confidence": "possible",
+          "reconciliation_required": true,
+          "known_gaps": ["No confirmed storage mapping yet"],
+          "evidence_files": ["src/app/api/dashboard/overview/route.ts"]
+        }
+      ]
+    },
+    {
+      "source": "meta_reporting",
+      "status": "connected_incomplete",
+      "source_records": ["scripts/run-meta-reporting.mjs"],
+      "canonical_events": [
+        {
+          "event_type": "impression_recorded",
+          "record": "Meta daily aggregates (TBD)",
+          "id_strategy": "event_id = hash(campaign_id+date)",
+          "timestamp": { "occurred_at": "date" },
+          "field_map": { "impressions": "meta.impressions", "clicks": "meta.clicks", "cost_cents": "meta.spend" },
+          "dedup": "per campaign/date",
+          "freshness": "snapshot time",
+          "history": "unknown",
+          "confidence": "likely",
+          "reconciliation_required": true,
+          "known_gaps": ["No matchback to Woo orders", "Platform attribution only"],
+          "evidence_files": ["scripts/run-meta-reporting.mjs", "src/components/dashboard/MetaAdsPanel.tsx"]
+        }
+      ]
+    },
+    {
+      "source": "lead_intelligence",
+      "status": "connected_incomplete",
+      "source_records": ["scripts/run-lead-intelligence.mjs"],
+      "canonical_events": [
+        {
+          "event_type": "lead_created",
+          "record": "CRM snapshot (TBD)",
+          "id_strategy": "lead_id from CRM",
+          "timestamp": { "occurred_at": "lead created" },
+          "field_map": {},
+          "dedup": "crm_lead_id",
+          "freshness": "snapshot",
+          "history": "unknown",
+          "confidence": "likely",
+          "reconciliation_required": true,
+          "known_gaps": ["No consistent lead→order linking"],
+          "evidence_files": ["scripts/run-lead-intelligence.mjs", "src/components/dashboard/LeadIntelligencePanel.tsx"]
+        }
+      ]
+    },
+    {
+      "source": "collectors",
+      "status": "connected_incomplete",
+      "source_records": ["src/app/api/collectors/route.ts", "supabase migrations 20260615_*"],
+      "canonical_events": [
+        {
+          "event_type": "collector_contacted",
+          "record": "collector interactions (TBD)",
+          "id_strategy": "collector_id",
+          "timestamp": { "occurred_at": "interaction time" },
+          "field_map": {},
+          "dedup": "interaction_id",
+          "freshness": "TBD",
+          "history": "unknown",
+          "confidence": "possible",
+          "reconciliation_required": true,
+          "known_gaps": ["Collector operations model incomplete in audit"],
+          "evidence_files": ["supabase/migrations/20260615_add_collector_identity_hash.sql", "src/app/api/collectors/route.ts"]
+        }
+      ]
+    },
+    {
+      "source": "social_intelligence",
+      "status": "connected_incomplete",
+      "source_records": ["scripts/run-social-intelligence.mjs"],
+      "canonical_events": [
+        {
+          "event_type": "social_post_published",
+          "record": "social post snapshot (TBD)",
+          "id_strategy": "platform_post_id",
+          "timestamp": { "occurred_at": "published_at" },
+          "field_map": { "reach": "impressions/reach", "engagements": "likes+comments+shares" },
+          "dedup": "platform_post_id",
+          "freshness": "snapshot",
+          "history": "unknown",
+          "confidence": "likely",
+          "reconciliation_required": true,
+          "known_gaps": ["No explicit join to sessions/orders"],
+          "evidence_files": ["scripts/run-social-intelligence.mjs", "src/components/dashboard/SocialIntelligencePanel.tsx"]
+        }
+      ]
+    },
+    {
+      "source": "cloudflare_telemetry",
+      "status": "connected_incomplete",
+      "source_records": ["scripts/run-cloudflare-telemetry.mjs"],
+      "canonical_events": [
+        {
+          "event_type": "anomaly_detected",
+          "record": "cloudflare snapshot anomalies (TBD)",
+          "id_strategy": "hash(metric+date)",
+          "timestamp": { "occurred_at": "date" },
+          "field_map": {},
+          "dedup": "metric+date",
+          "freshness": "snapshot",
+          "history": "unknown",
+          "confidence": "possible",
+          "reconciliation_required": true,
+          "known_gaps": ["No standardized ops → conversion linkage"],
+          "evidence_files": ["scripts/run-cloudflare-telemetry.mjs", "src/components/dashboard/CloudflarePanel.tsx"]
+        }
+      ]
+    },
+    {
+      "source": "industry_pulse",
+      "status": "connected_incomplete",
+      "source_records": ["src/lib/news/**", "scripts/run-industry-pulse.mjs"],
+      "canonical_events": [
+        {
+          "event_type": "press_mention",
+          "record": "industry pulse item",
+          "id_strategy": "hash(url)",
+          "timestamp": { "occurred_at": "published_at" },
+          "field_map": { "metadata": "headline/url/source" },
+          "dedup": "url",
+          "freshness": "ingested_at",
+          "history": "unknown",
+          "confidence": "likely",
+          "reconciliation_required": false,
+          "known_gaps": ["No linkage to specific products/campaigns"],
+          "evidence_files": ["src/lib/news/sources.ts", "src/components/dashboard/IndustryPulsePanel.tsx"]
+        }
+      ]
+    },
+    {
+      "source": "github_actions_scheduler",
+      "status": "connected_reliable",
+      "source_records": [".github/workflows/dashboard-scheduler.yml"],
+      "canonical_events": [
+        {
+          "event_type": "ingestion_started",
+          "record": "GHA workflow run/job",
+          "id_strategy": "run_id/job_id",
+          "timestamp": { "occurred_at": "run startedAt" },
+          "field_map": { "metadata": "workflow, job, ref" },
+          "dedup": "run_id+job",
+          "freshness": "run time",
+          "history": "GHA history",
+          "confidence": "confirmed",
+          "reconciliation_required": false,
+          "known_gaps": ["Need ingestion receipt stored in DB for join"],
+          "evidence_files": [".github/workflows/dashboard-scheduler.yml"]
+        }
+      ]
+    },
+    {
+      "source": "in_app_scheduler",
+      "status": "connected_reliable",
+      "source_records": ["src/app/api/scheduler/*", "src/lib/scheduler/auth.ts"],
+      "canonical_events": [
+        {
+          "event_type": "ingestion_started",
+          "record": "scheduler tick job log",
+          "id_strategy": "job_run_log.id",
+          "timestamp": { "occurred_at": "job_run_log.started_at" },
+          "field_map": { "metadata": "job_key/status" },
+          "dedup": "job_run_log.id",
+          "freshness": "near real time",
+          "history": "supabase job_run_log",
+          "confidence": "confirmed",
+          "reconciliation_required": false,
+          "known_gaps": ["Woo ingestion currently uses GHA, not in-app"],
+          "evidence_files": ["src/lib/scheduler/auth.ts", "supabase/phase4_scheduler.sql"]
+        }
+      ]
+    },
+    {
+      "source": "manual_finance",
+      "status": "manual_only",
+      "source_records": ["src/app/api/finance/snapshot/route.ts"],
+      "canonical_events": [
+        {
+          "event_type": "schema_changed",
+          "record": "finance snapshot",
+          "id_strategy": "snapshot date",
+          "timestamp": { "occurred_at": "snapshot date" },
+          "field_map": {},
+          "dedup": "date",
+          "freshness": "manual",
+          "history": "unknown",
+          "confidence": "possible",
+          "reconciliation_required": false,
+          "known_gaps": ["No safe profit/margin ingestion"],
+          "evidence_files": ["src/app/api/finance/snapshot/route.ts"]
+        }
+      ]
+    },
+    {
+      "source": "opportunities_tasks_decisions_agents",
+      "status": "connected_reliable",
+      "source_records": ["src/app/api/opportunities/**", "src/app/api/tasks/**", "src/app/api/decisions/route.ts", "src/app/api/agents/**"],
+      "canonical_events": [
+        {
+          "event_type": "recommendation_generated",
+          "record": "opportunity record",
+          "id_strategy": "opportunity id",
+          "timestamp": { "occurred_at": "created_at" },
+          "field_map": {},
+          "dedup": "opportunity id",
+          "freshness": "near real time",
+          "history": "supabase",
+          "confidence": "likely",
+          "reconciliation_required": false,
+          "known_gaps": ["Needs explicit linkage to PreparedAction/Approval/Outcome"],
+          "evidence_files": ["src/app/api/opportunities/route.ts", "src/lib/opportunity-approval-pipeline.ts"]
+        }
+      ]
+    }
+  ]
+}

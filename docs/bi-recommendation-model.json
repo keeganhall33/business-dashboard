@@ -1,0 +1,422 @@
+{
+  "generated_at": "2026-07-29T21:35:00-07:00",
+  "milestone": "M5_recommendation_architecture",
+  "version": "bi_recommendation_model_v1",
+  "lifecycle": [
+    {
+      "stage": "signal_detected",
+      "inputs": ["delta_set", "anomaly_flags", "data_quality_events"],
+      "outputs": ["signal"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["required sources unknown/stale for the metric"],
+      "audit_records": ["BusinessEvent:anomaly_detected"],
+      "failure_behavior": "record data-quality remediation candidate",
+      "user_visible_state": "Insight only"
+    },
+    {
+      "stage": "business_change_explained",
+      "inputs": ["signal", "explanation_pipeline_output"],
+      "outputs": ["explanation"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["insufficient_evidence"],
+      "audit_records": ["Explanation record (explanation_id)", "confidence + evidence packet"],
+      "failure_behavior": "produce insufficient-evidence explanation",
+      "user_visible_state": "Explanation"
+    },
+    {
+      "stage": "opportunity_candidate_generated",
+      "inputs": ["explanation", "event_timeline", "knowledge_model"],
+      "outputs": ["opportunity_candidate"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["no opportunity conditions met"],
+      "audit_records": ["OpportunityCandidate"],
+      "failure_behavior": "emit take_no_action",
+      "user_visible_state": "Opportunity"
+    },
+    {
+      "stage": "eligibility_gates_applied",
+      "inputs": ["opportunity_candidate", "inventory/licensing constraints", "conflict set", "recommendation memory"],
+      "outputs": ["eligible_opportunity"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["product unavailable", "conflicting active recommendation", "coverage insufficient"],
+      "audit_records": ["Eligibility decision + reasons"],
+      "failure_behavior": "downgrade or suppress recommendation",
+      "user_visible_state": "Opportunity qualified or suppressed"
+    },
+    {
+      "stage": "recommendation_generated",
+      "inputs": ["eligible_opportunity"],
+      "outputs": ["recommendation"],
+      "required_confidence": "likely",
+      "blocking_conditions": ["confidence below threshold", "duplicate active recommendation"],
+      "audit_records": ["Recommendation"],
+      "failure_behavior": "insight_only",
+      "user_visible_state": "Recommendation"
+    },
+    {
+      "stage": "evidence_packet_assembled",
+      "inputs": ["recommendation", "raw evidence refs"],
+      "outputs": ["evidence_packet"],
+      "required_confidence": "likely",
+      "blocking_conditions": ["missing provenance"],
+      "audit_records": ["evidence_ids"],
+      "failure_behavior": "downgrade confidence",
+      "user_visible_state": "Expandable evidence"
+    },
+    {
+      "stage": "impact_estimated",
+      "inputs": ["recommendation", "historical precedents", "benchmarks"],
+      "outputs": ["impact_estimate"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["insufficient evidence tier"],
+      "audit_records": ["estimate method + assumptions + ranges"],
+      "failure_behavior": "present directional estimate",
+      "user_visible_state": "Expected impact range"
+    },
+    {
+      "stage": "effort_cost_urgency_risk_scored",
+      "inputs": ["recommendation", "constraints", "preferences"],
+      "outputs": ["scored_recommendation"],
+      "required_confidence": "possible",
+      "blocking_conditions": [],
+      "audit_records": ["scoring factors"],
+      "failure_behavior": "default conservative risk",
+      "user_visible_state": "Ranked recommendation"
+    },
+    {
+      "stage": "recommendation_ranked",
+      "inputs": ["scored_recommendation", "other candidates"],
+      "outputs": ["ranked_list"],
+      "required_confidence": "possible",
+      "blocking_conditions": [],
+      "audit_records": ["ranking snapshot"],
+      "failure_behavior": "show top few",
+      "user_visible_state": "Action Center list"
+    },
+    {
+      "stage": "action_draft_prepared",
+      "inputs": ["recommendation"],
+      "outputs": ["prepared_action"],
+      "required_confidence": "strongly_supported",
+      "blocking_conditions": ["execution connector unavailable", "insufficient evidence"],
+      "audit_records": ["PreparedAction"],
+      "failure_behavior": "leave as recommendation-only",
+      "user_visible_state": "Draft prepared"
+    },
+    {
+      "stage": "approval_requested",
+      "inputs": ["prepared_action"],
+      "outputs": ["approval_request"],
+      "required_confidence": "strongly_supported",
+      "blocking_conditions": ["high-risk action", "missing rollback plan"],
+      "audit_records": ["Approval"],
+      "failure_behavior": "request more info",
+      "user_visible_state": "Approval needed"
+    },
+    {
+      "stage": "action_executed",
+      "inputs": ["approval"],
+      "outputs": ["execution_receipt"],
+      "required_confidence": "confirmed",
+      "blocking_conditions": ["explicit user approval missing"],
+      "audit_records": ["Execution"],
+      "failure_behavior": "stop + alert",
+      "user_visible_state": "Executing/Executed"
+    },
+    {
+      "stage": "outcome_measured",
+      "inputs": ["execution", "post-window metrics"],
+      "outputs": ["outcome"],
+      "required_confidence": "possible",
+      "blocking_conditions": ["window not elapsed", "source stale"],
+      "audit_records": ["Outcome"],
+      "failure_behavior": "mark insufficient_evidence",
+      "user_visible_state": "Measured"
+    },
+    {
+      "stage": "recommendation_evaluated",
+      "inputs": ["outcome", "expected impact", "baseline"],
+      "outputs": ["evaluation"],
+      "required_confidence": "possible",
+      "blocking_conditions": [],
+      "audit_records": ["RecommendationEvaluation"],
+      "failure_behavior": "qualitative review",
+      "user_visible_state": "Learned"
+    },
+    {
+      "stage": "pattern_retained_revised_or_retired",
+      "inputs": ["evaluation"],
+      "outputs": ["knowledge updates"],
+      "required_confidence": "possible",
+      "blocking_conditions": [],
+      "audit_records": ["LearnedPattern/Hypothesis"],
+      "failure_behavior": "no-op",
+      "user_visible_state": "Updated playbook"
+    }
+  ],
+  "schema": {
+    "entity": "Recommendation",
+    "idempotency": {
+      "dedup_key": ["recommendation_type", "channel", "campaign_id", "product_id", "audience_id", "baseline_definition", "generated_at_bucket"],
+      "bucket": "hour"
+    },
+    "status_transitions": {
+      "states": ["draft", "active", "prepared", "approval_requested", "approved", "rejected", "executed", "measuring", "evaluated", "expired", "dismissed"],
+      "allowed": [
+        ["draft", "active"],
+        ["active", "prepared"],
+        ["prepared", "approval_requested"],
+        ["approval_requested", "approved"],
+        ["approval_requested", "rejected"],
+        ["approved", "executed"],
+        ["executed", "measuring"],
+        ["measuring", "evaluated"],
+        ["active", "expired"],
+        ["active", "dismissed"],
+        ["rejected", "dismissed"]
+      ]
+    },
+    "required_fields": [
+      "recommendation_id",
+      "recommendation_type",
+      "title",
+      "summary",
+      "recommended_action",
+      "business_question",
+      "generated_at",
+      "valid_until",
+      "status",
+      "priority",
+      "urgency",
+      "confidence",
+      "confidence_reason",
+      "evidence_ids",
+      "channel",
+      "measurement_plan",
+      "baseline_definition",
+      "success_metric",
+      "success_threshold",
+      "stop_condition",
+      "data_freshness",
+      "coverage",
+      "definition_version",
+      "created_by"
+    ],
+    "optional_fields": [
+      "explanation_id",
+      "opportunity_id",
+      "campaign_id",
+      "product_id",
+      "artwork_id",
+      "audience_id",
+      "customer_segment_id",
+      "geography",
+      "expected_incremental_revenue_cents",
+      "expected_incremental_profit_cents",
+      "expected_cost_cents",
+      "expected_effort",
+      "time_to_impact",
+      "downside_risk",
+      "prerequisites",
+      "execution_steps",
+      "prepared_action_type",
+      "approval_level",
+      "expiration_reason",
+      "supersedes_recommendation_id",
+      "rejection_reason",
+      "metadata"
+    ],
+    "validation_rules": [
+      "confidence must use approved vocabulary",
+      "valid_until must be after generated_at",
+      "expected_* fields must not be negative",
+      "approval_level required when prepared_action_type is present",
+      "evidence_ids must be non-empty for active recommendations"
+    ],
+    "expiration_behavior": {
+      "triggers": ["time elapsed", "product unavailable", "superseded", "conflict"],
+      "actions": ["set status=expired", "record expiration_reason"]
+    }
+  },
+  "categories": {
+    "paid_advertising": [
+      "scale_campaign",
+      "reduce_budget",
+      "pause_campaign",
+      "refresh_creative",
+      "duplicate_winning_ad",
+      "change_audience",
+      "create_retargeting_audience",
+      "expand_prospecting",
+      "reduce_frequency",
+      "change_placement",
+      "fix_landing_page_before_scaling"
+    ],
+    "email": [
+      "send_campaign",
+      "resend_to_non_openers",
+      "segment_campaign",
+      "recover_abandoned_cart",
+      "reactivate_past_buyers",
+      "promote_specific_product",
+      "promote_related_product",
+      "follow_up_after_launch",
+      "test_subject_line",
+      "change_send_time"
+    ],
+    "website_conversion": [
+      "feature_product",
+      "update_product_page",
+      "create_landing_page",
+      "improve_call_to_action",
+      "add_social_proof",
+      "clarify_shipping",
+      "create_bundle",
+      "adjust_offer",
+      "fix_checkout_issue",
+      "reduce_page_friction"
+    ],
+    "organic_social": [
+      "publish_process_video",
+      "publish_product_story",
+      "reuse_winning_content",
+      "create_new_hook_variations",
+      "promote_media_appearance",
+      "publish_customer_story",
+      "post_at_recommended_time",
+      "redirect_traffic_to_product_page",
+      "create_launch_sequence"
+    ],
+    "sales_collectors": [
+      "follow_up_lead",
+      "contact_collector",
+      "contact_repeat_buyer",
+      "revive_original_art_inquiry",
+      "follow_up_commission_inquiry",
+      "propose_related_artwork",
+      "prioritize_high_value_lead",
+      "close_stale_lead",
+      "prepare_personalized_outreach"
+    ],
+    "product_merchandising": [
+      "promote_underexposed_product",
+      "reduce_promotion_of_weak_product",
+      "bundle_products",
+      "test_price",
+      "emphasize_scarcity",
+      "launch_signed_edition",
+      "feature_local_market_subject",
+      "align_product_with_current_event",
+      "retire_or_archive_product",
+      "restock_or_reprint_review"
+    ],
+    "data_operations": [
+      "repair_data_source",
+      "refresh_stale_source",
+      "investigate_anomaly",
+      "improve_tracking",
+      "reconcile_attribution",
+      "create_experiment",
+      "wait_for_more_data",
+      "take_no_action"
+    ]
+  },
+  "gates": {
+    "hard_gates": [
+      "required sources freshness acceptable",
+      "coverage sufficient for the metric",
+      "metric definition known",
+      "minimum sample size met",
+      "no unresolved telemetry failure",
+      "no major attribution contradiction",
+      "no duplicate active recommendation",
+      "product available",
+      "licensing permits",
+      "inventory permits",
+      "no campaign conflict",
+      "time remains before opportunity expires"
+    ],
+    "confidence_thresholds": {
+      "insight_only": ["possible", "insufficient_evidence"],
+      "recommendation_allowed": ["likely", "strongly_supported", "confirmed"],
+      "draft_preparation_allowed": ["strongly_supported", "confirmed"],
+      "approval_request_allowed": ["strongly_supported", "confirmed"],
+      "execution_prohibited_without_user_approval": true
+    }
+  },
+  "why_packet": {
+    "must_include": [
+      "what changed",
+      "likely reason",
+      "recommendation",
+      "supporting metrics",
+      "supporting events",
+      "historical precedent",
+      "comparison period",
+      "confidence",
+      "assumptions",
+      "missing data",
+      "expected benefit range",
+      "cost",
+      "effort",
+      "risk",
+      "exact steps",
+      "measurement plan",
+      "stop condition"
+    ],
+    "expand_path": ["recommendation", "explanation", "raw_evidence"]
+  },
+  "impact_estimation": {
+    "evidence_tiers": [
+      "historical_matched_precedent",
+      "controlled_experiment",
+      "comparable_campaign",
+      "keegan_channel_benchmark",
+      "directional_estimate",
+      "insufficient_evidence"
+    ],
+    "requirements": ["ranges not point estimates", "sample size and assumptions", "downside/upside scenarios"],
+    "no_external_benchmarks_without_label": true
+  },
+  "conflicts": {
+    "examples": [
+      "scale ad vs fix landing page first",
+      "send email vs avoid over-emailing",
+      "discount vs premium positioning",
+      "scarcity messaging vs inventory"
+    ],
+    "handling": {
+      "detect": ["mutual exclusion rules", "sequencing constraints"],
+      "precedence": ["data-quality remediation", "fix blocking conversion before scaling spend"],
+      "bundling": ["combine compatible actions into one approval packet"],
+      "user_required": ["when tradeoffs are strategic"]
+    }
+  },
+  "memory": {
+    "remember": [
+      "accepted",
+      "rejected",
+      "edits",
+      "rejection reasons",
+      "executed actions",
+      "outcomes",
+      "successful patterns",
+      "preferences",
+      "constraints",
+      "risk tolerance"
+    ],
+    "anti_spam_rules": [
+      "do not repeat rejected recommendation without new evidence",
+      "do not recommend unavailable products",
+      "avoid generic content advice",
+      "no duplicates or contradictory simultaneous actions"
+    ]
+  },
+  "action_center_handoff": {
+    "meta": ["exact campaign/ad-set target", "budget delta", "audience", "creative brief", "tracking", "rollback"],
+    "email": ["segment", "subject lines", "draft", "products", "send time", "UTMs", "follow-up"],
+    "website": ["page target", "copy/CTA", "experiment plan", "rollback"],
+    "social": ["platform", "hook/script", "caption", "CTA", "time", "linked product"],
+    "sales": ["recipient cohort", "ranked list", "draft outreach", "follow-up schedule"]
+  }
+}

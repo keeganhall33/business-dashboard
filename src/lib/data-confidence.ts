@@ -339,14 +339,38 @@ function evaluateGa4(data: DashboardOverviewResponse, timestamp: number, conflic
 
 function evaluateMeta(data: DashboardOverviewResponse, timestamp: number, conflicts: ConflictMap, partialDay: boolean): ConfidenceEntry {
   const meta = data.metaAds;
+
+  const deliveryAvailable = Boolean(
+    meta?.summary?.spend != null ||
+      meta?.summary?.impressions != null ||
+      meta?.summary?.clicks != null ||
+      (meta?.campaigns?.length ?? 0) > 0
+  );
+  const attributionAvailable = Boolean(meta?.summary?.purchases != null || meta?.summary?.roas != null);
+
+  const warnings = [...(conflicts.meta ?? [])];
+  if (deliveryAvailable && !attributionAvailable) {
+    warnings.push("Meta delivery metrics are available, but purchase attribution is unavailable.");
+  }
+
   return evaluateTelemetryDomain({
     domain: "meta",
-    hasData: Boolean(meta?.summary?.spend ?? meta?.summary?.purchases ?? meta?.campaigns?.length),
+    hasData: deliveryAvailable || attributionAvailable,
     metadataTimestamp: meta?.generatedAt,
     lastVerified: meta?.generatedAt ?? null,
-    coverageStatus: meta?.status === "PARTIAL" ? "partial" : meta?.status === "BROKEN" ? "no_data" : "complete",
-    healthStatus: meta?.status === "BROKEN" ? "critical" : meta?.status === "PARTIAL" ? "warning" : "healthy",
-    warnings: conflicts.meta ?? [],
+    coverageStatus:
+      meta?.status === "BROKEN"
+        ? "no_data"
+        : meta?.status === "PARTIAL" || (deliveryAvailable && !attributionAvailable)
+          ? "partial"
+          : "complete",
+    healthStatus:
+      meta?.status === "BROKEN"
+        ? "critical"
+        : meta?.status === "PARTIAL" || (deliveryAvailable && !attributionAvailable)
+          ? "warning"
+          : "healthy",
+    warnings,
     conflicts: conflicts.meta,
     timestamp,
     partialDay

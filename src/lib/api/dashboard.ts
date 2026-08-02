@@ -58,10 +58,26 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   } catch (error) {
     throw new Error(`[dashboard] fetch failed for ${String(input)}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  const contentType = res.headers.get("content-type") ?? "";
+  const safeTarget = (() => {
+    try {
+      const u = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(String(input));
+      return u.pathname;
+    } catch {
+      return typeof input === "string" ? input.split("?")[0] : String(input);
+    }
+  })();
+
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Request failed (${res.status}): ${text || res.statusText}`);
+    // Do not include response bodies (can be HTML redirects/login pages).
+    throw new Error(`[dashboard] request failed (${res.status}) for ${safeTarget} (content-type: ${contentType || "unknown"})`);
   }
+
+  if (!/application\/(json|problem\+json)/i.test(contentType)) {
+    // Avoid crashing on HTML responses (e.g., deployment protection / login redirects).
+    throw new Error(`[dashboard] expected JSON for ${safeTarget} but received ${contentType || "unknown"}`);
+  }
+
   return (await res.json()) as T;
 }
 
@@ -71,8 +87,13 @@ type OverviewParams = {
   endDate?: string | null;
 };
 
-export async function getDashboardOverview(params: OverviewParams = {}): Promise<DashboardOverviewResponse> {
-  const base = getAppUrl();
+type ServerRequestContext = {
+  baseUrl: string;
+  cookie: string | null;
+};
+
+export async function getDashboardOverview(params: OverviewParams = {}, ctx?: ServerRequestContext): Promise<DashboardOverviewResponse> {
+  const base = ctx?.baseUrl ?? getAppUrl();
   const search = new URLSearchParams();
 
   if (params.preset) {
@@ -88,7 +109,11 @@ export async function getDashboardOverview(params: OverviewParams = {}): Promise
   const query = search.toString();
   const path = query ? `/api/dashboard/overview?${query}` : "/api/dashboard/overview";
   const url = base ? `${base}${path}` : path;
-  return fetchJson<DashboardOverviewResponse>(url, { method: "GET" });
+
+  const headers = new Headers();
+  if (ctx?.cookie) headers.set("cookie", ctx.cookie);
+
+  return fetchJson<DashboardOverviewResponse>(url, { method: "GET", headers });
 }
 
 export async function getAgentDashboard(agentKey: string): Promise<AgentDashboardResponse> {

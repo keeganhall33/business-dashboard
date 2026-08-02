@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-07-29T21:35:00-07:00",
+  "milestone": "M5_recommendation_evaluation",
+  "version": "bi_recommendation_evaluation_v1",
+  "evaluation_record": {
+    "required_fields": [
+      "recommendation_id",
+      "baseline_definition",
+      "expected_outcome",
+      "actual_outcome",
+      "evaluation_window",
+      "method",
+      "confidence_before",
+      "confidence_after",
+      "result",
+      "reason",
+      "lessons"
+    ],
+    "optional_fields": [
+      "incremental_revenue_cents",
+      "incremental_profit_cents",
+      "cost_cents",
+      "side_effects",
+      "sample_size",
+      "notes"
+    ]
+  },
+  "methods": [
+    {
+      "method": "pre_post",
+      "use_when": "Quick operational decisions with stable baselines.",
+      "limitations": ["Confounds likely"],
+      "how_to_learn": "Store as weak evidence tier unless corroborated"
+    },
+    {
+      "method": "holdout",
+      "use_when": "Ads/email segments where holdout is possible.",
+      "limitations": ["Requires platform control"],
+      "how_to_learn": "Strong evidence for retention"
+    },
+    {
+      "method": "split_test",
+      "use_when": "Email subject lines, landing pages.",
+      "limitations": ["Needs instrumentation"],
+      "how_to_learn": "Preferred"
+    },
+    {
+      "method": "matched_historical_period",
+      "use_when": "When seasonality is dominant and tests aren’t possible.",
+      "limitations": ["Non-stationarity"],
+      "how_to_learn": "Medium evidence"
+    },
+    {
+      "method": "interrupted_time_series",
+      "use_when": "Longer changes; enough daily history.",
+      "limitations": ["Complex"],
+      "how_to_learn": "Strong if done correctly"
+    },
+    {
+      "method": "qualitative_review",
+      "use_when": "Collector outreach, partnerships.",
+      "limitations": ["Subjective"],
+      "how_to_learn": "Record as qualitative"
+    },
+    {
+      "method": "insufficient_evidence",
+      "use_when": "Sources stale/partial.",
+      "limitations": ["No conclusions"],
+      "how_to_learn": "Do not retain as pattern"
+    }
+  ],
+  "learning_rules": [
+    "Do not treat correlation as proof; promotion requires stronger methods/tier.",
+    "Store rejected recommendations with reason; suppress repeats until new evidence.",
+    "If repeated failures, downrank that recommendation type for similar contexts.",
+    "Retain successful patterns with provenance and effective dates."
+  ],
+  "memory_requirements": {
+    "must_store": [
+      "accept/reject",
+      "edits",
+      "executed actions",
+      "outcome metrics",
+      "evaluation method",
+      "confidence before/after",
+      "lessons learned"
+    ],
+    "anti_repeat": [
+      "no repeat after rejection without new evidence",
+      "no duplicate active recommendation",
+      "no contradictory simultaneous actions"
+    ]
+  }
+}

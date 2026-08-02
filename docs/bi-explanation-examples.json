@@ -1,0 +1,139 @@
+{
+  "generated_at": "2026-07-29T21:05:00-07:00",
+  "milestone": "M4_examples",
+  "model_version": "bi_explanation_model_v1",
+  "examples": [
+    {
+      "id": "m4_ex_01_revenue_down_conversion",
+      "question": "Why was revenue down 28% this week?",
+      "detected_delta": "net_revenue down; sessions flat; orders down",
+      "candidate_causes": ["conversion drop", "refunds", "product mix"],
+      "evidence": ["Woo telemetry complete", "GA4 snapshot sessions"],
+      "confounders": ["GA4 completeness unknown"],
+      "confidence": "likely",
+      "rendered": "Revenue is likely down because orders fell while traffic was roughly flat; conversion appears weaker, but GA4 completeness is not fully proven for this window.",
+      "handoff": "Prepare actions: landing-page audit + retargeting creative refresh (approval-gated)."
+    },
+    {
+      "id": "m4_ex_02_revenue_up_meta_spend",
+      "question": "What caused yesterday’s revenue spike?",
+      "detected_delta": "net_revenue up; single-day anomaly",
+      "candidate_causes": ["single-order outlier", "meta spend increase", "email send"],
+      "evidence": ["Woo daily buckets", "Meta aggregate snapshot"],
+      "confounders": ["overlapping campaigns"],
+      "confidence": "possible",
+      "rendered": "Revenue spiked; a single order may account for an unusually large share. Meta activity also increased, but causal attribution is insufficient without a verified touch timeline.",
+      "handoff": "Segment outlier; consider scaling if sustained across multiple days."
+    },
+    {
+      "id": "m4_ex_03_refunds_drive_net_down",
+      "question": "Why did net revenue drop while gross stayed similar?",
+      "detected_delta": "refund_rate up",
+      "candidate_causes": ["refund timing"],
+      "evidence": ["Woo telemetry refund cents"],
+      "confounders": [],
+      "confidence": "confirmed",
+      "rendered": "Net revenue decreased due to refunds increasing in this window.",
+      "handoff": "Prepare refund reason audit + customer outreach drafts (approval-gated)."
+    },
+    {
+      "id": "m4_ex_04_product_mix_shift",
+      "question": "Why did AOV rise but orders fall?",
+      "detected_delta": "AOV up; orders down",
+      "candidate_causes": ["product mix shift", "pricing/offer"],
+      "evidence": ["Woo AOV (complete)"],
+      "confounders": ["missing product-level telemetry"],
+      "confidence": "likely",
+      "rendered": "AOV rose while orders fell, suggesting a product mix shift toward higher-priced items; product-level breakdown is not yet available to confirm which items drove it.",
+      "handoff": "Add product-level revenue dimensions; prepare promotion for high-converting item."
+    },
+    {
+      "id": "m4_ex_05_email_assisted_sales",
+      "question": "Did the email campaign matter?",
+      "detected_delta": "orders up within 48h",
+      "candidate_causes": ["email send"],
+      "evidence": ["email send/click events (TBD)", "Woo orders"],
+      "confounders": ["no verified click→order join"],
+      "confidence": "possible",
+      "rendered": "Email may have assisted conversions within 48h, but attribution is not confirmed without a validated touch→order linkage.",
+      "handoff": "Implement email event ingestion + attribution touch model."
+    },
+    {
+      "id": "m4_ex_06_meta_fatigue_frequency",
+      "question": "Why is retargeting weak?",
+      "detected_delta": "clicks flat; orders down",
+      "candidate_causes": ["audience saturation", "creative fatigue"],
+      "evidence": ["Meta aggregates (frequency if present)", "Woo orders"],
+      "confounders": ["no audience dimension proven"],
+      "confidence": "possible",
+      "rendered": "Retargeting weakness is possibly due to audience saturation or creative fatigue; current data lacks verified frequency/audience signals.",
+      "handoff": "Prepare creative brief; add audience/frequency telemetry."
+    },
+    {
+      "id": "m4_ex_07_social_spike_no_sales",
+      "question": "Why did Instagram engagement not translate to sales?",
+      "detected_delta": "sessions up; orders flat",
+      "candidate_causes": ["landing mismatch", "audience intent"],
+      "evidence": ["social snapshot", "GA4 sessions"],
+      "confounders": ["GA4 completeness unknown"],
+      "confidence": "likely",
+      "rendered": "Traffic rose from social but sales did not; likely the landing page or offer didn’t match visitor intent.",
+      "handoff": "Prepare landing page test + retargeting sequence."
+    },
+    {
+      "id": "m4_ex_08_media_event_direct_traffic",
+      "question": "Did press coverage drive sales?",
+      "detected_delta": "direct traffic up; orders up",
+      "candidate_causes": ["media appearance"],
+      "evidence": ["industry pulse press_mention", "GA4 direct traffic (TBD)", "Woo orders"],
+      "confounders": ["concurrent ads"],
+      "confidence": "possible",
+      "rendered": "Press coverage possibly influenced demand; confirm by checking direct/branded traffic lift and ruling out concurrent paid spend changes.",
+      "handoff": "Add event timeline + baseline matching."
+    },
+    {
+      "id": "m4_ex_09_overlap_campaigns",
+      "question": "Which campaign worked when multiple ran?",
+      "detected_delta": "orders up; multiple campaigns active",
+      "candidate_causes": ["campaign A", "campaign B"],
+      "evidence": ["Meta aggregates", "email sends"],
+      "confounders": ["overlap"],
+      "confidence": "insufficient_evidence",
+      "rendered": "Multiple campaigns overlapped; without a validated multi-touch model, we cannot credibly assign incremental lift to a specific campaign.",
+      "handoff": "Implement attribution touch model; run holdout experiments."
+    },
+    {
+      "id": "m4_ex_10_incomplete_sources",
+      "question": "Why are comparisons unavailable?",
+      "detected_delta": "completeness unknown",
+      "candidate_causes": ["coverage partial"],
+      "evidence": ["completeness gates"],
+      "confounders": [],
+      "confidence": "confirmed",
+      "rendered": "Comparisons are suppressed because coverage or freshness cannot be verified for the selected range.",
+      "handoff": "Refresh ingestion; expand coverage proof."
+    },
+    {
+      "id": "m4_ex_11_original_art_outlier",
+      "question": "Revenue is up but feels misleading — why?",
+      "detected_delta": "single order accounts for large share",
+      "candidate_causes": ["original-art outlier"],
+      "evidence": ["Woo order-level totals"],
+      "confounders": [],
+      "confidence": "strongly_supported",
+      "rendered": "Revenue is up primarily due to an outlier purchase; the underlying print trend should be evaluated with the outlier segmented out.",
+      "handoff": "Add product-type segmentation (original vs print)."
+    },
+    {
+      "id": "m4_ex_12_seattle_subject_pattern",
+      "question": "What’s likely to work next?",
+      "detected_delta": "pattern: Seattle-related subjects convert better",
+      "candidate_causes": ["market affinity"],
+      "evidence": ["learned pattern (future)", "historical sales anchors (future)"] ,
+      "confounders": ["pattern not yet computed"],
+      "confidence": "possible",
+      "rendered": "Seattle-related subjects may be higher-converting based on prior results, but this must be verified with historical pattern extraction before making strong claims.",
+      "handoff": "Milestone 6: pattern detection; then prepare campaign brief for Seattle subject."
+    }
+  ]
+}

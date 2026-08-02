@@ -1,0 +1,247 @@
+{
+  "generated_at": "2026-07-29T21:05:00-07:00",
+  "milestone": "M4_causal_explanation_architecture",
+  "version": "bi_explanation_model_v1",
+  "inputs": {
+    "event_model": "docs/bi-business-event-model.json",
+    "source_mappings": "docs/bi-source-event-mappings.json",
+    "confidence_scale": "bi_event_model_v1.confidence_scale"
+  },
+  "goals": [
+    "Explain meaningful changes in sales/traffic/conversion with evidence-ranked hypotheses.",
+    "Prevent false causal claims; always separate confirmed facts from inference.",
+    "Hand off to recommendation engine with explicit confidence and prerequisites."
+  ],
+  "pipeline": [
+    {
+      "stage": "normalize",
+      "purpose": "Convert source records into canonical BusinessEvents with validation + dedupe.",
+      "rules": [
+        "Apply source-to-event mappings.",
+        "Normalize timestamps to ISO; treat Woo *_gmt without timezone suffix as UTC.",
+        "Attach provenance: source_record_ref, definition_version, freshness_as_of, coverage_start/end, completeness.",
+        "Deduplicate by dedup_key per event_type.",
+        "Reject events missing required fields for their event type; emit data-quality events instead (schema_changed/coverage_partial)."
+      ],
+      "outputs": ["BusinessEvent stream", "data-quality events"]
+    },
+    {
+      "stage": "select_window",
+      "purpose": "Resolve analysis window for a dashboard range.",
+      "rules": [
+        "Use inclusive start/end in Pacific day for commerce windows.",
+        "Record resolved range in explanation context.",
+        "If requested range extends outside proven coverage for required sources, degrade to unknown/insufficient evidence."
+      ],
+      "outputs": ["analysis_context"]
+    },
+    {
+      "stage": "baseline_selection",
+      "purpose": "Choose appropriate baselines for comparison.",
+      "baselines": [
+        {
+          "baseline": "previous_period",
+          "definition": "Immediately preceding window of equal length.",
+          "use_when": ["most comparisons"],
+          "avoid_when": ["coverage mismatch", "major missing sources"]
+        },
+        {
+          "baseline": "week_over_week",
+          "definition": "Same weekday-aligned window one week prior.",
+          "use_when": ["daily/weekly operational views"],
+          "avoid_when": ["holiday/major event spikes"]
+        },
+        {
+          "baseline": "seasonal_anchor",
+          "definition": "Same period last year (if history supports).",
+          "use_when": ["seasonal businesses"],
+          "avoid_when": ["insufficient history"]
+        }
+      ],
+      "outputs": ["baseline_context"]
+    },
+    {
+      "stage": "change_detection",
+      "purpose": "Detect meaningful changes (deltas) that require explanation.",
+      "signals": [
+        {
+          "metric": "net_revenue",
+          "source": "Woo selected-range telemetry",
+          "meaning": "Primary commerce outcome",
+          "thresholds": {
+            "absolute_cents": 25000,
+            "relative_percent": 0.1
+          }
+        },
+        {
+          "metric": "orders",
+          "source": "Woo selected-range telemetry",
+          "meaning": "Demand volume",
+          "thresholds": { "absolute": 3, "relative_percent": 0.1 }
+        },
+        {
+          "metric": "aov",
+          "source": "Woo selected-range telemetry (only when complete)",
+          "meaning": "Order value composition",
+          "thresholds": { "relative_percent": 0.1 }
+        },
+        {
+          "metric": "refund_rate",
+          "source": "Woo selected-range telemetry",
+          "meaning": "Returns-driven net change",
+          "thresholds": { "relative_percent": 0.1 }
+        },
+        {
+          "metric": "sessions",
+          "source": "GA4 snapshot",
+          "meaning": "Traffic",
+          "thresholds": { "relative_percent": 0.15 }
+        },
+        {
+          "metric": "conversion_rate",
+          "source": "Derived: orders / sessions (only when both proven)",
+          "meaning": "Efficiency",
+          "thresholds": { "relative_percent": 0.15 }
+        }
+      ],
+      "outputs": ["delta_set"]
+    },
+    {
+      "stage": "anomaly_detection",
+      "purpose": "Detect outliers requiring special treatment (e.g., original-art sale).",
+      "methods": [
+        {
+          "method": "robust_zscore",
+          "description": "Median absolute deviation based z-score on daily revenue buckets.",
+          "requires": ["daily timeseries"],
+          "output": "anomaly_detected events"
+        },
+        {
+          "method": "top_order_outlier",
+          "description": "If single order > X% of window revenue, flag for segmentation.",
+          "requires": ["order-level telemetry"],
+          "output": "outlier flags"
+        }
+      ]
+    },
+    {
+      "stage": "candidate_cause_generation",
+      "purpose": "Generate candidate causes for each delta.",
+      "cause_families": [
+        {
+          "family": "traffic",
+          "candidates": ["sessions delta", "channel mix shift", "landing page shift"]
+        },
+        {
+          "family": "conversion",
+          "candidates": ["checkout friction", "product-page mismatch", "offer/price shift", "inventory constraint"]
+        },
+        {
+          "family": "marketing",
+          "candidates": ["meta spend/creative changes", "email sends", "social post activity"]
+        },
+        {
+          "family": "external_events",
+          "candidates": ["press mentions", "celebrity share", "partnership announcement"]
+        },
+        {
+          "family": "commerce_mechanics",
+          "candidates": ["refunds", "product mix", "AOV shift", "status transitions"]
+        },
+        {
+          "family": "data_quality",
+          "candidates": ["stale data", "coverage partial", "schema drift"]
+        }
+      ],
+      "retrieval": {
+        "lookback_windows": {
+          "default": "7d",
+          "external_events": "30d",
+          "email": "72h",
+          "meta": "7d"
+        },
+        "joins": ["campaign_id", "utm", "product_id", "paid_pacific_date buckets"],
+        "notes": "If joins are unavailable, candidates remain possible with low confidence."
+      }
+    },
+    {
+      "stage": "evidence_ranking",
+      "purpose": "Rank evidence supporting each candidate cause.",
+      "ranking_model": {
+        "features": [
+          "source_reliability",
+          "freshness",
+          "coverage_completeness",
+          "temporal_alignment",
+          "magnitude_alignment",
+          "attribution_model_validity",
+          "confounder_penalty"
+        ],
+        "hard_rules": [
+          "Never mark a cause as confirmed unless evidence is confirmed and coverage is complete.",
+          "Never attribute revenue to Meta/Email unless attribution requirements satisfied.",
+          "If Woo completeness is unknown, do not generate revenue-based causal claims."
+        ]
+      }
+    },
+    {
+      "stage": "alternative_testing_and_confounders",
+      "purpose": "Test alternative explanations and handle confounds.",
+      "confounders": [
+        "overlapping campaigns",
+        "seasonality",
+        "single-order outlier",
+        "refund timing",
+        "inventory limits/licensing constraints",
+        "platform attribution lag",
+        "partial coverage in GA4/meta"
+      ],
+      "rules": [
+        "If multiple candidates plausibly explain delta, keep top 2-3 with confidence labels.",
+        "If data is incomplete, downgrade confidence and surface missing evidence explicitly.",
+        "For outliers, produce segmented explanation: baseline + outlier-separated view."
+      ]
+    },
+    {
+      "stage": "confidence_assignment",
+      "purpose": "Assign confidence levels (confirmed→insufficient_evidence).",
+      "rules": [
+        "confirmed requires: exact telemetry + complete coverage + deterministic definition.",
+        "strongly_supported requires: multiple agreeing signals + acceptable coverage.",
+        "likely/possible used for plausible correlations; must include alternative explanations.",
+        "insufficient_evidence when required sources are stale/partial/unknown."
+      ]
+    },
+    {
+      "stage": "explanation_rendering",
+      "purpose": "Render explanation text with provenance and allowed language.",
+      "wording_rules": {
+        "confirmed": ["because", "due to"],
+        "strongly_supported": ["strongly supported by"],
+        "likely": ["likely", "appears"],
+        "possible": ["possibly", "may be influenced by"],
+        "insufficient_evidence": ["insufficient evidence", "cannot verify"]
+      },
+      "must_include": ["metric change", "time window", "evidence list", "confidence", "missing data"],
+      "must_not_include": ["absolute causal claims without confirmed evidence"]
+    },
+    {
+      "stage": "recommendation_handoff",
+      "purpose": "Convert explanations into recommendation inputs.",
+      "outputs": [
+        {
+          "type": "RecommendationInput",
+          "fields": ["delta", "top_causes", "confidence", "constraints", "opportunities"]
+        }
+      ],
+      "insufficient_evidence_behavior": [
+        "If insufficient_evidence, generate only data-quality remediation recommendations (refresh ingestion, fix stale source)"
+      ]
+    }
+  ],
+  "non_negotiables": [
+    "Do not destabilize Woo telemetry system.",
+    "No automatic execution for ads/emails/posts/contact/price/discounts.",
+    "All revenue explanations must reference definition_version and coverage."
+  ]
+}
