@@ -351,6 +351,11 @@ function buildIndustrySummary(data: DashboardOverviewResponse): SectionSummary {
   };
 }
 
+// Test-only exports (no runtime behavior change)
+export const __test__ = {
+  buildMarketingSummary
+};
+
 function buildConfidenceSectionSummary(summary: ReturnType<typeof buildDataConfidenceModel>): SectionSummary {
   const tone = summary.overall.tone;
   const watchCount = summary.caveatSources.length + summary.conflictingSources.length;
