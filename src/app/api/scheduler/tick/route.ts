@@ -18,6 +18,7 @@ import { runMidweekOpportunityPulse } from "@/lib/scheduler/midweekOpportunityPu
 import { runAgentIdeaPulse } from "@/lib/scheduler/agentIdeaPulse";
 import { runIndustryNewsPulse } from "@/lib/scheduler/industryNewsPulse";
 import { runScoreboardRefresh } from "@/lib/scheduler/scoreboardRefresh";
+import { runIntelligenceTrafficQualityDaily } from "@/lib/scheduler/intelligenceTrafficQualityDaily";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,8 @@ const runners: Record<string, JobRunner> = {
   "midweek-opportunity-pulse": runMidweekOpportunityPulse,
   "agent-idea-pulse": runAgentIdeaPulse,
   "industry-news-pulse": runIndustryNewsPulse,
-  "scoreboard-refresh": runScoreboardRefresh
+  "scoreboard-refresh": runScoreboardRefresh,
+  "intelligence-traffic-quality": runIntelligenceTrafficQualityDaily
 };
 
 /**
