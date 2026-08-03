@@ -1,4 +1,6 @@
 import type { TelemetrySource } from "@/lib/types/dashboard";
+import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contract";
+import type { Opportunity, Recommendation } from "@/lib/intelligence/recommendation-contract";
 
 export type WindowType = "daily_bucket" | "selected_range_snapshot" | "rolling_snapshot";
 
@@ -9,10 +11,8 @@ export type CoverageState = "complete" | "partial" | "unknown" | "unavailable";
 export type AttributionDefensible = "defensible" | "not_defensible" | "not_applicable";
 export type ConfidenceState = "trusted" | "caveated" | "insufficient" | "conflicting" | "unavailable";
 
-export type ConfidenceLevel = "confirmed" | "strongly_supported" | "likely" | "possible" | "insufficient_evidence";
-
 export type Confidence = {
-  level: ConfidenceLevel;
+  level: ExplanationConfidence;
   score: number | null; // 0-1
   reasons: string[];
   blockers: string[];
@@ -89,45 +89,16 @@ export type Hypothesis = {
   created_at: string;
 };
 
-export type Opportunity = {
-  opportunity_id: string;
-  finding_id: string;
-  hypothesis_ids: string[];
-  type: string;
-  title: string;
-  why_now: string;
-  risk_if_ignored: string;
-  evidence_for: FactRef[];
-  evidence_against: FactRef[];
-  missing_evidence: string[];
-  confidence: Confidence;
-  created_at: string;
-};
-
-export type Recommendation = {
-  recommendation_id: string;
-  opportunity_id: string;
-  finding_id: string;
-  hypothesis_id: string;
-  title: string;
-  action: string;
-  rationale: string;
-  success_metrics: Array<{ metric_id: string; success_threshold: string; note: string }>;
-  evaluation_window: { days: number; startDate: string; endDate: string };
-  stop_condition: string | null;
-  what_changes_my_mind: string[];
-  confidence: Confidence;
-  created_at: string;
-};
+export type IntelligenceOpportunity = Opportunity;
+export type IntelligenceRecommendation = Recommendation;
 
 export type TrafficQualityMismatchResult = {
   ok: boolean;
   generatedAt: string;
   finding: Finding | null;
   hypotheses: Hypothesis[];
-  opportunity: Opportunity | null;
-  recommendation: Recommendation | null;
+  opportunity: IntelligenceOpportunity | null;
+  recommendation: IntelligenceRecommendation | null;
   evidence_edges: EvidenceEdge[];
   warnings: string[];
 };
-

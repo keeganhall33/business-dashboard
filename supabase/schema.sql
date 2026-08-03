@@ -685,36 +685,9 @@ create table if not exists intelligence_hypotheses_v1 (
   created_at timestamptz not null default now()
 );
 
-create table if not exists intelligence_opportunities_v1 (
-  opportunity_id text primary key,
-  finding_id text not null references intelligence_findings_v1(finding_id) on delete cascade,
-  hypothesis_ids text[] not null default array[]::text[],
-  type text not null,
-  title text not null,
-  why_now text not null,
-  risk_if_ignored text not null,
-  missing_evidence jsonb not null default '[]'::jsonb,
-  confidence jsonb not null,
-  evidence_for jsonb not null,
-  evidence_against jsonb not null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists intelligence_recommendations_v1 (
-  recommendation_id text primary key,
-  opportunity_id text not null references intelligence_opportunities_v1(opportunity_id) on delete cascade,
-  finding_id text not null references intelligence_findings_v1(finding_id) on delete cascade,
-  hypothesis_id text not null references intelligence_hypotheses_v1(hypothesis_id) on delete cascade,
-  title text not null,
-  action text not null,
-  rationale text not null,
-  success_metrics jsonb not null,
-  evaluation_window jsonb not null,
-  stop_condition text,
-  what_changes_my_mind jsonb not null default '[]'::jsonb,
-  confidence jsonb not null,
-  created_at timestamptz not null default now()
-);
+-- NOTE: We intentionally do not persist separate recommendation/opportunity tables yet.
+-- This vertical slice reuses the existing recommendation + action-store contracts and
+-- records the full chain in system_runs/job_run_log outputs_json for audit.
 
 create table if not exists intelligence_evidence_edges_v1 (
   edge_id uuid primary key default gen_random_uuid(),

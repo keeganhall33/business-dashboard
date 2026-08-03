@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Finding, Hypothesis, Opportunity, Recommendation, EvidenceEdge } from "@/lib/intelligence-v1/contracts";
+import type { Finding, Hypothesis, EvidenceEdge } from "@/lib/intelligence-v1/contracts";
 
 export async function insertFacts(rows: Array<{
   metric_id: string;
@@ -65,43 +65,6 @@ export async function insertHypotheses(rows: Hypothesis[]) {
     }))
   );
   if (error) throw new Error(`Failed to insert hypotheses: ${error.message}`);
-}
-
-export async function insertOpportunity(row: Opportunity) {
-  const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("intelligence_opportunities_v1").insert({
-    opportunity_id: row.opportunity_id,
-    finding_id: row.finding_id,
-    hypothesis_ids: row.hypothesis_ids,
-    type: row.type,
-    title: row.title,
-    why_now: row.why_now,
-    risk_if_ignored: row.risk_if_ignored,
-    missing_evidence: row.missing_evidence,
-    confidence: row.confidence,
-    evidence_for: row.evidence_for,
-    evidence_against: row.evidence_against
-  });
-  if (error) throw new Error(`Failed to insert opportunity: ${error.message}`);
-}
-
-export async function insertRecommendation(row: Recommendation) {
-  const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("intelligence_recommendations_v1").insert({
-    recommendation_id: row.recommendation_id,
-    opportunity_id: row.opportunity_id,
-    finding_id: row.finding_id,
-    hypothesis_id: row.hypothesis_id,
-    title: row.title,
-    action: row.action,
-    rationale: row.rationale,
-    success_metrics: row.success_metrics,
-    evaluation_window: row.evaluation_window,
-    stop_condition: row.stop_condition,
-    what_changes_my_mind: row.what_changes_my_mind,
-    confidence: row.confidence
-  });
-  if (error) throw new Error(`Failed to insert recommendation: ${error.message}`);
 }
 
 export async function insertEvidenceEdges(edges: EvidenceEdge[]) {

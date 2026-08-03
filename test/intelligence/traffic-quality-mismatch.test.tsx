@@ -27,5 +27,8 @@ test("Traffic Quality Mismatch: triggers sessions up + conversion down with guar
   assert.match(out.finding?.summary ?? "", /Sessions increased while purchase conversion declined/);
   assert.equal(out.hypotheses.length >= 3, true);
   assert.ok(out.recommendation);
-  assert.ok(out.recommendation?.action.includes("source/medium") || out.recommendation?.action.includes("device"));
+  assert.ok(
+    (out.recommendation?.recommended_action ?? "").includes("source/medium") ||
+      (out.recommendation?.recommended_action ?? "").includes("device")
+  );
 });

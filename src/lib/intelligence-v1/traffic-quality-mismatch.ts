@@ -1,4 +1,11 @@
-import type { FactRef, TrafficQualityMismatchResult, Finding, Hypothesis, Opportunity, Recommendation, Confidence } from "@/lib/intelligence-v1/contracts";
+import type {
+  FactRef,
+  TrafficQualityMismatchResult,
+  Finding,
+  Hypothesis,
+  Confidence
+} from "@/lib/intelligence-v1/contracts";
+import type { Opportunity, Recommendation, ExpectedImpactRange, PriorityBreakdown } from "@/lib/intelligence/recommendation-contract";
 
 const ENGINE_VERSION = "v1";
 const DETECTOR_ID = "traffic_quality_mismatch_v1";
@@ -295,43 +302,102 @@ export async function runTrafficQualityMismatch(input: {
   ];
 
   const opportunityId = stableId("opp", [findingId, "traffic_quality_mismatch"]);
-  const opportunity: Opportunity = {
-    opportunity_id: opportunityId,
-    finding_id: findingId,
-    hypothesis_ids: hypotheses.map((h) => h.hypothesis_id),
-    type: "traffic_quality_mismatch",
-    title: "Traffic quality mismatch",
-    why_now: "Sessions are up but purchase conversion is down; scaling or optimizing without isolating the constraint risks wasted effort.",
-    risk_if_ignored: "You may scale low-quality traffic or fix the wrong constraint, slowing growth and wasting time/spend.",
-    evidence_for: evidenceFor,
-    evidence_against: evidenceAgainst,
-    missing_evidence: missingEvidence,
-    confidence: conf,
-    created_at: nowIso
+
+  const estimated_upside: ExpectedImpactRange = {
+    currency: "UNKNOWN",
+    horizon: "7d",
+    low_incremental_revenue_cents: null,
+    expected_incremental_revenue_cents: null,
+    high_incremental_revenue_cents: null,
+    notes: ["Impact estimate unavailable without channel mix + lag-aware attribution."],
+    assumptions: []
   };
 
-  const recommendationId = stableId("rec", [findingId, "isolate_constraint"]);
+  const opportunity: Opportunity = {
+    id: opportunityId,
+    type: "high_traffic_low_conversion",
+    title: "Traffic up while purchase conversion down",
+    detection_rule: "sessions up materially AND purchase conversion down materially (7d vs prior 7d)",
+    evidence: [],
+    confidence: conf.level,
+    estimated_upside,
+    effort: "low",
+    cost: { money_cents: null, notes: ["Read-only analysis first"] },
+    urgency: "high",
+    dependencies: missingEvidence,
+    recommended_action: "Before changing spend or redesigning checkout, isolate the source/medium + device segment responsible for the traffic increase and verify its engagement quality.",
+    review_date: null,
+    expiration: null
+  };
+
+  const priority_score: PriorityBreakdown = {
+    revenuePotential: 0.6,
+    confidence: 0.55,
+    urgency: 0.8,
+    timeToImpact: 0.8,
+    effortInverse: 0.9,
+    costInverse: 0.9,
+    riskInverse: 0.7,
+    strategicFit: 0.8,
+    executionReadiness: 0.5,
+    overallScore: 72,
+    formula: "Heuristic: urgent + low effort + moderate confidence"
+  };
+
+  const recommendationId = stableId("rec", [DETECTOR_ID, input.current.startDate, input.current.endDate]);
   const recommendation: Recommendation = {
-    recommendation_id: recommendationId,
-    opportunity_id: opportunityId,
-    finding_id: findingId,
-    hypothesis_id: hypotheses[0].hypothesis_id,
+    id: recommendationId,
     title: "Isolate traffic quality before changing spend or site",
-    action: "Identify which GA4 source/medium and device segments grew most vs prior 7d, and validate whether engagement quality dropped in those segments before scaling spend or redesigning checkout.",
-    rationale: "The system observed sessions up with purchase conversion down. The highest-leverage next step is to isolate whether the binding constraint is traffic quality (mix shift) versus funnel friction.",
-    success_metrics: [
-      { metric_id: "derived.purchase_conversion_pct", success_threshold: "stops declining and recovers vs prior window", note: "Evaluate overall and for the identified traffic segments" },
-      { metric_id: "ga4.engaged_sessions_count", success_threshold: "engaged sessions per session stabilizes or improves", note: "Use as a quality proxy when attribution is blocked" }
+    category: "website",
+    recommended_action:
+      "Identify the GA4 source/medium and device segments responsible for the session increase vs prior 7d, then compare engagement quality and purchase conversion proxies for those segments before taking scaling or CRO actions.",
+    reason:
+      "Sessions increased materially while purchase conversion declined. The highest-information next step is to isolate whether the binding constraint is traffic quality/mix shift versus conversion execution.",
+    supporting_evidence: [],
+    affected_products: [],
+    affected_channels: ["ga4", "woo"],
+    affected_audiences: [],
+    expected_outcome: "Clarify whether the constraint is traffic quality vs conversion execution; avoid scaling low-quality traffic.",
+    estimated_incremental_revenue: {
+      currency: "UNKNOWN",
+      horizon: "7d",
+      low_incremental_revenue_cents: null,
+      expected_incremental_revenue_cents: null,
+      high_incremental_revenue_cents: null,
+      notes: ["Impact estimate intentionally omitted until segment drivers are identified."],
+      assumptions: []
+    },
+    estimated_incremental_profit: null,
+    estimated_cost: { money_cents: null, notes: ["No spend change recommended in this step"] },
+    estimated_effort: { hours: 2, level: "low", notes: ["Read-only segment isolation"] },
+    time_to_impact: "hours",
+    confidence: conf.level,
+    confidence_reasons: conf.reasons,
+    urgency: "high",
+    priority_score,
+    risk: "low",
+    downside: ["If ignored, you may scale into low-quality traffic or optimize the wrong constraint."],
+    prerequisites: missingEvidence,
+    execution_steps: [
+      "Pull GA4 sessions by source/medium and device for current vs prior 7d",
+      "Identify top share shifts",
+      "Compare engaged sessions per session and any available checkout/funnel proxies",
+      "Only then decide: spend adjustment vs funnel/CRO focus"
     ],
-    evaluation_window: { days: 7, startDate: input.current.startDate, endDate: input.current.endDate },
-    stop_condition: "If sessions continue rising but purchase conversion continues falling after isolating segments, treat as site/funnel constraint and prioritize funnel telemetry + checkout diagnostics.",
-    what_changes_my_mind: [
-      "If FunnelKit completion is down materially, funnel friction becomes the primary hypothesis.",
-      "If source/medium and device mix are stable, mix-shift hypothesis weakens; investigate landing/product mismatch.",
-      "If GA4 sessions are inflated (spam/bots), treat as measurement artifact and suppress acquisition conclusions."
+    prepared_assets: [],
+    approval_level: "L1_RECOMMENDATION",
+    measurement_plan: "Evaluate purchase conversion and engagement quality for the identified segments over the next 7 days.",
+    success_threshold: "Purchase conversion stops declining and segment engagement quality stabilizes or improves.",
+    stop_condition: "If funnel completion declines materially, pivot to funnel/checkout friction investigation.",
+    review_date: null,
+    data_used: [
+      { source: "Woo selected-range telemetry", notes: "orders, net revenue, asOf" },
+      { source: "GA4 aggregate telemetry", notes: "sessions (and engaged sessions when available)" }
     ],
-    confidence: confidence("possible", 0.55, ["Strong relationship signal; missing dimension-level evidence limits certainty."], missingEvidence.length ? ["Missing GA4 breakdowns and funnel telemetry"] : []),
-    created_at: nowIso
+    data_missing: missingEvidence,
+    assumptions: ["Attribution is not required for this relationship; this is cross-channel correlation only."],
+    limitations: ["Does not claim causality. Requires GA4 breakdowns to identify which traffic is responsible."],
+    status: "recommended"
   };
 
   return {
