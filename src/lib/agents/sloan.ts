@@ -27,8 +27,8 @@ export async function runSloan(): Promise<AgentRunResult> {
       relatedMetricKeys: ["aov", "monthly_revenue"]
     },
     {
-      title: "Conversion remains below acceptable range",
-      summary: `Conversion 30d avg is ${formatPercent(conversion?.average)} vs target ${formatPercent(
+      title: "Purchase conversion remains below acceptable range",
+      summary: `Purchase conversion 30d avg is ${formatPercent(conversion?.average)} vs target ${formatPercent(
         conversion?.target
       )} (latest ${formatPercent(conversion?.current)}, Δ ${formatPercent(conversion?.changePercent)}).`,
       detailMd: "Homepage and product page clarity likely need tightening.",
@@ -54,7 +54,7 @@ export async function runSloan(): Promise<AgentRunResult> {
       relatedMetricKeys: ["aov"]
     },
     {
-      title: "Audit conversion friction",
+      title: "Audit purchase conversion friction",
       summary: "Review homepage, PDP, and checkout experience for clarity and trust signals.",
       priority: "critical" as const,
       relatedMetricKeys: ["conversion_rate"]
@@ -92,7 +92,7 @@ export async function runSloan(): Promise<AgentRunResult> {
       title: "Audit checkout and recovery flow",
       description: "Identify friction points in checkout and design recovery improvements.",
       priority: "high" as const,
-      expectedImpact: "Recover abandoned revenue and improve conversion",
+      expectedImpact: "Recover abandoned revenue and improve purchase conversion",
       impactScore: 8.4,
       whyThisMatters: "High abandonment is leaving recoverable revenue behind.",
       relatedMetricKeys: ["cart_abandonment_rate", "conversion_rate"],
@@ -113,7 +113,7 @@ export async function runSloan(): Promise<AgentRunResult> {
   const plan = await submitAgentPlanDraft({
     agentKey: "sloan",
     planTitle: "Ecommerce revenue uplift plan",
-    summary: "Raise AOV, unclog conversion, and recover abandoned revenue.",
+    summary: "Raise AOV, unclog purchase conversion, and recover abandoned revenue.",
     detailMd: bigBet.detailMd,
     payload: { insights, actions, bigBet, tasks }
   });
@@ -128,7 +128,7 @@ export async function runSloan(): Promise<AgentRunResult> {
   });
 
   return {
-    summary: "Identified AOV, conversion, and abandonment as the top ecommerce blockers.",
+    summary: "Identified AOV, purchase conversion, and abandonment as the top ecommerce blockers.",
     updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
     tasksCreated: outputResult.tasksCreated,
     opportunitiesCreated: outputResult.opportunitiesCreated,

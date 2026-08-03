@@ -51,9 +51,9 @@ export async function runAvery(): Promise<AgentRunResult> {
   const resolvedConversionCurrent = conversionCurrentValue ?? fallbackConversionValue;
   const activeOpportunityCount = opportunities?.length ?? 0;
   const directiveSummary =
-    `Pricing and conversion remain below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
+    `Pricing and purchase conversion remain below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
       aovDeltaValue
-    )}), conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(
+    )}), purchase conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(
       conversionDeltaValue
     )}). Active opportunities tracked: ${formatNumberValue(activeOpportunityCount)}.`;
 
@@ -62,7 +62,7 @@ export async function runAvery(): Promise<AgentRunResult> {
       title: "Revenue gap is still primarily structural",
       summary: `AOV 30d avg is ${formatUsd(resolvedAovAvg)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
         resolvedAovCurrent
-      )}, trend ${formatPercent(aovDeltaValue)}). Conversion 30d avg is ${formatPercent(
+      )}, trend ${formatPercent(aovDeltaValue)}). Purchase conversion 30d avg is ${formatPercent(
         resolvedConversionAvg
       )} vs target ${formatPercent(conversion?.target)} (latest ${formatPercent(
         resolvedConversionCurrent
@@ -90,7 +90,7 @@ export async function runAvery(): Promise<AgentRunResult> {
 
   const actions = [
     {
-      title: "Reprioritize all agents around AOV, conversion, and pipeline",
+      title: "Reprioritize all agents around AOV, purchase conversion, and pipeline",
       summary: "Kill low-leverage drift and force concentration on the highest-value bottlenecks.",
       priority: "critical" as const,
       relatedMetricKeys: ["aov", "conversion_rate"]

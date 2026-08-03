@@ -51,8 +51,8 @@ export function PerformanceBaselinePanel({
         <MetricCard metric={snapshot.metrics.orders} label="Orders" />
         <MetricCard metric={snapshot.metrics.avgOrderValue} label="AOV" />
         <MetricCard metric={snapshot.metrics.sessions} label="Sessions" />
-        <MetricCard metric={snapshot.metrics.purchaseConversionRate} label="Purchase conv" />
-        <MetricCard metric={snapshot.metrics.funnelCompletionRate} label="Funnel" />
+        <MetricCard metric={snapshot.metrics.purchaseConversionRate} label="Purchase conversion" />
+        <MetricCard metric={snapshot.metrics.funnelCompletionRate} label="Funnel completion" />
       </div>
 
       <details className="mt-3 text-xs text-zinc-500">

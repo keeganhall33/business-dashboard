@@ -36,7 +36,7 @@ export async function runLyra(): Promise<AgentRunResult> {
       relatedMetricKeys: ["cultural_relevance_score"]
     },
     {
-      title: "Message clarity is likely affecting conversion",
+      title: "Message clarity is likely affecting purchase conversion",
       summary: "Brand and ecommerce are linked at the homepage and product-story level.",
       detailMd: "Luxury clarity and authority cues likely need to be more explicit.",
       priority: "critical" as const,
@@ -100,7 +100,7 @@ export async function runLyra(): Promise<AgentRunResult> {
   const plan = await submitAgentPlanDraft({
     agentKey: "lyra",
     planTitle: "Brand narrative reinforcement plan",
-    summary: "Rebuild the Impossible in Pencil story to lift engagement and conversion.",
+    summary: "Rebuild the Impossible in Pencil story to lift engagement and purchase conversion.",
     detailMd: bigBet.detailMd,
     payload: { insights, actions, bigBet, tasks }
   });
@@ -110,8 +110,8 @@ export async function runLyra(): Promise<AgentRunResult> {
   await ensureDailyIdeaAndKpis({
     agentKey: "lyra",
     metrics,
-    fallbackIdeaTitle: "Sharpen homepage narrative to increase authority + conversion",
-    fallbackIdeaSummary: "Tighten the Impossible in Pencil story hierarchy and prestige cues to lift conversion."
+    fallbackIdeaTitle: "Sharpen homepage narrative to increase authority + purchase conversion",
+    fallbackIdeaSummary: "Tighten the Impossible in Pencil story hierarchy and prestige cues to lift purchase conversion."
   });
 
   return {

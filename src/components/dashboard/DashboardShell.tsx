@@ -261,9 +261,16 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
 
   const revenue = wooTelemetry?.revenue ?? null;
   const orders = wooTelemetry?.orders ?? null;
-  // Selected-range truth: purchase conversion from baseline if available; otherwise FunnelKit completion.
-  const purchaseConversion = data.performanceBaseline?.metrics.purchaseConversionRate.current ?? null;
-  const conversionPercent = purchaseConversion ?? (funnelTelemetry?.conversionRate ?? null);
+  // Selected-range truth: prefer purchase conversion (Woo orders / GA4 sessions). Only fall back
+  // to FunnelKit completion when purchase conversion is unavailable.
+  const purchaseConversionPercent = data.performanceBaseline?.metrics.purchaseConversionRate.current ?? null;
+  const funnelCompletionPercent = funnelTelemetry?.conversionRate ?? null;
+  const conversionLabel =
+    purchaseConversionPercent != null
+      ? `Purchase conversion ${purchaseConversionPercent.toFixed(1)}%`
+      : funnelCompletionPercent != null
+        ? `Funnel completion ${funnelCompletionPercent.toFixed(1)}%`
+        : null;
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "woo")?.label ?? null;
   return {
     status: revenue != null || orders != null ? "Live" : "Needs data",
@@ -271,7 +278,7 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
     metrics: [
       revenue != null ? `Rev ${formatCurrencyShort(revenue)}` : null,
       orders != null ? `Orders ${formatCount(orders)}` : null,
-      conversionPercent != null ? `Conv ${conversionPercent.toFixed(1)}%` : null
+      conversionLabel
     ].filter(Boolean) as string[],
     insight,
     actions: actions.filter((action) => action.id.startsWith("top-")).length
@@ -282,7 +289,7 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
   const meta = data.metaAds;
   const spend = meta?.summary?.spend ?? null;
   const roas = meta?.summary?.roas ?? null;
-  const conversions = meta?.summary?.purchases ?? null;
+  const purchases = meta?.summary?.purchases ?? null;
   const deliveryAvailable = Boolean(spend != null || meta?.summary?.impressions != null || meta?.summary?.clicks != null);
   const attributionAvailable = hasDefensibleMetaAttribution(meta ?? null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
@@ -310,11 +317,11 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
         : null,
       meta?.status === "LIVE" || meta?.status === "PARTIAL"
         ? attributionAvailable
-          ? conversions != null
-            ? `Conv ${formatCount(conversions)}`
+          ? purchases != null
+            ? `Meta purchases ${formatCount(purchases)}`
             : null
           : deliveryAvailable
-            ? "Conv Unavailable"
+            ? "Meta purchases unavailable"
             : null
         : null
     ].filter(Boolean) as string[],
@@ -357,6 +364,7 @@ function buildIndustrySummary(data: DashboardOverviewResponse): SectionSummary {
 
 // Test-only exports (no runtime behavior change)
 export const __test__ = {
+  buildCommerceSummary,
   buildMarketingSummary
 };
 
