@@ -107,7 +107,7 @@ export async function insertFinding(row: Finding) {
     type: row.type,
     title: row.title,
     summary: row.summary,
-    window: row.window,
+    analysis_window: row.window,
     materiality_score: row.materiality_score,
     false_positive_guards: row.false_positive_guards,
     missing_evidence: row.missing_evidence,

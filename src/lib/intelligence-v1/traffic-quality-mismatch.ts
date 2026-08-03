@@ -246,7 +246,7 @@ export async function runTrafficQualityMismatch(input: {
 
   // Deterministic, explainable confidence calibration.
   // Start from the base relationship confidence, then apply conservative downgrades.
-  let confLevel: Confidence["level"] = "possible";
+  const confLevel: Confidence["level"] = "possible";
   let confScore = 0.55;
   const confReasons: string[] = [
     "Sessions increased while purchase conversion declined.",

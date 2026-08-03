@@ -36,7 +36,7 @@ create table if not exists intelligence_findings_v1 (
   type text not null,
   title text not null,
   summary text not null,
-  window jsonb not null,
+  analysis_window jsonb not null,
   materiality_score numeric,
   false_positive_guards jsonb not null default '[]'::jsonb,
   missing_evidence jsonb not null default '[]'::jsonb,
