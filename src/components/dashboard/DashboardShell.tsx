@@ -25,6 +25,7 @@ import { ExecutiveNav } from "./ExecutiveNav";
 import { buildDashboardTruthState } from "@/lib/dashboard/truth-state";
 import { DataLimitationsBanner } from "./DataLimitationsBanner";
 import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
+import { formatRelativeTimeFromNow } from "@/lib/date";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -226,6 +227,7 @@ type SectionSummary = {
   status: string;
   tone: "emerald" | "amber" | "rose" | "zinc";
   metrics: string[];
+  freshness?: string | null;
   insight?: string | null;
   actions: number;
 };
@@ -236,6 +238,7 @@ function SectionMeta({ summary }: { summary: SectionSummary }) {
     <div className="text-right text-[11px] leading-relaxed text-zinc-400">
       <div className={`font-semibold ${toneText(summary.tone)}`}>{summary.status}</div>
       <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">{metrics}</div>
+      {summary.freshness ? <div className="mt-1 text-[10px] text-zinc-500">{summary.freshness}</div> : null}
       {summary.insight ? <div className="mt-1 text-[10px] text-zinc-500 line-clamp-1">{summary.insight}</div> : null}
       <div className="text-[10px] text-zinc-500">Actions: {summary.actions}</div>
     </div>
@@ -261,6 +264,7 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
 
   const revenue = wooTelemetry?.revenue ?? null;
   const orders = wooTelemetry?.orders ?? null;
+  const commerceFreshness = formatRelativeTimeFromNow(wooTelemetry?.asOf);
   // Selected-range truth: prefer purchase conversion (Woo orders / GA4 sessions). Only fall back
   // to FunnelKit completion when purchase conversion is unavailable.
   const purchaseConversionPercent = data.performanceBaseline?.metrics.purchaseConversionRate.current ?? null;
@@ -280,6 +284,7 @@ function buildCommerceSummary(data: DashboardOverviewResponse, actions: Executiv
       orders != null ? `Orders ${formatCount(orders)}` : null,
       conversionLabel
     ].filter(Boolean) as string[],
+    freshness: commerceFreshness ? `Updated ${commerceFreshness}` : null,
     insight,
     actions: actions.filter((action) => action.id.startsWith("top-")).length
   };
@@ -290,6 +295,7 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
   const spend = meta?.summary?.spend ?? null;
   const roas = meta?.summary?.roas ?? null;
   const purchases = meta?.summary?.purchases ?? null;
+  const marketingFreshness = formatRelativeTimeFromNow(meta?.generatedAt);
   const deliveryAvailable = Boolean(spend != null || meta?.summary?.impressions != null || meta?.summary?.clicks != null);
   const attributionAvailable = hasDefensibleMetaAttribution(meta ?? null);
   const insight = data.executiveInsights?.trends?.find((trend) => trend.source === "meta")?.label ?? null;
@@ -325,6 +331,7 @@ function buildMarketingSummary(data: DashboardOverviewResponse, actions: Executi
             : null
         : null
     ].filter(Boolean) as string[],
+    freshness: marketingFreshness ? `Updated ${marketingFreshness}` : null,
     insight,
     actions: actions.filter((action) => action.id.startsWith("marketing-")).length
   };
