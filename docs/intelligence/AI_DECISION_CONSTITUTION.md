@@ -19,10 +19,10 @@ This constitution governs every detector, finding, hypothesis, opportunity, reco
 - The AI must consider relevant external conditions before making a strategic recommendation.
 - External evidence must be:
   - **classified** (verified_event | trend_signal | market_observation | forecast | opinion | rumor | hypothesis)
-  - **cited** (source, source type)
-  - **credibility-scored** (with reasons)
-  - **time-bounded** (event time, retrieved_at, relevance window, expiration)
-  - **mechanism-linked** (why it matters to this business)
+  - **cited** (source, source type, source reference URL/identifier)
+  - **credibility-scored** (score + reasons) and **corroborated** when possible
+  - **time-bounded** (event_time, retrieved_at, relevance window, expiration)
+  - **mechanism-linked** (explicitly states why it matters to this business)
 - Rumor or opinion may generate a question or hypothesis, but **cannot independently trigger an operating recommendation**.
 - External signals must never override:
   - profitability

@@ -27,13 +27,16 @@ Internal data alone is not the final system.
 - Entity + Relationship Graph
 - Strategic Opportunity Fusion Engine (internal evidence + external context)
 - External evidence rules:
-  - source, source type, retrieved_at
-  - event date/time and relevance window
-  - expiration
-  - credibility scoring + corroboration
+  - source, source type, source reference, retrieved_at
+  - event time + relevance window + expiration
+  - credibility scoring + corroboration + contradiction tracking
   - classification: verified_event | market_observation | trend_signal | forecast | opinion | rumor | hypothesis
   - mechanism-linked to business relevance
   - rumor/opinion may generate questions/hypotheses, **not** operating recommendations
+- Canonical categories (see `docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`):
+  - sports, music, entertainment/culture, art/collector markets, search/social, commercial/competitive,
+    economic/consumer, platform/regulatory
+  - additions: licensing/IP, collector liquidity, shipping/fulfillment disruptions
 
 ### C) Outcome and Learning Foundation
 Recommendation output alone is not the final system.

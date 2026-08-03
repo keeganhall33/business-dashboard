@@ -61,6 +61,32 @@ create table if not exists intelligence_hypotheses_v1 (
   created_at timestamptz not null default now()
 );
 
+-- Canonical intelligence recommendation history store (read-only by default).
+-- Actions will later reference these recommendation records.
+create table if not exists intelligence_recommendations_v1 (
+  recommendation_id text primary key,
+  recommendation_fingerprint text not null,
+  action_key text not null,
+  detector_id text not null,
+  detector_version text not null,
+  recommendation_policy_version text not null,
+  finding_id text not null references intelligence_findings_v1(finding_id) on delete cascade,
+  hypothesis_ids text[] not null default array[]::text[],
+  opportunity_id text not null,
+  evidence_window jsonb not null,
+  baseline_window jsonb not null,
+  evaluation_window jsonb not null,
+  success_metrics jsonb not null,
+  success_threshold text not null,
+  stop_condition text not null,
+  what_changes_my_mind jsonb not null default '[]'::jsonb,
+  confidence jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_intelligence_recommendations_v1_fingerprint
+  on intelligence_recommendations_v1(recommendation_fingerprint);
+
 -- NOTE: We intentionally do not persist separate recommendation/opportunity tables yet.
 -- This vertical slice reuses the existing recommendation + action-store contracts and
 -- records the full chain in system_runs/job_run_log outputs_json for audit.

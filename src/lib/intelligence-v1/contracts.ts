@@ -31,11 +31,28 @@ export type FactRef = {
   };
   dimensions: Record<string, unknown>;
   provenance: {
+    source_type?: "internal" | "external";
     source_system: TelemetrySource | "meta" | "social" | "internal" | "unknown";
     source_run_id: string | null;
     snapshot_id: string | null;
     retrieved_at: string | null;
     source_as_of: string | null;
+
+    // External-only provenance (nullable; future use)
+    source_reference?: string | null;
+    external_classification?:
+      | "verified_event"
+      | "trend_signal"
+      | "market_observation"
+      | "forecast"
+      | "opinion"
+      | "rumor"
+      | "hypothesis"
+      | null;
+    credibility?: { score: number; reasons: string[] } | null;
+    event_time?: string | null;
+    relevance_expires_at?: string | null;
+    corroborating_sources?: Array<{ source: string; source_reference?: string | null }>;
   };
   data_quality: {
     freshness_state: FreshnessState | null;

@@ -21,13 +21,15 @@ export async function insertFacts(rows: Array<{
 }>) {
   if (!rows.length) return;
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("intelligence_facts_v1").insert(rows);
+  const { error } = await supabase
+    .from("intelligence_facts_v1")
+    .upsert(rows, { onConflict: "metric_id,business_date,window_type,source_system,metric_definition_version" });
   if (error) throw new Error(`Failed to insert intelligence facts: ${error.message}`);
 }
 
 export async function insertFinding(row: Finding) {
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("intelligence_findings_v1").insert({
+  const { error } = await supabase.from("intelligence_findings_v1").upsert({
     finding_id: row.finding_id,
     detector_id: row.detector_id,
     engine_version: row.engine_version,
@@ -49,7 +51,7 @@ export async function insertFinding(row: Finding) {
 export async function insertHypotheses(rows: Hypothesis[]) {
   if (!rows.length) return;
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("intelligence_hypotheses_v1").insert(
+  const { error } = await supabase.from("intelligence_hypotheses_v1").upsert(
     rows.map((h) => ({
       hypothesis_id: h.hypothesis_id,
       finding_id: h.finding_id,
@@ -65,6 +67,32 @@ export async function insertHypotheses(rows: Hypothesis[]) {
     }))
   );
   if (error) throw new Error(`Failed to insert hypotheses: ${error.message}`);
+}
+
+export async function upsertRecommendation(row: {
+  recommendation_id: string;
+  recommendation_fingerprint: string;
+  action_key: string;
+  detector_id: string;
+  detector_version: string;
+  recommendation_policy_version: string;
+  finding_id: string;
+  hypothesis_ids: string[];
+  opportunity_id: string;
+  evidence_window: Record<string, unknown>;
+  baseline_window: Record<string, unknown>;
+  evaluation_window: Record<string, unknown>;
+  success_metrics: Array<Record<string, unknown>>;
+  success_threshold: string;
+  stop_condition: string;
+  what_changes_my_mind: string[];
+  confidence: Record<string, unknown>;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.from("intelligence_recommendations_v1").upsert(row, {
+    onConflict: "recommendation_id"
+  });
+  if (error) throw new Error(`Failed to upsert recommendation: ${error.message}`);
 }
 
 export async function insertEvidenceEdges(edges: EvidenceEdge[]) {
