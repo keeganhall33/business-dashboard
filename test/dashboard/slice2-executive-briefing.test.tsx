@@ -29,17 +29,40 @@ function summaryWithMovements(movements: Array<{ label: string; deltaPercent: nu
   return base;
 }
 
-function confidenceWithIssues(labels: string[]) {
-  const summary = {
-    entries: labels.map((label, idx) => ({
-      id: `src-${idx}`,
+function confidenceWithIssues(labels: string[], options?: { trustedSources?: string[] }) {
+  const entries = labels.map((label) => {
+    const lower = label.toLowerCase();
+    const id = (lower === "woo" || lower === "ga4" || lower === "meta" || lower === "funnelkit" || lower === "industry" || lower === "operations" || lower === "pipeline" || lower === "customer"
+      ? (lower as unknown)
+      : ("industry" as unknown)) as ConfidenceSummary["entries"][number]["id"]; 
+
+    return {
+      id,
       label,
       state: "unavailable",
-      decisionImpact: `${label} is unavailable.`,
+      decisionImpact: label === "Meta" ? "Meta attribution is unavailable; decisions relying on it are blocked." : `${label} is unavailable.`,
       confidenceScore: 0
-    }))
+    };
+  });
+
+  const summary = {
+    entries,
+    partialDay: false,
+    overall: { label: "Moderate confidence", tone: "amber", rationale: "", state: "mixed", lastRefresh: null },
+    trustedSources: options?.trustedSources ?? [],
+    caveatSources: [],
+    insufficientSources: labels,
+    conflictingSources: [],
+    topRisk: null,
+    decisionsAffected: [],
+    recommendedActions: []
   };
+
   return summary as unknown as ConfidenceSummary;
+}
+
+function confidenceCommerceTrafficTrustedMetaBlocked() {
+  return confidenceWithIssues(["Meta"], { trustedSources: ["Woo", "GA4"] });
 }
 
 function healthyTruth(): DashboardTruthState {
@@ -140,6 +163,25 @@ test("briefing: degraded mode forces 'Unable to verify changes'", () => {
   assert.equal(model.changed.lines[0], "Unable to verify changes for this period.");
   assert.ok(!model.health.lines.join(" ").includes("No material verified changes"));
   assert.ok(!model.changed.lines.join(" ").includes("No material verified changes"));
+});
+
+test("briefing: domain-qualified narrative when Meta attribution is unavailable", () => {
+  const model = buildExecutiveBriefingModel({
+    summary: summaryWithMovements([]),
+    confidence: confidenceCommerceTrafficTrustedMetaBlocked(),
+    actions: [],
+    truth: healthyTruth()
+  });
+
+  // Business can remain stable.
+  assert.equal(model.health.lines[0], "Stable");
+  // Verified basis is explicit.
+  assert.ok(model.health.lines.join(" ").includes("Verified: commerce + traffic"));
+  // Decision limitation is explicit and not numeric.
+  assert.ok(model.health.lines.join(" ").toLowerCase().includes("meta attribution"));
+  assert.ok(model.health.lines.join(" ").toLowerCase().includes("marketing efficiency"));
+  // Avoid repeating the same warning verbatim in other cards.
+  assert.ok(!model.attention.lines.join(" ").toLowerCase().includes("meta attribution"));
 });
 
 test("briefing: healthy comparable mode can render 'No material verified changes'", () => {
