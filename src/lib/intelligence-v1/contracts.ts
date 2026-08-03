@@ -53,6 +53,25 @@ export type FactRef = {
     event_time?: string | null;
     relevance_expires_at?: string | null;
     corroborating_sources?: Array<{ source: string; source_reference?: string | null }>;
+
+    // Competitive intelligence hooks (external-only; future use)
+    competitor_entity_id?: string | null;
+    competitor_role?:
+      | "direct_competitor"
+      | "adjacent_competitor"
+      | "substitute"
+      | "potential_partner"
+      | "benchmark"
+      | "market_signal_source"
+      | null;
+    entity_name?: string | null;
+    entity_type?: string | null;
+    signal_category?: string | null;
+    strategic_move_type?: string | null;
+    market?: string | null;
+    geography?: string | null;
+    channel?: string | null;
+    product_or_offer?: string | null;
   };
   data_quality: {
     freshness_state: FreshnessState | null;
