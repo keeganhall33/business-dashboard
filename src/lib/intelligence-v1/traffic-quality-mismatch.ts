@@ -160,6 +160,15 @@ export async function runTrafficQualityMismatch(input: {
   const confidenceReasons: string[] = [];
   const blockers: string[] = [];
 
+  // Data quality gating: this detector is non-causal and should be conservative.
+  // If commerce telemetry is partial/unknown, suppress rather than emit an operating recommendation.
+  const wooCompleteness = currentWoo?.completeness ?? "unknown";
+  if (wooCompleteness !== "complete") {
+    blockers.push(
+      `Commerce telemetry completeness is ${wooCompleteness}; suppressing traffic-quality mismatch finding until complete telemetry is available.`
+    );
+  }
+
   const baseWindow = { start_ts: `${input.current.startDate}T00:00:00.000Z`, end_ts: `${input.current.endDate}T23:59:59.999Z`, timezone: TZ, window_type: "selected_range_snapshot" as const };
   const baseProv = { source_system: "internal" as const, source_run_id: null, snapshot_id: null, retrieved_at: nowIso, source_as_of: null };
   const baseQ = {
@@ -234,7 +243,30 @@ export async function runTrafficQualityMismatch(input: {
   );
 
   const materialityScore = Math.max(0, Math.min(100, ((Math.abs(sessionsPct ?? 0) + Math.abs(convPct ?? 0)) / 2)));
-  const conf = confidence("possible", 0.55, ["Sessions increased while purchase conversion declined.", "Revenue decomposition indicates a traffic-quality vs conversion constraint question."], []);
+
+  // Deterministic, explainable confidence calibration.
+  // Start from the base relationship confidence, then apply conservative downgrades.
+  let confLevel: Confidence["level"] = "possible";
+  let confScore = 0.55;
+  const confReasons: string[] = [
+    "Sessions increased while purchase conversion declined.",
+    "This is a relationship detector (non-causal) and requires segment breakdowns to identify the driver."
+  ];
+  const confBlockers: string[] = [];
+
+  // Contradiction downgrade: if revenue/AOV improved materially, the implied business impact is less clear.
+  const CONTRADICTION_PCT = 10; // deterministic threshold
+  const revenueContradicts = revenuePct != null && revenuePct >= CONTRADICTION_PCT;
+  const aovContradicts = aovPct != null && aovPct >= CONTRADICTION_PCT;
+  if (revenueContradicts || aovContradicts) {
+    confScore = 0.35;
+    confReasons.push(
+      `Contradictory evidence: revenue and/or AOV increased materially (>= ${CONTRADICTION_PCT}%), weakening the traffic-quality harm interpretation.`
+    );
+    confBlockers.push("Counter-evidence present; treat as a diagnostic, not an operating directive.");
+  }
+
+  const conf = confidence(confLevel, confScore, confReasons, confBlockers);
 
   const findingId = stableId("find", [DETECTOR_ID, input.current.startDate, input.current.endDate]);
   const finding: Finding = {

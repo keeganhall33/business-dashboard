@@ -1,8 +1,15 @@
 import { withJobRun } from "@/lib/scheduler/jobLogger";
 import { formatPacificIsoDate, addDaysIso } from "@/lib/date/pacific";
 import { runTrafficQualityMismatch } from "@/lib/intelligence-v1/traffic-quality-mismatch";
-import { insertFacts, insertFinding, insertHypotheses, upsertRecommendation } from "@/lib/intelligence-v1/store";
+import {
+  insertFinding,
+  insertHypotheses,
+  upsertRecommendation,
+  upsertFactsAndFetchIds,
+  insertEvidenceEdges
+} from "@/lib/intelligence-v1/store";
 import { computeRecommendationFingerprint } from "@/lib/actions/action-fingerprint";
+import { buildTrafficQualityEvidenceEdges } from "@/lib/intelligence-v1/evidence-graph";
 
 export async function runIntelligenceTrafficQualityDaily() {
   const jobKey = "intelligence-traffic-quality";
@@ -29,10 +36,11 @@ export async function runIntelligenceTrafficQualityDaily() {
     await insertFinding(result.finding);
     await insertHypotheses(result.hypotheses);
 
-    // Persist minimal facts used by the finding (idempotent by uniqueness index).
-    await insertFacts(
-      (result.finding.facts_primary ?? []).
-        filter((f) => typeof f.value === "number" && Number.isFinite(f.value))
+    // Persist minimal facts used by the finding (idempotent by uniqueness index) and fetch stable fact ids
+    // so evidence edges can reference persisted fact identities.
+    const persistedFacts = await upsertFactsAndFetchIds(
+      (result.finding.facts_primary ?? [])
+        .filter((f) => typeof f.value === "number" && Number.isFinite(f.value))
         .map((f) => ({
           metric_id: f.metric_id,
           value: f.value as number,
@@ -50,6 +58,9 @@ export async function runIntelligenceTrafficQualityDaily() {
           metric_definition_version: f.metric_definition_version
         }))
     );
+
+    const factIdByMetric: Record<string, string> = {};
+    for (const f of persistedFacts) factIdByMetric[f.metric_id] = f.fact_id;
 
     const recommendation_fingerprint = computeRecommendationFingerprint({
       category: result.recommendation.category,
@@ -84,6 +95,16 @@ export async function runIntelligenceTrafficQualityDaily() {
         blockers: result.recommendation.data_missing
       }
     });
+
+    // Evidence graph linkage: persist edges that reference persisted fact identities.
+    const edges = buildTrafficQualityEvidenceEdges({
+      finding: result.finding,
+      hypotheses: result.hypotheses,
+      recommendation: result.recommendation,
+      factIdByMetricId: factIdByMetric
+    });
+
+    await insertEvidenceEdges(edges);
 
     // Persist the remainder of the chain as an auditable payload in the job run log.
     // (Recommendation/opportunity reuse existing contracts; no parallel tables yet.)

@@ -4,6 +4,12 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Finding, Hypothesis, EvidenceEdge } from "@/lib/intelligence-v1/contracts";
 import { computeDimensionsHash } from "@/lib/intelligence-v1/dimensions-hash";
 
+type SupabaseLike = ReturnType<typeof getSupabaseServerClient>;
+
+function getClient(client?: SupabaseLike) {
+  return client ?? getSupabaseServerClient();
+}
+
 export async function insertFacts(rows: Array<{
   metric_id: string;
   value: number;
@@ -22,7 +28,7 @@ export async function insertFacts(rows: Array<{
   metric_definition_version: string;
 }>) {
   if (!rows.length) return;
-  const supabase = getSupabaseServerClient();
+  const supabase = getClient();
   const normalized = rows.map((r) => ({
     ...r,
     dimensions_hash: r.dimensions_hash ?? computeDimensionsHash(r.dimensions)
@@ -35,8 +41,65 @@ export async function insertFacts(rows: Array<{
   if (error) throw new Error(`Failed to insert intelligence facts: ${error.message}`);
 }
 
+export async function upsertFactsAndFetchIds(
+  rows: Array<{
+    metric_id: string;
+    value: number;
+    unit: string;
+    business_date: string;
+    window_type: string;
+    dimensions: Record<string, unknown>;
+    dimensions_hash?: string;
+    source_system: string;
+    retrieved_at: string;
+    source_as_of: string | null;
+    freshness_state: string | null;
+    coverage_state: string | null;
+    attribution_defensible: string | null;
+    confidence_state: string | null;
+    metric_definition_version: string;
+  }>,
+  opts?: { client?: SupabaseLike }
+): Promise<Array<{ metric_id: string; dimensions_hash: string; fact_id: string }>> {
+  if (!rows.length) return [];
+  const supabase = getClient(opts?.client);
+  const normalized = rows.map((r) => ({
+    ...r,
+    dimensions_hash: r.dimensions_hash ?? computeDimensionsHash(r.dimensions)
+  }));
+
+  const up = await supabase.from("intelligence_facts_v1").upsert(normalized, {
+    onConflict: "metric_id,business_date,window_type,source_system,metric_definition_version,dimensions_hash"
+  });
+  if (up.error) throw new Error(`Failed to upsert intelligence facts: ${up.error.message}`);
+
+  // Fetch ids deterministically by the uniqueness key.
+  const out: Array<{ metric_id: string; dimensions_hash: string; fact_id: string }> = [];
+  for (const r of normalized) {
+    const q = await supabase
+      .from("intelligence_facts_v1")
+      .select("fact_id,metric_id,dimensions_hash")
+      .eq("metric_id", r.metric_id)
+      .eq("business_date", r.business_date)
+      .eq("window_type", r.window_type)
+      .eq("source_system", r.source_system)
+      .eq("metric_definition_version", r.metric_definition_version)
+      .eq("dimensions_hash", r.dimensions_hash)
+      .limit(1)
+      .maybeSingle();
+    if (q.error) throw new Error(`Failed to fetch fact id: ${q.error.message}`);
+    if (!q.data?.fact_id) throw new Error(`Failed to fetch fact id for metric_id=${r.metric_id}`);
+    out.push({
+      metric_id: String(q.data.metric_id),
+      dimensions_hash: String(q.data.dimensions_hash),
+      fact_id: String(q.data.fact_id)
+    });
+  }
+  return out;
+}
+
 export async function insertFinding(row: Finding) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getClient();
   const { error } = await supabase.from("intelligence_findings_v1").upsert({
     finding_id: row.finding_id,
     detector_id: row.detector_id,
@@ -58,7 +121,7 @@ export async function insertFinding(row: Finding) {
 
 export async function insertHypotheses(rows: Hypothesis[]) {
   if (!rows.length) return;
-  const supabase = getSupabaseServerClient();
+  const supabase = getClient();
   const { error } = await supabase.from("intelligence_hypotheses_v1").upsert(
     rows.map((h) => ({
       hypothesis_id: h.hypothesis_id,
@@ -96,7 +159,7 @@ export async function upsertRecommendation(row: {
   what_changes_my_mind: string[];
   confidence: Record<string, unknown>;
 }) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getClient();
   const { error } = await supabase.from("intelligence_recommendations_v1").upsert(row, {
     onConflict: "recommendation_id"
   });
@@ -105,7 +168,7 @@ export async function upsertRecommendation(row: {
 
 export async function insertEvidenceEdges(edges: EvidenceEdge[]) {
   if (!edges.length) return;
-  const supabase = getSupabaseServerClient();
+  const supabase = getClient();
   const { error } = await supabase.from("intelligence_evidence_edges_v1").insert(
     edges.map((e) => ({
       from_type: e.from_type,
