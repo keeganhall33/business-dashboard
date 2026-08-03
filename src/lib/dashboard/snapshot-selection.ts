@@ -36,7 +36,7 @@ export type PreviousSnapshotResult<T> = {
  * - Rejects candidates >= current.
  * - Deterministic for ties (prefers generated_at timestamps; then prefers later updated_at).
  */
-export function selectPreviousSnapshot<T extends { generatedAt: string }>(
+export function selectPreviousSnapshot<T extends { generatedAt: string | null }>(
   rows: DashboardSnapshotRecord[] | undefined,
   currentTimestampIso: string | null | undefined
 ): PreviousSnapshotResult<T> | null {
@@ -64,7 +64,7 @@ export function selectPreviousSnapshot<T extends { generatedAt: string }>(
     const sourceRank = ts.source === "generated_at" ? 2 : 1;
 
     const payload = row.payload as T | null;
-    if (!payload || typeof payload.generatedAt !== "string") continue;
+    if (!payload) continue;
 
     if (!best) {
       best = { time: candidateTime, updatedAt, sourceRank, payload, iso: ts.iso, source: ts.source };

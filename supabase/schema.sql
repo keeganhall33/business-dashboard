@@ -674,7 +674,10 @@ as $$
     select
       (select proven_coverage_start from latest_run) as coverage_start,
       (select proven_coverage_end from latest_run) as coverage_end,
-      (select source_as_of_gmt from latest_run) as as_of
+      coalesce(
+        (select source_as_of_gmt from latest_run),
+        (select completed_at from latest_run)
+      ) as as_of
   )
   select jsonb_build_object(
     'summary', jsonb_build_object(

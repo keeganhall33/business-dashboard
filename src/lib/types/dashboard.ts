@@ -618,7 +618,7 @@ export type MetaAdsCampaign = {
 };
 
 export type MetaAdsSnapshot = {
-  generatedAt: string;
+  generatedAt: string | null;
   accountId: string;
   range: number; // days
   campaigns: MetaAdsCampaign[];
