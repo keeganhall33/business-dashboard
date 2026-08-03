@@ -58,9 +58,9 @@ test("Meta LIVE + attribution unavailable: delivery visible; ROAS and conversion
   assert.match(metrics, /Spend/);
   // But attribution metrics must not be numeric.
   assert.ok(!/ROAS\s*0\.0x/.test(metrics));
-  assert.ok(!/Conv\s*0\b/.test(metrics));
+  assert.ok(!/Meta purchases\s*0\b/i.test(metrics));
   assert.match(metrics, /ROAS Not attributable/);
-  assert.match(metrics, /Conv Unavailable/);
+  assert.match(metrics, /Meta purchases unavailable/i);
 });
 
 test("Defensible attribution: genuine attributable zeros may still render as numeric in Marketing summary", () => {
@@ -99,7 +99,7 @@ test("Defensible attribution: genuine attributable zeros may still render as num
   const summary = dashboardShellTest.buildMarketingSummary(minimalDashboardData(snap), []);
   const metrics = summary.metrics.join(" • ");
   assert.match(metrics, /ROAS\s*0\.0x/);
-  assert.match(metrics, /Conv\s*0\b/);
+  assert.match(metrics, /Meta purchases\s*0\b/i);
 });
 
 test("Marketing summary and Meta detail panel agree when attribution is unavailable", () => {
@@ -138,7 +138,7 @@ test("Marketing summary and Meta detail panel agree when attribution is unavaila
   const summary = dashboardShellTest.buildMarketingSummary(minimalDashboardData(snap), []);
   const metrics = summary.metrics.join(" • ");
   assert.match(metrics, /ROAS Not attributable/);
-  assert.match(metrics, /Conv Unavailable/);
+  assert.match(metrics, /Meta purchases unavailable/i);
 
   const panelHtml = renderToStaticMarkup(React.createElement(MetaAdsPanel, { snapshot: snap }));
   assert.match(panelHtml, /Not attributable/);

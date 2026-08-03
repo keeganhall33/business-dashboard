@@ -58,7 +58,7 @@ export async function evaluateWarRoomMode() {
   }
 
   if (Number.isFinite(conversionCurrent) && conversionCurrent < 1.0) {
-    triggers.push("Conversion rate is below 1.0%");
+    triggers.push("Purchase conversion is below 1.0%");
   }
 
   if (Number.isFinite(dealsClosedCurrent) && dealsClosedCurrent <= 0) {
