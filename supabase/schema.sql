@@ -636,6 +636,7 @@ create table if not exists intelligence_facts_v1 (
   timezone text not null default 'America/Los_Angeles',
   window_type text not null,
   dimensions jsonb not null default '{}'::jsonb,
+  dimensions_hash text not null,
   source_system text not null,
   source_run_id text,
   snapshot_id text,
@@ -650,7 +651,7 @@ create table if not exists intelligence_facts_v1 (
 );
 
 create unique index if not exists idx_intelligence_facts_v1_unique
-  on intelligence_facts_v1(metric_id, business_date, window_type, source_system, metric_definition_version, (md5(dimensions::text)));
+  on intelligence_facts_v1(metric_id, business_date, window_type, source_system, metric_definition_version, dimensions_hash);
 
 create table if not exists intelligence_findings_v1 (
   finding_id text primary key,

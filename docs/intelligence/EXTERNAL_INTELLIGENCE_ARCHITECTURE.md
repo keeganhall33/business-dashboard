@@ -8,6 +8,24 @@ External intelligence provides context and opportunity discovery beyond internal
 
 ## Core components
 
+### Competitive Intelligence Engine (permanent)
+
+**Purpose:** continuously monitor competitors, adjacent creators, institutions, brands, teams, galleries, and market participants; interpret their strategic moves; connect them to internal evidence; and surface opportunities, risks, white space, positioning advantages, and recommended responses.
+
+This subsystem must answer:
+- What are competitors doing?
+- Why are they likely doing it (strategic hypothesis)?
+- Is it working (as far as we can tell)?
+- What can we learn from it?
+- What should we imitate, adapt, avoid, counter, or ignore?
+- What opportunity does it reveal for this business?
+- What second-order effects could their decisions create?
+- Does it change what to create, promote, price, launch, partner on, or stop doing?
+
+**Competitor universe:** dynamic; not a fixed list. Entities are tagged by category (direct artists, galleries, adjacent collectible businesses, brands/teams/institutions, etc.) and can be expanded over time.
+
+**Rules:** competitor activity is external evidence and must follow the external evidence requirements (classification, credibility, time bounds, mechanism).
+
 ### 1) External Intelligence Layer
 - Collects external signals.
 - Normalizes them into structured facts.

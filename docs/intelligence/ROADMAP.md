@@ -26,6 +26,8 @@ Internal data alone is not the final system.
 - External Signal Fact Model
 - Entity + Relationship Graph
 - Strategic Opportunity Fusion Engine (internal evidence + external context)
+- Competitive Intelligence Engine (see `docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`)
+
 - External evidence rules:
   - source, source type, source reference, retrieved_at
   - event time + relevance window + expiration

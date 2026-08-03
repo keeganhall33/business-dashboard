@@ -2,6 +2,7 @@ import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Finding, Hypothesis, EvidenceEdge } from "@/lib/intelligence-v1/contracts";
+import { computeDimensionsHash } from "@/lib/intelligence-v1/dimensions-hash";
 
 export async function insertFacts(rows: Array<{
   metric_id: string;
@@ -10,6 +11,7 @@ export async function insertFacts(rows: Array<{
   business_date: string;
   window_type: string;
   dimensions: Record<string, unknown>;
+  dimensions_hash?: string;
   source_system: string;
   retrieved_at: string;
   source_as_of: string | null;
@@ -21,9 +23,15 @@ export async function insertFacts(rows: Array<{
 }>) {
   if (!rows.length) return;
   const supabase = getSupabaseServerClient();
+  const normalized = rows.map((r) => ({
+    ...r,
+    dimensions_hash: r.dimensions_hash ?? computeDimensionsHash(r.dimensions)
+  }));
   const { error } = await supabase
     .from("intelligence_facts_v1")
-    .upsert(rows, { onConflict: "metric_id,business_date,window_type,source_system,metric_definition_version" });
+    .upsert(normalized, {
+      onConflict: "metric_id,business_date,window_type,source_system,metric_definition_version,dimensions_hash"
+    });
   if (error) throw new Error(`Failed to insert intelligence facts: ${error.message}`);
 }
 
