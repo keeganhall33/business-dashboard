@@ -54,6 +54,7 @@ import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
 import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
 import { buildRevenueEngineMetrics } from "@/lib/dashboard/revenue-engine";
+import { normalizeMetaSnapshotGeneratedAt } from "@/lib/dashboard/meta-snapshot-generatedAt";
 
 export const runtime = "nodejs";
 
@@ -1056,7 +1057,11 @@ export async function GET(request: Request) {
     const normalizedWebsiteSnapshot = websiteSnapshot ? normalizeWebsiteSnapshot(websiteSnapshot) : websiteSnapshot;
     const cloudflareSnapshot =
       (snapshotMap.get("cloudflare")?.payload as CloudflareTelemetrySnapshot | null) ?? localArtifacts.cloudflareSnapshot;
-    const metaSnapshot = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
+    const metaRowGeneratedAt = snapshotMap.get("meta")?.generated_at ?? null;
+    const metaSnapshotRaw = (snapshotMap.get("meta")?.payload as MetaAdsSnapshot | null) ?? localArtifacts.metaSnapshot;
+    // Meta snapshot freshness: prefer payload.generatedAt when present; otherwise use
+    // dashboard_snapshots.generated_at (snapshot-generation / retrieval time).
+    const metaSnapshot = normalizeMetaSnapshotGeneratedAt(metaSnapshotRaw, metaRowGeneratedAt);
     const socialSnapshot = (snapshotMap.get("social")?.payload as SocialIntelligenceSnapshot | null) ?? localArtifacts.socialSnapshot;
 
     // Range integrity: when Woo selected-range telemetry is missing/stale but the latest Woo snapshot
