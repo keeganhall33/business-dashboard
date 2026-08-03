@@ -15,6 +15,7 @@ export type ExecutiveBriefingModel = {
   changed: ExecutiveBriefingBlock;
   attention: ExecutiveBriefingBlock;
   nextMove: ExecutiveBriefingBlock;
+  decisionLimitations: string[];
 };
 
 function pickHealth(summary: ExecutiveSummary | null): ExecutiveBriefingBlock {
@@ -83,7 +84,11 @@ function confidenceSeverity(entry: ConfidenceEntry): number {
   return 0;
 }
 
-function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceSummary): ExecutiveBriefingBlock {
+function pickAttention(
+  summary: ExecutiveSummary | null,
+  confidence: ConfidenceSummary,
+  options?: { omitDomains?: Array<ConfidenceEntry["id"]> }
+): ExecutiveBriefingBlock {
   const businessRisks: string[] = [];
 
   if (summary) {
@@ -93,8 +98,10 @@ function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceS
     if (typeof orders === "number" && orders <= -0.1) businessRisks.push("Orders declined materially versus the comparable period.");
   }
 
+  const omit = new Set(options?.omitDomains ?? []);
   const dataIssues = confidence.entries
     .filter((e) => e.state !== "trusted")
+    .filter((e) => !omit.has(e.id))
     .slice()
     .sort((a, b) => confidenceSeverity(b) - confidenceSeverity(a))
     .map((e) => {
@@ -109,6 +116,34 @@ function pickAttention(summary: ExecutiveSummary | null, confidence: ConfidenceS
     tone: lines.length ? "amber" : "zinc",
     lines: lines.length ? lines : ["No verified issues require attention for this period."]
   };
+}
+
+function pickVerifiedBasis(confidence: ConfidenceSummary): string | null {
+  const trusted = new Set(confidence.trustedSources ?? []);
+  const basis: string[] = [];
+
+  if (trusted.has("Woo")) basis.push("commerce");
+  if (trusted.has("GA4")) basis.push("traffic");
+
+  if (basis.length) return `Verified: ${basis.join(" + ")}.`;
+  if (trusted.size) return `Verified: ${Array.from(trusted).join(", ")}.`;
+  return null;
+}
+
+function pickDecisionLimitations(confidence: ConfidenceSummary): {
+  limitations: string[];
+  omitDomains: Array<ConfidenceEntry["id"]>;
+} {
+  const limitations: string[] = [];
+  const omitDomains: Array<ConfidenceEntry["id"]> = [];
+
+  const meta = confidence.entries.find((e) => e.id === "meta");
+  if (meta && (meta.state === "unavailable" || meta.state === "insufficient_evidence" || meta.state === "conflicting")) {
+    limitations.push("Limits: marketing efficiency (ROAS, attributed conversions) cannot be evaluated — Meta attribution unavailable.");
+    omitDomains.push("meta");
+  }
+
+  return { limitations, omitDomains };
 }
 
 function summarizeWhy(impact: string): string {
@@ -184,14 +219,26 @@ export function buildExecutiveBriefingModel(input: {
         lines: ["Unable to verify changes for this period."]
       },
       attention: pickAttention(input.summary, input.confidence),
-      nextMove: pickNextMove(input.actions, input.confidence)
+      nextMove: pickNextMove(input.actions, input.confidence),
+      decisionLimitations: []
     };
   }
 
+  const { limitations: decisionLimitations, omitDomains } = pickDecisionLimitations(input.confidence);
+  const verifiedBasis = pickVerifiedBasis(input.confidence);
+  const health = pickHealth(input.summary);
+  const healthLines = [
+    health.lines[0],
+    verifiedBasis,
+    health.lines[1],
+    ...decisionLimitations
+  ].filter(Boolean) as string[];
+
   return {
-    health: pickHealth(input.summary),
+    health: { ...health, lines: healthLines },
     changed: pickChanges(input.summary),
-    attention: pickAttention(input.summary, input.confidence),
-    nextMove: pickNextMove(input.actions, input.confidence)
+    attention: pickAttention(input.summary, input.confidence, { omitDomains }),
+    nextMove: pickNextMove(input.actions, input.confidence),
+    decisionLimitations
   };
 }
