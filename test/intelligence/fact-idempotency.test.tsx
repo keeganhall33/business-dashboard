@@ -62,4 +62,3 @@ test("fact idempotency: identical fact + different dimensions yields distinct ke
   });
   assert.notEqual(a, b);
 });
-

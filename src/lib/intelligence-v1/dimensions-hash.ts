@@ -42,4 +42,3 @@ export function computeDimensionsHash(dimensions: Record<string, unknown> | null
   const bytes = Buffer.from(JSON.stringify(canonical));
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
-

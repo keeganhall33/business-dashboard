@@ -19,4 +19,3 @@ test("dimensions_hash: different dimensions produce distinct hashes", () => {
   const b = { device: "desktop" };
   assert.notEqual(computeDimensionsHash(a), computeDimensionsHash(b));
 });
-
