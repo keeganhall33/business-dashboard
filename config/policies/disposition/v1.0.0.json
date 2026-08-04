@@ -1,0 +1,25 @@
+{
+  "policy_name": "disposition",
+  "semantic_version": "v1.0.0",
+  "effective_from": "2026-08-04",
+  "effective_until": null,
+  "approval_status": "approved",
+  "approved_by": "architecture",
+  "changed_at": "2026-08-04",
+  "change_reason": "Initial fixture policy for Signal disposition eligibility gates.",
+  "dispositions": [
+    "suppress",
+    "archive_only",
+    "monitor",
+    "validate",
+    "escalate_to_external_finding",
+    "escalate_to_opportunity",
+    "send_to_fusion_context"
+  ],
+  "rules": {
+    "popularity_never_sufficient": true,
+    "rumor_monitor_only": true,
+    "one_weak_signal_cannot_create_operating_recommendation": true,
+    "licensing_infeasibility_blocks_actionability": true
+  }
+}

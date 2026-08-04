@@ -1,0 +1,43 @@
+{
+  "policy_name": "lifecycle",
+  "semantic_version": "v1.0.0",
+  "effective_from": "2026-08-04",
+  "effective_until": null,
+  "approval_status": "approved",
+  "approved_by": "architecture",
+  "changed_at": "2026-08-04",
+  "change_reason": "Initial fixture lifecycle policy for Signals/Findings/Hypotheses.",
+  "signal_lifecycle": [
+    "candidate",
+    "active",
+    "corroborated",
+    "contradicted",
+    "under_review",
+    "updated",
+    "superseded",
+    "expired",
+    "invalidated",
+    "archived"
+  ],
+  "finding_lifecycle": [
+    "candidate",
+    "active",
+    "corroborated",
+    "contradicted",
+    "under_review",
+    "superseded",
+    "expired",
+    "invalidated",
+    "archived"
+  ],
+  "hypothesis_lifecycle": [
+    "proposed",
+    "supported",
+    "weakened",
+    "contradicted",
+    "under_review",
+    "superseded",
+    "invalidated",
+    "archived"
+  ]
+}

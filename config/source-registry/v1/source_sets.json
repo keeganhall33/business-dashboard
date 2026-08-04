@@ -1,0 +1,36 @@
+{
+  "schema_version": "source_sets_v1",
+  "source_sets_config_version": "v1.0.0",
+  "generated_at": null,
+  "source_sets": [
+    {
+      "source_set_id": "set.example.wave1",
+      "name": "Example Wave 1 Set (Fixture)",
+      "purpose": "Fixture set: validates governed membership shape and caps.",
+      "domains": ["brand"],
+      "membership_rules": "Only official primary sources. Hard cap for review.",
+      "maximum_active_members": 3,
+      "member_source_ids": ["example.official.press_release"],
+      "member_status_policy": "member_enabled required",
+      "individual_credibility_policy": "item-level scoring; set membership does not confer truth",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "inclusion_reasons": ["fixture"],
+      "duplicate_handling_policy": "syndication does not count as independent",
+      "source_set_owner": "architecture",
+      "source_set_version": "v1.0.0",
+      "lifecycle_status": "proposed",
+      "legal_access_policy": "manual_only",
+      "schema_version": "source_sets_v1"
+    }
+  ],
+  "memberships": [
+    {
+      "source_set_id": "set.example.wave1",
+      "source_id": "example.official.press_release",
+      "member_role": "primary",
+      "member_enabled": false,
+      "member_inclusion_reason": "fixture"
+    }
+  ]
+}
