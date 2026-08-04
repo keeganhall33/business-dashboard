@@ -448,19 +448,44 @@ Each example below shows:
 
 5) **Gallery trend × Athlete partnership × Premium positioning**
    - Component signals:
-     - Relationship: gallery begins representing (or heavily featuring) sports-adjacent work (weak unless corroborated)
-     - Event: athlete/brand partnership activity rises (weak, noisy)
-     - Market: premium auction outcomes for similar subjects/mediums (credible)
-   - Links:
+     - Gallery ecosystem: one or more credible galleries increasingly feature or represent artists exploring athlete/sports-cultural collaborations.
+     - Sports institution: an athlete, team, league foundation, or athletic department publicly signals interest in premium cultural partnerships (talks, museum nights, charity auctions, documentary tie-ins).
+     - Market: premium auction outcomes for comparable subjects/mediums strengthen (transaction signal; still non-causal).
+   - Why each is individually weak:
+     - Gallery trend: may be curatorial fashion, not demand; may not be accessible or relevant to your collector base.
+     - Sports partnership signal: could be PR-only with no real partnership budget or licensing path.
+     - Auction outcomes: may reflect a few lots; may not translate to your medium/subject choices.
+   - Connecting entities & relationships:
      - gallery → represents → artist
-     - athlete → partnered_with → brand
-     - collector_segment → prefers → premium positioning
-   - Mechanism (hypothesis): a premium-aligned collaboration window may exist if gallery/brand signals align.
-   - Internal evidence: prior collector responses to premium sports subjects; capacity constraints.
-   - Missing evidence: licensing feasibility; explicit partner interest; audience overlap verification.
-   - Risk/contradiction: partnership may be pure marketing; gallery move may be unrelated.
-   - Timing window: weeks–months.
-   - Disposition: **monitor** → **validate** (partner confirmation) → **opportunity**.
+     - athlete/team/league → partnered_with → brand
+     - athlete/team/league_foundation → supports_charity → charity
+     - collector_segment → prefers → premium positioning (your brand constraints)
+   - Combined strategic mechanism (non-causal hypothesis):
+     - The ecosystem may be entering a short window where premium cultural partnerships with sports institutions are viewed as prestige-positive (not “merch”), creating a partnership opportunity aligned with your premium positioning and scarcity strategy.
+   - Relevant internal evidence (required):
+     - your premium positioning constraints (no discounting; scarcity protected)
+     - prior collector fit for sports/cultural subjects
+     - any existing partnership history / institutional credibility signals
+     - production capacity window (so a partnership is feasible without diluting quality)
+   - Missing evidence (must be explicit):
+     - licensing feasibility / rights-holder permissions
+     - confirmation of institutional decision-maker interest (not just social posts)
+     - audience overlap validation (your collectors vs the institution’s audience)
+     - whether the partnership would preserve scarcity and prestige
+   - Contradiction / risk:
+     - risk of imitation: do not copy another artist/gallery; the opportunity is to identify an institutional partnership mechanism that matches your differentiated positioning.
+     - reputational risk if the partnership reads as promotional rather than cultural.
+     - licensing conflict risk.
+   - Licensing & relationship constraints:
+     - rights-holder constraints may block imagery/marks; charity/league rules may limit commercial use.
+   - Timing window:
+     - weeks–months; tied to exhibition cycles, seasons, documentary releases, or charitable events.
+   - Initial disposition:
+     - **monitor** (signals logged) → **validate** (corroborate institutional intent + licensing feasibility) → **opportunity** only if prerequisites are met.
+   - What promotes it:
+     - two independent corroborations (primary sources) + a confirmed licensing path + explicit partnership mechanism that preserves premium positioning.
+   - What invalidates it:
+     - licensing infeasible, institution interest is PR-only, or partnership would require volume/discount behavior that conflicts with scarcity/premium constraints.
 
 6) **Auction results × Subject momentum × Collector liquidity**
    - Component signals:
@@ -477,16 +502,44 @@ Each example below shows:
 
 7) **Competitor launch × Customer overlap × Product white space**
    - Component signals:
-     - Competitor monitoring: competitor launches a new edition/format (observed, not proof)
-     - Internal: customer segment overlap (internal evidence)
-     - Market: absence of premium alternatives in a niche (weak; requires validation)
-   - Links:
+     - Competitor move: competitor launches a product/edition/subject/collaboration or new content strategy (observed signal, not outcome proof).
+     - Audience overlap: evidence of collector/customer overlap (shared collectors, shared channels, shared geographic market, or shared subject category).
+     - White space: evidence that an adjacent premium tier/subject/geography/partnership remains underserved (weak; requires validation).
+   - Why each is individually weak:
+     - Competitor launch alone does not prove demand or profitability; could be a failed experiment.
+     - Overlap evidence may be noisy (social followers ≠ buyers; channel overlap ≠ collector overlap).
+     - White-space claims are often wishful; absence of competition can mean absence of demand.
+   - Connecting entities & relationships:
      - competitor → competes_with → your positioning
      - customer_segment → overlaps_with → competitor_audience
-   - Mechanism (hypothesis): competitor launch indicates demand direction, leaving a premium white space.
-   - Missing evidence: pricing power, scarcity appetite, whether demand is transient.
-   - Risk: copying competitor without mechanism; saturation.
-   - Disposition: **validate** → **external finding**; may become **opportunity** if corroborated by demand + market response.
+     - subject_category → relevant_to → collector_segment
+     - channel → distributes_to → customer_segment
+   - Combined strategic mechanism (non-causal hypothesis):
+     - The competitor’s move may indicate a directional shift in attention, while the real opportunity for you may be to **differentiate** into an adjacent premium white space (price tier, subject angle, geography, or partnership mechanism) that preserves scarcity and premium positioning.
+   - Relevant internal evidence (required):
+     - your historical conversion/collector fit by subject category
+     - your capacity constraints and scarcity strategy
+     - your pricing power signals (internal telemetry)
+     - your partnership feasibility (licensing/brand access)
+   - Missing evidence:
+     - whether the competitor launch produced sellouts/transaction outcomes (must be corroborated)
+     - whether your collectors care about that adjacent space
+     - distribution feasibility and partnership access
+     - licensing/IP feasibility if the white space depends on rights
+   - Contradiction / saturation risk:
+     - market saturation if many competitors follow;
+     - reputational risk if the move reads as imitation;
+     - demand may be transient or platform-driven.
+   - Licensing feasibility:
+     - licensing infeasibility blocks actionability even if demand appears present.
+   - Timing window:
+     - weeks–months; tied to the competitor’s launch window and the adjacent demand cycle.
+   - Initial disposition:
+     - **validate** (confirm outcomes and overlap) → **external finding** (if corroborated) → **opportunity** only if differentiated mechanism + feasibility prerequisites are satisfied.
+   - What promotes it:
+     - corroborated market response (sellouts/auctions/search) + strong internal fit + a differentiated premium strategy + feasible licensing/partnership path.
+   - What invalidates it:
+     - competitor launch shows poor market response, overlap is weak, licensing infeasible, or the only viable response would be imitation/volume behavior that violates scarcity/premium constraints.
 
 ---
 
