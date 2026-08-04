@@ -68,3 +68,65 @@ export function provenanceEdgeIdempotencyKey(input: {
     policy_version: input.policy_version
   });
 }
+
+export function lifecycleTransitionIdempotencyKey(input: {
+  object_ref: VersionRef;
+  from_status: string;
+  to_status: string;
+  effective_at: string;
+  policy_version: string;
+  reason_codes: string[];
+}): string {
+  return idempotencyKey({
+    object_ref: stableVersionRefKey(input.object_ref),
+    from_status: input.from_status,
+    to_status: input.to_status,
+    effective_at: input.effective_at,
+    policy_version: input.policy_version,
+    reason_codes: [...input.reason_codes].sort()
+  });
+}
+
+export function correctionIdempotencyKey(input: {
+  object_ref: VersionRef;
+  correction_type: "correction" | "retraction" | "supersession";
+  supersedes_ref: VersionRef | null;
+  policy_version: string;
+  reason: string;
+}): string {
+  return idempotencyKey({
+    object_ref: stableVersionRefKey(input.object_ref),
+    correction_type: input.correction_type,
+    supersedes_ref: input.supersedes_ref ? stableVersionRefKey(input.supersedes_ref) : null,
+    policy_version: input.policy_version,
+    reason: input.reason
+  });
+}
+
+export function sourceContributionIdempotencyKey(input: {
+  target_ref: VersionRef;
+  source_id: string;
+  source_set_id: string | null;
+  evidence_reference_version_ref: VersionRef;
+}): string {
+  return idempotencyKey({
+    target_ref: stableVersionRefKey(input.target_ref),
+    source_id: input.source_id,
+    source_set_id: input.source_set_id,
+    evidence_reference_version_ref: stableVersionRefKey(input.evidence_reference_version_ref)
+  });
+}
+
+export function processingRunIdempotencyKey(input: {
+  input_set_fingerprint: string;
+  source_registry_hash: string;
+  policy_bundle_hash: string;
+  engine_version: string;
+}): string {
+  return idempotencyKey({
+    input_set_fingerprint: input.input_set_fingerprint,
+    source_registry_hash: input.source_registry_hash,
+    policy_bundle_hash: input.policy_bundle_hash,
+    engine_version: input.engine_version
+  });
+}

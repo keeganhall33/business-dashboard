@@ -41,12 +41,18 @@ export class InMemoryExternalIntelligenceStore implements ExternalIntelligenceSt
 
   evidence = {
     upsertStable: async (row: EvidenceReferenceRecord) => {
+      if (row.object_id !== row.evidence_reference_id) {
+        throw new Error("EvidenceReference stable row must use object_id === evidence_reference_id");
+      }
       this.evidenceStable.set(row.evidence_reference_id, row);
     },
     upsertVersion: async (row: EvidenceReferenceVersionRecord) => {
+      if (row.object_id !== row.evidence_reference_id) {
+        throw new Error("EvidenceReference version row must use object_id === evidence_reference_id");
+      }
       const k = `${row.evidence_reference_id}::${row.content_hash}`;
       const existing = this.evidenceVersions.get(k);
-      if (existing && JSON.stringify(existing.payload) !== JSON.stringify(row.payload)) {
+      if (existing && JSON.stringify(existing.payload_json) !== JSON.stringify(row.payload_json)) {
         throw new Error("same content_hash cannot map to different payload");
       }
       this.evidenceVersions.set(k, row);
@@ -64,12 +70,18 @@ export class InMemoryExternalIntelligenceStore implements ExternalIntelligenceSt
 
   claims = {
     upsertStable: async (row: ClaimRecord) => {
+      if (row.object_id !== row.claim_id) {
+        throw new Error("Claim stable row must use object_id === claim_id");
+      }
       this.claimStable.set(row.claim_id, row);
     },
     upsertVersion: async (row: ClaimVersionRecord) => {
+      if (row.object_id !== row.claim_id) {
+        throw new Error("Claim version row must use object_id === claim_id");
+      }
       const k = `${row.claim_id}::${row.content_hash}`;
       const existing = this.claimVersions.get(k);
-      if (existing && JSON.stringify(existing.payload) !== JSON.stringify(row.payload)) {
+      if (existing && JSON.stringify(existing.payload_json) !== JSON.stringify(row.payload_json)) {
         throw new Error("same content_hash cannot map to different payload");
       }
       this.claimVersions.set(k, row);
@@ -87,12 +99,18 @@ export class InMemoryExternalIntelligenceStore implements ExternalIntelligenceSt
 
   signals = {
     upsertStable: async (row: ExternalSignalRecord) => {
+      if (row.object_id !== row.signal_id) {
+        throw new Error("Signal stable row must use object_id === signal_id");
+      }
       this.signalStable.set(row.signal_id, row);
     },
     upsertVersion: async (row: ExternalSignalVersionRecord) => {
+      if (row.object_id !== row.signal_id) {
+        throw new Error("Signal version row must use object_id === signal_id");
+      }
       const k = `${row.signal_id}::${row.content_hash}`;
       const existing = this.signalVersions.get(k);
-      if (existing && JSON.stringify(existing.payload) !== JSON.stringify(row.payload)) {
+      if (existing && JSON.stringify(existing.payload_json) !== JSON.stringify(row.payload_json)) {
         throw new Error("same content_hash cannot map to different payload");
       }
       this.signalVersions.set(k, row);
@@ -163,6 +181,18 @@ export class InMemoryExternalIntelligenceStore implements ExternalIntelligenceSt
 
   runs = {
     upsertRun: async (row: ProcessingRunRecord) => {
+      // Enforce completion invariants in-memory (fail closed).
+      if (row.status === "completed") {
+        if (!row.persistence_complete || !row.validation_complete) {
+          throw new Error("cannot mark run completed unless persistence_complete and validation_complete");
+        }
+        if (row.persisted_output_count !== row.expected_output_count) {
+          throw new Error("cannot mark run completed unless persisted_output_count === expected_output_count");
+        }
+
+        // All output VersionRefs must resolve.
+        await this.verifyWriteSetComplete({ expected_version_refs: row.output_refs, required_edges: row.required_provenance_edges });
+      }
       this.runsById.set(row.run_id, row);
     },
     fetchRun: async (run_id: string) => {
@@ -172,12 +202,29 @@ export class InMemoryExternalIntelligenceStore implements ExternalIntelligenceSt
     }
   };
 
-  verifyWriteSetComplete = async (input: { expected_version_refs: VersionRef[] }) => {
+  verifyWriteSetComplete = async (input: {
+    expected_version_refs: VersionRef[];
+    required_edges?: Array<Pick<ProvenanceEdgeRecord, "from_ref" | "to_ref" | "relation" | "policy_version">>;
+  }) => {
     for (const ref of input.expected_version_refs) {
       if (ref.object_type === "evidence_reference") await this.evidence.fetchVersion(ref);
       else if (ref.object_type === "claim") await this.claims.fetchVersion(ref);
       else if (ref.object_type === "signal") await this.signals.fetchVersion(ref);
       else throw new PersistenceCompletenessError(`unsupported object_type in completeness check: ${ref.object_type}`);
+    }
+
+    if (input.required_edges) {
+      for (const edge of input.required_edges) {
+        const k = provenanceEdgeIdempotencyKey({
+          from_ref: edge.from_ref,
+          to_ref: edge.to_ref,
+          relation: edge.relation,
+          policy_version: edge.policy_version
+        });
+        if (!this.edges.has(k)) {
+          throw new PersistenceCompletenessError(`missing required provenance edge: ${k}`);
+        }
+      }
     }
   };
 }

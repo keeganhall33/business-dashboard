@@ -73,5 +73,9 @@ export type ExternalIntelligenceStore = {
   /**
    * Completeness invariant: verify that a write set is complete before it is exposed to downstream consumers.
    */
-  verifyWriteSetComplete: (input: { expected_version_refs: VersionRef[] }) => Promise<void>;
+  verifyWriteSetComplete: (input: {
+    expected_version_refs: VersionRef[];
+    /** when provided, required provenance edges must exist (pins exact versions) */
+    required_edges?: Array<{ from_ref: VersionRef; to_ref: VersionRef; relation: string; policy_version: string }>;
+  }) => Promise<void>;
 };
