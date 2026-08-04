@@ -96,3 +96,12 @@ Additions (permanent):
 - Licensing/IP opportunity and risk
 - Collector liquidity signals
 - Shipping & fulfillment disruptions
+
+## Fusion Engine policy configuration (reference)
+
+The Fusion Engine reads a **version-controlled policy configuration** at:
+
+- `config/strategic_constraints_v1.json`
+
+This file is **production-affecting policy**. Changing it can change Fusion eligibility and ranking behavior.
+Fusion runs must persist the deterministic content hash and the explicit config version.
