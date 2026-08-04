@@ -46,6 +46,23 @@ Each object below has a distinct meaning and allowed transitions.
 
 **Boundary:** the Signal Engine interprets evidence and produces Signals. It does not produce Opportunities, Recommendations, or Actions.
 
+### 1.1 Reconciliation note (no parallel contracts)
+
+This document **does not replace** the canonical object definitions in:
+- `EXTERNAL_KNOWLEDGE_MODEL.md`
+- `EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`
+- `SOURCE_REGISTRY_V1_ARCHITECTURE.md`
+
+Instead, it defines the missing **interpretation layer** between Evidence References and the durable External Knowledge graph:
+
+Evidence Reference → Claim(s) → ExternalSignal
+
+and explicitly enforces the guardrail:
+
+**Raw Evidence References (articles/posts/announcements) must never flow directly into External Findings, Opportunities, or Fusion.**
+
+Where field names differ from earlier docs, this doc should be treated as the **more precise Signal Engine contract**, and downstream layers should map to it explicitly (see §17 Versioning + §16 Persistence).
+
 ---
 
 ## 2) Canonical ExternalSignal contract
@@ -55,7 +72,12 @@ Every field is marked as **Required / Optional / Derived / Learned / Future**.
 ### 2.1 Identity and versioning
 - `signal_id` **(Derived)**: stable id derived from `signal_fingerprint` (deterministic)
 - `signal_schema_version` **(Required)**
-- `signal_policy_version` **(Required)**
+- `signal_policy_version` **(Required)**: umbrella policy version for interpretation
+- `interpretation_policy_version` **(Required)**
+- `confidence_policy_version` **(Required)**
+- `disposition_policy_version` **(Required)**
+- `legal_policy_version` **(Required)**
+- `entity_resolution_version` **(Required)**
 - `signal_fingerprint` **(Derived)**
 
 - `created_at` **(Derived)**
@@ -141,6 +163,13 @@ Every field is marked as **Required / Optional / Derived / Learned / Future**.
 - `correction_history[]` **(Derived)**
 - `attribution_links[]` **(Future)**
 
+### 2.7 Contract shape note (required vs derived)
+
+For implementation:
+- **Config/policy inputs** determine required policy versions.
+- **Deterministic identity** (`signal_fingerprint` → `signal_id`) is never hand-edited.
+- **Observed timestamps** are derived from Evidence References and aggregation history.
+
 ---
 
 ## 3) Claim model (canonical)
@@ -204,6 +233,11 @@ Independence heuristics (deterministic features):
 - timestamp proximity
 - explicit citation links (“according to X”)
 - source ownership relationships (same parent)
+
+**Independence output (Derived fields):**
+- `independent_source_count`
+- `corroboration_count` (must exclude syndicated duplicates)
+- `independence_explanations[]` (why sources were/weren’t counted independent)
 
 ---
 
@@ -304,6 +338,22 @@ For each transition define:
 - downstream propagation
 - rollback/correction behavior
 
+### 8.1 Lifecycle transitions (minimum deterministic rules)
+
+The Signal Engine must record a **LifecycleTransition** entry for every change.
+
+| From → To | Trigger | Evidence requirement | Deterministic vs human | Downstream effect |
+|---|---|---|---|---|
+| candidate → active | first validated Claim set created for a fingerprint | ≥1 Claim with admissible Evidence Reference | deterministic | eligible for `monitor` at minimum |
+| active → corroborated | independent corroboration detected | `independent_source_count` increases and Claims are consistent | deterministic | may raise confidence; does **not** auto-escalate |
+| active/corroborated → contradicted | contradiction Claim linked | contradiction recorded with severity | deterministic + may require human review | confidence decreases; may suspend escalation |
+| contradicted → under_review | severe contradiction or correction appears | retraction/correction evidence present | deterministic | freezes escalation; requires review for next disposition |
+| active/corroborated → updated | new compatible evidence adds terms/details | new Claims join same fingerprint | deterministic | version bump; keep same `signal_id` |
+| * → superseded | new Signal replaces this interpretation | successor Signal references `supersedes_signal_ids` | deterministic | downstream consumers must prefer successor |
+| * → expired | relevance window ends | time rules satisfied | deterministic | removed from active influence; preserved historically |
+| * → invalidated | official retraction or conclusive disproof | retraction/correction evidence is primary | human-reviewed recommended | downstream must treat as non-actionable; audit preserved |
+| expired/invalidated → archived | retention policy moves to cold storage | none (policy) | deterministic | no active influence |
+
 ---
 
 ## 9) Disposition model (with guardrails)
@@ -323,6 +373,22 @@ Rules:
 - one weak signal cannot create an operating recommendation
 - multiple weak signals may combine only when linked by credible entities/relationships/mechanisms
 - licensing infeasibility blocks actionability
+
+### 9.1 Disposition requirements (minimum thresholds)
+
+These are **eligibility gates**, not recommendations.
+
+| Disposition | Minimum relevance | Minimum credibility | Corroboration requirement | Strategic/internal fit | Licensing feasibility | Downstream permission |
+|---|---|---|---|---|---|---|
+| suppress | none | any | none | n/a | n/a | no downstream propagation except audit |
+| archive_only | low | any | none | n/a | n/a | no Finding/Opportunity; audit only |
+| monitor | low–medium | low+ | none | optional | not required | may enter Fusion Context as “monitor-only” |
+| validate | medium | medium+ | prefer independent | optional | required to be *unknown/feasible*, not infeasible | can request additional evidence; no conclusions |
+| escalate_to_external_finding | medium+ | medium+ | independent corroboration strongly preferred | required mechanism hypothesis | licensing feasibility must be non-blocking | Finding layer may combine with other Signals |
+| escalate_to_opportunity | high relevance | high credibility | independent corroboration required unless official | strategic fit required | must be feasible (not blocked) | Opportunity layer evaluates action potential |
+| send_to_fusion_context | medium+ | medium+ | depends on signal type | required mechanism + relevance | must not be blocked | Fusion may consider as context, not as action |
+
+**Note:** lifecycle status and disposition are orthogonal (e.g., `active` + `monitor`).
 
 ---
 
@@ -359,6 +425,20 @@ When new evidence arrives, choose:
 
 All changes append to correction/history. No destructive overwrite.
 
+### 11.1 Worked update/supersession examples (decision rules)
+
+These examples define **what the Signal Engine decides**, not what the business does.
+
+- **Rumor → officially confirmed**: keep original rumor Signal (history preserved) and either:
+  - **supersede** with a new `officially_confirmed` Signal if fingerprint changes materially (e.g., entity/time/terms), or
+  - **update** existing Signal if it is clearly the same real-world event and only verification state improved.
+- **Announcement gains additional terms**: **update** (version bump) if same event window + same subject; add Claims for new terms.
+- **Projected auction estimate → realized sale price**: **supersede** if realized price is a different claim class (outcome vs forecast); link via supersession.
+- **Search momentum accelerates**: **update** the same Trend-type Signal if same window/subject; otherwise create a new Signal for a new window.
+- **Competitor launch later appears weak**: create a **separate** Signal for the market response observation; do not silently mutate the launch announcement.
+- **Reported injury is corrected**: create correction Claims; move lifecycle to `under_review` then **supersede** or **update** depending on whether the underlying event claim changed.
+- **Partnership relationship expires**: create a new Signal representing relationship termination/expiration; do not back-edit the original partnership Signal.
+
 ---
 
 ## 12) Breaking-news handling
@@ -373,6 +453,27 @@ Breaking-news states:
 - resolved
 
 Urgency may increase review cadence but cannot lower evidence standards.
+
+### 12.1 Worked breaking-news example (single-source → confirmed → corrected)
+
+Scenario: **single-source report** of a trade/partnership.
+
+1) **Evidence Reference A** (secondary report) → extract **Claim A1** (observed_vs_inferred=observed, verification_state=unverified)
+   - Signal: lifecycle=`candidate`, disposition=`monitor`, confidence(evidence)=low, interpretation=possible.
+
+2) **Evidence Reference B** (independent secondary source) → **Claim B1** consistent
+   - Signal: lifecycle=`active` (or `corroborated` if independence qualifies), disposition=`validate`.
+
+3) **Evidence Reference C** (official source) → **Claim C1** officially confirms
+   - Signal: lifecycle=`corroborated`, classification=`officially_confirmed`, disposition may become `send_to_fusion_context`.
+   - Event: an **Event** object may be created/updated downstream using the Signal (Signal Engine only links `event_ids[]`).
+
+4) Later **Evidence Reference D** (official correction/clarification) → **Claim D1** contradicts a term
+   - Signal: record contradiction; lifecycle=`under_review`; confidence decreases; disposition returns to `monitor` or `archive_only` depending on severity.
+
+Propagation rules:
+- External Finding layer must consume **Signal versions**, so the correction creates a new Signal version and downstream must re-evaluate.
+- Opportunity layer must treat retraction/correction as a blocker; it cannot be hidden by editing the past.
 
 ---
 
@@ -432,6 +533,25 @@ AI must never:
 - escalate directly to a recommendation
 - claim causality
 
+### 15.1 Structured AI I/O (architecture contract)
+
+AI input must be restricted to:
+- Evidence excerpts (bounded, cited)
+- Evidence Reference metadata (source_id, timestamps)
+- Source Registry credibility/legal/access constraints
+- Known entity candidates (from canonical entity registry)
+- Extraction schema + policy versions
+
+AI output must be restricted to schema-validated suggestions:
+- candidate Claims (with pointers back to evidence excerpt spans)
+- candidate entity links (with ambiguity flags)
+- candidate normalized_statement
+- candidate mechanism hypothesis (explicitly labeled inferred)
+- missing-evidence suggestions
+- contradiction summary
+
+All AI outputs are **non-authoritative** until accepted by deterministic validation/human review.
+
 ---
 
 ## 16) Persistence and auditability (minimum design)
@@ -464,6 +584,15 @@ Each Signal references:
 - entity-resolution version
 - source registry version
 - legal-policy version
+
+### 17.1 Downstream consumer rule
+
+External Findings, Opportunities, and Fusion Context must reference:
+- `signal_id`
+- `signal_schema_version`
+- **signal version identifier** (e.g., monotonically increasing `signal_version` or content hash) **(Future)**
+
+This prevents downstream layers from silently consuming a changed Signal after correction/retraction.
 
 ---
 
