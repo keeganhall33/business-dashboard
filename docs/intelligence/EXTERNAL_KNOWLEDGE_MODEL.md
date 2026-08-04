@@ -16,6 +16,22 @@ The model is intentionally **source-agnostic**. Sources are inputs; the model is
 
 ---
 
+## Canonical wire contracts (implementation-first)
+
+The following are the **only canonical implementation contracts** for Phase A+.
+
+- **EvidenceReference** uses `evidence_reference_id` (never `evidence_id`).
+- **Immutable version pinning** uses **VersionRef** (`content_hash` is the immutable identity).
+- **Policies** use **PolicyRef** (semantic version + content hash).
+- **Confidence** uses one canonical **ConfidenceAxes** shape.
+- **Entities** are referenced via the minimal **EntityRef** interface.
+- **Fusion inputs** are constrained to **FusionContext** (synthesized, versioned; no raw signals).
+
+Any legacy field names are documented only in **Appendix: Legacy compatibility mappings** and must not be used as canonical fields in new implementation.
+
+
+---
+
 ## 0) Core principles
 
 1) **Knowledge objects, not articles.** Articles are evidence containers; the system stores normalized knowledge objects.
@@ -52,19 +68,19 @@ A canonical record describing an external source (not its content).
 - `enabled_state` (proposed | trial | active | promoted | demoted | paused | retired | replaced)
 - `schema_version`
 
-### 1.2 Evidence Reference
+### 1.2 Evidence Reference (LEGACY terminology; do not implement)
 A pointer to an evidence artifact and the minimal metadata required to audit it.
 
-**Required fields:**
-- `evidence_id` (stable)
+**Required fields (legacy):**
+-- `evidence_id` (legacy; use `evidence_reference_id`)
 - `source_id`
-- `source_reference` (URL/identifier)
+-- `source_reference` (legacy; use `source_url_or_reference`)
 - `retrieved_at`
 - `published_at` (nullable)
 - `content_hash` (optional; for dedupe/audit)
 - `credibility` (score 0–1 + reasons)
-- `corroborating_evidence_ids[]`
-- `contradicting_evidence_ids[]`
+-- `corroborating_evidence_ids[]` (legacy; use `corroborating_evidence_reference_ids[]`)
+-- `contradicting_evidence_ids[]` (legacy; use `contradicting_evidence_reference_ids[]`)
 - `relevance_window` (start/end)
 - `expires_at` (nullable)
 - `geography` (nullable)
@@ -878,6 +894,22 @@ Credibility may be summarized downstream, but the EvidenceReference itself is an
 - `content_hash` (same name; must be treated as immutable)
 
 All documents that mention “evidence_id”, “evidence_reference_id”, or “source_reference” must map to this canonical contract.
+
+---
+
+## Appendix: Legacy compatibility mappings (do not use in new code)
+
+This appendix exists only to support interpretation of older drafts and any historic artifacts.
+
+| Legacy field | Canonical replacement | Deprecated? | Adapter required? | May appear in new code? |
+|---|---|---:|---:|---:|
+| `evidence_id` | `evidence_reference_id` | yes | yes (if encountered) | no |
+| `source_reference` | `source_url_or_reference` | yes | yes (if encountered) | no |
+| `corroborating_evidence_ids[]` | `corroborating_evidence_reference_ids[]` | yes | yes (if encountered) | no |
+| `contradicting_evidence_ids[]` | `contradicting_evidence_reference_ids[]` | yes | yes (if encountered) | no |
+| `signal_type` legacy taxonomy (`forecast`, `opinion`, `hypothesis`) | use Signal Engine / ExternalSignal taxonomy | yes | yes (mapping) | no |
+
+Rule: new implementation must use only the canonical wire contracts defined in §17.
 
 ### 17.3 EntityRef (minimal interface)
 

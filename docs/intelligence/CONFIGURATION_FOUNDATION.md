@@ -100,6 +100,9 @@ Array semantics:
 Operational timestamp rule:
 - Policy metadata fields like `changed_at` must be **null** (or otherwise excluded by policy) in fixtures so hashes are not contaminated by non-semantic timestamps.
 
+Terms governance vocabulary (canonical):
+- `terms_review_status` ∈ { `not_reviewed`, `approved`, `restricted`, `prohibited` }
+
 ---
 
 ## 6) Fail-closed behavior (required)

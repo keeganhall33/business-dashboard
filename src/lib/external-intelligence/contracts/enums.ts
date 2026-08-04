@@ -1,5 +1,9 @@
 // Phase A1: Canonical external-intelligence enums.
-// Keep this file minimal: only enums required by the A1 contracts.
+//
+// Naming boundary reminder:
+// - This module defines enums for external-intelligence objects.
+// - Do not introduce unqualified generic Finding/Hypothesis contracts under external-intelligence.
+// - Use explicit names: ExternalSignal, ExternalFinding, ExternalHypothesis.
 
 export type ObjectType =
   | "evidence_reference"

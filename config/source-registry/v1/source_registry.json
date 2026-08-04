@@ -152,7 +152,7 @@
       "paywalled": false,
       "licensing_required": false,
       "automation_suitability": "prohibited",
-      "terms_review_status": "restricted",
+      "terms_review_status": "prohibited",
       "copyright_handling": "link_only",
       "approved_fallback_method": "manual_review",
       "legal_risk_level": "high",
