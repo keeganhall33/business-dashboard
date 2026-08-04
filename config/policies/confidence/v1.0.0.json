@@ -1,0 +1,28 @@
+{
+  "schema_version": "policy_confidence_v1",
+  "policy_name": "confidence",
+  "semantic_version": "v1.0.0",
+  "effective_from": "2026-08-04",
+  "effective_until": null,
+  "fixture_status": "architecture_fixture",
+  "production_eligibility": "disabled",
+  "approval_status": "approved",
+  "approved_by": "architecture",
+  "changed_at": null,
+  "change_reason": "Initial fixture policy to validate PolicyRef + hashing + ConfidenceAxes shape.",
+  "rules": {
+    "no_fabricated_probabilities": true,
+    "unknown_remains_unknown": true,
+    "overall_is_derived": true,
+    "bounded_levels": ["known", "likely", "possible", "rumor", "speculation", "unknown"],
+    "required_axes": [
+      "evidence",
+      "interpretation",
+      "business_relevance",
+      "mechanism",
+      "timing",
+      "entity_resolution",
+      "overall"
+    ]
+  }
+}

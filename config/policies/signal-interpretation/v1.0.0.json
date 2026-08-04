@@ -1,0 +1,28 @@
+{
+  "schema_version": "policy_signal_interpretation_v1",
+  "policy_name": "signal-interpretation",
+  "semantic_version": "v1.0.0",
+  "effective_from": "2026-08-04",
+  "effective_until": null,
+  "fixture_status": "architecture_fixture",
+  "production_eligibility": "disabled",
+  "approval_status": "approved",
+  "approved_by": "architecture",
+  "changed_at": null,
+  "change_reason": "Initial fixture interpretation policy to validate policy pinning and deterministic fingerprint inputs.",
+  "rules": {
+    "require_claim_level_interpretation": true,
+    "raw_evidence_cannot_become_signal": true,
+    "syndication_not_independent": true,
+    "ai_outputs_non_authoritative": true
+  },
+  "fingerprint_inputs": [
+    "entities",
+    "signal_type",
+    "core_claim",
+    "event_window",
+    "domain",
+    "geography",
+    "mechanism"
+  ]
+}
