@@ -24,6 +24,8 @@ export type FusionCandidateType =
 
 export type FusionSourceEngine =
   | "intelligence_v1_detector"
+  | "dashboard_snapshots"
+  | "opportunity_pipeline"
   | "manual_fixture";
 
 export type FusionUrgency = "low" | "medium" | "high";
@@ -227,4 +229,3 @@ export type DailyDecisionPackage = {
     do_not_do: string[];
   };
 };
-
