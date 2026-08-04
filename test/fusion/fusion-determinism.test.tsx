@@ -51,5 +51,8 @@ test("fusion determinism: same inputs and versions produce same fingerprints, ra
   // Fingerprints are deterministic.
   assert.deepEqual(a.candidateFingerprints, b.candidateFingerprints);
   assert.equal(a.input_set_fingerprint, b.input_set_fingerprint);
-});
 
+  // Deterministic decision identity bytes/hash (redacts generated_at and narrative).
+  assert.equal(a.decision_deterministic_hash, b.decision_deterministic_hash);
+  assert.equal(a.decision_deterministic_bytes, b.decision_deterministic_bytes);
+});

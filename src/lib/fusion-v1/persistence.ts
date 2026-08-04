@@ -17,6 +17,7 @@ export async function persistFusionRunV1(input: {
   normalizedCandidatesById: Record<string, unknown>; // v1: normalized candidate snapshots
   gateByClusterId: Record<string, unknown>;
   ranking: RankedCandidate[];
+  conflictsByCandidateId?: Record<string, unknown>;
 }): Promise<{ run_id: string; decision_package_hash: string }> {
   const decision_package_hash = canonicalJsonSha256Hex(input.run);
 
@@ -55,8 +56,11 @@ export async function persistFusionRunV1(input: {
     cluster_id: (input.gateByClusterId[candidate_id] as { cluster_id?: string | null } | undefined)?.cluster_id ?? null
   })
   );
-  const insCandidates = await input.client.from("fusion_candidates_v1").insert(candidateRows);
-  if (insCandidates.error) throw new Error(`Failed to insert fusion candidates: ${insCandidates.error.message}`);
+  // Idempotent per (run_id, candidate_id)
+  for (const row of candidateRows) {
+    const up = await input.client.from("fusion_candidates_v1").upsert(row, { onConflict: "run_id,candidate_id" });
+    if (up.error) throw new Error(`Failed to upsert fusion candidate: ${up.error.message}`);
+  }
 
   const rankingRows: Array<Record<string, unknown>> = input.ranking.map((r, idx) => ({
     run_id: input.run.run_id,
@@ -67,11 +71,13 @@ export async function persistFusionRunV1(input: {
     feature_values: r.features,
     penalties: r.penalties,
     gates: r.gated,
-    conflicts: {},
+    conflicts: input.conflictsByCandidateId?.[r.candidate_id] ?? {},
     dedupe_cluster_id: r.cluster_id
   }));
-  const insRank = await input.client.from("fusion_rankings_v1").insert(rankingRows);
-  if (insRank.error) throw new Error(`Failed to insert fusion rankings: ${insRank.error.message}`);
+  for (const row of rankingRows) {
+    const up = await input.client.from("fusion_rankings_v1").upsert(row, { onConflict: "run_id,candidate_id" });
+    if (up.error) throw new Error(`Failed to upsert fusion ranking: ${up.error.message}`);
+  }
 
   return { run_id: input.run.run_id, decision_package_hash };
 }

@@ -1,5 +1,3 @@
-import crypto from "node:crypto";
-
 import type { DailyDecisionPackage, FusionCandidate, RankedCandidate, CandidatePenaltyBreakdown, CandidateFeatureValues } from "@/lib/fusion-v1/contracts";
 import { FUSION_POLICY_VERSION_V1 as POLICY_V, FUSION_SCORE_VERSION_V1 as SCORE_V } from "@/lib/fusion-v1/contracts";
 import { computeFusionCandidateFingerprint, computeFusionInputSetFingerprint } from "@/lib/fusion-v1/fingerprinting";
@@ -7,10 +5,11 @@ import { dedupeAndCluster } from "@/lib/fusion-v1/dedupe";
 import { applyGates } from "@/lib/fusion-v1/gates";
 import { scoreCandidateV1 } from "@/lib/fusion-v1/scoring";
 import type { StrategicConstraintsV1 } from "@/lib/fusion-v1/strategic-constraints";
+import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 
-function runId(nowIso: string): string {
-  const bytes = Buffer.from(nowIso + ":" + crypto.randomUUID());
-  return crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 24);
+function runIdFromInputSetFingerprint(input_set_fingerprint: string): string {
+  // Deterministic id: stable for identical input set + policy/score/constraints versions.
+  return canonicalJsonSha256Hex({ input_set_fingerprint }).slice(0, 24);
 }
 
 function buildWhyRankedLower(rc: RankedCandidate): string {
@@ -33,6 +32,8 @@ export function runFusionV1(input: {
   decision: DailyDecisionPackage;
   candidateFingerprints: Record<string, string>;
   input_set_fingerprint: string;
+  decision_deterministic_bytes: string;
+  decision_deterministic_hash: string;
 } {
   const candidateFingerprints: Record<string, string> = {};
   for (const c of input.candidates) candidateFingerprints[c.candidate_id] = computeFusionCandidateFingerprint(c);
@@ -52,6 +53,31 @@ export function runFusionV1(input: {
     candidateFingerprintById: candidateFingerprints
   });
 
+  // Conflict detection + deterministic resolution notes.
+  const conflicts_identified: Array<Record<string, unknown>> = [];
+  const conflictByCandidateId: Record<string, Record<string, unknown>> = {};
+
+  // Conflict rule (v1): if there is a traffic-quality diagnostic candidate and a scale_spend candidate,
+  // treat them as mutually exclusive within the same decision window/domains, and block scaling.
+  const diag = clustered.find((c) => c.merged.proposed_action?.action_key === "diagnose_traffic_quality_segments");
+  const scaler = clustered.find((c) => c.merged.proposed_action?.action_key === "scale_spend");
+  if (diag && scaler) {
+    const group_id = "conflict_traffic_quality_vs_scaling";
+    conflicts_identified.push({
+      group_id,
+      type: "opposing_actions",
+      member_candidate_ids: [diag.merged.candidate_id, scaler.merged.candidate_id].sort(),
+      resolution: {
+        chosen: diag.merged.candidate_id,
+        blocked: scaler.merged.candidate_id,
+        reason:
+          "Scaling acquisition is not eligible while a credible traffic-quality risk remains unresolved; prioritize diagnostic information-gain first."
+      }
+    });
+    conflictByCandidateId[scaler.merged.candidate_id] = { group_id, status: "blocked", reason: "traffic_quality_unresolved" };
+    conflictByCandidateId[diag.merged.candidate_id] = { group_id, status: "chosen", reason: "information_gain_priority" };
+  }
+
   const ranked: RankedCandidate[] = clustered.map((cluster) => {
     const gated = applyGates({
       candidate: cluster.merged,
@@ -59,6 +85,17 @@ export function runFusionV1(input: {
       constraints: input.strategic_constraints.constraints,
       activeActionKeys: input.activeActionKeys
     });
+
+    // Apply conflict-based gating (v1). This is deterministic and must be persisted.
+    const conflict = conflictByCandidateId[cluster.merged.candidate_id];
+    if (conflict && conflict.status === "blocked") {
+      gated.gated_out = true;
+      gated.reasons.push({
+        code: "mutually_exclusive",
+        detail: "Blocked by conflict-resolution policy: traffic-quality diagnostic must run before scaling."
+      });
+    }
+
     const scored = scoreCandidateV1(cluster.merged, input.nowIso);
 
     const penalties: CandidatePenaltyBreakdown = {
@@ -100,8 +137,12 @@ export function runFusionV1(input: {
   // Deterministic sort.
   ranked.sort((a, b) => {
     if (b.final_score !== a.final_score) return b.final_score - a.final_score;
-    // tie-break #2: info gain when confidence low
-    if (b.features.informationGain !== a.features.informationGain) return b.features.informationGain - a.features.informationGain;
+    // tie-break #2: info gain when confidence is low
+    const lowA = a.features.confidenceNorm < 0.5;
+    const lowB = b.features.confidenceNorm < 0.5;
+    if (lowA || lowB) {
+      if (b.features.informationGain !== a.features.informationGain) return b.features.informationGain - a.features.informationGain;
+    }
     // tie-break #3: expiration pressure
     if (b.features.expirationPressure !== a.features.expirationPressure) return b.features.expirationPressure - a.features.expirationPressure;
     // tie-break #4: lower effort wins => higher inverse wins
@@ -146,10 +187,13 @@ export function runFusionV1(input: {
     stop_condition = selectedCandidate.proposed_action?.stop_condition ?? null;
     review_by = selectedCandidate.proposed_action?.review_by ?? selectedCandidate.relevance_expires_at;
     confidence = selectedCandidate.confidence;
+  } else {
+    // Hold decision must include a review time and what would change it.
+    review_by = new Date(new Date(input.nowIso).getTime() + 24 * 3600 * 1000).toISOString();
   }
 
   const decision: DailyDecisionPackage = {
-    run_id: runId(input.nowIso),
+    run_id: runIdFromInputSetFingerprint(input_set_fingerprint),
     generated_at: input.nowIso,
     fusion_policy_version: POLICY_V,
     fusion_score_version: SCORE_V,
@@ -162,7 +206,7 @@ export function runFusionV1(input: {
     strategic_constraints_snapshot: constraintsSnapshot as unknown as Record<string, unknown>,
     all_candidate_ids: input.candidates.map((c) => c.candidate_id).sort(),
     deduplication_decisions: dedupe_decisions,
-    conflicts_identified: [],
+    conflicts_identified,
     ranking: ranked,
     selected: {
       candidate_id: selectedCandidate?.candidate_id ?? "hold",
@@ -180,7 +224,9 @@ export function runFusionV1(input: {
       evaluation_window,
       stop_condition,
       review_by,
-      what_changes_my_mind: selectedCandidate?.missing_evidence ?? [],
+      what_changes_my_mind:
+        selectedCandidate?.missing_evidence ??
+        ranked.flatMap((r) => r.gated.reasons.map((x) => `Remove gate: ${x.code}`)).slice(0, 8),
       do_not_do: [
         ...(constraintsSnapshot.premium_positioning.prohibited_action_categories ?? []).map((c) => `Do not do: ${c}`),
         ...(constraintsSnapshot.scarcity.prohibited_action_categories ?? []).map((c) => `Do not do: ${c}`)
@@ -202,5 +248,14 @@ export function runFusionV1(input: {
   decision.generated_narrative.do_not_do = Array.from(new Set(decision.generated_narrative.do_not_do));
   decision.selected.do_not_do = Array.from(new Set(decision.selected.do_not_do));
 
-  return { decision, candidateFingerprints, input_set_fingerprint };
+  // Deterministic decision identity: exclude volatile fields.
+  const decision_deterministic_view = {
+    ...decision,
+    generated_at: "__redacted__",
+    generated_narrative: "__redacted__"
+  };
+  const decision_deterministic_bytes = JSON.stringify(decision_deterministic_view);
+  const decision_deterministic_hash = canonicalJsonSha256Hex(decision_deterministic_view);
+
+  return { decision, candidateFingerprints, input_set_fingerprint, decision_deterministic_bytes, decision_deterministic_hash };
 }

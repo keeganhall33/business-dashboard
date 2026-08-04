@@ -1,4 +1,5 @@
 import type { FusionCandidate } from "@/lib/fusion-v1/contracts";
+import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 
 export type DedupeDecision = {
   cluster_id: string;
@@ -39,7 +40,6 @@ export function dedupeAndCluster(input: {
   const remaining = [...input.candidates];
   const clusters: ClusteredCandidate[] = [];
   const decisions: DedupeDecision[] = [];
-  let clusterN = 0;
 
   const popFirst = () => remaining.shift()!;
 
@@ -55,6 +55,19 @@ export function dedupeAndCluster(input: {
     // Find other candidates that should cluster with seed.
     for (let i = remaining.length - 1; i >= 0; i--) {
       const c = remaining[i]!;
+
+      // Do not cluster opposing actions (they must remain separate so conflicts can be resolved deterministically).
+      const seedAction = seed.proposed_action?.action_key ?? null;
+      const cAction = c.proposed_action?.action_key ?? null;
+      const opposing =
+        seedAction &&
+        cAction &&
+        seedAction !== cAction &&
+        ((seedAction === "scale_spend" && cAction === "diagnose_traffic_quality_segments") ||
+          (seedAction === "diagnose_traffic_quality_segments" && cAction === "scale_spend") ||
+          (seedAction === "scale_spend" && cAction === "pause_spend") ||
+          (seedAction === "pause_spend" && cAction === "scale_spend"));
+      if (opposing) continue;
 
       const cFingerprint = c.recommendation_fingerprint ?? input.candidateFingerprintById[c.candidate_id] ?? null;
       const sameFingerprint = seedFingerprint && cFingerprint && seedFingerprint === cFingerprint;
@@ -83,8 +96,10 @@ export function dedupeAndCluster(input: {
       }
     }
 
-    clusterN += 1;
-    const cluster_id = `cluster_${clusterN}`;
+    const memberIds = members.map((m) => m.candidate_id).slice().sort();
+    const hash = canonicalJsonSha256Hex({ members: memberIds }).slice(0, 10);
+    // Prefix with the smallest member id so lexicographic tie-break remains meaningful.
+    const cluster_id = `cluster_${memberIds[0]}_${hash}`;
 
     const merged: FusionCandidate = {
       ...seed,
@@ -137,7 +152,7 @@ export function dedupeAndCluster(input: {
 
     const dedupe_decision: DedupeDecision = {
       cluster_id,
-      member_candidate_ids: members.map((m) => m.candidate_id).sort(),
+      member_candidate_ids: memberIds,
       reason_codes: uniqStrings(reason_codes).sort()
     };
 

@@ -56,8 +56,9 @@ test("strategic-fit protection: competitor discount copy cannot win", () => {
   });
 
   assert.notEqual(out.decision.selected.candidate_id, "cand_competitor_move");
-  // Winner should be the traffic quality information-gain candidate in v1 fixtures.
-  assert.equal(out.decision.selected.candidate_id, "cluster_1");
+  const dedupe = out.decision.deduplication_decisions as unknown as Array<{ cluster_id: string; member_candidate_ids: string[] }>;
+  const selectedMembers = dedupe.find((d) => d.cluster_id === out.decision.selected.candidate_id)?.member_candidate_ids ?? [];
+  assert.deepEqual(selectedMembers, ["cand_traffic_quality_mismatch"]);
 });
 
 test("weak external fit: external opportunity does not win direct operating action", () => {
@@ -119,4 +120,3 @@ test("hold decision: hold wins when all operating candidates are gated out", () 
   });
   assert.equal(out.decision.selected.candidate_id, "hold");
 });
-
