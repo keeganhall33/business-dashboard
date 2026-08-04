@@ -5,6 +5,7 @@ import type {
   RetentionPolicy,
   RetractionStatus
 } from "@/lib/external-intelligence/contracts/enums";
+import { z } from "zod";
 
 export type EvidenceReference = {
   // Canonical id field name (never evidence_id)
@@ -50,3 +51,46 @@ export type EvidenceReference = {
 
   schema_version: string;
 };
+
+export const EvidenceReferenceSchema = z
+  .object({
+    evidence_reference_id: z.string().min(1),
+    source_id: z.string().min(1),
+    source_config_version: z.string().min(1),
+    source_set_id: z.string().min(1).nullable(),
+    source_artifact_identifier: z.string().min(1).nullable(),
+    source_url_or_reference: z.string().min(1),
+    content_hash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+    retrieved_at: z.string().datetime({ offset: true }),
+    published_at: z.string().datetime({ offset: true }).nullable(),
+    event_time: z.string().datetime({ offset: true }).nullable(),
+    evidence_type: z.enum([
+      "official_announcement",
+      "report",
+      "dataset",
+      "transcript",
+      "filing",
+      "price_result",
+      "schedule",
+      "social_post",
+      "other"
+    ]) as z.ZodType<EvidenceType>,
+    access_classification: z.enum([
+      "public",
+      "paywalled",
+      "licensed",
+      "terms_restricted",
+      "manual_only",
+      "unsuitable_for_automation"
+    ]) as z.ZodType<AccessClassification>,
+    legal_policy_version: z.string().min(1),
+    retention_policy: z.enum(["link_only", "quote_only", "summary_only", "licensed_fulltext"]) as z.ZodType<RetentionPolicy>,
+    excerpt_or_summary_reference: z.string().min(1).nullable(),
+    source_credibility_prior: z.enum(["high", "medium", "low"]),
+    correction_status: z.enum(["none", "corrected"]) as z.ZodType<CorrectionStatus>,
+    retraction_status: z.enum(["none", "retracted"]) as z.ZodType<RetractionStatus>,
+    supersedes_evidence_reference_id: z.string().min(1).nullable(),
+    provenance_metadata: z.record(z.string(), z.unknown()),
+    schema_version: z.string().min(1)
+  })
+  .strict();

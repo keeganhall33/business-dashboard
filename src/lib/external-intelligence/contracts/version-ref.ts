@@ -1,5 +1,6 @@
 import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 import type { ObjectType } from "@/lib/external-intelligence/contracts/enums";
+import { z } from "zod";
 
 export type VersionRef = {
   object_type: ObjectType;
@@ -21,6 +22,18 @@ export type VersionRef = {
   policy_version: string;
   created_at: string; // ISO-8601
 };
+
+export const VersionRefSchema = z
+  .object({
+    object_type: z.string() as z.ZodType<ObjectType>,
+    object_id: z.string().min(1),
+    version_id: z.string().min(1).nullable(),
+    content_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    schema_version: z.string().min(1),
+    policy_version: z.string().min(1),
+    created_at: z.string().datetime({ offset: true })
+  })
+  .strict();
 
 export function computeContentHash(value: unknown): string {
   // Reuse canonical JSON behavior from fusion-v1.

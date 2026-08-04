@@ -1,5 +1,6 @@
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 import type { ApprovalStatus } from "@/lib/external-intelligence/contracts/enums";
+import { z } from "zod";
 
 export type PolicyRef = {
   policy_name: string;
@@ -16,6 +17,20 @@ export type PolicyRef = {
   changed_at: string | null; // YYYY-MM-DD or ISO; null recommended for fixtures
   change_reason: string;
 };
+
+export const PolicyRefSchema = z
+  .object({
+    policy_name: z.string().min(1),
+    semantic_version: z.string().min(1),
+    content_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    effective_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    approval_status: z.enum(["draft", "approved", "retired"]) as z.ZodType<ApprovalStatus>,
+    approved_by: z.string().min(1).nullable(),
+    changed_at: z.string().min(1).nullable(),
+    change_reason: z.string().min(1)
+  })
+  .strict();
 
 /**
  * Deterministic PolicyRef hashing:

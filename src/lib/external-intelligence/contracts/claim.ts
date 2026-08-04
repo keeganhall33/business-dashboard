@@ -1,6 +1,7 @@
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 import type { EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
 import type { ClaimVerificationState, ObservedVsInferred } from "@/lib/external-intelligence/contracts/enums";
+import { z } from "zod";
 
 export type ClaimRelevanceWindow = {
   start: string | null; // ISO-8601
@@ -52,6 +53,45 @@ export type Claim = {
   schema_version: string;
   interpretation_policy_version: string;
 };
+
+export const ClaimSchema = z
+  .object({
+    claim_id: z.string().min(1),
+    claim_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    evidence_reference_id: z.string().min(1),
+    subject: z.any().nullable(),
+    predicate: z.string().min(1),
+    object: z.any(),
+    event_time: z.string().datetime({ offset: true }).nullable(),
+    announcement_time: z.string().datetime({ offset: true }).nullable(),
+    retrieved_at: z.string().datetime({ offset: true }),
+    observed_vs_inferred: z.enum(["observed", "inferred"]) as z.ZodType<ObservedVsInferred>,
+    verification_state: z.enum([
+      "unverified",
+      "developing",
+      "corroborated",
+      "contradicted",
+      "corrected",
+      "retracted"
+    ]) as z.ZodType<ClaimVerificationState>,
+    extraction_confidence: z
+      .object({
+        level: z.enum(["high", "medium", "low"]),
+        reasons: z.array(z.string())
+      })
+      .strict(),
+    contradiction_state: z.enum(["none", "contradicted"]),
+    correction_state: z.enum(["none", "corrected", "retracted"]),
+    relevance_window: z
+      .object({
+        start: z.string().datetime({ offset: true }).nullable(),
+        end: z.string().datetime({ offset: true }).nullable()
+      })
+      .strict(),
+    schema_version: z.string().min(1),
+    interpretation_policy_version: z.string().min(1)
+  })
+  .strict();
 
 export function computeClaimFingerprint(input: Omit<Claim, "claim_fingerprint">): string {
   // Deterministic fingerprint based on canonical claim content.

@@ -1,5 +1,6 @@
 import type { ConfidenceLevel } from "@/lib/external-intelligence/contracts/enums";
 import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
+import { z } from "zod";
 
 export type ConfidenceAxis = {
   level: ConfidenceLevel;
@@ -18,6 +19,18 @@ export type ConfidenceAxis = {
   missing_evidence_ids: string[];
 };
 
+export const ConfidenceAxisSchema = z
+  .object({
+    level: z.enum(["known", "likely", "possible", "rumor", "speculation", "unknown"]) as z.ZodType<ConfidenceLevel>,
+    bounded_score: z.number().min(0).max(1).nullable(),
+    reasons: z.array(z.string()),
+    blockers: z.array(z.string()),
+    supporting_reference_ids: z.array(z.any()),
+    contradicting_reference_ids: z.array(z.any()),
+    missing_evidence_ids: z.array(z.string())
+  })
+  .strict();
+
 export type ConfidenceAxes = {
   evidence: ConfidenceAxis;
   interpretation: ConfidenceAxis;
@@ -27,3 +40,15 @@ export type ConfidenceAxes = {
   entity_resolution: ConfidenceAxis;
   overall: ConfidenceAxis; // derived
 };
+
+export const ConfidenceAxesSchema = z
+  .object({
+    evidence: ConfidenceAxisSchema,
+    interpretation: ConfidenceAxisSchema,
+    business_relevance: ConfidenceAxisSchema,
+    mechanism: ConfidenceAxisSchema,
+    timing: ConfidenceAxisSchema,
+    entity_resolution: ConfidenceAxisSchema,
+    overall: ConfidenceAxisSchema
+  })
+  .strict();
