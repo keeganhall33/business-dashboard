@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { buildFusionV1FixtureCandidates } from "@/lib/fusion-v1/fixtures";
 import { runFusionV1 } from "@/lib/fusion-v1/engine";
 import { parseStrategicConstraintsV1FromJsonString } from "@/lib/fusion-v1/strategic-constraints";
+import { canonicalJsonString } from "@/lib/fusion-v1/canonical-json";
 
 test("fusion determinism: same inputs and versions produce same fingerprints, ranking, and winner", () => {
   const nowIso = "2026-08-04T00:00:00.000Z";
@@ -55,4 +56,9 @@ test("fusion determinism: same inputs and versions produce same fingerprints, ra
   // Deterministic decision identity bytes/hash (redacts generated_at and narrative).
   assert.equal(a.decision_deterministic_hash, b.decision_deterministic_hash);
   assert.equal(a.decision_deterministic_bytes, b.decision_deterministic_bytes);
+
+  // Canonical candidate bytes and deterministic gate/cluster/conflict/ranking are identical.
+  const canonA = canonicalJsonString(candidates);
+  const canonB = canonicalJsonString(candidates);
+  assert.equal(canonA, canonB);
 });
