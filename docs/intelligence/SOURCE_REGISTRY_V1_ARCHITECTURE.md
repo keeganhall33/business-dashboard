@@ -56,6 +56,13 @@ Rules:
 - A verified official event may update the World Model immediately (as a state update), but still does not force an operating action.
 - Licensing infeasibility blocks actionability.
 
+### 1.1 Canonical wire contracts (reference)
+
+This registry uses shared wire contracts defined in `EXTERNAL_KNOWLEDGE_MODEL.md`:
+- **EvidenceReference** canonical id: `evidence_reference_id`
+- **VersionRef** is required for downstream pinning and audit
+- **ConfidenceAxes** is the shared confidence structure
+
 ---
 
 ## 2) Canonical Source Registry contract (SourceRegistryEntry)

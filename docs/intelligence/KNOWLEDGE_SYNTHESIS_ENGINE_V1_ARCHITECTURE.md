@@ -85,7 +85,7 @@ A deterministic snapshot of what the synthesis run consumed.
 
 - `synthesis_input_id` **(Derived)** (from `synthesis_input_fingerprint`)
 - `synthesis_input_fingerprint` **(Derived)**
-- `signal_refs[]` **(Required)**: `{ signal_id, signal_version_ref }`
+- `signal_version_refs[]` **(Required)**: VersionRef (signal)
 - `window_start` / `window_end` **(Required)**
 
 - `entity_resolution_version` **(Required)**
@@ -116,8 +116,8 @@ Contradictions are first-class and preserved.
 - `contradiction_id` **(Derived)**
 - `contradiction_type` **(Required)**: direct | partial | source_disagreement | interpretation_disagreement | correction | retraction | stale | regime_change
 - `severity` **(Required)**: low | medium | high
-- `supporting_signal_refs[]` **(Required)**
-- `contradicting_signal_refs[]` **(Required)**
+- `supporting_version_refs[]` **(Required)**: VersionRef (signal and/or internal fact)
+- `contradicting_version_refs[]` **(Required)**: VersionRef (signal and/or internal fact)
 - `summary` **(Required)** (observed vs inferred clearly labeled)
 - `created_at` **(Derived)**
 
@@ -377,6 +377,10 @@ Each axis must include:
 - contradicting signals
 - missing evidence
 
+### 6.3 Shared ConfidenceAxes contract
+
+KSE uses the shared **ConfidenceAxes** contract defined in `EXTERNAL_KNOWLEDGE_MODEL.md`.
+
 ### 6.2 Uncertainty propagation
 If any upstream Signal is:
 - contradictory
@@ -509,6 +513,16 @@ Minimum provenance links required:
 - Signal → Claim ids
 - Claim → Evidence Reference id
 - Evidence Reference → Source id
+
+### 12.2 Internal vs external contradiction ownership
+
+When internal telemetry conflicts with external synthesis:
+- **KSE owns** the contradiction artifact (type: `internal_vs_external`) as a first-class contradiction.
+- The contradiction must link both sides via **VersionRef**:
+  - external Signal VersionRef(s)
+  - internal Fact/metric VersionRef(s) (or equivalent pinned internal snapshot ref)
+
+Fusion may decide what to do with the conflict, but the conflict must remain preserved and auditable at the synthesis layer.
 
 This provenance chain must be sufficient for a human to audit:
 - what was observed

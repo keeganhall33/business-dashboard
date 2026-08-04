@@ -105,3 +105,25 @@ The Fusion Engine reads a **version-controlled policy configuration** at:
 
 This file is **production-affecting policy**. Changing it can change Fusion eligibility and ranking behavior.
 Fusion runs must persist the deterministic content hash and the explicit config version.
+
+---
+
+## Fusion Context interface (stable; no raw Signals)
+
+Fusion must not reason over raw Signals.
+
+Fusion consumes a **FusionContext** payload composed only of version-pinned knowledge objects:
+- `world_model_state_ref` (VersionRef)
+- `active_finding_version_refs[]` (VersionRef)
+- `active_hypothesis_version_refs[]` (VersionRef)
+- `active_risk_version_refs[]` (VersionRef)
+- `active_opportunity_version_refs[]` (VersionRef)
+- `unresolved_contradiction_refs[]` (VersionRef)
+- `missing_evidence_refs[]` (VersionRef)
+
+Each FusionContext must also include:
+- `policy_versions` + `policy_hashes`
+- `generated_at`
+- `effective_window`
+
+This interface is the only permitted input surface from external intelligence into Fusion.

@@ -810,6 +810,183 @@ Raw articles must not flow directly into Fusion as recommendations.
 
 ---
 
+## 17) Shared wire contracts (canonical; used by all layers)
+
+These contracts close the minimum gaps required for **reproducibility**, **provenance**, and clean layer boundaries.
+
+### 17.1 VersionRef (required everywhere)
+
+Downstream consumers must never reference only a mutable object id. They must persist **exact version references**.
+
+**VersionRef** (Required fields):
+- `object_type` (signal | finding | hypothesis | world_model_state | opportunity | risk | evidence_reference | claim)
+- `object_id`
+- `version_id` (optional monotonic sequence for readability)
+- `content_hash` (deterministic; immutable version identity)
+- `schema_version`
+- `policy_version`
+- `created_at`
+
+**Canonical version strategy:**
+- `content_hash` is the immutable version identity.
+- `version_id` is optional and must not be used as the primary identity.
+
+### 17.2 EvidenceReference (canonical wire contract)
+
+Canonical id field name: **`evidence_reference_id`**.
+
+**EvidenceReference** (minimum fields):
+- `evidence_reference_id`
+- `source_id`
+- `source_reference` (URL/identifier)
+- `retrieved_at`
+- `published_at` (nullable)
+- `content_hash` (optional but preferred)
+- `relevance_window` (start/end)
+- `expires_at` (nullable)
+- `geography` (nullable)
+- `languages[]` (optional)
+
+**Credibility + contradiction hooks** (required for audit; values may be null initially):
+- `credibility` (score/level + reasons)
+- `corroborating_evidence_reference_ids[]`
+- `contradicting_evidence_reference_ids[]`
+
+All documents that mention “evidence_id” or “evidence_reference_id” must treat **`evidence_reference_id`** as canonical.
+
+### 17.3 EntityRef (minimal interface)
+
+Signals/Findings must reference entities via a minimal, stable interface.
+
+**EntityRef**:
+- `entity_id` (canonical)
+- `entity_type`
+- `display_name`
+- `aliases[]` (optional)
+- `resolution_confidence` (bounded level + reasons)
+- `ambiguity_status` (resolved | ambiguous | unknown)
+
+### 17.4 ConfidenceAxes (shared)
+
+All layers use the same multidimensional confidence object.
+
+**ConfidenceAxes**:
+- `evidence_confidence`
+- `interpretation_confidence`
+- `synthesis_confidence` (only for synthesis outputs)
+- `business_relevance_confidence`
+- `mechanism_confidence`
+- `timing_confidence`
+- `overall` (derived)
+
+Each axis must include:
+- `level` (bounded; no fabricated probabilities)
+- `reasons[]`
+- `blockers[]`
+- `supporting_version_refs[]` (VersionRef)
+- `contradicting_version_refs[]` (VersionRef)
+- `missing_evidence[]`
+
+### 17.5 Policy registry + versioning rule (canonical)
+
+Every run/output object must record:
+- the **policy versions** used (interpretation, synthesis, confidence, contradiction, disposition/eligibility, legal/access, entity-resolution)
+- and a deterministic **policy hash** for each.
+
+**Rule:** changing policy is production-affecting behavior and must be version-controlled, auditable, and persisted alongside outputs.
+
+---
+
+## 18) Strategic World Model (contract; no new subsystem)
+
+The Strategic World Model is the canonical representation of **current belief** derived from version-pinned Findings/Hypotheses and governed updates.
+
+### 18.1 WorldModelState
+
+**Identity + versioning**
+- `world_state_id`
+- `world_state_version` (optional monotonic)
+- `world_state_fingerprint` (deterministic)
+- `schema_version`
+- `policy_version`
+- `effective_at`
+- `generated_at`
+- `valid_from`
+- `valid_until` (nullable)
+- `supersedes_version` (nullable)
+- `superseded_by_version` (nullable)
+
+**State contents**
+- `entity_state_refs[]` (VersionRef)
+- `relationship_state_refs[]` (VersionRef)
+- `event_state_refs[]` (VersionRef)
+- `trend_state_refs[]` (VersionRef)
+
+- `active_finding_version_refs[]` (VersionRef)
+- `active_risk_refs[]` (VersionRef)
+- `active_opportunity_refs[]` (VersionRef)
+- `strategic_thesis_refs[]` (VersionRef)
+
+- `unresolved_contradiction_refs[]` (VersionRef)
+- `missing_evidence_refs[]` (VersionRef)
+
+- `regime` (identifier + description)
+- `confidence` (ConfidenceAxes)
+- `freshness` (bounded freshness state + reasons)
+- `affected_domains[]`
+- `affected_markets[]`
+
+**Auditability**
+- `source_signal_version_refs[]` (VersionRef)
+- `finding_version_refs[]` (VersionRef)
+- `synthesis_run_refs[]` (VersionRef)
+- `update_reason_codes[]`
+- `deterministic_rules_applied[]`
+- `human_review_status`
+- `correction_history[]`
+- `policy_hashes` (map)
+
+### 18.2 WorldModelUpdateCandidate
+
+**Required fields**
+- `wmuc_id`
+- `proposed_update_type`:
+  - create_state | strengthen_state | weaken_state | correct_state | supersede_state | expire_state | invalidate_state | preserve_historical | mark_unresolved
+- `target_object_ref` (VersionRef; nullable for create)
+- `previous_state_ref` (VersionRef)
+- `proposed_state_ref` (VersionRef)
+
+- `supporting_finding_version_refs[]` (VersionRef)
+- `contradicting_finding_version_refs[]` (VersionRef)
+- `missing_evidence[]`
+
+- `confidence` (ConfidenceAxes)
+- `freshness` (bounded)
+- `update_eligibility` (eligible | blocked | requires_review)
+- `required_review` (none | human)
+- `invalidation_conditions[]`
+- `policy_versions` + `policy_hashes`
+
+### 18.3 Update gate (hard requirements)
+
+A World Model update may occur only when:
+- exact **Finding versions** are pinned (VersionRef)
+- provenance is complete (Evidence→Claims→Signals→Synthesis→Finding)
+- contradiction policy has run
+- confidence + freshness satisfy update policy
+- legal/access requirements remain valid
+- required human review is complete
+- deterministic fingerprinting succeeds
+
+### 18.4 Current truth vs historical truth
+
+- **Current truth**: the latest eligible WorldModelState for a domain/window/regime.
+- **Historical truth**: prior WorldModelState versions retained indefinitely for audit.
+
+Historical state must never be destructively overwritten.
+
+---
+
 ## 9) How this model evolves over time
 
 - New sources map into the same objects: Entity/Event/Relationship/Trend/Opportunity/Risk.
