@@ -310,6 +310,82 @@ Rule: the system may elevate a set of individually weak signals into an External
 - the combined mechanism hypothesis
 - missing evidence and what would validate/invalidate
 
+### Worked weak-signal intersection examples (non-causal)
+
+Each example below shows:
+- component signals (individually weak)
+- connecting entities/relationships
+- combined mechanism hypothesis
+- missing evidence
+- why it survives filtering
+- disposition outcome (monitor | validate | external finding | opportunity | fusion context)
+
+1) **Sports × Collectibles × Regional demand**
+   - Component signals:
+     - Social: a team/athlete highlight clip goes viral (weak, noisy)
+     - Market: a small rise in memorabilia auction closes for that athlete (weak)
+     - Search: localized Google Trends increase in athlete/team query (weak)
+   - Links:
+     - athlete → plays_for → team → located_in → geography
+     - athlete → relevant_to → memorabilia category
+   - Mechanism (hypothesis): regional attention spike may increase collector demand for a narrow window.
+   - Missing evidence: corroborating auction volume, pricing breadth, and whether attention is sustained.
+   - Survives filtering because: cross-domain conjunction + time-bounded window.
+   - Disposition: **monitor** → **validate** if corroborated by primary transaction data.
+
+2) **Documentary × Search momentum × existing artwork**
+   - Component signals:
+     - Event: documentary announced/released (single-source or early report)
+     - Trend: search demand rises for subject
+     - Internal inventory: existing artwork subject alignment (internal fact)
+   - Links:
+     - documentary → about → entity(subject)
+     - trend(search) → subject
+   - Mechanism (hypothesis): documentary drives renewed interest; existing artwork can be timed to demand.
+   - Missing evidence: confirmation of release date, sustained search trend, competitor releases.
+   - Survives filtering because: affects demand timing and subject selection.
+   - Disposition: **validate** → **opportunity** if release timing and sustained trend corroborate.
+
+3) **Music tour × Geographic customer concentration**
+   - Component signals:
+     - Event: tour dates announced (credible)
+     - Trend: city-level social chatter increases (weak)
+     - Internal: customer concentration in tour cities (internal fact)
+   - Links:
+     - musician → tours_in → geography
+     - customer_segment → concentrated_in → geography
+   - Mechanism (hypothesis): tour attention increases local willingness-to-buy premium work.
+   - Missing evidence: licensing feasibility, venue partner access, tour marketing intensity.
+   - Survives filtering because: targets a specific market window.
+   - Disposition: **external finding** → **opportunity** if corroborated by search/social + internal demand.
+
+4) **Anniversary × Licensing feasibility × Competitor inactivity**
+   - Component signals:
+     - Calendar: milestone anniversary upcoming
+     - Signal: rights-holder newsroom indicates licensing openness (weak)
+     - Competitor monitoring: no comparable premium releases in last 12–18 months (weak)
+   - Links:
+     - entity(subject) → has_anniversary → date
+     - rights_holder → owns_rights_to → subject
+     - competitor → released → comparable_product (absence as weak signal)
+   - Mechanism (hypothesis): rare window for premium timed release if licensing is feasible.
+   - Missing evidence: confirmed licensing path, collector appetite, channel strategy.
+   - Survives filtering because: scarcity + timing + rights feasibility.
+   - Disposition: **validate** → **opportunity**.
+
+5) **Auction results × Subject momentum × Collector liquidity**
+   - Component signals:
+     - Market: strong auction closes for a subject category (credible)
+     - Trend: search/social modest lift for the subject (weak)
+     - Economic: liquidity proxy stable (credible)
+   - Links:
+     - subject_category → correlates_with → collector spending
+     - economic_indicator → influences → discretionary spending (explicitly non-causal unless proven)
+   - Mechanism (hypothesis): collector willingness-to-pay may support premium positioning for a narrow window.
+   - Missing evidence: breadth across auction houses, competitor supply, internal conversion signals.
+   - Survives filtering because: transaction truth + timing.
+   - Disposition: **external finding** → **fusion context** (contextual reprioritization only).
+
 ---
 
 ## 5) Relationship taxonomy (canonical)

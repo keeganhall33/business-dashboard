@@ -436,9 +436,9 @@ Noisy, difficult, costly, or legally constrained sources.
 
 ---
 
-## Recommended initial portfolio (v1) — 20 sources
+## Recommended initial portfolio (v1) — 24 sources
 
-Goal: strong coverage across sports, sports business, music, entertainment, art, galleries, collectors, memorabilia/trading cards, search, economics, competitor activity, and calendar/milestones.
+Goal: strong coverage across sports, sports business, music, entertainment, art, galleries, collectors, memorabilia/trading cards, licensing/IP, competitor activity, search, economics, calendars/milestones, platform/regulatory, and fulfillment/ops risk.
 
 For each, we note: tier, cadence, noise, and intended feed target:
 - **World model only**
@@ -446,40 +446,18 @@ For each, we note: tier, cadence, noise, and intended feed target:
 - **Fusion context**
 - **All three**
 
-1) NFL official (transactions + schedule)
-   - source_id: `sports.nfl.official`
+1) Major leagues official (canonical transactions + schedules set)
+   - source_id: `sports.major_leagues.official`
    - domains: sports ecosystem, calendar/milestones
-   - type: official/primary
-   - unique signal: canonical transactions, schedules, official confirmations
+   - type: primary/official set
+   - unique signal: canonical transactions, schedules, awards, roster changes (official confirmations)
    - cadence: daily | latency: low
    - credibility: high | noise: low | duplication: medium
-   - access: public_webpage (official); avoid prohibited scraping; prefer official feeds/exports when available
+   - access: official public pages, official feeds/exports where available; manual-only if terms-restricted
    - feed: world model + opportunity detection
-   - v1 reason: authoritative state changes and time-bounded catalysts
+   - v1 reason: authoritative state changes and time-bounded catalysts across major leagues
 
-2) NBA official
-   - source_id: `sports.nba.official`
-   - domains: sports ecosystem, calendar/milestones
-   - type: official/primary
-   - unique signal: official confirmations and schedule/transaction timing
-   - cadence: daily | latency: low
-   - credibility: high | noise: low | duplication: medium
-   - access: public_webpage (official)
-   - feed: world model + opportunity detection
-   - v1 reason: authoritative state + catalysts
-
-3) MLB official
-   - source_id: `sports.mlb.official`
-   - domains: sports ecosystem, calendar/milestones
-   - type: official/primary
-   - unique signal: official confirmations and schedule/transaction timing
-   - cadence: daily | latency: low
-   - credibility: high | noise: low | duplication: medium
-   - access: public_webpage (official)
-   - feed: world model + opportunity detection
-   - v1 reason: authoritative state + catalysts
-
-4) NCAA official
+2) NCAA official
    - source_id: `sports.ncaa.official`
    - domains: NIL, college sports, governance
    - type: official/primary
@@ -490,7 +468,7 @@ For each, we note: tier, cadence, noise, and intended feed target:
    - feed: world model
    - v1 reason: canonical governance context
 
-5) Sportico
+3) Sportico
    - source_id: `sports_business.sportico`
    - domains: sports business, partnerships/licensing
    - type: specialist industry reporting (secondary)
@@ -501,7 +479,7 @@ For each, we note: tier, cadence, noise, and intended feed target:
    - feed: opportunity detection + fusion context
    - v1 reason: business-mechanism lens (not game news)
 
-6) Front Office Sports
+4) Boardroom
    - source_id: `sports_business.front_office_sports`
    - domains: sports business, sponsorship/brand collaborations
    - type: industry reporting (secondary)
@@ -512,75 +490,221 @@ For each, we note: tier, cadence, noise, and intended feed target:
    - feed: opportunity detection
    - v1 reason: recurring sponsorship pattern detection
 
-7) Boardroom
    - source_id: `sports_business.boardroom`
-   - domains: sports × entertainment × collectibles (cross-domain)
+   - domains: sports × entertainment × collectibles × brand partnerships (cross-domain)
    - type: culture/business reporting (secondary)
-   - unique signal: intersection/crossover weak signals
+   - unique signal: crossover catalysts and athlete-business moves that connect domains
    - cadence: weekly | latency: medium
    - credibility: medium | noise: medium | duplication: medium
    - access: public_webpage/newsletter
    - feed: opportunity detection (cross-domain)
-   - v1 reason: intersection-first catalysts
+   - v1 reason: preserves cross-domain opportunity discovery without becoming a news firehose
 
-8) The Athletic (major beats)
-   - source_id: `sports.the_athletic`
-   - domains: sports ecosystem
-   - type: specialist reporting (secondary)
-   - unique signal: early context and beat-level timing
+5) Front Office Sports
+   - source_id: `sports_business.front_office_sports`
+   - domains: sports business, sponsorship/brand collaborations
+   - type: industry reporting (secondary)
+   - unique signal: sponsorship patterns, partnership signals
    - cadence: daily | latency: low
-   - credibility: medium | noise: medium | duplication: medium-high
-   - access: paywalled (terms-restricted); fallback: corroborate via official league/team announcements
-   - feed: world model + opportunity detection
-   - v1 reason: earlier weak signals with required corroboration
+   - credibility: medium | noise: medium | duplication: medium
+   - access: public_webpage/newsletter
+   - feed: opportunity detection
+   - v1 reason: recurring sponsorship pattern detection
 
-9) Sotheby’s results/catalog
+6) League schedules + Hall of Fame + awards calendars (canonical sports calendar set)
+   - source_id: `calendar.sports.milestones`
+   - domains: calendars/anniversaries/milestones, sports ecosystem
+   - type: primary/official calendar set
+   - unique signal: time-bounded catalysts (HOF, awards, major schedule milestones)
+   - cadence: seasonal/daily during seasons | latency: low
+   - credibility: high | noise: low | duplication: low
+   - access: public_webpage / official calendar feeds where available; manual-only if terms-restricted
+   - feed: world model + opportunity detection
+   - v1 reason: timing is the backbone of opportunity windows
+
+7) USPTO (trademarks)
+   - source_id: `licensing.uspto.trademarks`
+   - domains: licensing/IP, brand partnerships
+   - type: primary/government
+   - unique signal: early intent signals before launches
+   - cadence: weekly | latency: medium
+   - credibility: high (filing), medium (meaning) | noise: medium | duplication: low
+   - access: official search/export; avoid prohibited scraping; use compliant export/API where available
+   - feed: world model + opportunity detection
+   - v1 reason: licensing/IP visibility without relying on rumor
+
+8) Rights-holder + league licensing newsrooms (canonical licensing set)
+   - source_id: `licensing.rights_holders.newsrooms`
+   - domains: licensing/IP, partnerships
+   - type: primary/official set
+   - unique signal: confirmed licensing availability, disputes, policy constraints
+   - cadence: episodic | latency: low
+   - credibility: high | noise: low | duplication: medium
+   - access: public_webpage/newsletters (official)
+   - feed: world model
+   - v1 reason: turns licensing into explicit constraints/opportunities
+
+9) Curated competitor monitoring set (governed collection)
+   - source_id: `competitors.curated.set`
+   - domains: competitor activity, galleries, substitute products, collectibles
+   - type: primary/observational set (many sources)
+   - unique signal: competitor launches, pricing, editions/scarcity, representation, repositioning
+   - cadence: weekly (manual report acceptable) | latency: medium
+   - credibility: medium | noise: medium | duplication: medium
+   - access: manual_report initially; future: allowlisted APIs/RSS/newsletters only
+   - feed: world model + opportunity detection
+   - v1 reason: competitive landscape is decision-critical but must be governed
+
+10) Curated gallery roster + representation set (governed collection)
+   - source_id: `galleries.curated.rosters`
+   - domains: galleries and represented artists, art market
+   - type: primary/official set
+   - unique signal: representation changes, exhibitions, fair participation, artist launches
+   - cadence: weekly | latency: medium
+   - credibility: high | noise: low–medium | duplication: medium
+   - access: newsletters/press releases preferred; manual-only for paywalled rosters
+   - feed: world model + opportunity detection
+   - v1 reason: gallery ecosystem shifts affect positioning and partnerships
+
+11) Meta policy + product updates (canonical set)
+   - source_id: `platform.meta.policy_updates`
+   - domains: platform/regulatory changes, attribution/privacy
+   - type: primary/official
+   - unique signal: policy/algorithm changes affecting marketing feasibility and attribution assumptions
+   - cadence: weekly | latency: medium
+   - credibility: high | noise: low | duplication: medium
+   - access: official docs/changelogs (manual ok)
+   - feed: fusion context
+   - v1 reason: prevents invalid attribution or platform-assumption decisions
+
+12) Google policy + search/ads/analytics updates (canonical set)
+   - source_id: `platform.google.policy_updates`
+   - domains: platform/regulatory changes, search demand instrumentation
+   - type: primary/official
+   - unique signal: changes that affect measurement and demand capture
+   - cadence: weekly | latency: medium
+   - credibility: high | noise: low | duplication: medium
+   - access: official docs/changelogs
+   - feed: fusion context
+   - v1 reason: protects measurement integrity
+
+13) FTC / DOJ / SEC releases (regulatory set)
+   - source_id: `regulatory.us.releases`
+   - domains: regulatory/legal, platform/regulatory changes
+   - type: primary/government
+   - unique signal: enforcement/policy that changes platform and market constraints
+   - cadence: episodic | latency: low
+   - credibility: high | noise: low | duplication: medium
+   - access: public_webpage/RSS where available
+   - feed: fusion context
+   - v1 reason: constraint changes should adjust risk posture
+
+14) Carrier + logistics service alerts (canonical set)
+   - source_id: `ops.shipping.alerts`
+   - domains: fulfillment/shipping/operational risks
+   - type: primary/official set
+   - unique signal: delivery disruptions impacting customer experience
+   - cadence: episodic | latency: low
+   - credibility: high | noise: low | duplication: low
+   - access: official service alert pages / RSS where available
+   - feed: fusion context
+   - v1 reason: operational constraints must be explicit
+
+15) Sotheby’s results/catalog
    - source_id: `art_market.sothebys`
    - tier: 1 | cadence: weekly | noise: low | feed: world model + fusion context
 
-10) Christie’s results/catalog
-   - source_id: `art_market.christies`
-   - tier: 1 | cadence: weekly | noise: low | feed: world model + fusion context
-
-11) Heritage Auctions (memorabilia)
+16) Heritage Auctions (memorabilia)
    - source_id: `memorabilia.heritage`
    - tier: 1 | cadence: weekly | noise: low | feed: world model + fusion context
 
-12) Goldin
-   - source_id: `memorabilia.goldin`
-   - tier: 1 | cadence: weekly | noise: low | feed: world model + opportunity detection
-
-13) PSA
+17) PSA
    - source_id: `trading_cards.psa`
    - tier: 1 | cadence: weekly | noise: low | feed: world model
 
-14) Card Ladder
+18) Trading card market pricing (Card Ladder)
    - source_id: `trading_cards.card_ladder`
-   - tier: 2 | cadence: daily | noise: med | feed: trend detection + opportunity detection
+   - domains: trading cards, collector market
+   - type: structured market data (secondary)
+   - unique signal: price movement and demand indicators across cards
+   - cadence: daily | latency: low
+   - credibility: medium | noise: medium | duplication: medium-high
+   - access: paywalled/licensed; fallback: rely on auction results + PSA supply signals until licensed access is approved
+   - feed: opportunity detection
+   - v1 reason: structured market trend signal for collector spending substitutes
 
-15) Google Trends
+19) Google Trends
    - source_id: `search.google_trends`
-   - tier: 1 | cadence: daily | noise: med | feed: trend detection + fusion context
+   - domains: search demand, social momentum (proxy)
+   - type: structured market data
+   - unique signal: normalized demand curves and timing windows
+   - cadence: daily | latency: low
+   - credibility: medium-high | noise: medium | duplication: medium
+   - access: official product; use compliant access (no prohibited scraping)
+   - feed: fusion context + opportunity detection
+   - v1 reason: demand timing and novelty detection
 
-16) FRED (Federal Reserve economic series)
+20) FRED (Federal Reserve economic series)
    - source_id: `economics.fred`
-   - tier: 1 | cadence: weekly/monthly | noise: low | feed: fusion context
+   - domains: economic conditions, discretionary-spending context
+   - type: structured government data
+   - unique signal: macro regime context (liquidity/consumer confidence proxies)
+   - cadence: weekly/monthly | latency: medium
+   - credibility: high | noise: low | duplication: low
+   - access: official API/web
+   - feed: fusion context
+   - v1 reason: macro context for premium pricing posture
 
-17) Deadline
+21) Deadline
    - source_id: `entertainment.deadline`
-   - tier: 2 | cadence: daily | noise: med | feed: opportunity detection
+   - domains: entertainment, cultural events
+   - type: industry reporting (secondary)
+   - unique signal: early project/biopic/documentary announcements
+   - cadence: daily | latency: low
+   - credibility: medium-high | noise: medium | duplication: medium
+   - access: public_webpage/newsletter
+   - feed: opportunity detection
+   - v1 reason: catalyst events for subject momentum
 
-18) Variety
-   - source_id: `entertainment.variety`
-   - tier: 2 | cadence: daily | noise: med | feed: corroboration + opportunity detection
-
-19) Pollstar
+22) Pollstar
    - source_id: `music.pollstar`
-   - tier: 2 | cadence: weekly | noise: med | feed: world model + opportunity detection
+   - domains: music, touring geography
+   - type: specialist industry data/reporting (secondary)
+   - unique signal: tour momentum and venue economics
+   - cadence: weekly | latency: medium
+   - credibility: medium-high | noise: medium | duplication: medium
+   - access: paywalled/licensed; fallback: use official artist/venue announcements until access approved
+   - feed: world model + opportunity detection
+   - v1 reason: touring signals connect to geographic opportunity windows
 
-20) YouTube (official channels + releases)
+23) YouTube (official channels + releases)
    - source_id: `social.youtube`
-   - tier: 2 | cadence: daily | noise: high | feed: opportunity detection (weak signals) + corroboration
+   - domains: social momentum, media releases
+   - type: platform signal (weak by default)
+   - unique signal: release timing and early momentum
+   - cadence: daily | latency: low
+   - credibility: medium | noise: high | duplication: high
+   - access: platform APIs/feeds where allowed; otherwise manual review; do not violate terms
+   - feed: monitor → validate only (must be corroborated)
+   - v1 reason: early weak signals for cross-domain conjunctions
+
+24) Variety
+   - source_id: `entertainment.variety`
+   - domains: entertainment, partnerships/licensing
+   - type: industry reporting (secondary)
+   - unique signal: corroboration and breadth for entertainment/business signals
+   - cadence: daily | latency: low
+   - credibility: medium | noise: medium | duplication: high
+   - access: public_webpage/newsletter (respect terms)
+   - feed: corroboration + opportunity detection
+   - v1 reason: corroborates and contextualizes entertainment catalysts
+
+Removed from v1 (explicit substitutions):
+- Christie’s (kept Sotheby’s as the single auction-house anchor to reduce duplication)
+- Goldin (kept Heritage as memorabilia anchor to reduce duplication)
+- The Athletic (paywalled; kept official league sources + sports business reporting)
+
+Kept: Boardroom (explicitly retained for cross-domain value).
 
 ---
 
@@ -621,3 +745,49 @@ Competitors are not only other graphite artists. The universe includes:
 Competitor moves produce External Signals and External Findings; they require corroboration and do not imply outcomes.
 
 **Community sources (e.g. Reddit, X/Instagram) remain Tier 3 by default** and should be used for weak-signal discovery only until corroborated.
+
+---
+
+## Initial implementation sequencing (no implementation)
+
+### Wave 1 (6–8 sources): highest value, lowest legal/operational risk
+Goal: establish high-signal primary/structured context and low-noise catalysts.
+
+- `sports.major_leagues.official` (world model + opportunity)
+- `sports.ncaa.official` (world model)
+- `calendar.sports.milestones` (world model + opportunity)
+- `search.google_trends` (fusion context + opportunity)
+- `economics.fred` (fusion context)
+- `ops.shipping.alerts` (fusion context)
+- `licensing.uspto.trademarks` (world model + opportunity)
+
+Domains usable after Wave 1:
+- sports ecosystem + NIL governance + milestone timing
+- search demand and macro conditions
+- shipping/ops constraint context
+- early licensing/IP intent signals
+
+Knowledge objects populated:
+- Source Record, Evidence Reference
+- External Signal (verified events + trends)
+- Entity/Event/Relationship updates (core)
+- Trends (search + economic)
+
+Key blind spots that remain:
+- competitor activity (needs governed competitor set)
+- galleries/representation moves
+- entertainment/music catalysts
+
+### Wave 2: domain-depth + competitor and gallery expansion
+- `competitors.curated.set`
+- `galleries.curated.rosters`
+- `art_market.sothebys`
+- `memorabilia.heritage`
+- `trading_cards.psa`
+
+### Wave 3: noisier or terms-restricted expansion sources
+- `sports_business.sportico` (terms-restricted)
+- `music.pollstar` (licensed)
+- `trading_cards.card_ladder` (licensed)
+- `social.youtube` (high noise; weak-signal only)
+- `entertainment.variety` (high overlap)
