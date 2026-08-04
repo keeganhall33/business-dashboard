@@ -8,8 +8,6 @@ const FixtureStatusSchema = z.literal("architecture_fixture");
 const ProductionEligibilitySchema = z.literal("disabled");
 
 const LifecycleStatusSchema = z.enum(["proposed", "trial", "active", "paused", "retired"]);
-const ImplementationStatusSchema = z.enum(["unimplemented", "implemented", "deprecated"]);
-
 const AutomationSuitabilitySchema = z.enum(["allowed", "manual_only", "prohibited"]);
 const TermsReviewStatusSchema = z.enum(["not_reviewed", "restricted", "approved"]);
 

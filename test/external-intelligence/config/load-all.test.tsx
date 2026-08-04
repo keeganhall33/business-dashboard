@@ -29,4 +29,13 @@ test("A2 config loaders: load fixtures fail-closed and preserve disabled state",
     const p = cfg.policies[k]!.policy_ref;
     assert.match(p.content_hash, /^[a-f0-9]{64}$/);
   }
+
+  // Bundle must be blocked for production use.
+  assert.equal(cfg.eligibility_summary.blocked, true);
+  assert.ok(cfg.blocking_reasons.length > 0);
+  assert.match(cfg.registry_content_hash, /^[a-f0-9]{64}$/);
+  assert.match(cfg.source_sets_content_hash, /^[a-f0-9]{64}$/);
+
+  // Unreviewed terms must produce automation block reasons (fail-closed for automation).
+  assert.ok(cfg.automation_block_reasons_by_source_id["example.paywalled.manual_only"]!.length > 0);
 });

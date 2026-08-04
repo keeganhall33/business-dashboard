@@ -2,9 +2,12 @@ import fs from "node:fs";
 
 import { SourceSetsFileSchema, assertUniqueIds } from "@/lib/external-intelligence/config/contracts";
 import { SOURCE_SETS_V1_PATH } from "@/lib/external-intelligence/config/paths";
+import { createSourceSetsContentHash } from "@/lib/external-intelligence/config/hashing";
+import { deepFreeze } from "@/lib/external-intelligence/config/freeze";
 
 export type LoadedSourceSets = {
   sets: ReturnType<typeof SourceSetsFileSchema.parse>;
+  source_sets_content_hash: string;
 };
 
 export function loadSourceSetsV1(input: { knownSourceIds: string[] }): LoadedSourceSets {
@@ -46,5 +49,7 @@ export function loadSourceSetsV1(input: { knownSourceIds: string[] }): LoadedSou
   sets.source_sets.sort((a, b) => a.source_set_id.localeCompare(b.source_set_id));
   sets.memberships.sort((a, b) => membershipKey(a).localeCompare(membershipKey(b)));
 
-  return { sets };
+  const source_sets_content_hash = createSourceSetsContentHash(sets);
+
+  return deepFreeze({ sets, source_sets_content_hash });
 }
