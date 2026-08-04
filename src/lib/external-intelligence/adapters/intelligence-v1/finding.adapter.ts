@@ -44,7 +44,7 @@ export function createInternalFindingVersionRef(input: { finding: Finding }): In
   const content_hash = createVersionRefContentHash(semantic);
 
   const finding_version_ref: VersionRef = {
-    object_type: "finding",
+    object_type: "internal_finding",
     object_id: f.finding_id,
     version_id: null,
     content_hash,

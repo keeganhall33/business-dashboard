@@ -10,7 +10,10 @@ import { createPolicyRefContentHash } from "@/lib/external-intelligence/hashing/
 
 test("adapter policy content_hash is deterministic", () => {
   const h1 = createPolicyRefContentHash(INTELLIGENCE_V1_ADAPTER_POLICY_HASH_SEMANTIC_INPUT);
-  const h2 = createPolicyRefContentHash({ ...INTELLIGENCE_V1_ADAPTER_POLICY_HASH_SEMANTIC_INPUT, changed_at: "2099-01-01" } as any);
+  const h2 = createPolicyRefContentHash({
+    ...INTELLIGENCE_V1_ADAPTER_POLICY_HASH_SEMANTIC_INPUT,
+    changed_at: "2099-01-01"
+  });
   assert.equal(h1, h2);
   assert.equal(INTELLIGENCE_V1_ADAPTER_POLICY_REF.content_hash, h1);
 });

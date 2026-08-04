@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInternalFindingVersionRef } from "@/lib/external-intelligence/adapters/intelligence-v1/finding.adapter";
+import type { Finding } from "@/lib/intelligence-v1/contracts";
 
 test("Internal Finding envelope yields deterministic version hash ignoring created_at", () => {
-  const finding = {
+  const finding: Finding = {
     finding_id: "f1",
     detector_id: "d1",
     engine_version: "e1",
@@ -22,9 +23,9 @@ test("Internal Finding envelope yields deterministic version hash ignoring creat
     created_at: "2026-08-04T00:00:00Z"
   };
 
-  const a = createInternalFindingVersionRef({ finding: finding as any });
-  const b = createInternalFindingVersionRef({ finding: { ...finding, created_at: "2099-01-01T00:00:00Z" } as any });
+  const a = createInternalFindingVersionRef({ finding });
+  const b = createInternalFindingVersionRef({ finding: { ...finding, created_at: "2099-01-01T00:00:00Z" } as unknown as Finding });
 
   assert.equal(a.finding_version_ref.content_hash, b.finding_version_ref.content_hash);
-  assert.equal(a.finding_version_ref.object_type, "finding");
+  assert.equal(a.finding_version_ref.object_type, "internal_finding");
 });

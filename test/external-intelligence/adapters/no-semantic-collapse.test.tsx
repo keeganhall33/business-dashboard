@@ -25,5 +25,5 @@ test("Internal Finding envelope is not an ExternalSignal", () => {
   };
 
   const env = createInternalFindingVersionRef({ finding });
-  assert.throws(() => ExternalSignalSchema.parse(env as any));
+  assert.throws(() => ExternalSignalSchema.parse(env as unknown));
 });

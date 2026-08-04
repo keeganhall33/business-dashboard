@@ -38,5 +38,21 @@ export function adaptInternalEvidenceEdgeToVersionedEdge(input: {
   if (!from_ref) throw new Error(`cannot pin from endpoint: ${e.from_type}:${e.from_id}`);
   if (!to_ref) throw new Error(`cannot pin to endpoint: ${e.to_type}:${e.to_id}`);
 
+  const expectedType = (t: EvidenceEdge["from_type"] | EvidenceEdge["to_type"]) => {
+    if (t === "fact") return "internal_fact";
+    if (t === "finding") return "internal_finding";
+    if (t === "hypothesis") return "internal_hypothesis";
+    return null;
+  };
+
+  const expFrom = expectedType(e.from_type);
+  const expTo = expectedType(e.to_type);
+  if (expFrom && from_ref.object_type !== expFrom) {
+    throw new Error(`from endpoint object_type mismatch: expected=${expFrom} got=${from_ref.object_type}`);
+  }
+  if (expTo && to_ref.object_type !== expTo) {
+    throw new Error(`to endpoint object_type mismatch: expected=${expTo} got=${to_ref.object_type}`);
+  }
+
   return deepFreeze({ edge: e, from_ref, to_ref, adapter_policy: INTELLIGENCE_V1_ADAPTER_POLICY_REF });
 }

@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInternalFindingVersionRef } from "@/lib/external-intelligence/adapters/intelligence-v1/finding.adapter";
+import type { Finding } from "@/lib/intelligence-v1/contracts";
 
 test("Adapter outputs are frozen", () => {
-  const finding = {
+  const finding: Finding = {
     finding_id: "f1",
     detector_id: "d1",
     engine_version: "e1",
@@ -22,7 +23,7 @@ test("Adapter outputs are frozen", () => {
     created_at: "2026-08-04T00:00:00Z"
   };
 
-  const out = createInternalFindingVersionRef({ finding: finding as any });
+  const out = createInternalFindingVersionRef({ finding });
   assert.equal(Object.isFrozen(out), true);
   assert.equal(Object.isFrozen(out.finding_version_ref), true);
 });

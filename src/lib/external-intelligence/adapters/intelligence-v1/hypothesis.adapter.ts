@@ -10,14 +10,26 @@ import { adaptInternalConfidenceToConfidenceAxes } from "@/lib/external-intellig
 export type InternalHypothesisCompatibilityEnvelope = {
   hypothesis: Hypothesis;
   hypothesis_version_ref: VersionRef;
+  linked_finding_version_ref: VersionRef;
   linked_fact_version_refs: VersionedInternalFactRef[];
   confidence_axes: ReturnType<typeof adaptInternalConfidenceToConfidenceAxes>["confidence"];
   adapter_policy: typeof INTELLIGENCE_V1_ADAPTER_POLICY_REF;
 };
 
-export function createInternalHypothesisVersionRef(input: { hypothesis: Hypothesis }): InternalHypothesisCompatibilityEnvelope {
+export function createInternalHypothesisVersionRef(input: {
+  hypothesis: Hypothesis;
+  linkedFindingVersionRef: VersionRef;
+}): InternalHypothesisCompatibilityEnvelope {
   const h = input.hypothesis;
   if (!h.hypothesis_id) throw new Error("Hypothesis.hypothesis_id is required");
+
+  const linked_finding_version_ref = input.linkedFindingVersionRef;
+  if (linked_finding_version_ref.object_type !== "internal_finding") {
+    throw new Error("linkedFindingVersionRef must be object_type=internal_finding");
+  }
+  if (linked_finding_version_ref.object_id !== h.finding_id) {
+    throw new Error("linkedFindingVersionRef.object_id must match hypothesis.finding_id");
+  }
 
   const linkedFacts = [...(h.evidence_for ?? []), ...(h.evidence_against ?? [])];
   const linked_fact_version_refs = linkedFacts.map((fact) => createInternalFactVersionRef({ fact }));
@@ -25,6 +37,7 @@ export function createInternalHypothesisVersionRef(input: { hypothesis: Hypothes
   const semantic = {
     hypothesis_id: h.hypothesis_id,
     finding_id: h.finding_id,
+    linked_finding_version_ref,
     engine_version: h.engine_version,
     statement: h.statement,
     mechanism: h.mechanism,
@@ -39,7 +52,7 @@ export function createInternalHypothesisVersionRef(input: { hypothesis: Hypothes
   const content_hash = createVersionRefContentHash(semantic);
 
   const hypothesis_version_ref: VersionRef = {
-    object_type: "hypothesis",
+    object_type: "internal_hypothesis",
     object_id: h.hypothesis_id,
     version_id: null,
     content_hash,
@@ -56,6 +69,7 @@ export function createInternalHypothesisVersionRef(input: { hypothesis: Hypothes
   return deepFreeze({
     hypothesis: h,
     hypothesis_version_ref,
+    linked_finding_version_ref,
     linked_fact_version_refs,
     confidence_axes,
     adapter_policy: INTELLIGENCE_V1_ADAPTER_POLICY_REF

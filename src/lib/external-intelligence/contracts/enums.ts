@@ -11,6 +11,8 @@ export type ObjectType =
   | "signal"
   | "policy"
   | "internal_fact"
+  | "internal_finding"
+  | "internal_hypothesis"
   // Reserved (not implemented in A1 contracts)
   | "finding"
   | "hypothesis"
@@ -26,6 +28,8 @@ export const OBJECT_TYPE_VALUES: ObjectType[] = [
   "signal",
   "policy",
   "internal_fact",
+  "internal_finding",
+  "internal_hypothesis",
   "finding",
   "hypothesis",
   "world_model_state",
