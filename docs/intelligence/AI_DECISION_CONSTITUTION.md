@@ -54,3 +54,11 @@ This constitution governs every detector, finding, hypothesis, opportunity, reco
 Every recommendation must eventually be traceable through:
 
 Facts → Finding → Hypothesis → Opportunity → Recommendation → Action → Outcome → Lesson → Updated Prior
+
+---
+
+## Version pinning + policy provenance (mandatory)
+
+- Downstream objects must reference exact **VersionRefs**, not only mutable ids.
+- Every run/output must persist the full set of **PolicyRefs** (semantic version + content hash).
+- Unsupported AI narratives must never enter Fusion; only synthesized, versioned knowledge may.

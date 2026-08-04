@@ -101,7 +101,8 @@ Every field is marked as **Required / Optional / Derived / Learned / Future**.
 
 - `source_ids[]` **(Required)**
 - `source_set_ids[]` **(Optional)**
-- `evidence_reference_refs[]` **(Required)**: VersionRef (must pin exact EvidenceReference versions)
+- `evidence_reference_ids[]` **(Required)**
+- `evidence_reference_version_refs[]` **(Required)**: VersionRef (evidence_reference; must pin exact versions)
 - `claim_ids[]` **(Required)**
 
 - `event_ids[]` **(Optional)**

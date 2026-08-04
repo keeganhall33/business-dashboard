@@ -112,18 +112,45 @@ Fusion runs must persist the deterministic content hash and the explicit config 
 
 Fusion must not reason over raw Signals.
 
-Fusion consumes a **FusionContext** payload composed only of version-pinned knowledge objects:
-- `world_model_state_ref` (VersionRef)
-- `active_finding_version_refs[]` (VersionRef)
-- `active_hypothesis_version_refs[]` (VersionRef)
-- `active_risk_version_refs[]` (VersionRef)
-- `active_opportunity_version_refs[]` (VersionRef)
-- `unresolved_contradiction_refs[]` (VersionRef)
+Fusion consumes a **FusionContext** payload composed only of synthesized, version-pinned knowledge.
+
+**FusionContext (required):**
+- `fusion_context_id`
+- `generated_at`
+- `context_window`
+- `domains[]`
+
+- `finding_version_refs[]` (VersionRef)
+- `hypothesis_version_refs[]` (VersionRef)
+- `risk_version_refs[]` (VersionRef)
+- `opportunity_version_refs[]` (VersionRef)
+- `world_model_state_version_ref` (VersionRef)
+
+- `contradiction_refs[]` (VersionRef)
 - `missing_evidence_refs[]` (VersionRef)
 
-Each FusionContext must also include:
-- `policy_versions` + `policy_hashes`
-- `generated_at`
-- `effective_window`
+- `confidence_summary` (ConfidenceAxes)
+- `freshness_summary` (bounded freshness + reasons)
+
+- `licensing_constraints` (structured; may be empty)
+- `strategic_fit_constraints` (structured; may be empty)
+
+- `provenance_bundle` (required: links to Findings/Hypotheses explanations + pinned inputs)
+
+- `context_policy_version` (PolicyRef)
+- `content_hash`
+
+**Strict exclusions:**
+- raw articles
+- raw EvidenceReferences without Claims/Signals
+- unversioned Signals
+- unversioned Findings
+- unsupported AI narratives
+- recommendations or actions created outside Fusion
+
+Clarifications:
+- Signals may be referenced only as supporting provenance behind a Finding/Hypothesis/Risk/WorldModelState.
+- raw Signals cannot independently become decision candidates.
+- Fusion consumes the exact versioned explanation bundle used to create each input.
 
 This interface is the only permitted input surface from external intelligence into Fusion.

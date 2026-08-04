@@ -114,7 +114,7 @@ An explicit, typed link in the provenance chain.
 Contradictions are first-class and preserved.
 
 - `contradiction_id` **(Derived)**
-- `contradiction_type` **(Required)**: direct | partial | source_disagreement | interpretation_disagreement | correction | retraction | stale | regime_change
+- `contradiction_type` **(Required)**: direct | partial | source_disagreement | interpretation_disagreement | correction | retraction | stale | regime_change | internal_vs_external
 - `severity` **(Required)**: low | medium | high
 - `supporting_version_refs[]` **(Required)**: VersionRef (signal and/or internal fact)
 - `contradicting_version_refs[]` **(Required)**: VersionRef (signal and/or internal fact)
@@ -381,6 +381,18 @@ Each axis must include:
 
 KSE uses the shared **ConfidenceAxes** contract defined in `EXTERNAL_KNOWLEDGE_MODEL.md`.
 
+---
+
+## 6.4 Confidence accumulation protections (required)
+
+Protections:
+- prevent double-counting duplicate signals (must dedupe by VersionRef content_hash)
+- prevent syndicated-source inflation (do not treat shared-origin/wire copies as independent)
+- prevent single high-credibility source domination (contradictions + missing evidence remain explicit)
+- prevent stale evidence overpowering current evidence (windowing + freshness)
+- prevent averaging away strong contradictions (contradictions can force split/suspend)
+- prohibit fabricated probabilities (bounded levels; bounded_score only when defensible)
+
 ### 6.2 Uncertainty propagation
 If any upstream Signal is:
 - contradictory
@@ -428,6 +440,33 @@ Regime change should:
 - weaken or invalidate dependent hypotheses
 - trigger re-synthesis of affected Findings
 - force downstream review (Opportunity/Risk layers)
+
+---
+
+## 9.1 Finding lifecycle transitions (minimum deterministic table)
+
+| From → To | Trigger | Evidence requirement | Deterministic vs human | Downstream propagation |
+|---|---|---|---|---|
+| candidate → active | cluster passes synthesis gates | pinned Signal VersionRefs + complete provenance | deterministic | eligible for FusionContext (as knowledge, not action) |
+| active → corroborated | independent corroboration increases | independent sources increase without contradictions | deterministic | may strengthen confidence |
+| active/corroborated → contradicted | contradiction recorded | contradiction artifact linked | deterministic + optional human | weaken confidence; may split |
+| contradicted → under_review | severe contradiction/correction | retraction/correction or high severity | deterministic | freezes downstream escalation |
+| * → superseded | corrected synthesis replaces | successor FindingVersion linked | deterministic | downstream must prefer successor |
+| * → expired | window ends | time rules satisfied | deterministic | removed from active influence |
+| * → invalidated | conclusive refutation | primary correction/retraction dominates | human-reviewed recommended | downstream must treat as false |
+| expired/invalidated → archived | retention policy | none | deterministic | audit only |
+
+## 9.2 Hypothesis lifecycle transitions (minimum deterministic table)
+
+| From → To | Trigger | Evidence requirement | Deterministic vs human | Downstream propagation |
+|---|---|---|---|---|
+| proposed → supported | at least one Finding supports | pinned FindingVersion + consistency | deterministic | may enter FusionContext as context |
+| supported → weakened | new contradiction or missing evidence persists | contradiction artifact linked | deterministic | reduces confidence |
+| * → contradicted | strong counter-evidence appears | contradicting VersionRefs + severity high | deterministic + optional human | may generate competing hypotheses |
+| * → under_review | conflict/regime change | regime change or high contradiction | deterministic | freezes use for World Model updates |
+| * → superseded | better-scoped hypothesis replaces | successor linked | deterministic | downstream prefers successor |
+| * → invalidated | falsified by evidence | invalidation condition met | human-reviewed recommended | downstream must drop |
+| * → archived | window ends/retired | none | deterministic | audit only |
 
 ---
 

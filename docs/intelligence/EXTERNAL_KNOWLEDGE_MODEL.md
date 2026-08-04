@@ -835,65 +835,195 @@ Downstream consumers must never reference only a mutable object id. They must pe
 
 Canonical id field name: **`evidence_reference_id`**.
 
-**EvidenceReference** (minimum fields):
+**EvidenceReference** (canonical wire contract; minimum fields):
 - `evidence_reference_id`
 - `source_id`
-- `source_reference` (URL/identifier)
+- `source_config_version` (pins the SourceRegistryEntry meaning at the time of capture)
+- `source_set_id` (optional; when captured under a governed set)
+
+- `source_artifact_identifier` (source-native id; optional)
+- `source_url_or_reference` (URL/identifier)
+- `content_hash` (immutable content fingerprint; required when retention permits)
+
 - `retrieved_at`
 - `published_at` (nullable)
-- `content_hash` (optional but preferred)
-- `relevance_window` (start/end)
-- `expires_at` (nullable)
-- `geography` (nullable)
-- `languages[]` (optional)
+- `event_time` (nullable)
+- `evidence_type` (official_announcement | report | dataset | transcript | filing | price_result | schedule | social_post | other)
+
+- `access_classification` (public | paywalled | licensed | terms_restricted | manual_only | unsuitable_for_automation)
+- `legal_policy_version`
+- `retention_policy` (link_only | quote_only | summary_only | licensed_fulltext)
+- `excerpt_or_summary_reference` (pointer to stored excerpt/summary, not the full content)
+
+- `source_credibility_prior` (high | medium | low)
+
+- `correction_status` (none | corrected)
+- `retraction_status` (none | retracted)
+- `supersedes_evidence_reference_id` (nullable)
+
+- `provenance_metadata` (structured map: capture method, reviewer, tool, etc.)
+- `schema_version`
 
 **Credibility + contradiction hooks** (required for audit; values may be null initially):
-- `credibility` (score/level + reasons)
+- `credibility` (bounded level + reasons; no fabricated probabilities)
 - `corroborating_evidence_reference_ids[]`
 - `contradicting_evidence_reference_ids[]`
 
-All documents that mention “evidence_id” or “evidence_reference_id” must treat **`evidence_reference_id`** as canonical.
+**Immutability rule:** EvidenceReference is immutable after creation (except for append-only correction/retraction linking via supersession).
+Credibility may be summarized downstream, but the EvidenceReference itself is an immutable audit anchor.
+
+**Legacy field mappings (explicit):**
+- `evidence_id` → `evidence_reference_id`
+- `source_reference` → `source_url_or_reference`
+- `content_hash` (same name; must be treated as immutable)
+
+All documents that mention “evidence_id”, “evidence_reference_id”, or “source_reference” must map to this canonical contract.
 
 ### 17.3 EntityRef (minimal interface)
 
 Signals/Findings must reference entities via a minimal, stable interface.
 
-**EntityRef**:
-- `entity_id` (canonical)
+**EntityRef** (minimal stable interface; no full entity-resolution subsystem yet):
+- `entity_id`
 - `entity_type`
-- `display_name`
-- `aliases[]` (optional)
+- `canonical_name`
+- `aliases[]`
+- `source_specific_ids` (map of `{ source_id: source_native_id }`)
+
+- `resolution_status`:
+  - resolved
+  - provisionally_resolved
+  - ambiguous
+  - unresolved
+  - merged
+  - split
+  - superseded
+
 - `resolution_confidence` (bounded level + reasons)
-- `ambiguity_status` (resolved | ambiguous | unknown)
+- `ambiguity_flags[]`
+- `possible_entity_ids[]` (when ambiguous)
+- `alias_provenance[]` (where each alias came from)
+- `entity_resolution_version`
+
+- `last_verified_at` (nullable)
+- `valid_from` (nullable)
+- `valid_until` (nullable)
+
+Rules:
+- ambiguous entities must not silently enter deterministic fingerprints as resolved identities
+- unresolved entities use a deterministic provisional identity (stable, namespaced)
+- later merges must preserve old ids and mappings (no destructive rewrites)
+- every Signal/Finding fingerprint must record `entity_resolution_version`
 
 ### 17.4 ConfidenceAxes (shared)
 
 All layers use the same multidimensional confidence object.
 
-**ConfidenceAxes**:
-- `evidence_confidence`
-- `interpretation_confidence`
-- `synthesis_confidence` (only for synthesis outputs)
-- `business_relevance_confidence`
-- `mechanism_confidence`
-- `timing_confidence`
+**ConfidenceAxes** (canonical; reused verbatim by Signal/Finding/Hypothesis/Opportunity/Risk/World Model/Fusion Context):
+- `evidence`
+- `interpretation`
+- `business_relevance`
+- `mechanism`
+- `timing`
+- `entity_resolution`
 - `overall` (derived)
 
 Each axis must include:
 - `level` (bounded; no fabricated probabilities)
+- `bounded_score` (optional; only when defensible)
 - `reasons[]`
 - `blockers[]`
-- `supporting_version_refs[]` (VersionRef)
-- `contradicting_version_refs[]` (VersionRef)
-- `missing_evidence[]`
+- `supporting_reference_ids[]` (VersionRef)
+- `contradicting_reference_ids[]` (VersionRef)
+- `missing_evidence_ids[]`
+
+Rules:
+- overall confidence must be derived and explainable
+- confidence does not equal importance
+- urgency does not equal confidence
+- unknown must remain unknown (no default-to-zero)
 
 ### 17.5 Policy registry + versioning rule (canonical)
 
-Every run/output object must record:
-- the **policy versions** used (interpretation, synthesis, confidence, contradiction, disposition/eligibility, legal/access, entity-resolution)
-- and a deterministic **policy hash** for each.
+#### 17.5.1 PolicyRef (shared)
 
-**Rule:** changing policy is production-affecting behavior and must be version-controlled, auditable, and persisted alongside outputs.
+**PolicyRef**:
+- `policy_name`
+- `semantic_version`
+- `content_hash`
+- `effective_from`
+- `effective_until` (nullable)
+- `approval_status` (draft | approved | retired)
+- `approved_by` (nullable)
+- `changed_at`
+- `change_reason`
+
+#### 17.5.2 Repository convention (no new service)
+
+Policy files live in version control under:
+- `config/policies/<policy_name>/<semantic_version>.json`
+
+Rules:
+- canonical deterministic serialization required for hashing
+- store both semantic version and content hash
+- changes require explicit review/approval; rollback is selecting a prior approved PolicyRef
+- historical policy files are retained indefinitely
+
+Minimum required policies:
+- legal policy
+- entity-resolution policy
+- signal interpretation policy
+- confidence policy
+- disposition policy
+- contradiction policy
+- synthesis policy
+- world model update policy
+- fusion context policy
+
+#### 17.5.3 Persistence rule
+
+Every run/output object must persist the complete set of PolicyRefs used.
+
+**Rule:** changing policy is production-affecting behavior and must be auditable and persisted alongside outputs.
+
+---
+
+## 19) Opportunity/Risk evaluation input boundary (minimum)
+
+Future Opportunity/Risk evaluation must consume only:
+- Finding VersionRefs
+- Hypothesis VersionRefs
+- contradiction references
+- missing-evidence references
+- ConfidenceAxes
+- affected entities/domains/markets
+- timing window
+- licensing feasibility (known/unknown/blocked)
+- invalidation conditions
+- provenance bundle
+- World Model state VersionRef
+
+It must never consume raw articles or unversioned Signals directly.
+
+---
+
+## 20) Failure-mode matrix (fail-closed vs degraded)
+
+| Failure mode | Required behavior |
+|---|---|
+| malformed configuration | fail closed |
+| unknown source | fail closed |
+| expired legal access | fail closed (archive/link-only), require human review |
+| missing EvidenceReference | fail closed |
+| unresolved entity | degrade to monitor; block deterministic fingerprint promotion |
+| duplicate/syndicated evidence storm | degrade to monitor; dedupe; do not inflate corroboration |
+| contradiction overload | mark under_review; require human review |
+| missing version reference | fail closed |
+| stale Signals | degrade to monitor or archive_only |
+| incomplete provenance | hold update; require completion |
+| AI schema failure | fail closed; ignore AI output |
+| World Model update conflict | hold update; require human review |
+| Fusion Context missing required inputs | fail closed (no decision) |
 
 ---
 
