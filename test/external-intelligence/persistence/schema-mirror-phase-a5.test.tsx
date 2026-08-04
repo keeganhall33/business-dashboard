@@ -34,6 +34,19 @@ const CRITICAL_SNIPPETS: Array<{ name: string; pattern: RegExp }> = [
   {
     name: "processing run completed requires completeness check",
     pattern: /external_processing_runs_v1__completed_requires_completeness_check/i
+  },
+  {
+    name: "retention policy enum values",
+    pattern: /retention_policy\s+text\s+not\s+null\s+default\s+'retain'\s+check\s*\(retention_policy\s+in\s*\('retain','link_only','tombstone'\)\)/i
+  },
+  {
+    name: "processing run status enum values",
+    pattern:
+      /status\s+text\s+not\s+null\s+default\s+'started'\s+check\s*\(status\s+in\s*\('started','completed','no_output','blocked','failed','persistence_incomplete'\)\)/i
+  },
+  {
+    name: "stable current version FK is deferrable initially deferred",
+    pattern: /deferrable\s+initially\s+deferred/i
   }
 ];
 
