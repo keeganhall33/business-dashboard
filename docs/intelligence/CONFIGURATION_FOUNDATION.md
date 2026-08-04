@@ -93,6 +93,13 @@ Canonical JSON rules:
 - preserve array order
 - normalize non-finite numbers to null (if present)
 
+Array semantics:
+- **ordered arrays** preserve order (e.g., lifecycle state lists)
+- **set-like arrays** must be sorted before hashing to avoid semantic drift (e.g., domains, required_axes, dispositions)
+
+Operational timestamp rule:
+- Policy metadata fields like `changed_at` must be **null** (or otherwise excluded by policy) in fixtures so hashes are not contaminated by non-semantic timestamps.
+
 ---
 
 ## 6) Fail-closed behavior (required)
@@ -151,3 +158,19 @@ Phase A must include tests that:
 - compute deterministic content hashes
 - confirm fail-closed behavior on missing files
 - confirm that downstream objects cannot reference id-only (must use VersionRef)
+
+---
+
+## 12) Fixture vs production distinction
+
+These artifacts are **architecture fixtures**, not production configuration.
+
+All fixture files must include explicit markers:
+- `fixture_status: "architecture_fixture"`
+- `production_eligibility: "disabled"`
+
+Source Registry fixtures must default safe:
+- `enabled = false`
+- `enabled_by_default = false`
+- `lifecycle_status = proposed` (or trial)
+- `implementation_status = unimplemented`

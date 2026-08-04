@@ -30,6 +30,13 @@ Canonical JSON rules:
 - normalize `undefined` → `null` (if applicable)
 - JSON stringify
 
+Array semantics:
+- Ordered arrays preserve order.
+- Set-like arrays must be sorted before hashing.
+
+Operational timestamp rule:
+- Fixture policies must set `changed_at` to `null` (or otherwise exclude it) so hashes are not contaminated by non-semantic timestamps.
+
 ## Scope
 These are **architecture fixtures** in early milestones.
 They must remain safe defaults and must not embed production credentials, ingestion endpoints, or operational secrets.
