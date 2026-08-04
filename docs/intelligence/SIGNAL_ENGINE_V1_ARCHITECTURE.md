@@ -102,6 +102,7 @@ Every field is marked as **Required / Optional / Derived / Learned / Future**.
 - `source_ids[]` **(Required)**
 - `source_set_ids[]` **(Optional)**
 - `evidence_reference_ids[]` **(Required)**
+- `evidence_reference_version_refs[]` **(Required)**: VersionRef (evidence_reference; must pin exact versions)
 - `claim_ids[]` **(Required)**
 
 - `event_ids[]` **(Optional)**
@@ -125,7 +126,7 @@ Every field is marked as **Required / Optional / Derived / Learned / Future**.
 - `review_by` **(Derived/Optional)**
 
 ### 2.4 Evidence and uncertainty
-- `supporting_evidence[]` **(Required)**: list of evidence refs + claim refs
+- `supporting_evidence[]` **(Required)**: list of VersionRef (evidence_reference) + claim refs
 - `contradicting_evidence[]` **(Optional)**
 - `missing_evidence[]` **(Optional)**
 
@@ -584,6 +585,12 @@ Each Signal references:
 - entity-resolution version
 - source registry version
 - legal-policy version
+
+### 17.0 VersionRef requirement (canonical)
+
+This layer uses the shared **VersionRef** contract defined in `EXTERNAL_KNOWLEDGE_MODEL.md`.
+
+Rule: downstream objects must persist **VersionRefs**, not only ids.
 
 ### 17.1 Downstream consumer rule
 
