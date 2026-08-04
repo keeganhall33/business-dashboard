@@ -27,6 +27,7 @@ The model is intentionally **source-agnostic**. Sources are inputs; the model is
    - **Relationship strength** (how strong/confirmed the link is)
    - **Opportunity confidence** (how actionable the opportunity is)
 5) **Decision quality is the metric.** Knowledge exists to improve decision quality and explain restraint.
+6) **Source score ≠ signal score.** A high-quality source can publish irrelevant content; a low-confidence community source can surface an early weak signal that requires corroboration.
 
 ---
 
@@ -241,7 +242,77 @@ The world model is a graph with typed edges. Examples of canonical edge patterns
 
 ---
 
-## 3) Relationship taxonomy (canonical)
+## 3) Signal disposition model (noise filtering)
+
+Signals must be filtered by **decision relevance**, not popularity.
+
+### Dispositions (canonical)
+
+1) **suppress**
+   - Meaning: drop from active processing; keep only minimal counters for portfolio scoring.
+   - Requirements: low relevance OR low credibility; popularity does not override.
+   - Expiration: immediate.
+   - Review cadence: none.
+
+2) **archive_only**
+   - Meaning: retain as audit reference; do not contribute to findings/opportunities.
+   - Requirements: credible but not currently relevant.
+   - Expiration: keep for pattern memory; not active.
+   - Review cadence: none.
+
+3) **monitor**
+   - Meaning: keep active, low-touch; await corroboration or cross-domain conjunction.
+   - Requirements: moderate relevance OR participates in a known cross-domain pattern.
+   - Credibility: can be medium/low if explicitly tagged as weak.
+   - Expiration: short (days–weeks) unless reinforced.
+   - Review cadence: weekly.
+
+4) **validate**
+   - Meaning: schedule corroboration tasks (future) against primary sources; still no operating recommendation.
+   - Requirements: high relevance, but credibility incomplete.
+   - Corroboration: required.
+   - Expiration: short; invalidated if not corroborated.
+   - Review cadence: daily.
+
+5) **escalate_to_external_finding**
+   - Meaning: combine multiple signals into a cross-signal conclusion.
+   - Requirements: at least 2 supporting signals or one high-credibility verified event.
+   - Contradiction: must be recorded.
+   - Expiration: bounded window.
+
+6) **escalate_to_opportunity**
+   - Meaning: create a hypothesis-backed opportunity with explicit prerequisites.
+   - Requirements: mechanism-linked, time-bounded, and lists missing evidence.
+   - Popularity alone is insufficient.
+
+7) **send_to_fusion_context**
+   - Meaning: provide world-state context to Fusion (not a recommendation).
+   - Requirements: high relevance + time alignment; must include evidence refs.
+   - This does not force a decision.
+
+### Relevance gates (minimum)
+A signal must be suppressed/archived unless it is relevant to at least one of:
+- collectors, demand, and willingness-to-pay
+- premium positioning / scarcity constraints
+- licensing/IP availability or constraints
+- partnerships/collaborations
+- geographic markets and audience overlap
+- operational risks (shipping/fulfillment)
+
+---
+
+## 4) Cross-domain discovery (weak-signal preservation)
+
+Weak signals may survive filtering when they participate in a meaningful cross-domain pattern.
+
+Rule: the system may elevate a set of individually weak signals into an External Finding **without claiming causality**, by explicitly stating:
+- the connecting entities/relationships
+- the combined mechanism hypothesis
+- missing evidence and what would validate/invalidate
+
+---
+
+## 5) Relationship taxonomy (canonical)
 
 Relationships are directional where appropriate and must support:
 - observed vs inferred
@@ -285,7 +356,7 @@ Historical relationships must not be deleted; they transition to `historical`/`e
 
 ---
 
-## 4) Event taxonomy (canonical)
+## 6) Event taxonomy (canonical)
 
 Events are not equal. The taxonomy is designed to support decision relevance.
 
@@ -326,7 +397,7 @@ Events are not equal. The taxonomy is designed to support decision relevance.
 
 ---
 
-## 5) Entity confidence (separate from source credibility)
+## 7) Entity confidence (separate from source credibility)
 
 Entity confidence expresses whether an entity is real/active and how certain we are.
 
@@ -342,7 +413,7 @@ Canonical levels:
 
 ---
 
-## 6) Relationship strength
+## 8) Relationship strength
 
 Relationship strength expresses the stability/confirmation level of an edge.
 
@@ -356,7 +427,7 @@ Canonical levels:
 
 ---
 
-## 7) Opportunity confidence (the language Fusion consumes)
+## 9) Opportunity confidence (the language Fusion consumes)
 
 Canonical levels:
 - `interesting`
@@ -369,7 +440,7 @@ Canonical levels:
 
 ---
 
-## 8) Opportunity lifecycle
+## 10) Opportunity lifecycle
 
 Opportunities must support both **timing** and **decision lifecycle** states.
 
@@ -395,7 +466,7 @@ The lifecycle is not narrative; it is an auditable timing + handling model used 
 
 ---
 
-## 9) Canonical entity types (minimum set)
+## 11) Canonical entity types (minimum set)
 
 The system must support entity types spanning:
 
@@ -425,7 +496,7 @@ Entities can carry multiple tags such as:
 
 ---
 
-## 10) Canonical entity types (domain groupings)
+## 12) Canonical entity types (domain groupings)
 
 ### Sports
 - athlete, team, league, university, coach, agent_manager, brand_sponsor
@@ -447,6 +518,67 @@ Entities can carry multiple tags such as:
 
 ---
 
+## 13) Entity resolution and duplicate-event handling (requirements)
+
+Do not implement entity resolution in this milestone.
+
+Architecture requirements:
+- **Canonical IDs**: every entity/event has a stable canonical id.
+- **Aliases**: entities must store aliases (nicknames, former names, common misspellings).
+- **Name changes**: support historical names without breaking references.
+- **Ambiguous names**: keep ambiguity explicit until resolved; do not merge prematurely.
+- **Source-specific identifiers**: store per-source ids (league ids, platform ids, auction lot ids).
+
+Duplicate-event handling requirements:
+- multiple evidence references may map to one Event
+- later corrections are modeled as:
+  - an Event update (superseding fields) plus
+  - new Evidence References that corroborate/contradict
+- contradictory reports are preserved (do not delete); they reduce confidence and force validation
+
+---
+
+## 14) Breaking-news handling (requirements)
+
+Breaking news increases review urgency but must not lower evidence standards.
+
+Canonical breaking-news states:
+- `verified_breaking_event`
+- `single_source_report`
+- `developing_report`
+- `rumor`
+- `correction`
+- `retraction`
+- `later_confirmation`
+
+Propagation rules:
+- Event: updated with correction/retraction metadata and linked evidence
+- Signal: may be superseded/expired
+- External Finding: updated confidence + contradiction list
+- Opportunity: may advance, hold, or be invalidated
+- Fusion context: may update the world-state context, but still cannot force an operating recommendation
+
+---
+
+## 15) Pipeline consistency (canonical)
+
+Source Record
+→ Evidence Reference
+→ External Signal
+→ canonical Entity/Event/Relationship update
+→ Trend or External Finding
+→ Opportunity or Risk
+→ Strategic World Model
+→ Fusion Candidate or Fusion Context
+→ Recommendation
+→ Action
+→ Outcome
+→ source-usefulness learning
+
+Raw articles must not flow directly into Fusion as recommendations.
+
+---
+
 ## 9) How this model evolves over time
 
 - New sources map into the same objects: Entity/Event/Relationship/Trend/Opportunity/Risk.
@@ -456,7 +588,7 @@ Entities can carry multiple tags such as:
 
 ---
 
-## 11) Compatibility with existing external-signal fact model
+## 16) Compatibility with existing external-signal fact model
 
 The existing `External Signal Fact Model (v1)` remains the **evidence layer**.
 

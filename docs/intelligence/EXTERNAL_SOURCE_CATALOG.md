@@ -448,35 +448,91 @@ For each, we note: tier, cadence, noise, and intended feed target:
 
 1) NFL official (transactions + schedule)
    - source_id: `sports.nfl.official`
-   - tier: 1 | cadence: daily | noise: low | feed: world model + opportunity detection
+   - domains: sports ecosystem, calendar/milestones
+   - type: official/primary
+   - unique signal: canonical transactions, schedules, official confirmations
+   - cadence: daily | latency: low
+   - credibility: high | noise: low | duplication: medium
+   - access: public_webpage (official); avoid prohibited scraping; prefer official feeds/exports when available
+   - feed: world model + opportunity detection
+   - v1 reason: authoritative state changes and time-bounded catalysts
 
 2) NBA official
    - source_id: `sports.nba.official`
-   - tier: 1 | cadence: daily | noise: low | feed: world model + opportunity detection
+   - domains: sports ecosystem, calendar/milestones
+   - type: official/primary
+   - unique signal: official confirmations and schedule/transaction timing
+   - cadence: daily | latency: low
+   - credibility: high | noise: low | duplication: medium
+   - access: public_webpage (official)
+   - feed: world model + opportunity detection
+   - v1 reason: authoritative state + catalysts
 
 3) MLB official
    - source_id: `sports.mlb.official`
-   - tier: 1 | cadence: daily | noise: low | feed: world model + opportunity detection
+   - domains: sports ecosystem, calendar/milestones
+   - type: official/primary
+   - unique signal: official confirmations and schedule/transaction timing
+   - cadence: daily | latency: low
+   - credibility: high | noise: low | duplication: medium
+   - access: public_webpage (official)
+   - feed: world model + opportunity detection
+   - v1 reason: authoritative state + catalysts
 
 4) NCAA official
    - source_id: `sports.ncaa.official`
-   - tier: 1 | cadence: weekly | noise: low | feed: world model
+   - domains: NIL, college sports, governance
+   - type: official/primary
+   - unique signal: eligibility/policy announcements; NIL-related governance context
+   - cadence: weekly | latency: medium
+   - credibility: high | noise: low | duplication: low
+   - access: public_webpage (official)
+   - feed: world model
+   - v1 reason: canonical governance context
 
 5) Sportico
    - source_id: `sports_business.sportico`
-   - tier: 1 | cadence: daily | noise: med | feed: opportunity detection + fusion context
+   - domains: sports business, partnerships/licensing
+   - type: specialist industry reporting (secondary)
+   - unique signal: valuations, rights deals, partnership economics
+   - cadence: daily | latency: low
+   - credibility: medium-high | noise: medium | duplication: medium
+   - access: paywalled/newsletter (treat as terms-restricted); fallback: confirm via official press releases + league/team newsrooms
+   - feed: opportunity detection + fusion context
+   - v1 reason: business-mechanism lens (not game news)
 
 6) Front Office Sports
    - source_id: `sports_business.front_office_sports`
-   - tier: 1 | cadence: daily | noise: med | feed: opportunity detection
+   - domains: sports business, sponsorship/brand collaborations
+   - type: industry reporting (secondary)
+   - unique signal: sponsorship patterns, partnership signals
+   - cadence: daily | latency: low
+   - credibility: medium | noise: medium | duplication: medium
+   - access: public_webpage/newsletter
+   - feed: opportunity detection
+   - v1 reason: recurring sponsorship pattern detection
 
 7) Boardroom
    - source_id: `sports_business.boardroom`
-   - tier: 2 | cadence: weekly | noise: med | feed: cross-domain opportunity detection
+   - domains: sports × entertainment × collectibles (cross-domain)
+   - type: culture/business reporting (secondary)
+   - unique signal: intersection/crossover weak signals
+   - cadence: weekly | latency: medium
+   - credibility: medium | noise: medium | duplication: medium
+   - access: public_webpage/newsletter
+   - feed: opportunity detection (cross-domain)
+   - v1 reason: intersection-first catalysts
 
 8) The Athletic (major beats)
    - source_id: `sports.the_athletic`
-   - tier: 2 | cadence: daily | noise: med | feed: world model + opportunity detection
+   - domains: sports ecosystem
+   - type: specialist reporting (secondary)
+   - unique signal: early context and beat-level timing
+   - cadence: daily | latency: low
+   - credibility: medium | noise: medium | duplication: medium-high
+   - access: paywalled (terms-restricted); fallback: corroborate via official league/team announcements
+   - feed: world model + opportunity detection
+   - v1 reason: earlier weak signals with required corroboration
 
 9) Sotheby’s results/catalog
    - source_id: `art_market.sothebys`
@@ -525,5 +581,43 @@ For each, we note: tier, cadence, noise, and intended feed target:
 20) YouTube (official channels + releases)
    - source_id: `social.youtube`
    - tier: 2 | cadence: daily | noise: high | feed: opportunity detection (weak signals) + corroboration
+
+---
+
+## Competitor monitoring (how it works in this model)
+
+Competitor activity is modeled as **observed external signals** and **relationships/events**. It is never treated as proof the competitor’s strategy worked.
+
+### Competitor universe (dynamic)
+Competitors are not only other graphite artists. The universe includes:
+- direct artists
+- galleries and represented artists
+- sports-art and entertainment-art companies
+- memorabilia and collectible companies
+- auction houses
+- trading-card companies
+- professional teams and leagues
+- colleges, NIL collectives, and athletic departments
+- entertainment companies
+- music labels, managers, and tour organizations
+- brands pursuing athlete/musician/artist collaborations
+- substitute products competing for collector spending
+
+### What competitor monitoring captures (as observed signals)
+- partnerships (announced collaborations, sponsorships)
+- product launches (new drops, new collections)
+- pricing (list price changes, edition pricing)
+- editions and scarcity (edition sizes, sellouts, restocks)
+- gallery representation moves
+- licensing activity
+- geographic expansion (new markets, shows, pop-ups)
+- content strategy (documentary, campaigns, releases)
+- social momentum (qualified as weak signal)
+- sellouts and market response (transaction/auction outcomes)
+- event participation (fairs, exhibitions, festivals)
+- strategic repositioning (messaging/offer shifts)
+
+### Interpretation rule
+Competitor moves produce External Signals and External Findings; they require corroboration and do not imply outcomes.
 
 **Community sources (e.g. Reddit, X/Instagram) remain Tier 3 by default** and should be used for weak-signal discovery only until corroborated.
