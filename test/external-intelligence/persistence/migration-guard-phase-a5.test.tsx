@@ -48,6 +48,11 @@ test("phase a5 migration guard: forward SQL defines all 11 required tables and n
 test("phase a5 migration guard: rollback drops all 11 tables in dependency-safe order", () => {
   const rb = fs.readFileSync(RB, "utf8");
 
+  // Must drop stable->current FKs before dropping version tables.
+  assert.ok(/drop constraint if exists external_evidence_references_v1__current_version_fk/i.test(rb));
+  assert.ok(/drop constraint if exists external_claims_v1__current_version_fk/i.test(rb));
+  assert.ok(/drop constraint if exists external_signals_v1__current_version_fk/i.test(rb));
+
   // Required rollback order (child -> parent)
   const expectedOrder = [
     "external_processing_runs_v1",

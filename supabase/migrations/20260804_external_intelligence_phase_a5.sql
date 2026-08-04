@@ -2,6 +2,35 @@
 -- Authoritative spec: EXTERNAL_INTELLIGENCE_MIGRATION_SPEC_V1 (Phase A4)
 
 -- =========================================================
+-- 0) Dependencies
+-- =========================================================
+
+-- This migration creates updated_at triggers that depend on set_updated_at().
+-- In production, set_updated_at() exists in the canonical schema mirror, but
+-- this migration must also apply cleanly to an empty disposable database.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'set_updated_at'
+  ) then
+    create function set_updated_at()
+    returns trigger
+    language plpgsql
+    as $fn$
+    begin
+      new.updated_at = now();
+      return new;
+    end;
+    $fn$;
+  end if;
+end
+$$;
+
+-- =========================================================
 -- 1) Stable object tables (no stable->current FK yet; added after version tables exist)
 -- =========================================================
 
