@@ -22,19 +22,9 @@ Facts → Findings → Hypotheses → Opportunities → Recommendations → Acti
 ### B) External Intelligence Foundation
 Internal data alone is not the final system.
 
-External Intelligence is not “monitor websites.” It is a decision-quality layer.
-
-- Source Registry (canonical registry; promote/demote/retire sources)
-- Source Performance Learning (usefulness, overlap, false-positive rate)
-- Canonical External Intelligence Domains (business-domain taxonomy)
-- Dynamic Competitor Universe (direct/adjacent/substitutes/collaborators)
-- External Intelligence Layer (collection + normalization)
+- External Intelligence Layer
 - External Signal Fact Model
 - Entity + Relationship Graph
-- Strategic World Model (permanent layer between External Intelligence and Fusion)
-- Cross-Domain Opportunity Detection (intersection-first)
-- Intelligent Noise Filtering (relevance-first; not popularity)
-- Opportunity Discovery Engine (hypothesis generation from weak cross-domain signals)
 - Strategic Opportunity Fusion Engine (internal evidence + external context)
 - Competitive Intelligence Engine (see `docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`)
 
