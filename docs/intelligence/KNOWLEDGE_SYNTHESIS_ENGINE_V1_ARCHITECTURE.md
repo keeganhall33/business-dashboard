@@ -14,6 +14,24 @@ and
 
 **Primary purpose:** ensure that downstream reasoning (especially Fusion) never operates directly on raw Signals.
 
+## Boundary reminder (non-negotiable)
+
+KSE is **not** a decision engine.
+
+- **Signal Engine answers:** “What happened?”
+- **Knowledge Synthesis Engine answers:** “What does all of this collectively tell us?”
+- **Strategic World Model answers:** “What do we currently believe to be true?”
+- **Fusion answers:** “Given what we know, what should we do?”
+
+KSE must never:
+- prioritize actions
+- rank opportunities
+- recommend actions
+- compare business initiatives
+- optimize ROI
+- choose among alternatives
+- execute strategic reasoning that belongs in Fusion
+
 **Non-goals (explicit):**
 - No ingestion/adapters/crawlers/scraping.
 - No external APIs.
@@ -30,6 +48,8 @@ and
 **Source Registry → Evidence References → Claims → Signals → Knowledge Synthesis → Findings/Hypotheses/Risks → Opportunities → Strategic World Model → Fusion**
 
 **Invariant:** Fusion must consume **synthesized knowledge** (Findings/Hypotheses/Risks + versioned context), not raw Signals.
+
+**Invariant:** KSE outputs are *knowledge*, not *choices*. Any prioritization/ranking/selection remains a Fusion concern.
 
 ---
 
@@ -118,6 +138,18 @@ Each contract is marked **Required / Optional / Derived / Learned / Future**.
 - `human_review_status` **(Optional)**
 - `correction_history[]` **(Derived)**
 
+### 3.1.1 Finding explanation bundle (Required)
+
+Every Finding must explicitly answer:
+- **What do we believe?** (`normalized_conclusion`)
+- **Why do we believe it?** (`observed_basis` + linked supporting signals)
+- **What contradicts it?** (`contradicting_signal_ids[]` + `contradiction_summary`)
+- **What evidence is still missing?** (`missing_evidence[]`)
+- **What would increase confidence?** (Derived from `missing_evidence` + corroboration gaps)
+- **What would invalidate it?** (encoded via hypothesis invalidation conditions and/or finding correction rules)
+
+These answers must be reproducible given pinned inputs + policy versions.
+
 ### 3.2 Hypothesis (falsifiable)
 
 - `hypothesis_id` **(Derived)**
@@ -195,6 +227,27 @@ For each cluster, produce:
 - explicit contradiction handling (see §7)
 
 **Rule:** no Finding may be created without at least one Signal that itself is traceable to Claims and Evidence References.
+
+### 4.4 Reproducibility requirement (deterministic Findings)
+
+Every Finding must be reproducible.
+
+Given the same:
+- input **Signal ids + exact Signal versions**
+- policy versions (synthesis + confidence + legal + entity resolution)
+- deterministic clustering/fingerprinting rules
+
+the system must deterministically recreate the exact same:
+- `finding_fingerprint`
+- `external_finding_id`
+- `normalized_conclusion` and `observed_basis` (when generated deterministically)
+- confidence features and lifecycle state transitions
+
+If any AI assistance was used for summarization, the Finding must store:
+- the AI output artifact hash (Future)
+- the prompt/model versions
+
+and still remain reconstructable as an *auditable* transformation from the pinned input set.
 
 ---
 
@@ -350,6 +403,26 @@ Every Finding/Hypothesis must have an explanation bundle:
 - why confidence has its value
 
 Explanations must be reproducible given the same input versions + policy versions.
+
+---
+
+## 12.1 Provenance chain (required)
+
+No Finding may exist without a complete provenance chain that can be traversed:
+
+Evidence Reference → Claim(s) → Signal(s) → Synthesis reasoning → Finding
+
+Minimum provenance links required:
+- Finding → supporting Signal ids (+ pinned versions)
+- Signal → Claim ids
+- Claim → Evidence Reference id
+- Evidence Reference → Source id
+
+This provenance chain must be sufficient for a human to audit:
+- what was observed
+- what was inferred
+- what was missing
+- what contradicted
 
 ---
 
