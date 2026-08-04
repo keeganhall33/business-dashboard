@@ -45,10 +45,28 @@ export async function runFusionDailyDecisionV1() {
         }
       }
 
-      // Eligible for comparison only if source freshness is "fresh".
+      type ClusterFreshness = "fresh" | "monitor_only" | "stale";
+
+      function deriveClusterFreshness(clusterMembers: Array<{ candidate_id: string }>): ClusterFreshness {
+        let sawMonitorOnly = false;
+        for (const member of clusterMembers) {
+          const freshness = load.candidate_meta_by_id[member.candidate_id]?.freshness;
+          if (freshness === "fresh") return "fresh";
+          if (freshness === "monitor_only") sawMonitorOnly = true;
+        }
+        return sawMonitorOnly ? "monitor_only" : "stale";
+      }
+
+      const clusterFreshnessByClusterId: Record<string, ClusterFreshness> = {};
+      for (const cluster of clustered) {
+        clusterFreshnessByClusterId[cluster.cluster_id] = deriveClusterFreshness(cluster.members);
+      }
+
+      // Eligible for comparison only if the merged cluster contains at least one "fresh" member.
+      // NOTE: freshness metadata is keyed by *source candidate id*, not merged cluster id.
       const freshCandidates = clustered
-        .map((c) => c.merged)
-        .filter((c) => load.candidate_meta_by_id[c.candidate_id]?.freshness === "fresh");
+        .filter((c) => clusterFreshnessByClusterId[c.cluster_id] === "fresh")
+        .map((c) => c.merged);
 
       const policy = decideRunPolicy({
         nowIso,
@@ -127,6 +145,8 @@ export async function runFusionDailyDecisionV1() {
                 ? "Not enough independently sourced eligible intelligence candidates exist yet."
                 : policy.status === "no_fresh_candidates"
                   ? "Candidates were stale under freshness policy."
+                  : policy.status === "completed_hold" || policy.status === "completed_monitor"
+                    ? "A single fresh candidate was evaluated, but the comparative evidence set is insufficient to justify an operating decision."
                   : policy.status === "blocked_by_data_quality"
                     ? "Available candidates were blocked by evidence quality or policy constraints."
                     : "Holding is currently safest.",
