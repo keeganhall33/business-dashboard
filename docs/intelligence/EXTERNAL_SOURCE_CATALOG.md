@@ -606,7 +606,8 @@ For each, we note: tier, cadence, noise, and intended feed target:
    - unique signal: delivery disruptions impacting customer experience
    - cadence: episodic | latency: low
    - credibility: high | noise: low | duplication: low
-   - access: official service alert pages / RSS where available
+   - includes: UPS, FedEx, USPS + major disruption alerts + service/cost changes
+   - access: official service alert pages / RSS where available; otherwise manual review
    - feed: fusion context
    - v1 reason: operational constraints must be explicit
 
@@ -791,3 +792,31 @@ Key blind spots that remain:
 - `trading_cards.card_ladder` (licensed)
 - `social.youtube` (high noise; weak-signal only)
 - `entertainment.variety` (high overlap)
+
+---
+
+## Reassessment: likely removals / wave placement (explicit)
+
+This section evaluates high-risk/high-overlap sources without automatically removing them.
+
+### The Athletic
+- decision: **replace** (not in v1)
+- why: paywalled + high overlap with official announcements; not required for low-noise baseline
+- fallback: official league/team announcements + sports-business sources
+
+### Variety
+- decision: **move to Wave 3**
+- why: high overlap; useful as corroboration but not needed for v1 baseline; access via public web/newsletter
+
+### Front Office Sports
+- decision: **retain (Wave 1/2 boundary)**
+- why: partnership/sponsorship patterns; medium overlap with Sportico but different editorial focus; reasonable access
+
+### Card Ladder
+- decision: **move to Wave 3 (licensed)**
+- why: useful structured market pricing but likely licensed/paywalled; do not enable-by-default without compliant access
+- fallback: auction results + PSA supply signals
+
+### YouTube
+- decision: **move to Wave 3 (weak-signal only)**
+- why: high noise; valuable only for cross-domain conjunction + corroboration; not eligible to create opportunities without validation

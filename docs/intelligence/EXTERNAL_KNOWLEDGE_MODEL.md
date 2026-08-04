@@ -288,7 +288,80 @@ Signals must be filtered by **decision relevance**, not popularity.
 7) **send_to_fusion_context**
    - Meaning: provide world-state context to Fusion (not a recommendation).
    - Requirements: high relevance + time alignment; must include evidence refs.
-   - This does not force a decision.
+  - This does not force a decision.
+
+---
+
+### Disposition thresholds (architecture-level)
+
+Each signal is evaluated across:
+- business relevance
+- entity relevance and audience overlap
+- strategic fit (premium positioning, scarcity)
+- licensing feasibility
+- novelty
+- time alignment (relevance window)
+- source credibility (publisher-level)
+- signal credibility (item-level)
+- corroboration and contradiction
+- duplication/overlap
+
+Threshold summary:
+
+- **suppress**
+  - min business relevance: low
+  - min source credibility: any
+  - min signal credibility: any
+  - corroboration: none
+  - affects Fusion: no
+  - operating recommendation: never
+
+- **archive_only**
+  - min business relevance: low–medium
+  - min signal credibility: medium
+  - corroboration: not required
+  - affects Fusion: no
+  - operating recommendation: never
+
+- **monitor**
+  - min business relevance: medium OR participates in cross-domain conjunction
+  - min signal credibility: low–medium (explicitly tagged)
+  - corroboration: optional
+  - expiration: short window; renewed only when reinforced
+  - affects Fusion: context only (not candidates)
+  - operating recommendation: never
+
+- **validate**
+  - min business relevance: high
+  - min signal credibility: medium
+  - corroboration: required against primary sources
+  - affects Fusion: context only until corroborated
+  - operating recommendation: never
+
+- **escalate_to_external_finding**
+  - min business relevance: high
+  - min signal credibility: medium-high
+  - corroboration: required OR multiple independent signals
+  - contradiction: must be recorded
+  - affects Fusion: yes (as context)
+  - operating recommendation: never directly
+
+- **escalate_to_opportunity**
+  - min business relevance: high
+  - min signal credibility: high
+  - internal-fit requirement: explicit (positioning/scarcity/licensing)
+  - missing evidence: explicit list required
+  - affects Fusion: yes (as candidate/context)
+  - operating recommendation: only if Fusion’s internal policy allows it
+
+- **send_to_fusion_context**
+  - min business relevance: high
+  - min signal credibility: high
+  - time alignment: required
+  - affects Fusion: yes (context)
+  - operating recommendation: never directly
+
+**Popularity rule:** high popularity/virality may increase review urgency, but cannot by itself raise disposition.
 
 ### Relevance gates (minimum)
 A signal must be suppressed/archived unless it is relevant to at least one of:
@@ -373,7 +446,23 @@ Each example below shows:
    - Survives filtering because: scarcity + timing + rights feasibility.
    - Disposition: **validate** → **opportunity**.
 
-5) **Auction results × Subject momentum × Collector liquidity**
+5) **Gallery trend × Athlete partnership × Premium positioning**
+   - Component signals:
+     - Relationship: gallery begins representing (or heavily featuring) sports-adjacent work (weak unless corroborated)
+     - Event: athlete/brand partnership activity rises (weak, noisy)
+     - Market: premium auction outcomes for similar subjects/mediums (credible)
+   - Links:
+     - gallery → represents → artist
+     - athlete → partnered_with → brand
+     - collector_segment → prefers → premium positioning
+   - Mechanism (hypothesis): a premium-aligned collaboration window may exist if gallery/brand signals align.
+   - Internal evidence: prior collector responses to premium sports subjects; capacity constraints.
+   - Missing evidence: licensing feasibility; explicit partner interest; audience overlap verification.
+   - Risk/contradiction: partnership may be pure marketing; gallery move may be unrelated.
+   - Timing window: weeks–months.
+   - Disposition: **monitor** → **validate** (partner confirmation) → **opportunity**.
+
+6) **Auction results × Subject momentum × Collector liquidity**
    - Component signals:
      - Market: strong auction closes for a subject category (credible)
      - Trend: search/social modest lift for the subject (weak)
@@ -385,6 +474,19 @@ Each example below shows:
    - Missing evidence: breadth across auction houses, competitor supply, internal conversion signals.
    - Survives filtering because: transaction truth + timing.
    - Disposition: **external finding** → **fusion context** (contextual reprioritization only).
+
+7) **Competitor launch × Customer overlap × Product white space**
+   - Component signals:
+     - Competitor monitoring: competitor launches a new edition/format (observed, not proof)
+     - Internal: customer segment overlap (internal evidence)
+     - Market: absence of premium alternatives in a niche (weak; requires validation)
+   - Links:
+     - competitor → competes_with → your positioning
+     - customer_segment → overlaps_with → competitor_audience
+   - Mechanism (hypothesis): competitor launch indicates demand direction, leaving a premium white space.
+   - Missing evidence: pricing power, scarcity appetite, whether demand is transient.
+   - Risk: copying competitor without mechanism; saturation.
+   - Disposition: **validate** → **external finding**; may become **opportunity** if corroborated by demand + market response.
 
 ---
 
