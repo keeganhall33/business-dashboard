@@ -5,6 +5,7 @@ import { dedupeAndCluster } from "@/lib/fusion-v1/dedupe";
 import { computeFusionCandidateFingerprint, computeFusionInputSetFingerprint } from "@/lib/fusion-v1/fingerprinting";
 import { decideRunPolicy } from "@/lib/fusion-v1/production/run-policy";
 import { runFusionV1 } from "@/lib/fusion-v1/engine";
+import { rankCandidatesForAuditV1 } from "@/lib/fusion-v1/audit-ranking";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { persistFusionRunV1, type FusionDbClient } from "@/lib/fusion-v1/persistence";
 import { FUSION_POLICY_VERSION_V1, FUSION_SCORE_VERSION_V1 } from "@/lib/fusion-v1/contracts";
@@ -33,6 +34,14 @@ export async function runFusionDailyDecisionV1() {
       const { clustered } = dedupeAndCluster({ candidates: load.candidates, candidateFingerprintById: candidateFingerprints });
       const independent_cluster_count = clustered.length;
 
+      // Map original candidate_id -> deterministic cluster_id for audit persistence.
+      const clusterIdByCandidateId: Record<string, string> = {};
+      for (const cluster of clustered) {
+        for (const member of cluster.members) {
+          clusterIdByCandidateId[member.candidate_id] = cluster.cluster_id;
+        }
+      }
+
       // Eligible for comparison only if source freshness is "fresh".
       const freshCandidates = clustered
         .map((c) => c.merged)
@@ -45,6 +54,18 @@ export async function runFusionDailyDecisionV1() {
         freshCount: freshCandidates.length,
         staleCount: load.sources_stale.length,
         sourcesInspected: load.sources_inspected
+      });
+
+      // Build an audit-complete ranking set for every loaded candidate.
+      // Even when policy says "no decision", every candidate must receive a ranking row with explicit gating/exclusion.
+      const auditRanking = rankCandidatesForAuditV1({
+        nowIso,
+        candidates: load.candidates,
+        constraints,
+        activeActionKeys: [],
+        candidateMetaById: load.candidate_meta_by_id,
+        clusterIdByCandidateId,
+        enforceFreshnessPolicy: true
       });
 
       const input_set_fingerprint = computeFusionInputSetFingerprint({
@@ -93,7 +114,7 @@ export async function runFusionDailyDecisionV1() {
           all_candidate_ids: load.candidates.map((c) => c.candidate_id).sort(),
           deduplication_decisions: clustered.map((c) => c.dedupe_decision),
           conflicts_identified: [],
-          ranking: [],
+          ranking: auditRanking,
           selected: {
             candidate_id: "none",
             headline: policy.status,
@@ -124,13 +145,27 @@ export async function runFusionDailyDecisionV1() {
             do_not_do: []
           },
           next_best: null,
-          alternatives_considered: [],
-          monitor: [],
+          alternatives_considered: auditRanking.slice(0, 5).map((r) => ({
+            candidate_id: r.candidate_id,
+            headline: r.candidate_id,
+            why_ranked_lower: r.why_ranked_lower ?? ""
+          })),
+          monitor: auditRanking
+            .filter((r) => r.gated.gated_out)
+            .slice(0, 10)
+            .map((r) => ({
+              candidate_id: r.candidate_id,
+              reason: r.gated.reasons.map((x) => x.code).join(", "),
+              review_by: null
+            })),
           ignored: [],
           generated_narrative: {
             situation_summary: "Fusion ran but did not produce a comparative decision.",
-            why_winner: "",
-            why_alternatives: [],
+            why_winner: "No candidate met freshness/eligibility requirements for an operating decision.",
+            why_alternatives: auditRanking.slice(0, 5).map((r) => ({
+              candidate_id: r.candidate_id,
+              why: r.why_ranked_lower ?? (r.gated.gated_out ? "Excluded by gates." : "Ranked lower.")
+            })),
             do_not_do: []
           }
         };
@@ -156,14 +191,44 @@ export async function runFusionDailyDecisionV1() {
         input_set_fingerprint,
         candidateFingerprints,
         normalizedCandidatesById: Object.fromEntries(load.candidates.map((c) => [c.candidate_id, c])),
-        gateByClusterId: Object.fromEntries(clustered.map((c) => [c.merged.candidate_id, { gated_out: false, reasons: [], cluster_id: c.cluster_id }])),
-        ranking: decisionPackage.ranking,
+        gateByClusterId: Object.fromEntries(
+          auditRanking.map((r) => [
+            r.candidate_id,
+            { gated_out: r.gated.gated_out, reasons: r.gated.reasons, cluster_id: r.cluster_id }
+          ])
+        ),
+        ranking: auditRanking,
         conflictsByCandidateId
       });
 
       // Patch in the extra run-status fields after upsert.
       const { error } = await supabase.from("fusion_runs_v1").update(runRowExtra).eq("run_id", decisionPackage.run_id);
       if (error) throw error;
+
+      // Completeness invariant: candidates and rankings must match for a persisted run.
+      const candCountRes = await supabase
+        .from("fusion_candidates_v1")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", decisionPackage.run_id);
+      if (candCountRes.error) throw candCountRes.error;
+      const rankCountRes = await supabase
+        .from("fusion_rankings_v1")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", decisionPackage.run_id);
+      if (rankCountRes.error) throw rankCountRes.error;
+
+      const persistedCandidates = candCountRes.count ?? 0;
+      const persistedRankings = rankCountRes.count ?? 0;
+
+      if (persistedCandidates > 0 && persistedRankings !== persistedCandidates) {
+        await supabase
+          .from("fusion_runs_v1")
+          .update({ run_status: "failed", reason_codes: [...policy.reason_codes, "persistence_incomplete"] })
+          .eq("run_id", decisionPackage.run_id);
+        throw new Error(
+          `Fusion persistence incomplete: fusion_candidates_v1=${persistedCandidates} fusion_rankings_v1=${persistedRankings}`
+        );
+      }
 
       return {
         status: policy.status,

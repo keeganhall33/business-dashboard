@@ -133,7 +133,12 @@ export type CandidateGateCode =
   | "budget_infeasible"
   | "action_already_underway"
   | "mutually_exclusive"
-  | "insufficient_evidence_for_operating_action";
+  | "insufficient_evidence_for_operating_action"
+  // Production eligibility/exclusion (used by scheduler audit trails)
+  | "stale_candidate"
+  | "monitor_only_candidate"
+  | "insufficient_fresh_evidence"
+  | "no_actionable_candidate";
 
 export type CandidateGateResult = {
   gated_out: boolean;
