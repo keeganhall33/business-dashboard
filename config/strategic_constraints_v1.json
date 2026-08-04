@@ -1,0 +1,35 @@
+{
+  "schema_version": "strategic_constraints_v1",
+  "config_version": "v1.0",
+  "premium_positioning": {
+    "protected": true,
+    "prohibited_action_categories": ["discounting", "mass_market_pricing"],
+    "notes": [
+      "Protect premium positioning: avoid recommendations that commoditize the brand."
+    ]
+  },
+  "scarcity": {
+    "protected": true,
+    "prohibited_action_categories": ["open_edition_expansion"],
+    "notes": [
+      "Protect scarcity: avoid actions that materially increase supply without strategic justification."
+    ]
+  },
+  "licensing_ip": {
+    "requires_review": true,
+    "notes": [
+      "Any licensing/IP-dependent action must be flagged for explicit review before execution."
+    ]
+  },
+  "blocked_domains": ["meta_attribution"],
+  "capacity": {
+    "available_hours_today": 2.0,
+    "available_discretionary_budget_cents_today": null
+  },
+  "prohibited_action_categories": ["unauthorized_scraping", "impersonation"],
+  "mutually_exclusive_action_groups": {
+    "pricing": ["raise_price", "lower_price"],
+    "traffic": ["scale_spend", "pause_spend"]
+  }
+}
+
