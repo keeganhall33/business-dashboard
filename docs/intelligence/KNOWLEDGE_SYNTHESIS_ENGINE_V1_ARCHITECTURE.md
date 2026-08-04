@@ -73,6 +73,98 @@ This layer introduces *explicit* reasoning objects so “External Finding” is 
 
 Each contract is marked **Required / Optional / Derived / Learned / Future**.
 
+### 3.0 Synthesis coordination + provenance objects (required)
+
+These objects exist to guarantee **reproducibility**, **version pinning**, and a complete provenance chain.
+
+> Reuse/adaptation note: this architecture reuses the canonical meanings of **Evidence Reference**, **Claim**, and **Signal** from the existing Knowledge + Signal Engine architecture. It does **not** introduce parallel Evidence/Claim/Signal contracts.
+
+#### 3.0.1 SynthesisInput
+
+A deterministic snapshot of what the synthesis run consumed.
+
+- `synthesis_input_id` **(Derived)** (from `synthesis_input_fingerprint`)
+- `synthesis_input_fingerprint` **(Derived)**
+- `signal_refs[]` **(Required)**: `{ signal_id, signal_version_ref }`
+- `window_start` / `window_end` **(Required)**
+
+- `entity_resolution_version` **(Required)**
+- `source_registry_version` **(Required)**
+- `legal_policy_version` **(Required)**
+- `synthesis_policy_version` **(Required)**
+- `confidence_policy_version` **(Required)**
+- `contradiction_policy_version` **(Required)**
+
+- `created_at` **(Derived)**
+
+#### 3.0.2 EvidenceEdge (for audit graph)
+
+An explicit, typed link in the provenance chain.
+
+- `evidence_edge_id` **(Derived)**
+- `edge_type` **(Required)**: evidence_to_claim | claim_to_signal | signal_to_finding | finding_to_hypothesis
+- `from_id` **(Required)**
+- `to_id` **(Required)**
+- `from_version_ref` **(Optional/Future)**
+- `to_version_ref` **(Optional/Future)**
+- `created_at` **(Derived)**
+
+#### 3.0.3 Contradiction (synthesis-level)
+
+Contradictions are first-class and preserved.
+
+- `contradiction_id` **(Derived)**
+- `contradiction_type` **(Required)**: direct | partial | source_disagreement | interpretation_disagreement | correction | retraction | stale | regime_change
+- `severity` **(Required)**: low | medium | high
+- `supporting_signal_refs[]` **(Required)**
+- `contradicting_signal_refs[]` **(Required)**
+- `summary` **(Required)** (observed vs inferred clearly labeled)
+- `created_at` **(Derived)**
+
+#### 3.0.4 MissingEvidenceItem
+
+A structured representation of what would strengthen/weaken/invalidate synthesis.
+
+- `missing_evidence_id` **(Derived)**
+- `missing_type` **(Required)**: official_confirmation | independent_corroboration | primary_document | terms_detail | timestamp | entity_disambiguation | outcome_measurement
+- `requested_for` **(Required)**: finding_id | hypothesis_id
+- `why_needed` **(Required)**
+- `priority` **(Optional)** (informational only; not business ranking)
+- `expires_at` **(Derived/Optional)**
+
+#### 3.0.5 SynthesisReasoningTrace
+
+An append-only trace of deterministic rules applied (and any AI-assisted steps) that produced a Finding/Hypothesis.
+
+- `reasoning_trace_id` **(Derived)**
+- `synthesis_input_id` **(Required)**
+- `deterministic_steps[]` **(Required)**: `{ step_id, step_type, inputs, outputs, rule_version }`
+- `ai_steps[]` **(Optional)**: `{ step_id, prompt_version, model_version, output_hash }`
+- `created_at` **(Derived)**
+
+#### 3.0.6 FindingVersion
+
+A version wrapper so downstream systems can pin exact Finding state.
+
+- `finding_id` **(Required)**
+- `finding_version_ref` **(Required/Future)** (monotonic int or content hash)
+- `finding_schema_version` **(Required)**
+- `created_at` **(Derived)**
+- `supersedes_finding_version_refs[]` **(Optional/Future)**
+
+#### 3.0.7 SynthesisRun
+
+The run envelope that produced one or more Findings/Hypotheses.
+
+- `synthesis_run_id` **(Derived)**
+- `synthesis_input_id` **(Required)**
+- `run_started_at` / `run_completed_at` **(Derived)**
+- `produced_finding_ids[]` **(Derived)**
+- `produced_hypothesis_ids[]` **(Derived)**
+- `policy_versions` **(Required)** (all versions listed in SynthesisInput)
+- `errors[]` **(Optional)**
+- `created_at` **(Derived)**
+
 ### 3.1 ExternalFinding (synthesized)
 
 - `external_finding_id` **(Derived)** (from `finding_fingerprint`)
