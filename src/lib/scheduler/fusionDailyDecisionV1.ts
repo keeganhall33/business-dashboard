@@ -8,6 +8,10 @@ import { runFusionV1 } from "@/lib/fusion-v1/engine";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { persistFusionRunV1, type FusionDbClient } from "@/lib/fusion-v1/persistence";
 import { FUSION_POLICY_VERSION_V1, FUSION_SCORE_VERSION_V1 } from "@/lib/fusion-v1/contracts";
+import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 const JOB_KEY = "fusion-daily-decision-v1";
 
@@ -18,6 +22,9 @@ export async function runFusionDailyDecisionV1() {
       const nowIso = new Date().toISOString();
       const { constraints, constraints_hash } = loadStrategicConstraintsV1();
 
+      const constitution_hash = sha256File(path.join(process.cwd(), "docs/intelligence/AI_DECISION_CONSTITUTION.md"));
+      const roadmap_hash = sha256File(path.join(process.cwd(), "docs/intelligence/ROADMAP.md"));
+
       const load = await loadProductionFusionCandidates({ nowIso, strategic_constraints_blocked_domains: constraints.blocked_domains });
 
       const candidateFingerprints: Record<string, string> = {};
@@ -26,13 +33,16 @@ export async function runFusionDailyDecisionV1() {
       const { clustered } = dedupeAndCluster({ candidates: load.candidates, candidateFingerprintById: candidateFingerprints });
       const independent_cluster_count = clustered.length;
 
-      const freshCandidates = clustered.map((c) => c.merged);
+      // Eligible for comparison only if source freshness is "fresh".
+      const freshCandidates = clustered
+        .map((c) => c.merged)
+        .filter((c) => load.candidate_meta_by_id[c.candidate_id]?.freshness === "fresh");
 
       const policy = decideRunPolicy({
         nowIso,
         eligibleClusters: freshCandidates,
         gatedCount: 0,
-        freshCount: load.candidates.length,
+        freshCount: freshCandidates.length,
         staleCount: load.sources_stale.length,
         sourcesInspected: load.sources_inspected
       });
@@ -53,8 +63,8 @@ export async function runFusionDailyDecisionV1() {
         const out = runFusionV1({
           nowIso,
           candidates: freshCandidates,
-          constitution_hash: "unknown",
-          roadmap_hash: "unknown",
+          constitution_hash,
+          roadmap_hash,
           strategic_constraints: { constraints, constraints_hash },
           external_context_snapshot: { sources_inspected: load.sources_inspected },
           competitor_context_snapshot: {},
@@ -64,12 +74,12 @@ export async function runFusionDailyDecisionV1() {
       } else {
         // Honest non-decision package.
         decisionPackage = {
-          run_id: input_set_fingerprint.slice(0, 24),
+          run_id: canonicalJsonSha256Hex({ input_set_fingerprint }).slice(0, 24),
           generated_at: nowIso,
           fusion_policy_version: FUSION_POLICY_VERSION_V1,
           fusion_score_version: FUSION_SCORE_VERSION_V1,
-          constitution_hash: "unknown",
-          roadmap_hash: "unknown",
+          constitution_hash,
+          roadmap_hash,
           strategic_constraints_hash: constraints_hash,
           strategic_constraints_version: constraints.config_version,
           external_context_snapshot: {
@@ -131,7 +141,7 @@ export async function runFusionDailyDecisionV1() {
         run_status: policy.status,
         reason_codes: policy.reason_codes,
         candidate_total_count: load.candidates.length,
-        candidate_fresh_count: load.candidates.length,
+        candidate_fresh_count: freshCandidates.length,
         candidate_stale_count: load.sources_stale.length,
         candidate_gated_count: 0,
         candidate_eligible_count: freshCandidates.length,
@@ -168,4 +178,9 @@ export async function runFusionDailyDecisionV1() {
       detailsJson: result as unknown as Record<string, unknown>
     })
   });
+}
+
+function sha256File(filePath: string): string {
+  const bytes = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(bytes).digest("hex");
 }

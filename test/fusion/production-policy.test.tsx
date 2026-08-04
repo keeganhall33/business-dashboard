@@ -100,3 +100,29 @@ test("run policy: two candidates, none sufficient => blocked_by_data_quality", (
   assert.equal(p.status, "blocked_by_data_quality");
 });
 
+test("run policy: two candidates with sufficient evidence => completed_with_decision", () => {
+  const a = candidate("a");
+  const b = candidate("b");
+  const p = decideRunPolicy({
+    nowIso: "2026-08-04T00:00:00.000Z",
+    eligibleClusters: [a, b],
+    gatedCount: 0,
+    freshCount: 2,
+    staleCount: 0,
+    sourcesInspected: ["dashboard_snapshots"]
+  });
+  assert.equal(p.status, "completed_with_decision");
+  assert.equal(p.execution_mode, "comparative");
+});
+
+test("run policy: stale-only => no_fresh_candidates", () => {
+  const p = decideRunPolicy({
+    nowIso: "2026-08-04T00:00:00.000Z",
+    eligibleClusters: [],
+    gatedCount: 0,
+    freshCount: 0,
+    staleCount: 3,
+    sourcesInspected: ["dashboard_snapshots"]
+  });
+  assert.equal(p.status, "no_fresh_candidates");
+});

@@ -8,6 +8,7 @@ import type { Finding, Hypothesis } from "@/lib/intelligence-v1/contracts";
 
 export type ProductionCandidateLoadResult = {
   candidates: FusionCandidate[];
+  candidate_meta_by_id: Record<string, { source: string; freshness: "fresh" | "monitor_only" }>;
   sources_inspected: string[];
   sources_empty: string[];
   sources_stale: string[];
@@ -26,6 +27,7 @@ export async function loadProductionFusionCandidates(input: {
   const freshness_notes: Array<Record<string, unknown>> = [];
 
   const candidates: FusionCandidate[] = [];
+  const candidate_meta_by_id: Record<string, { source: string; freshness: "fresh" | "monitor_only" }> = {};
 
   // 1) Dashboard snapshots (whitelist)
   sources_inspected.push("dashboard_snapshots");
@@ -44,7 +46,13 @@ export async function loadProductionFusionCandidates(input: {
       if (res.freshness.classification === "stale") sources_stale.push(`dashboard_snapshots:${snap.key}`);
       continue;
     }
-    candidates.push(...res.candidates);
+    for (const c of res.candidates) {
+      candidates.push(c);
+      candidate_meta_by_id[c.candidate_id] = {
+        source: `dashboard_snapshots:${snap.key}`,
+        freshness: res.freshness.classification === "fresh" ? "fresh" : "monitor_only"
+      };
+    }
   }
 
   // 2) Opportunity pipeline (long-horizon)
@@ -60,6 +68,12 @@ export async function loadProductionFusionCandidates(input: {
       continue;
     }
     if (res.candidate) candidates.push(res.candidate);
+    if (res.candidate) {
+      candidate_meta_by_id[res.candidate.candidate_id] = {
+        source: `opportunity_pipeline:${row.id}`,
+        freshness: res.freshness.classification === "fresh" ? "fresh" : "monitor_only"
+      };
+    }
   }
 
   // 3) Traffic quality mismatch chain (intelligence v1)
@@ -68,10 +82,12 @@ export async function loadProductionFusionCandidates(input: {
   if (!tq) {
     sources_empty.push("intelligence_v1_traffic_quality");
   } else {
-    candidates.push(trafficQualityChainToFusionCandidate({ nowIso: input.nowIso, chain: tq }));
+    const c = trafficQualityChainToFusionCandidate({ nowIso: input.nowIso, chain: tq });
+    candidates.push(c);
+    candidate_meta_by_id[c.candidate_id] = { source: "intelligence_v1_traffic_quality", freshness: "fresh" };
   }
 
-  return { candidates, sources_inspected, sources_empty, sources_stale, sources_skipped, freshness_notes };
+  return { candidates, candidate_meta_by_id, sources_inspected, sources_empty, sources_stale, sources_skipped, freshness_notes };
 }
 
 async function loadTrafficQualityMismatchChain(): Promise<TrafficQualityChain | null> {
@@ -106,23 +122,17 @@ async function loadTrafficQualityMismatchChain(): Promise<TrafficQualityChain | 
   const rec = (recRes.data?.[0] as unknown as Record<string, unknown> | undefined) ?? null;
   if (!rec) return null;
 
-  // Evidence edges are required for traceability: ensure at least one edge exists.
+  // Evidence edges are required for traceability and must reference persisted fact ids.
   const edgesRes = await supabase
     .from("intelligence_evidence_edges_v1")
-    .select("*")
+    .select("from_type,from_id,to_type,to_id,relation")
     .eq("from_type", "finding")
-    .eq("from_id", String(finding.finding_id ?? ""))
-    .limit(1);
+    .eq("from_id", String(finding.finding_id ?? ""));
   if (edgesRes.error) throw edgesRes.error;
-  if (!edgesRes.data?.length) return null;
-
-  // We cannot reliably re-hydrate full fact ids without a graph query; require at least one fact row.
-  const factsRes = await supabase
-    .from("intelligence_facts_v1")
-    .select("fact_id")
-    .limit(1);
-  if (factsRes.error) throw factsRes.error;
-  if (!factsRes.data?.length) return null;
+  const edges = (edgesRes.data ?? []) as Array<{ to_type: string; to_id: string; relation: string }>;
+  const fact_ids = edges.filter((e) => e.to_type === "fact").map((e) => e.to_id);
+  const contradicting_fact_ids = edges.filter((e) => e.to_type === "fact" && e.relation === "contradicts").map((e) => e.to_id);
+  if (!fact_ids.length) return null;
 
   return {
     finding: finding as unknown as Finding,
@@ -139,7 +149,7 @@ async function loadTrafficQualityMismatchChain(): Promise<TrafficQualityChain | 
       stop_condition: (rec.stop_condition as string | null) ?? null,
       review_by: null
     },
-    fact_ids: [],
-    contradicting_fact_ids: []
+    fact_ids,
+    contradicting_fact_ids
   };
 }
