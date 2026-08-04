@@ -55,5 +55,37 @@ test("EvidenceReference fingerprint changes when semantic timestamps change", ()
 
   const a = createEvidenceReferenceFingerprint(base);
   const b = createEvidenceReferenceFingerprint({ ...base, retrieved_at: "2026-08-05T00:00:00.000Z" });
-  assert.notEqual(a, b);
+  // retrieved_at is metadata-only for fingerprinting; repeat retrieval must not inflate corroboration.
+  assert.equal(a, b);
+});
+
+test("Policy content hash ignores non-semantic metadata", async () => {
+  const { createPolicyRefContentHash } = await import("@/lib/external-intelligence/hashing/content-hash");
+
+  const a = createPolicyRefContentHash({
+    schema_version: "policy_confidence_v1",
+    policy_name: "confidence",
+    semantic_version: "v1.0.0",
+    effective_from: "2026-08-04",
+    effective_until: null,
+    approval_status: "approved",
+    changed_at: "2026-08-04",
+    change_reason: "x",
+    rules: { required_axes: ["overall", "evidence"] }
+  });
+
+  const b = createPolicyRefContentHash({
+    schema_version: "policy_confidence_v1",
+    policy_name: "confidence",
+    semantic_version: "v1.0.0",
+    effective_from: "2026-08-04",
+    effective_until: null,
+    approval_status: "approved",
+    changed_at: "2099-01-01",
+    change_reason: "y",
+    rules: { required_axes: ["evidence", "overall"] }
+  });
+
+  // changed_at + change_reason excluded; required_axes treated as set-like and normalized.
+  assert.equal(a, b);
 });

@@ -15,6 +15,8 @@ export function createEvidenceReferenceFingerprint(input: {
   source_artifact_identifier: string | null;
   source_url_or_reference: string;
   content_hash: string | null;
+  // retrieved_at is intentionally excluded from fingerprint to prevent duplicate retrievals
+  // of identical content from inflating corroboration.
   retrieved_at: string;
   published_at: string | null;
   event_time: string | null;
@@ -29,9 +31,10 @@ export function createEvidenceReferenceFingerprint(input: {
   supersedes_evidence_reference_id: string | null;
   schema_version: string;
 }): string {
-  return sha256CanonicalJson({
-    ...input
-  });
+  const { retrieved_at, ...semantic } = input;
+  void retrieved_at;
+
+  return sha256CanonicalJson(semantic);
 }
 
 /**

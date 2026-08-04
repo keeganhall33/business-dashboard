@@ -1,5 +1,5 @@
 import type { ConfidenceLevel } from "@/lib/external-intelligence/contracts/enums";
-import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
+import { VersionRefSchema, type VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
 import { z } from "zod";
 
 export type ConfidenceAxis = {
@@ -25,9 +25,11 @@ export const ConfidenceAxisSchema = z
     bounded_score: z.number().min(0).max(1).nullable(),
     reasons: z.array(z.string()),
     blockers: z.array(z.string()),
-    supporting_reference_ids: z.array(z.any()),
-    contradicting_reference_ids: z.array(z.any()),
-    missing_evidence_ids: z.array(z.string())
+    supporting_reference_ids: z.array(VersionRefSchema),
+    contradicting_reference_ids: z.array(VersionRefSchema),
+
+    // Minimal strict reference type for A1: ids only (MissingEvidenceItem is not implemented yet).
+    missing_evidence_ids: z.array(z.string().min(1))
   })
   .strict();
 

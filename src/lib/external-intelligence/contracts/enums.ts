@@ -15,6 +15,20 @@ export type ObjectType =
   | "fusion_context"
   | "contradiction";
 
+export const OBJECT_TYPE_VALUES: ObjectType[] = [
+  "evidence_reference",
+  "claim",
+  "signal",
+  "policy",
+  "finding",
+  "hypothesis",
+  "world_model_state",
+  "opportunity",
+  "risk",
+  "fusion_context",
+  "contradiction"
+];
+
 export type ApprovalStatus = "draft" | "approved" | "retired";
 
 export type AccessClassification =

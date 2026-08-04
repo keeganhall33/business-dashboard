@@ -17,6 +17,20 @@ test("VersionRefSchema rejects id-only reference without content_hash", () => {
   );
 });
 
+test("VersionRefSchema rejects unknown object_type", () => {
+  assert.throws(() =>
+    VersionRefSchema.parse({
+      object_type: "made_up",
+      object_id: "x",
+      version_id: null,
+      content_hash: "a".repeat(64),
+      schema_version: "v1",
+      policy_version: "p1",
+      created_at: new Date().toISOString()
+    })
+  );
+});
+
 test("VersionRefSchema accepts valid content_hash", () => {
   const ok = VersionRefSchema.parse({
     object_type: "signal",

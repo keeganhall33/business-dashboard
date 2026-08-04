@@ -1,5 +1,5 @@
 import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
-import type { ObjectType } from "@/lib/external-intelligence/contracts/enums";
+import { OBJECT_TYPE_VALUES, type ObjectType } from "@/lib/external-intelligence/contracts/enums";
 import { z } from "zod";
 
 export type VersionRef = {
@@ -25,7 +25,7 @@ export type VersionRef = {
 
 export const VersionRefSchema = z
   .object({
-    object_type: z.string() as z.ZodType<ObjectType>,
+    object_type: z.enum(OBJECT_TYPE_VALUES) as z.ZodType<ObjectType>,
     object_id: z.string().min(1),
     version_id: z.string().min(1).nullable(),
     content_hash: z.string().regex(/^[a-f0-9]{64}$/),

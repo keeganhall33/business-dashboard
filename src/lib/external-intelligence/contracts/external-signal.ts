@@ -1,6 +1,6 @@
-import type { ConfidenceAxes } from "@/lib/external-intelligence/contracts/confidence-axes";
-import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
-import type { EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
+import { ConfidenceAxesSchema, type ConfidenceAxes } from "@/lib/external-intelligence/contracts/confidence-axes";
+import { VersionRefSchema, type VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
+import { EntityRefSchema, type EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
 import type {
   AccessClassification,
   SignalDisposition,
@@ -133,6 +133,13 @@ export type ExternalSignal = {
   access_classification: AccessClassification;
 };
 
+const EvidenceBundleSchema = z
+  .object({
+    evidence_reference: VersionRefSchema,
+    claim_refs: z.array(VersionRefSchema)
+  })
+  .strict();
+
 export const ExternalSignalSchema = z
   .object({
     signal_id: z.string().min(1),
@@ -181,17 +188,19 @@ export const ExternalSignalSchema = z
       "retracted"
     ]) as z.ZodType<ExternalSignalClassification>,
     business_domains: z.array(z.string()),
-    affected_entities: z.array(z.any()),
+    affected_entities: z.array(EntityRefSchema),
     affected_markets: z.array(z.string()),
     geography: z.string().min(1).nullable(),
     languages: z.array(z.string()),
     source_ids: z.array(z.string()),
     source_set_ids: z.array(z.string()),
-    evidence_reference_version_refs: z.array(z.any()),
-    claim_version_refs: z.array(z.any()),
-    event_version_refs: z.array(z.any()),
-    relationship_version_refs: z.array(z.any()),
-    trend_version_refs: z.array(z.any()),
+    evidence_reference_version_refs: z.array(VersionRefSchema).min(1),
+    claim_version_refs: z.array(VersionRefSchema).min(1),
+
+    // Cross-object links are VersionRef-only in A1 (no Event/Relationship/Trend contracts).
+    event_version_refs: z.array(VersionRefSchema),
+    relationship_version_refs: z.array(VersionRefSchema),
+    trend_version_refs: z.array(VersionRefSchema),
     normalized_statement: z.string().min(1),
     observed_fact: z.string().min(1),
     inferred_interpretation: z.string().min(1).nullable(),
@@ -204,8 +213,8 @@ export const ExternalSignalSchema = z
     urgency: z.enum(["low", "medium", "high", "unknown"]),
     expiration: z.string().datetime({ offset: true }),
     review_by: z.string().datetime({ offset: true }).nullable(),
-    supporting_evidence: z.array(z.any()),
-    contradicting_evidence: z.array(z.any()),
+    supporting_evidence: z.array(EvidenceBundleSchema),
+    contradicting_evidence: z.array(EvidenceBundleSchema),
     missing_evidence: z.array(z.string()),
     corroboration_count: z.number().int().min(0),
     independent_source_count: z.number().int().min(0),
@@ -213,7 +222,7 @@ export const ExternalSignalSchema = z
     signal_credibility: z
       .object({ level: z.enum(["high", "medium", "low"]), reasons: z.array(z.string()) })
       .strict(),
-    confidence: z.any(),
+    confidence: ConfidenceAxesSchema,
     uncertainty_reasons: z.array(z.string()),
     what_would_strengthen: z.array(z.string()),
     what_would_weaken: z.array(z.string()),

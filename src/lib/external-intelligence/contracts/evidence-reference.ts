@@ -7,6 +7,12 @@ import type {
 } from "@/lib/external-intelligence/contracts/enums";
 import { z } from "zod";
 
+export type EvidenceCredibility = {
+  level: "high" | "medium" | "low" | "unknown";
+  bounded_score: number | null; // optional, only when defensible
+  reasons: string[];
+};
+
 export type EvidenceReference = {
   // Canonical id field name (never evidence_id)
   evidence_reference_id: string;
@@ -48,6 +54,11 @@ export type EvidenceReference = {
 
   // Arbitrary structured provenance metadata (capture method, reviewer, tool, etc.)
   provenance_metadata: Record<string, unknown>;
+
+  // Credibility + corroboration/contradiction hooks (architecture-required)
+  credibility: EvidenceCredibility;
+  corroborating_evidence_reference_ids: string[];
+  contradicting_evidence_reference_ids: string[];
 
   schema_version: string;
 };
@@ -91,6 +102,53 @@ export const EvidenceReferenceSchema = z
     retraction_status: z.enum(["none", "retracted"]) as z.ZodType<RetractionStatus>,
     supersedes_evidence_reference_id: z.string().min(1).nullable(),
     provenance_metadata: z.record(z.string(), z.unknown()),
+
+    credibility: z
+      .object({
+        level: z.enum(["high", "medium", "low", "unknown"]),
+        bounded_score: z.number().min(0).max(1).nullable(),
+        reasons: z.array(z.string())
+      })
+      .strict(),
+    corroborating_evidence_reference_ids: z.array(z.string().min(1)),
+    contradicting_evidence_reference_ids: z.array(z.string().min(1)),
+
     schema_version: z.string().min(1)
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    const id = val.evidence_reference_id;
+
+    // Reject self-reference.
+    if (val.corroborating_evidence_reference_ids.includes(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["corroborating_evidence_reference_ids"],
+        message: "EvidenceReference must not corroborate itself"
+      });
+    }
+    if (val.contradicting_evidence_reference_ids.includes(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["contradicting_evidence_reference_ids"],
+        message: "EvidenceReference must not contradict itself"
+      });
+    }
+
+    // Reject duplicates (deterministic identity should not depend on duplicates).
+    const uniq = (xs: string[]) => new Set(xs).size === xs.length;
+    if (!uniq(val.corroborating_evidence_reference_ids)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["corroborating_evidence_reference_ids"],
+        message: "corroborating_evidence_reference_ids must not contain duplicates"
+      });
+    }
+    if (!uniq(val.contradicting_evidence_reference_ids)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["contradicting_evidence_reference_ids"],
+        message: "contradicting_evidence_reference_ids must not contain duplicates"
+      });
+    }
+  });

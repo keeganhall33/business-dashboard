@@ -1,5 +1,5 @@
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
-import type { EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
+import { EntityRefSchema, type EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
 import type { ClaimVerificationState, ObservedVsInferred } from "@/lib/external-intelligence/contracts/enums";
 import { z } from "zod";
 
@@ -11,7 +11,9 @@ export type ClaimRelevanceWindow = {
 export type ClaimObjectLiteral = {
   kind: "literal";
   value: string | number | boolean | null;
+  value_type: "string" | "number" | "boolean" | "null";
   unit?: string | null;
+  language?: string | null;
 };
 
 export type ClaimObjectEntity = {
@@ -54,14 +56,50 @@ export type Claim = {
   interpretation_policy_version: string;
 };
 
+const ClaimObjectLiteralSchema = z
+  .object({
+    kind: z.literal("literal"),
+    value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    value_type: z.enum(["string", "number", "boolean", "null"]),
+    unit: z.string().min(1).nullable().optional(),
+    language: z.string().min(1).nullable().optional()
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    const vt = val.value_type;
+    const ok =
+      (vt === "string" && typeof val.value === "string") ||
+      (vt === "number" && typeof val.value === "number") ||
+      (vt === "boolean" && typeof val.value === "boolean") ||
+      (vt === "null" && val.value === null);
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["value_type"],
+        message: "value_type must match value"
+      });
+    }
+  });
+
+const ClaimObjectEntitySchema = z
+  .object({
+    kind: z.literal("entity"),
+    entity: EntityRefSchema
+  })
+  .strict();
+
+const ClaimObjectSchema = z.union([ClaimObjectLiteralSchema, ClaimObjectEntitySchema]);
+
+const ClaimSubjectSchema = EntityRefSchema.nullable();
+
 export const ClaimSchema = z
   .object({
     claim_id: z.string().min(1),
     claim_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     evidence_reference_id: z.string().min(1),
-    subject: z.any().nullable(),
+    subject: ClaimSubjectSchema,
     predicate: z.string().min(1),
-    object: z.any(),
+    object: ClaimObjectSchema,
     event_time: z.string().datetime({ offset: true }).nullable(),
     announcement_time: z.string().datetime({ offset: true }).nullable(),
     retrieved_at: z.string().datetime({ offset: true }),
