@@ -9,7 +9,7 @@ const ProductionEligibilitySchema = z.literal("disabled");
 
 const LifecycleStatusSchema = z.enum(["proposed", "trial", "active", "paused", "retired"]);
 const AutomationSuitabilitySchema = z.enum(["allowed", "manual_only", "prohibited"]);
-const TermsReviewStatusSchema = z.enum(["not_reviewed", "restricted", "approved"]);
+const TermsReviewStatusSchema = z.enum(["not_reviewed", "approved", "restricted", "prohibited"]);
 
 export const SourceRegistrySourceSchema = z
   .object({

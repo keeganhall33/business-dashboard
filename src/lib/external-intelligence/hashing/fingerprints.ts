@@ -15,8 +15,10 @@ export function createEvidenceReferenceFingerprint(input: {
   source_artifact_identifier: string | null;
   source_url_or_reference: string;
   content_hash: string | null;
-  // retrieved_at is intentionally excluded from fingerprint to prevent duplicate retrievals
-  // of identical content from inflating corroboration.
+  // NOTE: Artifact identity vs retrieval occurrence
+  // - Artifact identity: content_hash (when available) and the semantic fields below.
+  // - Retrieval occurrence: retrieved_at is metadata-only and intentionally excluded.
+  // This prevents repeated retrieval of identical content from inflating corroboration.
   retrieved_at: string;
   published_at: string | null;
   event_time: string | null;

@@ -1,6 +1,40 @@
 import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 
 /**
+ * Canonical hashing invariants (authoritative)
+ *
+ * Applies to:
+ * - VersionRef
+ * - PolicyRef
+ * - Source Registry + Source Sets configuration hashes
+ * - EvidenceReference / Claim / ExternalSignal fingerprints
+ * - future persisted external-intelligence objects
+ *
+ * Requirements:
+ * - serializer: src/lib/fusion-v1/canonical-json.ts
+ * - encoding: UTF-8
+ * - digest: SHA-256 hex
+ * - object keys sorted recursively by canonical-json
+ * - ordered arrays preserve order
+ * - set-like arrays MUST be normalized deterministically by the caller/projection (sorted unique)
+ * - excluded metadata MUST be explicitly listed per object type
+ * - never hash an arbitrary whole object when only a defined semantic projection is intended
+ */
+
+export const CANONICAL_HASHING = {
+  serializer: "src/lib/fusion-v1/canonical-json.ts",
+  encoding: "utf-8",
+  digest: "sha256-hex"
+} as const;
+
+// Policy hashing (semantic projection)
+// Non-semantic metadata excluded from policy content identity.
+export const POLICY_HASH_EXCLUDED_FIELDS = ["changed_at", "approved_by", "change_reason", "content_hash"] as const;
+
+// Known set-like arrays in policy fixtures (normalize sorted unique before hashing).
+export const POLICY_SET_LIKE_ARRAY_FIELDS = ["required_axes", "dispositions"] as const;
+
+/**
  * Phase A1: Deterministic content hashing.
  * Reuses fusion-v1 canonical JSON and SHA-256 behavior.
  */

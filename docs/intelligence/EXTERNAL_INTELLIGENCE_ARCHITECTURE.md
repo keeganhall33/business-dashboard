@@ -154,3 +154,26 @@ Clarifications:
 - Fusion consumes the exact versioned explanation bundle used to create each input.
 
 This interface is the only permitted input surface from external intelligence into Fusion.
+
+---
+
+## Naming boundary (internal vs external; required before adapters)
+
+To prevent duplicate systems and ambiguous adapters:
+
+**Internal (existing) objects remain named and owned by intelligence-v1:**
+- intelligence-v1 **Finding**
+- intelligence-v1 **Hypothesis**
+- intelligence-v1 **EvidenceEdge**
+- internal **FactRef**
+
+**External intelligence objects use explicit external naming:**
+- **EvidenceReference** (external artifact pointer)
+- **ExternalSignal**
+- **ExternalFinding** (future; Knowledge Synthesis Engine output)
+- **ExternalHypothesis** (future)
+
+Rule:
+- Do not introduce an unqualified generic `Finding` or `Hypothesis` inside `external-intelligence/**`.
+- Shared **ConfidenceAxes** is canonical for new external objects.
+- Legacy confidence shapes require explicit adapters (A3), never silent compatibility.

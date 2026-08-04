@@ -38,4 +38,13 @@ test("A2 config loaders: load fixtures fail-closed and preserve disabled state",
 
   // Unreviewed terms must produce automation block reasons (fail-closed for automation).
   assert.ok(cfg.automation_block_reasons_by_source_id["example.paywalled.manual_only"]!.length > 0);
+
+  // Prohibited terms must parse and must block automation.
+  assert.ok(cfg.automation_block_reasons_by_source_id["example.terms_restricted.prohibited"]!.length > 0);
+
+  // Approved terms does not bypass other restrictions (paywall/licensing/auth/etc.).
+  // (Fixture entries are not terms-approved, but the gate is derived from multiple fields.)
+  const paywalledReasons = cfg.automation_block_reasons_by_source_id["example.paywalled.manual_only"]!;
+  assert.ok(paywalledReasons.some((r) => r === "paywalled"));
+  assert.ok(paywalledReasons.some((r) => r === "licensing_required"));
 });
