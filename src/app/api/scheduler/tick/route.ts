@@ -19,6 +19,7 @@ import { runAgentIdeaPulse } from "@/lib/scheduler/agentIdeaPulse";
 import { runIndustryNewsPulse } from "@/lib/scheduler/industryNewsPulse";
 import { runScoreboardRefresh } from "@/lib/scheduler/scoreboardRefresh";
 import { runIntelligenceTrafficQualityDaily } from "@/lib/scheduler/intelligenceTrafficQualityDaily";
+import { runFusionDailyDecisionV1 } from "@/lib/scheduler/fusionDailyDecisionV1";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,8 @@ const runners: Record<string, JobRunner> = {
   "agent-idea-pulse": runAgentIdeaPulse,
   "industry-news-pulse": runIndustryNewsPulse,
   "scoreboard-refresh": runScoreboardRefresh,
-  "intelligence-traffic-quality": runIntelligenceTrafficQualityDaily
+  "intelligence-traffic-quality": runIntelligenceTrafficQualityDaily,
+  "fusion-daily-decision-v1": runFusionDailyDecisionV1
 };
 
 /**
