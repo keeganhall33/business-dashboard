@@ -8,6 +8,7 @@ import { runFusionV1 } from "@/lib/fusion-v1/engine";
 import { rankCandidatesForAuditV1 } from "@/lib/fusion-v1/audit-ranking";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { persistFusionRunV1, type FusionDbClient } from "@/lib/fusion-v1/persistence";
+import { enforceFusionRunCompletenessInvariantV1, type FusionCountClient } from "@/lib/fusion-v1/persistence-invariant";
 import { FUSION_POLICY_VERSION_V1, FUSION_SCORE_VERSION_V1 } from "@/lib/fusion-v1/contracts";
 import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 import crypto from "node:crypto";
@@ -15,6 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const JOB_KEY = "fusion-daily-decision-v1";
+
+// (Completeness invariant helper is in fusion-v1/persistence-invariant.ts to keep it server-only free for tests.)
 
 export async function runFusionDailyDecisionV1() {
   return withJobRun({
@@ -206,29 +209,11 @@ export async function runFusionDailyDecisionV1() {
       if (error) throw error;
 
       // Completeness invariant: candidates and rankings must match for a persisted run.
-      const candCountRes = await supabase
-        .from("fusion_candidates_v1")
-        .select("id", { count: "exact", head: true })
-        .eq("run_id", decisionPackage.run_id);
-      if (candCountRes.error) throw candCountRes.error;
-      const rankCountRes = await supabase
-        .from("fusion_rankings_v1")
-        .select("id", { count: "exact", head: true })
-        .eq("run_id", decisionPackage.run_id);
-      if (rankCountRes.error) throw rankCountRes.error;
-
-      const persistedCandidates = candCountRes.count ?? 0;
-      const persistedRankings = rankCountRes.count ?? 0;
-
-      if (persistedCandidates > 0 && persistedRankings !== persistedCandidates) {
-        await supabase
-          .from("fusion_runs_v1")
-          .update({ run_status: "failed", reason_codes: [...policy.reason_codes, "persistence_incomplete"] })
-          .eq("run_id", decisionPackage.run_id);
-        throw new Error(
-          `Fusion persistence incomplete: fusion_candidates_v1=${persistedCandidates} fusion_rankings_v1=${persistedRankings}`
-        );
-      }
+      await enforceFusionRunCompletenessInvariantV1({
+        client: supabase as unknown as FusionCountClient,
+        run_id: decisionPackage.run_id,
+        policy
+      });
 
       return {
         status: policy.status,
