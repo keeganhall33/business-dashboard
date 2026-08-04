@@ -159,6 +159,31 @@ Learned metrics (persisted over time):
 
 The registry remains the canonical governor; learning augments it.
 
+### 2.7 Source-of-truth rules (config vs persistence)
+
+When configuration and persistence differ:
+
+- **Config wins** for governance-critical fields:
+  - canonical identity (`source_id`)
+  - domains and declared source sets
+  - access classification + terms status + legal constraints
+  - expected cadence/latency/freshness rules
+  - implementation wave and enabled-by-default recommendation
+  - supported knowledge types
+  - manual credibility prior
+  - owner and registry version
+
+- **Persistence wins** for observed facts and learning:
+  - lifecycle history, enable/disable history
+  - collection health and last-success timestamps
+  - observed metrics, usefulness metrics
+  - contribution and attribution records
+  - legal review history
+  - learned scores and overrides
+  - replacement history
+
+**Fail-closed rule:** if a persisted learning value disagrees with a config governance constraint, the governance constraint applies.
+
 ### 2.6 SourceStatus (separate from SourceRegistryEntry)
 
 Status must be writable without rewriting the source definition.
@@ -331,6 +356,28 @@ No schema/migration decisions are made in this milestone.
 - changes to required fields are additive and backward-compatible
 - deprecations require explicit migration plan
 
+### 7.1 Auditability requirements
+
+Every change must preserve:
+- prior registry version
+- prior source configuration (by `source_config_version`)
+- change reason
+- changed by
+- changed at
+- approval status
+- legal review status
+- lifecycle transition
+- old and new score values (when learned)
+- policy version and learning-policy version
+
+Invariants:
+- `source_id` remains stable forever
+- renames do not create new identities
+- replacement does not erase historical contribution/attribution
+- source-set membership history is retained
+- the system can reproduce which sources were eligible on any historical date
+- historical Fusion decisions can resolve the registry version used at the time
+
 ---
 
 ## 8) Governance rules
@@ -339,6 +386,16 @@ No schema/migration decisions are made in this milestone.
 - Terms-restricted sources cannot be enabled-by-default.
 - Source sets have caps and review cadence.
 - Promotion/demotion requires evidence thresholds (see §9).
+
+### Fail-closed behaviors (required)
+
+- **unknown source_id**: reject; do not collect; log audit event.
+- **malformed configuration**: reject whole registry load; do not collect any sources.
+- **expired legal approval / license / credential**: block automated collection; allow only approved manual fallback.
+- **source marked retired**: block collection; keep historical evidence for audit.
+- **disabled source**: block collection.
+- **terms status unresolved**: block automated collection; allow manual-only if permitted.
+- **source-set membership conflict** (exceeds cap, violates diversity, contradictory member policy): fail closed and require review; never silently expand.
 
 ---
 
@@ -441,7 +498,163 @@ Tests must prove:
 - wave sequencing is consistent
 - learning model calculations are deterministic
 
+Additional required tests:
+- valid registry parsing
+- malformed registry rejection
+- unknown enum rejection
+- duplicate source_id rejection
+- invalid source-set membership rejection
+- legal status fail-closed behavior
+- enabled/disabled behavior
+- lifecycle-transition validation
+- deterministic hashing
+- source rename preserves identity
+- replacement preserves history
+- source score and signal score independence
+- contribution attribution across multiple sources
+- minimum-sample protection
+- learning decay
+- outcome attribution without causal overclaim
+- historical registry reconstruction
+- new-domain extensibility without Fusion changes
+
 ---
+
+## 10.1 Registry integrity and idempotency requirements
+
+- deterministic source ids
+- deterministic configuration hashing
+- semantic normalization (stable ordering, whitespace-insensitive where appropriate)
+- duplicate source detection
+- alias handling (renames without identity change)
+- identical config → identical hash
+- changed config → new hash
+- source-set membership idempotency
+- lifecycle transition idempotency
+- no duplicate attribution records
+- no duplicate contribution metrics
+
+---
+
+## 10.2 Extensibility: new domains without Fusion changes
+
+New domains (e.g., luxury goods, watches, real estate, wine, politics, AI, broader macro) must be addable declaratively via:
+- taxonomy registration (domain id)
+- new SourceRegistryEntry definitions
+- supported entity/event/signal declarations
+- policy review (legal + relevance)
+
+Fusion scoring does not change unless the new domain introduces a genuinely new strategic constraint.
+
+---
+
+## 10.3 Initial Wave 1 registry entries (6–8)
+
+These are the proposed first entries to register (from the approved portfolio), balancing official events, calendars, search, macro, licensing, ops risk, and one crossover source.
+
+1) `sports.major_leagues.official`
+   - why: authoritative sports ecosystem state + catalysts
+   - domains: sports ecosystem, calendar
+   - knowledge: Entity/Event/Relationship + External Signals
+   - cadence: daily
+   - access: public_webpage_manual_review (or official feed/export when available)
+   - legal: low risk (official)
+   - noise: low
+   - enabled-by-default: yes
+   - difficulty: low
+   - feed: world model + opportunity detection
+   - blind spots: no direct licensing/partnership detail
+
+2) `calendar.sports.milestones`
+   - why: timing backbone (HOF/awards)
+   - domains: calendars/milestones
+   - knowledge: Events + timing relationships
+   - cadence: seasonal
+   - access: public_webpage_manual_review / official calendar feeds
+   - legal: low
+   - noise: low
+   - enabled-by-default: yes
+   - difficulty: low
+   - feed: world model + opportunity detection
+
+3) `search.google_trends`
+   - why: demand timing signal
+   - domains: search demand
+   - knowledge: Trends + Signals
+   - cadence: daily
+   - access: official_api/public export (compliant)
+   - legal: medium (terms-sensitive) but manageable
+   - noise: medium
+   - enabled-by-default: yes
+   - difficulty: medium
+   - feed: fusion context + opportunity detection
+
+4) `economics.fred`
+   - why: macro regime context
+   - domains: economics
+   - knowledge: Trends
+   - cadence: weekly/monthly
+   - access: official_api
+   - legal: low
+   - noise: low
+   - enabled-by-default: yes
+   - difficulty: low
+   - feed: fusion context
+
+5) `licensing.uspto.trademarks`
+   - why: early intent and licensing/IP visibility
+   - domains: licensing/IP
+   - knowledge: Signals + Events (filings)
+   - cadence: weekly
+   - access: public_structured_export (preferred)
+   - legal: low–medium
+   - noise: medium
+   - enabled-by-default: yes
+   - difficulty: medium
+   - feed: world model + opportunity detection
+
+6) `ops.shipping.alerts`
+   - why: operational risk constraints (UPS/FedEx/USPS)
+   - domains: shipping/logistics
+   - knowledge: Signals + Risk Events
+   - cadence: episodic
+   - access: public_webpage_manual_review / public_rss
+   - legal: low
+   - noise: low
+   - enabled-by-default: yes
+   - difficulty: low
+   - feed: fusion context
+
+7) `sports_business.boardroom`
+   - why: cross-domain catalysts
+   - domains: sports × entertainment × collectibles × partnerships
+   - knowledge: Signals (weak) → Findings with corroboration
+   - cadence: weekly
+   - access: approved_newsletter/public web (manual review)
+   - legal: medium
+   - noise: medium
+   - enabled-by-default: yes (monitor-only)
+   - difficulty: low
+   - feed: opportunity detection (cross-domain)
+   - blind spots: requires corroboration to escalate
+
+---
+
+## 15) Explicit exclusions (V1 does NOT implement)
+
+Source Registry V1 does not implement:
+- ingestion
+- adapters
+- crawling/scraping
+- APIs
+- scheduler jobs
+- live source scoring
+- learned automatic lifecycle changes
+- Fusion candidate generation
+- Strategic World Model persistence
+- competitor monitoring execution
+- source settings UI
+- automatic source activation/retirement
 
 ## 11) Implementation sequence (future; no code in this milestone)
 
