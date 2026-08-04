@@ -1,12 +1,76 @@
 # External Intelligence Architecture
 
-This document defines how external-world signals are represented, validated, and fused into business reasoning.
+This document defines how external-world signals are represented, validated, learned-from, and fused into business reasoning.
 
 ## Purpose
 
-External intelligence provides context and opportunity discovery beyond internal telemetry. It must never override internal evidence without explicit qualification.
+External Intelligence is not “monitor websites.”
+
+It is a permanent capability for understanding the current state of the business ecosystem (industry, culture, markets, competitors, partners, constraints) and identifying opportunities/risks that meaningfully change decision quality.
+
+External signals must never override internal evidence without explicit qualification.
 
 ## Core components
+
+### Strategic World Model (permanent)
+
+**Purpose:** maintain a living, auditable graph of the external ecosystem so Fusion reasons over **state**, not raw articles.
+
+The world model maintains (at minimum):
+- **Entities** (people, teams, leagues, labels, galleries, auction houses, platforms, brands, products, events)
+- **Relationships** (ownership, partnership, sponsorship, licensing/IP links, influence, audience overlap)
+- **Events** (announcements, releases, injuries, tours, auctions, policy changes)
+- **Trends** (demand shifts, collector liquidity, search/social momentum)
+- **Opportunities** (hypothesis-backed, time-bounded)
+- **Risks** (time-bounded, mechanism-linked)
+- **Outcomes** (what actually happened, when measurable)
+
+**Key rule:** Fusion consumes the world model and its derived opportunities/risks, not raw source payloads.
+
+### Source Registry (permanent)
+
+Every external source must exist in a canonical registry. Sources are evaluated continuously and may be promoted/demoted/retired based on measured usefulness.
+
+Minimum registry fields:
+- `source_id` (stable)
+- `domain` (business-domain taxonomy; see below)
+- `category` (source type: news, filings, social, marketplace, calendars, etc.)
+- `base_domain` / `system` (where it comes from)
+- `expected_update_frequency`
+- `latency_slo`
+- `reliability_score` (0–1)
+- `historical_usefulness_score` (0–1)
+- `false_positive_rate` (rolling)
+- `overlap_score_by_source_id` (rolling)
+- `estimated_signal_value`
+- `enabled_state` (enabled | disabled | shadow)
+- `last_seen_at` / `last_success_at`
+
+**Registry invariant:** a source only exists if it improves decision quality, and the system can justify its continued use.
+
+### Source Performance Learning (permanent)
+
+The system tracks which sources produced useful signals over time:
+- earliest detection vs confirmed outcomes
+- duplication/overlap with other sources
+- downstream conversion to Findings/Hypotheses/Opportunities
+- downstream conversion to Recommendations/Actions/Outcomes
+
+Outputs:
+- promote/demote/retire recommendations for sources
+- suggested replacements when a source becomes stale/noisy
+
+### Cross-Domain Opportunity Detection (permanent)
+
+High-value opportunities often exist at **intersections**. The system must intentionally search for cross-domain conjunctions, e.g.:
+- Sports × Collectibles
+- Music × Charity
+- Gallery × Athlete
+- Entertainment × Documentary
+- Search Trends × Calendar
+- Competitor Activity × Collector Demand
+- Licensing/IP × Upcoming Anniversary
+- Economic Conditions × Luxury Spending
 
 ### Competitive Intelligence Engine (permanent)
 
@@ -30,6 +94,8 @@ This subsystem must answer:
 - Collects external signals.
 - Normalizes them into structured facts.
 - Scores credibility and expires signals.
+
+**Noise filtering requirement:** signals are ranked by expected business relevance (not popularity). Every signal must answer “why this matters” to at least one canonical business domain.
 
 ### 2) External Signal Fact Model (v1)
 Every external signal must eventually support:
@@ -80,6 +146,33 @@ The graph enables overlap discovery, e.g.:
 Fuses internal evidence with external context:
 - External signals can re-rank opportunities only when the mechanism is explicit and the linkage to internal evidence is stated.
 - Rumor/opinion may generate questions/hypotheses, not operating recommendations.
+
+## Canonical External Intelligence Domains (permanent)
+
+Organize around business domains (not websites). Each domain may have many sources.
+
+Minimum domain set:
+- Sports ecosystem
+- Sports business
+- Music industry
+- Entertainment industry
+- Art market
+- Gallery ecosystem
+- Collector market
+- Memorabilia market
+- Trading cards
+- Licensing/IP
+- Brand partnerships
+- NIL
+- Social trends
+- Search demand
+- Economic indicators
+- Calendar & anniversaries
+- Competitor intelligence
+- Customer sentiment
+- Shipping/logistics
+- Technology/AI
+- Regulatory/legal
 
 ## External-signal categories (canonical)
 

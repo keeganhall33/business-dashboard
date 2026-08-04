@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { decideRunPolicy } from "@/lib/fusion-v1/production/run-policy";
+import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 import type { FusionCandidate } from "@/lib/fusion-v1/contracts";
 
 type Freshness = "fresh" | "monitor_only" | "stale";
@@ -101,6 +102,53 @@ test("run policy regression: one fresh independent cluster is not no_fresh_candi
   assert.equal(policy.execution_mode, "single_candidate");
 });
 
+test("run policy: two independent fresh clusters proceed to comparative evaluation", () => {
+  const nowIso = new Date("2026-08-04T05:10:51.648Z").toISOString();
+
+  const a = minimalCandidate("cluster_a", { value_potential_proxy: 0.7 });
+  const b = minimalCandidate("cluster_b", { value_potential_proxy: 0.6 });
+
+  const policy = decideRunPolicy({
+    nowIso,
+    eligibleClusters: [a, b],
+    gatedCount: 0,
+    freshCount: 2,
+    staleCount: 0,
+    sourcesInspected: ["dashboard_snapshots"]
+  });
+
+  assert.equal(policy.execution_mode, "comparative");
+  assert.notEqual(policy.status, "no_fresh_candidates");
+});
+
+test("cluster freshness: mixed-member cluster resolves to fresh", () => {
+  assert.equal(deriveClusterFreshness({ memberFreshness: ["monitor_only", "fresh"] }), "fresh");
+});
+
+test("cluster freshness: monitor_only + stale resolves to monitor_only", () => {
+  assert.equal(deriveClusterFreshness({ memberFreshness: ["monitor_only", "stale"] }), "monitor_only");
+});
+
+test("cluster freshness: stale-only resolves to stale", () => {
+  assert.equal(deriveClusterFreshness({ memberFreshness: ["stale", "stale"] }), "stale");
+});
+
+test("idempotent run identity: run_id is derived from input_set_fingerprint only", () => {
+  // Production-shaped values from run 85f1e... (read-only test vector):
+  const input_set_fingerprint = "a91f2941366b5fafe1ba346c306ec32b74d6ac6611f3867f32b7d3c049a91c87";
+  const run_id = canonicalJsonSha256Hex({ input_set_fingerprint }).slice(0, 24);
+  assert.equal(run_id, "85f1e36651549d8037cfe9f6");
+});
+
+test("non-decision explanation wiring: single-candidate cases explicitly cite insufficient comparative evidence", async () => {
+  const fs = await import("node:fs/promises");
+  const text = await fs.readFile(
+    new URL("../../src/lib/scheduler/fusionDailyDecisionV1.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(text, /single fresh candidate was evaluated, but the comparative evidence set is insufficient/i);
+});
+
 test("duplicate sources in one cluster do not inflate comparative count", () => {
   const nowIso = new Date("2026-08-04T05:10:51.648Z").toISOString();
 
@@ -116,4 +164,3 @@ test("duplicate sources in one cluster do not inflate comparative count", () => 
 
   assert.equal(policy.execution_mode, "single_candidate");
 });
-
