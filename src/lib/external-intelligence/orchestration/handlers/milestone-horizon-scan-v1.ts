@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 import { parseAlertLeadTimePolicy } from "@/lib/external-intelligence/milestones/alert-policy";
 import type { SportsMilestoneCalendar } from "@/lib/external-intelligence/milestones/contracts";
+import { computeMilestoneCalendarHash } from "@/lib/external-intelligence/milestones/contracts";
 import { SportsMilestoneRepository } from "@/lib/external-intelligence/milestones/persistence/milestone.repository";
 import { runDailyMilestoneHorizonScanV1 } from "@/lib/external-intelligence/milestones/scheduler/daily-horizon-scan";
 
@@ -21,9 +22,15 @@ export async function runMilestoneHorizonScanV1(input: { now_ymd: string; now_is
     schema_version: "sports_milestone_calendar_v1",
     calendar_version: "production",
     fixture_status: "production",
-    calendar_content_hash: "production",
     milestones: current
   };
+
+  calendar.calendar_content_hash = computeMilestoneCalendarHash({
+    schema_version: calendar.schema_version,
+    calendar_version: calendar.calendar_version,
+    fixture_status: calendar.fixture_status,
+    milestones: calendar.milestones
+  });
 
   const result = await runDailyMilestoneHorizonScanV1({
     now_ymd: input.now_ymd,

@@ -87,7 +87,8 @@ export const SportsMilestoneCalendarSchema = z
     schema_version: z.literal("sports_milestone_calendar_v1"),
     calendar_version: z.string().min(1).max(64),
     fixture_status: z.enum(["test_only", "production"]).default("test_only"),
-    milestones: z.array(SportsMilestoneSchema).min(1),
+    // Production may legitimately have zero milestones.
+    milestones: z.array(SportsMilestoneSchema).min(0),
     calendar_content_hash: z.string().min(64).max(64)
   })
   .strict();
