@@ -1,0 +1,70 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "ops.shipping.alerts",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "manual_review",
+  "official_documentation_refs": [
+    {
+      "label": "USPS service alerts page",
+      "url": "https://about.usps.com/newsroom/service-alerts/",
+      "note": "Official USPS newsroom service alerts page."
+    },
+    {
+      "label": "USPS developer portal",
+      "url": "https://developers.usps.com/",
+      "note": "Official USPS API developer portal (not specifically service-alert ingestion)."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "manual_only",
+  "authentication_required": false,
+  "credential_requirements": [],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "store metadata and links only",
+    "no copying large bodies of text"
+  ],
+  "rate_limit_notes": [
+    "manual intake only until an approved official feed is confirmed"
+  ],
+  "expected_cadence": "daily",
+  "freshness_expectations": "7d",
+  "implementation_difficulty": "medium",
+  "available_fallback_methods": [
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "service_alert_metadata"
+  ],
+  "prohibited_behaviors": [
+    "automated scraping without approved method",
+    "retaining copyrighted text bodies"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_access_method",
+  "remaining_blockers": [
+    "carrier-by-carrier official feed qualification needed",
+    "environment not approved for collection",
+    "legal review not completed",
+    "no approved automated access method",
+    "terms review not completed"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "ops",
+  "evidence_refs": [
+    {
+      "label": "USPS service alerts",
+      "url": "https://about.usps.com/newsroom/service-alerts/"
+    },
+    {
+      "label": "USPS developer portal",
+      "url": "https://developers.usps.com/"
+    }
+  ],
+  "qualification_content_hash": "c1245b4aa584f1da31f65b7bdacc07b5f25684924b0e57378dafc8d68afbcf9c"
+}

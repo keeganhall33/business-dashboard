@@ -1,0 +1,61 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "sports.major_leagues.official",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "public_web",
+  "official_documentation_refs": [
+    {
+      "label": "League/team official newsrooms (varies by league)",
+      "url": "https://www.mlb.com/press-release",
+      "note": "Example official newsroom; access/terms must be reviewed per league/team before any automation."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "manual_only",
+  "authentication_required": false,
+  "credential_requirements": [],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "link-only or excerpt-limited; no full press release bodies unless permitted"
+  ],
+  "rate_limit_notes": [
+    "no automation until league-by-league terms reviewed"
+  ],
+  "expected_cadence": "daily",
+  "freshness_expectations": "7d",
+  "implementation_difficulty": "medium",
+  "available_fallback_methods": [
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "press_release_metadata",
+    "excerpt"
+  ],
+  "prohibited_behaviors": [
+    "automated scraping without explicit approval",
+    "retaining copyrighted bodies"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_implementation",
+  "remaining_blockers": [
+    "adapters not implemented",
+    "environment not approved for collection",
+    "league-by-league approved access method required",
+    "legal review not completed",
+    "terms review not completed"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "legal",
+  "evidence_refs": [
+    {
+      "label": "Example MLB press release page",
+      "url": "https://www.mlb.com/press-release"
+    }
+  ],
+  "qualification_content_hash": "dae1ef00daeb7fb7fda1f354c6ec7dbcbb7764269f1793a036205a90d07b4711"
+}

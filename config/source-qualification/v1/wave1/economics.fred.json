@@ -1,0 +1,74 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "economics.fred",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "official_api",
+  "official_documentation_refs": [
+    {
+      "label": "FRED API docs (overview)",
+      "url": "https://fred.stlouisfed.org/docs/api/fred/",
+      "note": "Official FRED API documentation and endpoints."
+    },
+    {
+      "label": "FRED series observations endpoint",
+      "url": "https://fred.stlouisfed.org/docs/api/fred/series_observations.html",
+      "note": "Documents HTTPS GET endpoint and api_key parameter."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "metadata_only",
+  "authentication_required": false,
+  "credential_requirements": [
+    "FRED API key (api_key query parameter)"
+  ],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "store indicator identifiers and numeric observations only",
+    "no copyrighted article bodies"
+  ],
+  "rate_limit_notes": [
+    "respect official API key policies; define conservative client-side rate limits"
+  ],
+  "expected_cadence": "monthly",
+  "freshness_expectations": "90d",
+  "implementation_difficulty": "low",
+  "available_fallback_methods": [
+    "metadata_only",
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "time_series_observations",
+    "series_metadata"
+  ],
+  "prohibited_behaviors": [
+    "scraping FRED UI pages",
+    "exceeding documented usage policies"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_pending_terms_review",
+  "remaining_blockers": [
+    "adapter not implemented",
+    "environment not approved for collection",
+    "legal review not completed",
+    "missing FRED API key",
+    "terms review not completed"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "legal",
+  "evidence_refs": [
+    {
+      "label": "FRED API docs",
+      "url": "https://fred.stlouisfed.org/docs/api/fred/"
+    },
+    {
+      "label": "FRED series observations docs",
+      "url": "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+    }
+  ],
+  "qualification_content_hash": "64e5fe55c3d77bdb19edc49f5039a5dd7ca849af6da2d38d8ad6fc1e842f2f26"
+}

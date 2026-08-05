@@ -1,0 +1,38 @@
+{
+  "schema_version": "milestone_horizon_policy_v1",
+  "policy_version": "v1.0.0",
+  "alert_windows": [
+    {
+      "window_id": "w_1d",
+      "days_before": 1,
+      "label": "1d (imminent)"
+    },
+    {
+      "window_id": "w_7d",
+      "days_before": 7,
+      "label": "7d (last call)"
+    },
+    {
+      "window_id": "w_14d",
+      "days_before": 14,
+      "label": "14d (finalize)"
+    },
+    {
+      "window_id": "w_30d",
+      "days_before": 30,
+      "label": "30d (execution)"
+    },
+    {
+      "window_id": "w_90d",
+      "days_before": 90,
+      "label": "90d (production planning)"
+    },
+    {
+      "window_id": "w_180d",
+      "days_before": 180,
+      "label": "180d (partnership runway)"
+    }
+  ],
+  "maximum_horizon_days": 365,
+  "policy_content_hash": "9ed1fce6a6cbefc00773724cdca015859d4d26a2e983ae574a7ee076796f35a2"
+}

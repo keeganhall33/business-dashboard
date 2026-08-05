@@ -1,0 +1,63 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "search.google_trends",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "official_api",
+  "official_documentation_refs": [
+    {
+      "label": "Google Trends API alpha (requires application)",
+      "url": "https://developers.google.com/search/apis/trends",
+      "note": "Official doc indicates early access alpha application is required."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "prohibited",
+  "authentication_required": true,
+  "credential_requirements": [
+    "Approved access to Google Trends API alpha (if granted)"
+  ],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "store aggregated trend metadata only"
+  ],
+  "rate_limit_notes": [
+    "unknown until alpha access granted and documented"
+  ],
+  "expected_cadence": "daily",
+  "freshness_expectations": "7d",
+  "implementation_difficulty": "high",
+  "available_fallback_methods": [
+    "disabled"
+  ],
+  "approved_artifact_types": [
+    "trend_timeseries_metadata"
+  ],
+  "prohibited_behaviors": [
+    "unofficial scraping",
+    "using third-party scraping APIs without approval"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_access_method",
+  "remaining_blockers": [
+    "adapter not implemented",
+    "alpha access not granted",
+    "environment not approved for collection",
+    "legal review not completed",
+    "no approved official access method in place",
+    "terms review not completed"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "legal",
+  "evidence_refs": [
+    {
+      "label": "Google Trends API alpha doc",
+      "url": "https://developers.google.com/search/apis/trends"
+    }
+  ],
+  "qualification_content_hash": "216c81aeef3b6cede09e30b6a65d32b679a82faa8eb5d781a3dbb6a6c3eb4605"
+}
