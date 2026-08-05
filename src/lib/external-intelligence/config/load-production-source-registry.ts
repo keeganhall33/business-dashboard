@@ -18,7 +18,7 @@ export function loadProductionSourceRegistryV1(): LoadedProductionSourceRegistry
   let raw: string;
   try {
     raw = fs.readFileSync(PRODUCTION_SOURCE_REGISTRY_PATH, "utf8");
-  } catch (err) {
+  } catch {
     throw new SourceGovernanceConfigNotFoundError(`production source registry not found: ${PRODUCTION_SOURCE_REGISTRY_PATH}`);
   }
 

@@ -5,6 +5,29 @@ import { sha256CanonicalJson } from "@/lib/external-intelligence/hashing/content
 
 export const CollectionModeSchema = z.enum(["automated", "manual", "metadata_only"]);
 
+const EligibilitySchema = z
+  .object({
+    allowed: z.boolean(),
+    allowed_modes: z.array(z.enum(["automated", "manual", "metadata_only", "disabled"])),
+    blocking_reasons: z.array(z.string()),
+    warnings: z.array(z.string()),
+    review_required: z.boolean(),
+    review_by: z.string().nullable(),
+    governing_source_config_version: z.string(),
+    governing_registry_version: z.string(),
+    governing_policy_refs: z.array(
+      z
+        .object({
+          policy_name: z.string(),
+          semantic_version: z.string(),
+          content_hash: z.string()
+        })
+        .strict()
+    ),
+    evaluation_fingerprint: z.string()
+  })
+  .strict();
+
 export const CollectionPlanSchema = z
   .object({
     collection_plan_id: z.string().min(8).max(128),
@@ -38,7 +61,7 @@ export const CollectionPlanSchema = z
 
     expected_outputs: z.array(z.string().min(1).max(64)).min(1),
 
-    eligibility_evaluation: z.custom<SourceEligibilityResult>(),
+    eligibility_evaluation: EligibilitySchema,
 
     created_at: z.string().datetime(),
     expires_at: z.string().datetime()
@@ -51,7 +74,7 @@ export function parseCollectionPlan(json: unknown): CollectionPlan {
   const parsed = CollectionPlanSchema.parse(json);
 
   // Fail-closed: plans cannot exist for ineligible sources.
-  const eligibility = parsed.eligibility_evaluation as any as SourceEligibilityResult;
+  const eligibility = parsed.eligibility_evaluation as unknown as SourceEligibilityResult;
   if (!eligibility.allowed) {
     throw new Error("collection_plan_ineligible");
   }
@@ -80,7 +103,7 @@ export function createCollectionPlanHash(plan: CollectionPlan): string {
     retention_policy: plan.retention_policy,
     legal_restrictions: plan.legal_restrictions,
     expected_outputs: plan.expected_outputs,
-    eligibility_fingerprint: (plan.eligibility_evaluation as any as SourceEligibilityResult).evaluation_fingerprint,
+    eligibility_fingerprint: (plan.eligibility_evaluation as unknown as SourceEligibilityResult).evaluation_fingerprint,
     expires_at: plan.expires_at
   });
 }

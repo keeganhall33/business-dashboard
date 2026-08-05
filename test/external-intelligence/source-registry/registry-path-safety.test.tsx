@@ -9,18 +9,21 @@ test("production registry loader uses fixed repository path (no env-controlled p
   const orig = fs.readFileSync;
 
   const allowed = new Set(["config/source-registry/v1/source_registry.production.json"]);
-  (fs as any).readFileSync = (p: any, ...rest: any[]) => {
+  const fsPatch = fs as unknown as { readFileSync: typeof fs.readFileSync };
+  fsPatch.readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+    const [p] = args;
     const sp = String(p);
     // allow reading policy fixtures too if something imports them transitively
-    if (sp.includes("config/policies/")) return orig(p, ...rest);
+    if (sp.includes("config/policies/")) return orig(...args);
     assert.ok(allowed.has(sp), `unexpected file read: ${sp}`);
-    return orig(p, ...rest);
-  };
+    return orig(...args);
+  }) as typeof fs.readFileSync;
 
   try {
     const { file } = loadProductionSourceRegistryV1();
     assert.equal(file.sources.length, 24);
   } finally {
-    (fs as any).readFileSync = orig;
+    const fsRestore = fs as unknown as { readFileSync: typeof fs.readFileSync };
+    fsRestore.readFileSync = orig;
   }
 });
