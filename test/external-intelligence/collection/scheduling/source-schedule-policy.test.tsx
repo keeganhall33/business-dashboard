@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { parseSourceSchedulePolicy, computeSourceSchedulePolicyHash } from "@/lib/external-intelligence/collection/scheduling/source-schedule-policy";
 
 test("source schedule policy: deterministic hash and fail-closed content_hash", () => {
-  const base: any = {
+  const base = {
     schema_version: "source_schedule_policy_v1",
     source_id: "economics.fred",
     source_config_version: "v1.0.0",
@@ -30,11 +30,21 @@ test("source schedule policy: deterministic hash and fail-closed content_hash", 
     review_by: "ops"
   };
 
-  const hash = computeSourceSchedulePolicyHash(base);
-  const parsed = parseSourceSchedulePolicy({ ...base, schedule_content_hash: hash });
+  const hash = computeSourceSchedulePolicyHash(
+    base as unknown as Parameters<typeof computeSourceSchedulePolicyHash>[0]
+  );
+  const parsed = parseSourceSchedulePolicy({
+    ...(base as unknown as Record<string, unknown>),
+    schedule_content_hash: hash
+  });
 
   assert.equal(parsed.schedule_content_hash, hash);
   assert.ok(Object.isFrozen(parsed));
 
-  assert.throws(() => parseSourceSchedulePolicy({ ...base, schedule_content_hash: "c".repeat(64) }));
+  assert.throws(() =>
+    parseSourceSchedulePolicy({
+      ...(base as unknown as Record<string, unknown>),
+      schedule_content_hash: "c".repeat(64)
+    })
+  );
 });

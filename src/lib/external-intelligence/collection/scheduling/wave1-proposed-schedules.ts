@@ -10,8 +10,11 @@ function policyPins(policy_refs: PolicyRef[]) {
     .sort((a, b) => `${a.policy_name}@${a.semantic_version}`.localeCompare(`${b.policy_name}@${b.semantic_version}`));
 }
 
-function makePolicy(input: Omit<SourceSchedulePolicy, "schedule_content_hash" | "governing_policy_refs"> & { governing_policy_refs: PolicyRef[] }):
-  SourceSchedulePolicy {
+function makePolicy(
+  input: Omit<SourceSchedulePolicy, "schema_version" | "schedule_content_hash" | "governing_policy_refs"> & {
+    governing_policy_refs: PolicyRef[];
+  }
+): SourceSchedulePolicy {
   const base = {
     ...input,
     schema_version: "source_schedule_policy_v1" as const,
@@ -38,8 +41,13 @@ export function buildWave1ProposedSchedulePolicies(input: {
     governing_policy_refs: input.policy_refs,
     preferred_collection_window: { start_hour_local: 6, end_hour_local: 10 },
     timezone: "America/Los_Angeles",
-    retry_policy: { strategy: "bounded_exponential", maximum_attempts: 3, base_delay_seconds: 30, max_delay_seconds: 15 * 60 },
-    backoff_policy: { jitter: "full", cooldown_seconds: 15 * 60 },
+    retry_policy: {
+      strategy: "bounded_exponential" as const,
+      maximum_attempts: 3,
+      base_delay_seconds: 30,
+      max_delay_seconds: 15 * 60
+    },
+    backoff_policy: { jitter: "full" as const, cooldown_seconds: 15 * 60 },
     timeout_seconds: 20,
     rate_limit_budget: { maximum_requests_per_minute: 30, maximum_requests_per_day: 5000 },
     overlap_policy: "no_overlap" as const,

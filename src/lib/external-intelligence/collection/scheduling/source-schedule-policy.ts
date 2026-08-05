@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import type { PolicyRef } from "@/lib/external-intelligence/contracts/policy-ref";
 import { deepFreeze } from "@/lib/external-intelligence/config/freeze";
 import { sha256CanonicalJson } from "@/lib/external-intelligence/hashing/content-hash";
 
