@@ -144,4 +144,34 @@ export class SportsMilestoneRepository {
       throw new PersistenceIdempotencyConflictError("integrity_conflict");
     }
   }
+
+  /**
+   * Read the current milestone versions needed for horizon scanning.
+   * This is a production read path: stable row + current version payload.
+   */
+  async listCurrentMilestonesForHorizonScan(): Promise<SportsMilestone[]> {
+    const supabase = getExternalIntelligenceSupabaseClient({});
+
+    const stable = await supabase
+      .from("sports_milestones_v1")
+      .select("milestone_id,current_content_hash")
+      .order("milestone_id", { ascending: true });
+    if (stable.error) throw new Error(`Failed to list stable milestones: ${stable.error.message}`);
+    const stableRows = (stable.data ?? []) as unknown as Array<{ milestone_id: string; current_content_hash: string }>;
+    if (!stableRows.length) return [];
+
+    const milestones: SportsMilestone[] = [];
+    for (const row of stableRows) {
+      const v = await supabase
+        .from("sports_milestone_versions_v1")
+        .select("canonical_payload_json")
+        .eq("milestone_id", row.milestone_id)
+        .eq("content_hash", row.current_content_hash)
+        .maybeSingle();
+      if (v.error) throw new Error(`Failed to fetch version payload: ${v.error.message}`);
+      if (!v.data) continue;
+      milestones.push(parseSportsMilestone((v.data as any).canonical_payload_json));
+    }
+    return milestones;
+  }
 }
