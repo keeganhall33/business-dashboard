@@ -18,19 +18,17 @@ export async function runMilestoneHorizonScanV1(input: { now_ymd: string; now_is
   const current = await repo.listCurrentMilestonesForHorizonScan();
   if (input.signal?.aborted) throw new Error("handler_aborted");
 
-  const calendar: SportsMilestoneCalendar = {
-    schema_version: "sports_milestone_calendar_v1",
+  const calendarBase = {
+    schema_version: "sports_milestone_calendar_v1" as const,
     calendar_version: "production",
-    fixture_status: "production",
+    fixture_status: "production" as const,
     milestones: current
   };
 
-  calendar.calendar_content_hash = computeMilestoneCalendarHash({
-    schema_version: calendar.schema_version,
-    calendar_version: calendar.calendar_version,
-    fixture_status: calendar.fixture_status,
-    milestones: calendar.milestones
-  });
+  const calendar: SportsMilestoneCalendar = {
+    ...calendarBase,
+    calendar_content_hash: computeMilestoneCalendarHash(calendarBase)
+  };
 
   const result = await runDailyMilestoneHorizonScanV1({
     now_ymd: input.now_ymd,
