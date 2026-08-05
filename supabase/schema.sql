@@ -1613,6 +1613,42 @@ begin
 end;
 $fn$;
 
+create or replace function redact_external_evidence_payload_v1(
+  in_evidence_reference_id text,
+  in_content_hash text,
+  in_redaction_reason text
+)
+returns table (evidence_reference_id text, content_hash text, redacted boolean)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v record;
+begin
+  if current_user is distinct from 'service_role' then
+    raise exception using errcode = '42501', message = 'unauthorized';
+  end if;
+  if in_redaction_reason is null or length(in_redaction_reason)=0 then
+    raise exception using errcode='P0001', message='invalid_argument';
+  end if;
+  select * into v from public.external_evidence_reference_versions_v1
+  where evidence_reference_id=in_evidence_reference_id and content_hash=in_content_hash;
+  if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
+  if v.legal_hold then raise exception using errcode='P0001', message='legal_hold_block'; end if;
+  update public.external_evidence_reference_versions_v1
+    set payload_json=null,
+        payload_available=false,
+        content_redacted_at=coalesce(content_redacted_at, timezone('utc', now())),
+        redaction_reason=in_redaction_reason
+  where evidence_reference_id=in_evidence_reference_id and content_hash=in_content_hash;
+  evidence_reference_id := in_evidence_reference_id;
+  content_hash := in_content_hash;
+  redacted := true;
+  return next;
+end;
+$fn$;
+
 create or replace function persist_external_claim_v1(
   in_claim_id text,
   in_content_hash text,
@@ -2033,6 +2069,222 @@ begin
   content_hash := in_content_hash;
   created_new_version := inserted_version;
   idempotent_replay := replay;
+  return next;
+end;
+$fn$;
+
+-- =========================================================
+-- External Intelligence (Phase A6.1) — transactional persistence RPCs (final definitions)
+-- =========================================================
+
+-- These definitions mirror supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql.
+
+create or replace function persist_external_evidence_reference_v1(
+  in_evidence_reference_id text,
+  in_content_hash text,
+  in_schema_version text,
+  in_source_id text,
+  in_source_config_version text,
+  in_legal_policy_version text,
+  in_policy_refs_json jsonb,
+  in_effective_at timestamptz,
+  in_valid_from timestamptz,
+  in_valid_until timestamptz,
+  in_supersedes_content_hashes jsonb,
+  in_payload_json jsonb,
+  in_retention_policy text,
+  in_retention_expires_at timestamptz,
+  in_legal_hold boolean,
+  in_access_revoked_at timestamptz,
+  in_content_redacted_at timestamptz,
+  in_redaction_reason text,
+  in_payload_available boolean
+)
+returns table (
+  evidence_reference_id text,
+  content_hash text,
+  created_new_version boolean,
+  idempotent_replay boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  existing record;
+  version_exists boolean;
+  inserted_version boolean := false;
+  replay boolean := false;
+begin
+  if current_user is distinct from 'service_role' then
+    raise exception using errcode = '42501', message = 'unauthorized';
+  end if;
+
+  select * into existing
+  from public.external_evidence_reference_versions_v1
+  where evidence_reference_id = in_evidence_reference_id
+    and content_hash = in_content_hash;
+
+  version_exists := found;
+
+  if version_exists then
+    if not (
+      existing.payload_available is not distinct from in_payload_available
+      and existing.payload_json is not distinct from in_payload_json
+      and existing.schema_version is not distinct from in_schema_version
+      and existing.source_id is not distinct from in_source_id
+      and existing.source_config_version is not distinct from in_source_config_version
+      and existing.legal_policy_version is not distinct from in_legal_policy_version
+      and existing.policy_refs_json is not distinct from in_policy_refs_json
+      and existing.effective_at is not distinct from in_effective_at
+      and existing.valid_from is not distinct from in_valid_from
+      and existing.valid_until is not distinct from in_valid_until
+      and existing.supersedes_content_hashes is not distinct from in_supersedes_content_hashes
+      and existing.retention_policy is not distinct from in_retention_policy
+      and existing.retention_expires_at is not distinct from in_retention_expires_at
+      and existing.legal_hold is not distinct from in_legal_hold
+      and existing.access_revoked_at is not distinct from in_access_revoked_at
+      and existing.content_redacted_at is not distinct from in_content_redacted_at
+      and existing.redaction_reason is not distinct from in_redaction_reason
+    ) then
+      raise exception using errcode = 'P0001', message = 'integrity_conflict';
+    end if;
+    replay := true;
+  else
+    insert into public.external_evidence_references_v1(
+      evidence_reference_id,
+      current_content_hash,
+      lifecycle_status,
+      correction_status,
+      source_id,
+      source_config_version,
+      legal_policy_version
+    ) values (
+      in_evidence_reference_id,
+      in_content_hash,
+      'new',
+      'none',
+      in_source_id,
+      in_source_config_version,
+      in_legal_policy_version
+    ) on conflict (evidence_reference_id) do nothing;
+
+    insert into public.external_evidence_reference_versions_v1(
+      evidence_reference_id,
+      content_hash,
+      schema_version,
+      source_id,
+      source_config_version,
+      legal_policy_version,
+      policy_refs_json,
+      effective_at,
+      valid_from,
+      valid_until,
+      supersedes_content_hashes,
+      payload_json,
+      retention_policy,
+      retention_expires_at,
+      legal_hold,
+      access_revoked_at,
+      content_redacted_at,
+      redaction_reason,
+      payload_available
+    ) values (
+      in_evidence_reference_id,
+      in_content_hash,
+      in_schema_version,
+      in_source_id,
+      in_source_config_version,
+      in_legal_policy_version,
+      in_policy_refs_json,
+      in_effective_at,
+      in_valid_from,
+      in_valid_until,
+      in_supersedes_content_hashes,
+      in_payload_json,
+      in_retention_policy,
+      in_retention_expires_at,
+      in_legal_hold,
+      in_access_revoked_at,
+      in_content_redacted_at,
+      in_redaction_reason,
+      in_payload_available
+    );
+
+    inserted_version := true;
+  end if;
+
+  update public.external_evidence_references_v1
+    set current_content_hash = in_content_hash
+  where evidence_reference_id = in_evidence_reference_id;
+
+  evidence_reference_id := in_evidence_reference_id;
+  content_hash := in_content_hash;
+  created_new_version := inserted_version;
+  idempotent_replay := replay;
+  return next;
+end;
+$fn$;
+
+create or replace function complete_external_processing_run_v1(in_run_id text)
+returns table (run_id text, resulting_status text)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  r record;
+  v jsonb;
+  obj_id text;
+  obj_hash text;
+  edge jsonb;
+  missing_edges integer := 0;
+begin
+  if current_user is distinct from 'service_role' then
+    raise exception using errcode = '42501', message = 'unauthorized';
+  end if;
+  select * into r from public.external_processing_runs_v1 where run_id = in_run_id;
+  if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
+  if r.persisted_output_count is distinct from r.expected_output_count then
+    raise exception using errcode='P0001', message='run_completion_blocked';
+  end if;
+  if r.persistence_complete is distinct from true or r.validation_complete is distinct from true or r.validation_result is distinct from 'ok' then
+    raise exception using errcode='P0001', message='run_completion_blocked';
+  end if;
+  for v in select * from jsonb_array_elements(coalesce(r.output_refs_json,'[]'::jsonb))
+  loop
+    obj_id := v->>'object_id';
+    obj_hash := v->>'content_hash';
+    if (v->>'object_type')='evidence_reference' then
+      perform 1 from public.external_evidence_reference_versions_v1 where evidence_reference_id=obj_id and content_hash=obj_hash;
+    elsif (v->>'object_type')='claim' then
+      perform 1 from public.external_claim_versions_v1 where claim_id=obj_id and content_hash=obj_hash;
+    elsif (v->>'object_type')='signal' then
+      perform 1 from public.external_signal_versions_v1 where signal_id=obj_id and content_hash=obj_hash;
+    else
+      raise exception using errcode='P0001', message='object_type_mismatch';
+    end if;
+    if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
+  end loop;
+  for edge in select * from jsonb_array_elements(coalesce(r.required_provenance_edges_json,'[]'::jsonb))
+  loop
+    perform 1 from public.external_provenance_edges_v1
+    where from_object_type=edge->>'from_object_type'
+      and from_object_id=edge->>'from_object_id'
+      and from_content_hash=edge->>'from_content_hash'
+      and to_object_type=edge->>'to_object_type'
+      and to_object_id=edge->>'to_object_id'
+      and to_content_hash=edge->>'to_content_hash'
+      and relation=edge->>'relation'
+      and policy_hash=edge->>'policy_hash';
+    if not found then missing_edges := missing_edges + 1; end if;
+  end loop;
+  if missing_edges > 0 then
+    raise exception using errcode='P0001', message='incomplete_write_set';
+  end if;
+  update public.external_processing_runs_v1 set status='completed', completed_at=timezone('utc', now()) where run_id=in_run_id;
+  run_id := in_run_id;
+  resulting_status := 'completed';
   return next;
 end;
 $fn$;
