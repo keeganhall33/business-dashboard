@@ -128,6 +128,11 @@ VCOUNT="$("${psql_base[@]}" -d b2test -tA -c "select count(*) from public.sports
 CUR_HASH="$("${psql_base[@]}" -d b2test -tA -c "select current_content_hash from public.sports_milestones_v1 where milestone_id='m1';")"
 [ "$CUR_HASH" = "$(printf '9%.0s' {1..64})" ]
 
+OLD_PAYLOAD="$(${psql_base[@]} -d b2test -tA -c "select canonical_payload_json->>'milestone_date' from public.sports_milestone_versions_v1 where milestone_id='m1' and content_hash=repeat('1',64);")"
+NEW_PAYLOAD="$(${psql_base[@]} -d b2test -tA -c "select canonical_payload_json->>'milestone_date' from public.sports_milestone_versions_v1 where milestone_id='m1' and content_hash=repeat('9',64);")"
+[ "$OLD_PAYLOAD" = "2027-06-03" ]
+[ "$NEW_PAYLOAD" = "2027-06-05" ]
+
 # Rollback and reapply.
 echo "rollback/reapply"
 apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.rollback.sql"
