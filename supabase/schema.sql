@@ -1467,6 +1467,8 @@ create index if not exists external_processing_runs_v1__started_at_idx
 -- External Intelligence (Phase A6.1) — transactional persistence RPCs
 -- =========================================================
 
+create extension if not exists pgcrypto;
+
 create or replace function persist_external_evidence_reference_v1(
   in_evidence_reference_id text,
   in_content_hash text,
@@ -1764,9 +1766,9 @@ declare
   replay boolean := false;
   edge_id text;
 begin
-  perform 1 from external_evidence_reference_versions_v1
-  where evidence_reference_id = in_evidence_reference_id
-    and content_hash = in_evidence_content_hash;
+  perform 1 from public.external_evidence_reference_versions_v1 ev
+  where ev.evidence_reference_id = in_evidence_reference_id
+    and ev.content_hash = in_evidence_content_hash;
   if not found then
     raise exception 'MissingLinkedVersion: evidence_reference_id=% content_hash=%', in_evidence_reference_id, in_evidence_content_hash;
   end if;
@@ -1774,13 +1776,13 @@ begin
   if (in_evidence_version_ref_json->>'object_type') is distinct from 'evidence_reference'
      or (in_evidence_version_ref_json->>'object_id') is distinct from in_evidence_reference_id
      or (in_evidence_version_ref_json->>'content_hash') is distinct from in_evidence_content_hash then
-    raise exception 'VersionRefMismatch: evidence ref json does not match normalized pins';
+    raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
   end if;
 
   select * into existing
-  from external_claim_versions_v1
-  where claim_id = in_claim_id
-    and content_hash = in_content_hash;
+  from public.external_claim_versions_v1 cv
+  where cv.claim_id = in_claim_id
+    and cv.content_hash = in_content_hash;
 
   if found then
     if not (
@@ -1867,9 +1869,9 @@ begin
     inserted_version := true;
   end if;
 
-  update external_claims_v1
+  update public.external_claims_v1 cs
     set current_content_hash = in_content_hash
-  where claim_id = in_claim_id;
+  where cs.claim_id = in_claim_id;
 
   edge_id := encode(digest(jsonb_build_object(
     'from_object_type','claim',
@@ -1977,7 +1979,7 @@ begin
   loop
     obj_id := v->>'object_id';
     obj_hash := v->>'content_hash';
-    perform 1 from external_claim_versions_v1 where claim_id = obj_id and content_hash = obj_hash;
+    perform 1 from public.external_claim_versions_v1 cv where cv.claim_id = obj_id and cv.content_hash = obj_hash;
     if not found then
       raise exception 'MissingLinkedVersion: claim_id=% content_hash=%', obj_id, obj_hash;
     end if;
@@ -1987,7 +1989,10 @@ begin
   loop
     obj_id := v->>'object_id';
     obj_hash := v->>'content_hash';
-    perform 1 from external_evidence_reference_versions_v1 where evidence_reference_id = obj_id and content_hash = obj_hash;
+    perform 1
+    from public.external_evidence_reference_versions_v1 ev
+    where ev.evidence_reference_id = obj_id
+      and ev.content_hash = obj_hash;
     if not found then
       raise exception 'MissingLinkedVersion: evidence_reference_id=% content_hash=%', obj_id, obj_hash;
     end if;

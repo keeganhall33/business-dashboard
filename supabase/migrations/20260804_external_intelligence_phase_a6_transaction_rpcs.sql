@@ -3,6 +3,9 @@
 
 -- NOTE: These functions are intentionally explicit/typed. No generic dynamic SQL persistence.
 
+-- Dependency: pgcrypto provides digest(...,'sha256') used for deterministic edge ids.
+create extension if not exists pgcrypto;
+
 create or replace function persist_external_evidence_reference_v1(
   in_evidence_reference_id text,
   in_content_hash text,
@@ -275,9 +278,9 @@ begin
 
   -- Validate pinned evidence version exists.
   select true into evidence_ok
-  from public.external_evidence_reference_versions_v1
-  where evidence_reference_id = in_evidence_reference_id
-    and content_hash = in_evidence_content_hash;
+  from public.external_evidence_reference_versions_v1 ev
+  where ev.evidence_reference_id = in_evidence_reference_id
+    and ev.content_hash = in_evidence_content_hash;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'linked_version_not_found';
@@ -291,9 +294,9 @@ begin
   end if;
 
   select * into existing
-  from public.external_claim_versions_v1
-  where claim_id = in_claim_id
-    and content_hash = in_content_hash;
+  from public.external_claim_versions_v1 cv
+  where cv.claim_id = in_claim_id
+    and cv.content_hash = in_content_hash;
 
   if found then
     if not (
@@ -380,9 +383,9 @@ begin
     inserted_version := true;
   end if;
 
-  update public.external_claims_v1
+  update public.external_claims_v1 cs
     set current_content_hash = in_content_hash
-  where claim_id = in_claim_id;
+  where cs.claim_id = in_claim_id;
 
   -- Persist required claim->evidence provenance edge (idempotent).
   edge_id := encode(digest(jsonb_build_object(
@@ -568,9 +571,9 @@ begin
     obj_id := v->>'object_id';
     obj_hash := v->>'content_hash';
     if obj_id is null or obj_hash is null then
-      raise exception 'VersionRefMismatch: claim VersionRef missing object_id/content_hash';
+      raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
     end if;
-    perform 1 from external_claim_versions_v1 where claim_id = obj_id and content_hash = obj_hash;
+    perform 1 from public.external_claim_versions_v1 cv where cv.claim_id = obj_id and cv.content_hash = obj_hash;
     if not found then
       raise exception using errcode = 'P0001', message = 'linked_version_not_found';
     end if;
@@ -585,9 +588,12 @@ begin
     obj_id := v->>'object_id';
     obj_hash := v->>'content_hash';
     if obj_id is null or obj_hash is null then
-      raise exception 'VersionRefMismatch: evidence VersionRef missing object_id/content_hash';
+      raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
     end if;
-    perform 1 from public.external_evidence_reference_versions_v1 where evidence_reference_id = obj_id and content_hash = obj_hash;
+    perform 1
+    from public.external_evidence_reference_versions_v1 ev
+    where ev.evidence_reference_id = obj_id
+      and ev.content_hash = obj_hash;
     if not found then
       raise exception using errcode = 'P0001', message = 'linked_version_not_found';
     end if;
@@ -719,7 +725,7 @@ begin
        or (edge->'to_ref_json'->>'object_type') is distinct from (edge->>'to_object_type')
        or (edge->'to_ref_json'->>'object_id') is distinct from (edge->>'to_object_id')
        or (edge->'to_ref_json'->>'content_hash') is distinct from (edge->>'to_content_hash') then
-      raise exception using errcode = 'P0001', message = 'policy_mismatch';
+      raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
     end if;
 
     edge_id := encode(digest(edge::text, 'sha256'), 'hex');
@@ -761,7 +767,7 @@ begin
     if (contrib->'target_ref_json'->>'object_type') is distinct from (contrib->>'target_object_type')
        or (contrib->'target_ref_json'->>'object_id') is distinct from (contrib->>'target_object_id')
        or (contrib->'target_ref_json'->>'content_hash') is distinct from (contrib->>'target_content_hash') then
-      raise exception using errcode = 'P0001', message = 'policy_mismatch';
+      raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
     end if;
 
     insert into public.external_source_contributions_v1(
