@@ -1,0 +1,63 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "sports_business.boardroom",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "manual_review",
+  "official_documentation_refs": [
+    {
+      "label": "Boardroom homepage (reference only)",
+      "url": "https://boardroom.tv/",
+      "note": "No compliant automated access method established in B1; do not assume scraping is permitted."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "manual_only",
+  "authentication_required": false,
+  "credential_requirements": [],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [
+    "potential licensing may be required for automated feeds"
+  ],
+  "copyright_and_retention_restrictions": [
+    "link-only or excerpt-limited; no full-article storage"
+  ],
+  "rate_limit_notes": [
+    "manual intake only until explicit licensing/terms approval"
+  ],
+  "expected_cadence": "weekly",
+  "freshness_expectations": "30d",
+  "implementation_difficulty": "medium",
+  "available_fallback_methods": [
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "article_metadata",
+    "excerpt"
+  ],
+  "prohibited_behaviors": [
+    "automated scraping without explicit approval",
+    "full-article retention"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_pending_terms_review",
+  "remaining_blockers": [
+    "terms review not completed",
+    "legal review not completed",
+    "no licensed feed or approved newsletter workflow established",
+    "environment not approved for collection",
+    "adapter not implemented"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "legal",
+  "evidence_refs": [
+    {
+      "label": "Boardroom homepage",
+      "url": "https://boardroom.tv/"
+    }
+  ],
+  "qualification_content_hash": "51856749db0c0dce22f88edbb230d1372de99e1bad1685063da0817134018caa"
+}

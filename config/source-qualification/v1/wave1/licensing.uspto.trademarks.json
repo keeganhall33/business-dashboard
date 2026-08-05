@@ -1,0 +1,73 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "licensing.uspto.trademarks",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "structured_export",
+  "official_documentation_refs": [
+    {
+      "label": "USPTO Trademark Status and Document Retrieval API (requires API key)",
+      "url": "https://www.uspto.gov/trademarks/apply/check-status-view-documents/trademark-bulk-data",
+      "note": "Documents TSDR APIs and that an API key is required."
+    },
+    {
+      "label": "TSDR Data API catalog",
+      "url": "https://developer.uspto.gov/api-catalog/tsdr-data-api",
+      "note": "Official USPTO developer portal reference for TSDR API."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "metadata_only",
+  "authentication_required": true,
+  "credential_requirements": [
+    "USPTO API key (TSDR APIs)"
+  ],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "store identifiers and metadata only",
+    "respect USPTO API key policies"
+  ],
+  "rate_limit_notes": [
+    "treat as metered official API; implement conservative client-side limits"
+  ],
+  "expected_cadence": "weekly",
+  "freshness_expectations": "30d",
+  "implementation_difficulty": "medium",
+  "available_fallback_methods": [
+    "metadata_only",
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "trademark_case_metadata"
+  ],
+  "prohibited_behaviors": [
+    "scraping USPTO UI pages",
+    "bypassing API key requirements"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_pending_credentials",
+  "remaining_blockers": [
+    "USPTO API key not available",
+    "terms review not completed",
+    "legal review not completed",
+    "environment not approved for collection",
+    "adapter not implemented"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "legal",
+  "evidence_refs": [
+    {
+      "label": "USPTO trademark bulk data page",
+      "url": "https://www.uspto.gov/trademarks/apply/check-status-view-documents/trademark-bulk-data"
+    },
+    {
+      "label": "TSDR Data API catalog",
+      "url": "https://developer.uspto.gov/api-catalog/tsdr-data-api"
+    }
+  ],
+  "qualification_content_hash": "76e9488b6c90fafa1411b827ea34d4c471b21987c88ca02578412c0ed41971dd"
+}

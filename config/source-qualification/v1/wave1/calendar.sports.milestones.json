@@ -1,0 +1,57 @@
+{
+  "schema_version": "wave1_source_qualification_v1",
+  "source_id": "calendar.sports.milestones",
+  "source_config_version": "v1.0.0",
+  "registry_schema_version": "production_source_registry_v1",
+  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
+  "reviewed_access_method": "manual_review",
+  "official_documentation_refs": [
+    {
+      "label": "Governed composite calendar source",
+      "url": "https://github.com/keeganhall33/business-dashboard",
+      "note": "This is an internal governed composite; do not automate until canonical source list and rules are approved."
+    }
+  ],
+  "terms_access_review_status": "not_reviewed",
+  "automation_suitability": "manual_only",
+  "authentication_required": false,
+  "credential_requirements": [],
+  "paywall_or_licensing_required": false,
+  "paywall_or_licensing_notes": [],
+  "copyright_and_retention_restrictions": [
+    "metadata only"
+  ],
+  "rate_limit_notes": [
+    "manual curation until source-of-truth is defined"
+  ],
+  "expected_cadence": "weekly",
+  "freshness_expectations": "90d",
+  "implementation_difficulty": "low",
+  "available_fallback_methods": [
+    "manual_review"
+  ],
+  "approved_artifact_types": [
+    "calendar_event_metadata"
+  ],
+  "prohibited_behaviors": [
+    "automated collection before composite policy is defined"
+  ],
+  "recommended_collection_mode": "disabled",
+  "status": "blocked_implementation",
+  "remaining_blockers": [
+    "composite source definition not finalized",
+    "terms/legal review not completed for underlying sources",
+    "environment not approved for collection"
+  ],
+  "reviewer": "keegan",
+  "reviewed_at": "2026-08-05T14:00:00.000Z",
+  "review_by": "ops",
+  "evidence_refs": [
+    {
+      "label": "Internal composite source placeholder",
+      "url": "https://github.com/keeganhall33/business-dashboard"
+    }
+  ],
+  "qualification_content_hash": "2b7fe042fdc619eb010b5d266de6a3b71121fd86c2498fde4979e2d815ef398b"
+}
