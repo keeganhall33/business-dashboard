@@ -295,6 +295,186 @@ test("b3.1 operator: no HTTP/Vercel requests are made by the operator wrapper", 
   globalThis.fetch = originalFetch;
 });
 
+test("b3.1 operator: alert comparison uses production-shaped id field; pre-existing alerts do not fail; new high-severity fails", async () => {
+  const claimed = new Set<string>();
+  let heartbeatCalls = 0;
+
+  const invocation: ManualHeartbeatInvocationV1 = {
+    schema_version: "manual_heartbeat_invocation_v1",
+    invocation_id: "inv-alerts",
+    environment: "production",
+    approved_internal_job_names: APPROVED,
+    dry_run: false,
+    requested_at: "2026-08-05T00:00:00.000Z",
+    requested_by: "keegan",
+    expires_at: "2026-08-06T00:00:00.000Z",
+    configuration_version: "x",
+    content_hash: "h"
+  };
+
+  const baseDeps = makeDeps({
+    validateInvocation: () => invocation,
+    claimInvocationOnce: async ({ key }) => {
+      if (claimed.has(key)) return { claimed: false, claimed_at: "2026-08-05T00:00:00.000Z" };
+      claimed.add(key);
+      return { claimed: true, claimed_at: "2026-08-05T00:00:00.000Z" };
+    },
+    snapshotPreconditions: async () => ({
+      ok: true,
+      facts: {
+        supabase_project_ref: "ibjsjosplgbqevmnvvpf",
+        operator_expected_project_ref: "ibjsjosplgbqevmnvvpf",
+        recurring_heartbeat_rows: 0,
+        active_heartbeat_leases: 0,
+        enabled_external_schedules: 0,
+        external_collection_jobs_total: 0,
+        external_collection_jobs_active_executable: 0
+      },
+      a5Counts: { evidence_refs: 1, claims: 1, signals: 1 }
+    }),
+    runHeartbeat: async () => {
+      heartbeatCalls += 1;
+      return {
+        status: "succeeded",
+        results: {
+          "external-source-watchdog-v1": { status: "succeeded", output: { sourcesEvaluated: 24, healthRowsUpserted: 24 } },
+          "milestone-horizon-scan-v1": { status: "succeeded", output: {} },
+          "expired-lease-recovery-v1": { status: "succeeded", output: {} },
+          "expired-milestone-alert-cleanup-v1": { status: "succeeded", output: {} }
+        }
+      };
+    },
+    getTableCountOrNull: async (table) => {
+      if (table === "external_collection_health_v1") return 24;
+      if (table === "sports_milestones_v1") return 0;
+      if (table === "sports_milestone_versions_v1") return 0;
+      if (table === "sports_milestone_alerts_v1") return 0;
+      if (table === "external_evidence_references_v1") return 1;
+      if (table === "external_claims_v1") return 1;
+      if (table === "external_signals_v1") return 1;
+      return 0;
+    },
+    getDistinctHealthSourceCount: async () => 24,
+    getHealthSourceIds: async () => ["a", "b"],
+    getCanonicalProductionSourceIds: () => ["a", "b"],
+    getActiveHeartbeatLeaseCount: async () => 0,
+    getRecurringHeartbeatRowCount: async () => 0
+  });
+
+  process.env.OPERATOR_ENVIRONMENT = "production";
+  process.env.OPERATOR_EXPECTED_SUPABASE_PROJECT_REF = "ibjsjosplgbqevmnvvpf";
+
+  // Case 1: pre-existing alert remains; should not fail.
+  heartbeatCalls = 0;
+  const depsNoNew = makeDeps({
+    ...baseDeps,
+    getUnresolvedHighSeverityOrchestrationAlerts: async () => [
+      { id: "a1", alert_type: "orchestration_failure", severity: "high", resolved_at: null }
+    ]
+  });
+
+  const out = await runControlledExternalIntelligenceHeartbeatV1WithDeps(depsNoNew, {
+    expected_project_ref: "ibjsjosplgbqevmnvvpf",
+    invocation_json: {}
+  });
+  assert.equal(out.ok, true);
+  assert.equal(heartbeatCalls, 1);
+
+  // Case 2: new unexpected high-severity alert appears; should fail verification.
+  const claimed2 = new Set<string>();
+  const invocation2: ManualHeartbeatInvocationV1 = { ...invocation, invocation_id: "inv-alerts-2" };
+  const baseDeps2 = makeDeps({
+    ...baseDeps,
+    validateInvocation: () => invocation2,
+    claimInvocationOnce: async ({ key }) => {
+      if (claimed2.has(key)) return { claimed: false, claimed_at: "2026-08-05T00:00:00.000Z" };
+      claimed2.add(key);
+      return { claimed: true, claimed_at: "2026-08-05T00:00:00.000Z" };
+    }
+  });
+
+  let alertCalls = 0;
+  const depsNewHigh = makeDeps({
+    ...baseDeps2,
+    getUnresolvedHighSeverityOrchestrationAlerts: async () => {
+      alertCalls += 1;
+      if (alertCalls === 1) {
+        return [{ id: "a1", alert_type: "orchestration_failure", severity: "high", resolved_at: null }];
+      }
+      return [
+        { id: "a1", alert_type: "orchestration_failure", severity: "high", resolved_at: null },
+        { id: "a2", alert_type: "orchestration_failure", severity: "high", resolved_at: null }
+      ];
+    }
+  });
+
+  await assert.rejects(() =>
+    runControlledExternalIntelligenceHeartbeatV1WithDeps(depsNewHigh, {
+      expected_project_ref: "ibjsjosplgbqevmnvvpf",
+      invocation_json: {}
+    })
+  );
+});
+
+test("b3.1 operator: if pre-run alert snapshot query fails, heartbeat is not invoked", async () => {
+  let heartbeatCalls = 0;
+  let enableCalls = 0;
+
+  const invocation: ManualHeartbeatInvocationV1 = {
+    schema_version: "manual_heartbeat_invocation_v1",
+    invocation_id: "inv-snapshot-fail",
+    environment: "production",
+    approved_internal_job_names: APPROVED,
+    dry_run: false,
+    requested_at: "2026-08-05T00:00:00.000Z",
+    requested_by: "keegan",
+    expires_at: "2026-08-06T00:00:00.000Z",
+    configuration_version: "x",
+    content_hash: "h"
+  };
+
+  const deps = makeDeps({
+    validateInvocation: () => invocation,
+    claimInvocationOnce: async () => ({ claimed: true, claimed_at: "2026-08-05T00:00:00.000Z" }),
+    snapshotPreconditions: async () => ({
+      ok: true,
+      facts: {
+        supabase_project_ref: "ibjsjosplgbqevmnvvpf",
+        operator_expected_project_ref: "ibjsjosplgbqevmnvvpf",
+        recurring_heartbeat_rows: 0,
+        active_heartbeat_leases: 0,
+        enabled_external_schedules: 0,
+        external_collection_jobs_total: 0,
+        external_collection_jobs_active_executable: 0
+      },
+      a5Counts: { evidence_refs: 1, claims: 1, signals: 1 }
+    }),
+    getUnresolvedHighSeverityOrchestrationAlerts: async () => {
+      throw new Error("alerts_query_failed");
+    },
+    enableJobsForOneShot: async () => {
+      enableCalls += 1;
+    },
+    runHeartbeat: async () => {
+      heartbeatCalls += 1;
+      return { status: "succeeded", results: {} };
+    }
+  });
+
+  process.env.OPERATOR_ENVIRONMENT = "production";
+  process.env.OPERATOR_EXPECTED_SUPABASE_PROJECT_REF = "ibjsjosplgbqevmnvvpf";
+
+  await assert.rejects(() =>
+    runControlledExternalIntelligenceHeartbeatV1WithDeps(deps, {
+      expected_project_ref: "ibjsjosplgbqevmnvvpf",
+      invocation_json: {}
+    })
+  );
+
+  assert.equal(enableCalls, 0);
+  assert.equal(heartbeatCalls, 0);
+});
+
 test("b3.1 operator: concurrent duplicate invocation_id => exactly one winner", async () => {
   const claimed = new Set<string>();
   let heartbeatCalls = 0;
