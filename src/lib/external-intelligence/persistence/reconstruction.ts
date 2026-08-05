@@ -69,3 +69,83 @@ export async function verifyReconstructionCompleteness(input: {
     await reconstructByVersionRef({ store: input.store, ref });
   }
 }
+
+export async function reconstructAtTime(input: {
+  store: ExternalIntelligenceStore;
+  object_type: VersionRef["object_type"];
+  object_id: string;
+  at: string; // ISO
+}): Promise<unknown | RedactedPayloadTombstone> {
+  const atMs = Date.parse(input.at);
+  if (!Number.isFinite(atMs)) throw new PersistenceNotFoundError("invalid_argument");
+
+  const pick = <T extends { effective_at: string | null; created_at: string; content_hash: string; schema_version: string }>(
+    rows: T[]
+  ) => {
+    const eligible = rows
+      .filter((r) => r.effective_at && Date.parse(r.effective_at) <= atMs)
+      .sort((a, b) => {
+        const ea = Date.parse(a.effective_at!);
+        const eb = Date.parse(b.effective_at!);
+        if (ea !== eb) return eb - ea;
+        return Date.parse(b.created_at) - Date.parse(a.created_at);
+      });
+    return eligible[0] ?? null;
+  };
+
+  if (input.object_type === "evidence_reference") {
+    const history = await input.store.evidence.listVersions(input.object_id);
+    const chosen = pick(history);
+    if (!chosen) throw new PersistenceNotFoundError("version_not_found");
+    return reconstructByVersionRef({
+      store: input.store,
+      ref: {
+        object_type: "evidence_reference",
+        object_id: input.object_id,
+        version_id: null,
+        content_hash: chosen.content_hash,
+        schema_version: chosen.schema_version,
+        policy_version: "reconstruction/v1",
+        created_at: chosen.created_at
+      }
+    });
+  }
+
+  if (input.object_type === "claim") {
+    const history = await input.store.claims.listVersions(input.object_id);
+    const chosen = pick(history);
+    if (!chosen) throw new PersistenceNotFoundError("version_not_found");
+    return reconstructByVersionRef({
+      store: input.store,
+      ref: {
+        object_type: "claim",
+        object_id: input.object_id,
+        version_id: null,
+        content_hash: chosen.content_hash,
+        schema_version: chosen.schema_version,
+        policy_version: "reconstruction/v1",
+        created_at: chosen.created_at
+      }
+    });
+  }
+
+  if (input.object_type === "signal") {
+    const history = await input.store.signals.listVersions(input.object_id);
+    const chosen = pick(history);
+    if (!chosen) throw new PersistenceNotFoundError("version_not_found");
+    return reconstructByVersionRef({
+      store: input.store,
+      ref: {
+        object_type: "signal",
+        object_id: input.object_id,
+        version_id: null,
+        content_hash: chosen.content_hash,
+        schema_version: chosen.schema_version,
+        policy_version: "reconstruction/v1",
+        created_at: chosen.created_at
+      }
+    });
+  }
+
+  throw new PersistenceNotFoundError("invalid_argument");
+}

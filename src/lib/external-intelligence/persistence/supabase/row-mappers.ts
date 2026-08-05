@@ -1,4 +1,4 @@
-import "server-only";
+import "@/lib/server-only";
 
 import { deepFreeze } from "@/lib/external-intelligence/config/freeze";
 import type {

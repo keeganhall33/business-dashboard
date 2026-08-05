@@ -1,4 +1,4 @@
-import "server-only";
+import "@/lib/server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 

@@ -1,5 +1,11 @@
 export class ExternalIntelligencePersistenceError extends Error {
   name = "ExternalIntelligencePersistenceError";
+
+  /**
+   * Explicit retry classification.
+   * Callers must not assume all DB failures are retryable.
+   */
+  retryable = false;
 }
 
 export class PersistenceIdempotencyConflictError extends ExternalIntelligencePersistenceError {
@@ -40,4 +46,19 @@ export class PersistenceRunCompletionBlockedError extends ExternalIntelligencePe
 
 export class PersistenceUnknownDatabaseError extends ExternalIntelligencePersistenceError {
   name = "PersistenceUnknownDatabaseError";
+
+  // Default unknown DB failures to retryable; callers may downgrade based on context.
+  retryable = true;
+}
+
+export class PersistenceObjectTypeMismatchError extends ExternalIntelligencePersistenceError {
+  name = "PersistenceObjectTypeMismatchError";
+}
+
+export class PersistenceContentHashMismatchError extends ExternalIntelligencePersistenceError {
+  name = "PersistenceContentHashMismatchError";
+}
+
+export class PersistencePolicyMismatchError extends ExternalIntelligencePersistenceError {
+  name = "PersistencePolicyMismatchError";
 }

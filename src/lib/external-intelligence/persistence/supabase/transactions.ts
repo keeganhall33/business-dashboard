@@ -1,11 +1,14 @@
-import "server-only";
+import "@/lib/server-only";
 
 import type { SupabaseServerClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import {
   PersistenceIdempotencyConflictError,
+  PersistenceContentHashMismatchError,
   PersistenceInvalidArgumentError,
   PersistenceLegalHoldBlockedError,
   PersistenceLinkedVersionNotFoundError,
+  PersistenceObjectTypeMismatchError,
+  PersistencePolicyMismatchError,
   PersistenceRunCompletionBlockedError,
   PersistenceUnauthorizedError,
   PersistenceUnknownDatabaseError,
@@ -38,8 +41,13 @@ function mapRpcError(error: RpcErrorLike): Error {
     case "linked_version_not_found":
       return new PersistenceLinkedVersionNotFoundError(msg);
     case "object_type_mismatch":
+      return new PersistenceObjectTypeMismatchError(msg);
     case "version_ref_mismatch":
       return new PersistenceVersionRefMismatchError(msg);
+    case "content_hash_mismatch":
+      return new PersistenceContentHashMismatchError(msg);
+    case "policy_mismatch":
+      return new PersistencePolicyMismatchError(msg);
     case "legal_hold_block":
       return new PersistenceLegalHoldBlockedError(msg);
     case "run_completion_blocked":
@@ -47,6 +55,7 @@ function mapRpcError(error: RpcErrorLike): Error {
     case "incomplete_write_set":
       return new PersistenceRunCompletionBlockedError(msg);
     default:
+      // Do not leak payload contents; only surface stable codes.
       return new PersistenceUnknownDatabaseError(msg || String(error.code ?? "unknown_db_error"));
   }
 }

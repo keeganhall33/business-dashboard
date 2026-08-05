@@ -1,4 +1,4 @@
-import "server-only";
+import "@/lib/server-only";
 
 import { canonicalJsonSha256Hex } from "@/lib/fusion-v1/canonical-json";
 

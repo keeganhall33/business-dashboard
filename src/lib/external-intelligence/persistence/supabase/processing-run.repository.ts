@@ -1,4 +1,4 @@
-import "server-only";
+import "@/lib/server-only";
 
 import type { ProcessingRunRecord } from "@/lib/external-intelligence/persistence/records";
 import { processingRunIdempotencyKey } from "@/lib/external-intelligence/persistence/idempotency";

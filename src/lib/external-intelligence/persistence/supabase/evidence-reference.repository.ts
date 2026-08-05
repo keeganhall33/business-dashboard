@@ -1,10 +1,14 @@
-import "server-only";
+import "@/lib/server-only";
 
 import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
 import type { EvidenceReference } from "@/lib/external-intelligence/contracts/evidence-reference";
 import { EvidenceReferenceSchema } from "@/lib/external-intelligence/contracts/evidence-reference";
 import { createEvidenceReferenceFingerprint } from "@/lib/external-intelligence/hashing/fingerprints";
-import { PersistenceNotFoundError } from "@/lib/external-intelligence/persistence/errors";
+import {
+  PersistenceContentHashMismatchError,
+  PersistenceObjectTypeMismatchError,
+  PersistenceNotFoundError
+} from "@/lib/external-intelligence/persistence/errors";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import { mapEvidenceStableRow, mapEvidenceVersionRow } from "@/lib/external-intelligence/persistence/supabase/row-mappers";
 import { EXTERNAL_INTELLIGENCE_RPCS, runRpc } from "@/lib/external-intelligence/persistence/supabase/transactions";
@@ -25,6 +29,9 @@ export class EvidenceReferenceRepository {
   }
 
   async getVersion(ref: VersionRef, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
+    if (ref.object_type !== "evidence_reference") {
+      throw new PersistenceObjectTypeMismatchError("object_type_mismatch");
+    }
     const supabase = getExternalIntelligenceSupabaseClient({ client: opts?.client });
     const q = await supabase
       .from("external_evidence_reference_versions_v1")
@@ -32,10 +39,14 @@ export class EvidenceReferenceRepository {
       .eq("evidence_reference_id", ref.object_id)
       .eq("content_hash", ref.content_hash)
       .limit(1)
-      .maybeSingle();
+    .maybeSingle();
     if (q.error) throw new Error(`Failed to fetch evidence version: ${q.error.message}`);
     if (!q.data) throw new PersistenceNotFoundError(`Evidence version not found: ${ref.object_id}::${ref.content_hash}`);
-    return mapEvidenceVersionRow(q.data as unknown as Record<string, unknown>);
+    const mapped = mapEvidenceVersionRow(q.data as unknown as Record<string, unknown>);
+    if (mapped.payload_available) {
+      EvidenceReferenceSchema.parse(mapped.payload_json);
+    }
+    return mapped;
   }
 
   async listVersions(evidence_reference_id: string, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
@@ -46,13 +57,20 @@ export class EvidenceReferenceRepository {
       .eq("evidence_reference_id", evidence_reference_id)
       .order("created_at", { ascending: true });
     if (q.error) throw new Error(`Failed to list evidence versions: ${q.error.message}`);
-    return (q.data ?? []).map((r) => mapEvidenceVersionRow(r as unknown as Record<string, unknown>));
+    return (q.data ?? []).map((r) => {
+      const mapped = mapEvidenceVersionRow(r as unknown as Record<string, unknown>);
+      if (mapped.payload_available) EvidenceReferenceSchema.parse(mapped.payload_json);
+      return mapped;
+    });
   }
 
   async persistEvidenceReference(input: {
     evidence: EvidenceReference;
     policy_refs_json: unknown;
     policy_version: string;
+    /** Optional supplied hash; when present must match recomputed canonical hash. */
+    supplied_content_hash?: string | null;
+    opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> };
   }): Promise<{ ref: VersionRef; created_new_version: boolean; idempotent_replay: boolean }> {
     const parsed = EvidenceReferenceSchema.parse(input.evidence);
 
@@ -80,8 +98,11 @@ export class EvidenceReferenceRepository {
     });
 
     const version_content_hash = computed;
+    if (input.supplied_content_hash && input.supplied_content_hash !== version_content_hash) {
+      throw new PersistenceContentHashMismatchError("content_hash_mismatch");
+    }
 
-    const supabase = getExternalIntelligenceSupabaseClient();
+    const supabase = getExternalIntelligenceSupabaseClient({ client: input.opts?.client });
 
     const res = await runRpc<
       Array<{
@@ -131,6 +152,10 @@ export class EvidenceReferenceRepository {
 
     void computeContentHash;
 
-    return { ref, created_new_version: row.created_new_version, idempotent_replay: row.idempotent_replay };
+    return Object.freeze({
+      ref: Object.freeze(ref),
+      created_new_version: row.created_new_version,
+      idempotent_replay: row.idempotent_replay
+    });
   }
 }

@@ -1,10 +1,10 @@
-import "server-only";
+import "@/lib/server-only";
 
 import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
 import type { Claim } from "@/lib/external-intelligence/contracts/claim";
 import { ClaimSchema, computeClaimFingerprint } from "@/lib/external-intelligence/contracts/claim";
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
-import { PersistenceNotFoundError } from "@/lib/external-intelligence/persistence/errors";
+import { PersistenceNotFoundError, PersistenceObjectTypeMismatchError } from "@/lib/external-intelligence/persistence/errors";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import { mapClaimStableRow, mapClaimVersionRow } from "@/lib/external-intelligence/persistence/supabase/row-mappers";
 import { EXTERNAL_INTELLIGENCE_RPCS, runRpc } from "@/lib/external-intelligence/persistence/supabase/transactions";
@@ -19,6 +19,9 @@ export class ClaimRepository {
   }
 
   async getVersion(ref: VersionRef, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
+    if (ref.object_type !== "claim") {
+      throw new PersistenceObjectTypeMismatchError("object_type_mismatch");
+    }
     const supabase = getExternalIntelligenceSupabaseClient({ client: opts?.client });
     const q = await supabase
       .from("external_claim_versions_v1")
@@ -26,10 +29,14 @@ export class ClaimRepository {
       .eq("claim_id", ref.object_id)
       .eq("content_hash", ref.content_hash)
       .limit(1)
-      .maybeSingle();
+    .maybeSingle();
     if (q.error) throw new Error(`Failed to fetch claim version: ${q.error.message}`);
     if (!q.data) throw new PersistenceNotFoundError(`Claim version not found: ${ref.object_id}::${ref.content_hash}`);
-    return mapClaimVersionRow(q.data as unknown as Record<string, unknown>);
+    const mapped = mapClaimVersionRow(q.data as unknown as Record<string, unknown>);
+    if (mapped.payload_available) {
+      ClaimSchema.parse(mapped.payload_json);
+    }
+    return mapped;
   }
 
   async listVersions(claim_id: string, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
@@ -38,7 +45,11 @@ export class ClaimRepository {
       ascending: true
     });
     if (q.error) throw new Error(`Failed to list claim versions: ${q.error.message}`);
-    return (q.data ?? []).map((r) => mapClaimVersionRow(r as unknown as Record<string, unknown>));
+    return (q.data ?? []).map((r) => {
+      const mapped = mapClaimVersionRow(r as unknown as Record<string, unknown>);
+      if (mapped.payload_available) ClaimSchema.parse(mapped.payload_json);
+      return mapped;
+    });
   }
 
   async persistClaim(input: {
@@ -47,10 +58,12 @@ export class ClaimRepository {
     policy_refs_json: unknown;
     interpretation_policy_hash: string;
     edge: { relation: string; policy_version: string; policy_hash: string };
+    supplied_content_hash?: string | null;
+    opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> };
   }): Promise<{ ref: VersionRef; created_new_version: boolean; idempotent_replay: boolean }> {
     const parsed = ClaimSchema.parse(input.claim);
     if (input.evidence_version_ref.object_type !== "evidence_reference") {
-      throw new Error("object_type_mismatch");
+      throw new PersistenceObjectTypeMismatchError("object_type_mismatch");
     }
 
     const { claim_fingerprint: _claim_fingerprint, ...rest } = parsed;
@@ -61,8 +74,11 @@ export class ClaimRepository {
     }
 
     const version_content_hash = computeContentHash(parsed);
+    if (input.supplied_content_hash && input.supplied_content_hash !== version_content_hash) {
+      throw new Error("content_hash_mismatch");
+    }
 
-    const supabase = getExternalIntelligenceSupabaseClient();
+    const supabase = getExternalIntelligenceSupabaseClient({ client: input.opts?.client });
     const res = await runRpc<
       Array<{ claim_id: string; content_hash: string; created_new_version: boolean; idempotent_replay: boolean }>
     >({
@@ -111,6 +127,10 @@ export class ClaimRepository {
       policy_version: parsed.interpretation_policy_version,
       created_at: new Date().toISOString()
     };
-    return { ref, created_new_version: row.created_new_version, idempotent_replay: row.idempotent_replay };
+    return Object.freeze({
+      ref: Object.freeze(ref),
+      created_new_version: row.created_new_version,
+      idempotent_replay: row.idempotent_replay
+    });
   }
 }
