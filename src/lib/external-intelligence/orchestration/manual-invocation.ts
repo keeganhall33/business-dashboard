@@ -44,6 +44,16 @@ export function validateManualHeartbeatInvocationV1(input: unknown): ManualHeart
     throw new Error("invalid_invocation");
   }
 
+  const allowed: ReadonlySet<string> = new Set([
+    "external-source-watchdog-v1",
+    "milestone-horizon-scan-v1",
+    "expired-lease-recovery-v1",
+    "expired-milestone-alert-cleanup-v1"
+  ]);
+  for (const name of x.approved_internal_job_names) {
+    if (typeof name !== "string" || !allowed.has(name)) throw new Error("invalid_invocation");
+  }
+
   const env = x.environment;
   if (env !== "production" && env !== "staging" && env !== "local") throw new Error("invalid_invocation");
 
@@ -61,7 +71,8 @@ export function validateManualHeartbeatInvocationV1(input: unknown): ManualHeart
 
   if (x.content_hash !== computed) throw new Error("invocation_hash_mismatch");
 
-  if (Date.parse(x.expires_at) <= Date.parse(x.requested_at)) throw new Error("invocation_expired");
+  const nowIso = new Date().toISOString();
+  if (Date.parse(x.expires_at) <= Date.parse(nowIso)) throw new Error("invocation_expired");
 
   return {
     schema_version: "manual_heartbeat_invocation_v1",

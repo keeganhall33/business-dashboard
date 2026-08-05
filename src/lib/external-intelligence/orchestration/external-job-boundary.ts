@@ -23,7 +23,7 @@ async function guardAndDispatchWithDeps(input: ExternalCollectionJobInput, deps:
   const block = async (codes: string[], summary: string) => {
     await deps.persistBlocked({ job_id: input.job_id, blocker_codes: codes, safe_error_summary: summary });
     await deps.alert({
-      dedupeKey: `external_collection_blocked:${input.source_id}`,
+      dedupeKey: `orchestration:external_collection:unexpected_attempt:${input.source_id}`,
       title: "Unexpected external collection attempt blocked",
       summary
     });

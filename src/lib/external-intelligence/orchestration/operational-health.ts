@@ -1,6 +1,7 @@
 import "@/lib/server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSystemState, resolveSystemAlert } from "@/lib/supabase/queries";
 import { createDedupedOperationalAlertV1 } from "@/lib/external-intelligence/orchestration/operational-alerts";
 
 function hoursSince(nowIso: string, thenIso: string) {
@@ -22,7 +23,26 @@ export async function evaluateInternalOrchestrationOperationalHealthV1(input: { 
     const row = j as unknown as { job_name: string; last_success_at: string | null };
     const jobName = String(row.job_name);
     const lastSuccess = row.last_success_at;
-    if (!lastSuccess) continue;
+    if (!lastSuccess) {
+      // Enabled but never succeeded yet.
+      if (jobName === "external-source-watchdog-v1") {
+        await createDedupedOperationalAlertV1({
+          dedupeKey: "orchestration:watchdog:stale",
+          severity: "high",
+          title: "Watchdog stale",
+          summary: `watchdog never_succeeded`
+        });
+      }
+      if (jobName === "milestone-horizon-scan-v1") {
+        await createDedupedOperationalAlertV1({
+          dedupeKey: "orchestration:milestone_scan:stale",
+          severity: "high",
+          title: "Milestone scan stale",
+          summary: `milestone scan never_succeeded`
+        });
+      }
+      continue;
+    }
     const age = hoursSince(input.now_iso, lastSuccess);
 
     if (jobName === "external-source-watchdog-v1" && age > 26) {
@@ -32,6 +52,8 @@ export async function evaluateInternalOrchestrationOperationalHealthV1(input: { 
         title: "Watchdog stale",
         summary: `watchdog last_success_at age_hours=${age.toFixed(2)}`
       });
+    } else if (jobName === "external-source-watchdog-v1") {
+      await resolveSystemAlert("orchestration:watchdog:stale");
     }
 
     if (jobName === "milestone-horizon-scan-v1" && age > 26) {
@@ -41,6 +63,8 @@ export async function evaluateInternalOrchestrationOperationalHealthV1(input: { 
         title: "Milestone scan stale",
         summary: `milestone scan last_success_at age_hours=${age.toFixed(2)}`
       });
+    } else if (jobName === "milestone-horizon-scan-v1") {
+      await resolveSystemAlert("orchestration:milestone_scan:stale");
     }
   }
 
@@ -61,13 +85,31 @@ export async function evaluateInternalOrchestrationOperationalHealthV1(input: { 
     else break;
   }
 
-  if (consecutiveFailed >= 3) {
+  const threshold = 3;
+  if (consecutiveFailed >= threshold) {
     await createDedupedOperationalAlertV1({
-      dedupeKey: "orchestration:heartbeat:repeated_failures",
+      dedupeKey: "orchestration:heartbeat:repeated_failure",
       severity: "high",
       title: "Internal orchestration heartbeat repeatedly failing",
       summary: `consecutive_failed=${consecutiveFailed}`
     });
+  } else {
+    await resolveSystemAlert("orchestration:heartbeat:repeated_failure");
+  }
+
+  // Persistent lease failures: stored in system_state by heartbeat runner.
+  const leaseState = await getSystemState("orchestration:lease_failures");
+  const value = leaseState?.value_json as unknown as { consecutive?: number } | null;
+  const consecutiveLeaseFailures = Number(value?.consecutive ?? 0);
+  if (consecutiveLeaseFailures >= threshold) {
+    await createDedupedOperationalAlertV1({
+      dedupeKey: "orchestration:lease:persistent_failure",
+      severity: "high",
+      title: "Persistent orchestration lease failures",
+      summary: `consecutive=${consecutiveLeaseFailures}`
+    });
+  } else {
+    await resolveSystemAlert("orchestration:lease:persistent_failure");
   }
 
   return { ok: true };

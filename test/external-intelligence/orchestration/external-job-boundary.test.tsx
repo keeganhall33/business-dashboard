@@ -45,5 +45,6 @@ test("external job boundary: blocks and persists + alerts once; does not invoke 
   assert.equal(res.status, "blocked");
   assert.equal(blocked.length, 1);
   assert.equal(alerts.length, 1);
+  assert.equal(alerts[0]?.dedupeKey, "orchestration:external_collection:unexpected_attempt:economics.fred");
   assert.ok(blocked[0].blocker_codes.includes("external_collection_not_activated"));
 });
