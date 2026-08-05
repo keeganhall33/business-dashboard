@@ -42,11 +42,11 @@
   "recommended_collection_mode": "disabled",
   "status": "blocked_implementation",
   "remaining_blockers": [
-    "terms review not completed",
-    "legal review not completed",
-    "league-by-league approved access method required",
+    "adapters not implemented",
     "environment not approved for collection",
-    "adapters not implemented"
+    "league-by-league approved access method required",
+    "legal review not completed",
+    "terms review not completed"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",

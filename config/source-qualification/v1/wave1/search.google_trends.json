@@ -43,12 +43,12 @@
   "recommended_collection_mode": "disabled",
   "status": "blocked_access_method",
   "remaining_blockers": [
-    "no approved official access method in place",
+    "adapter not implemented",
     "alpha access not granted",
-    "terms review not completed",
-    "legal review not completed",
     "environment not approved for collection",
-    "adapter not implemented"
+    "legal review not completed",
+    "no approved official access method in place",
+    "terms review not completed"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",

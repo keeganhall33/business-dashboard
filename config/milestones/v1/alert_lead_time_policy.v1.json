@@ -1,0 +1,62 @@
+{
+  "schema_version": "alert_lead_time_policy_v1",
+  "policy_version": "v1.0.0",
+  "horizons_days": [
+    0,
+    7,
+    14,
+    30,
+    60,
+    90,
+    120,
+    180,
+    270,
+    365,
+    548,
+    730
+  ],
+  "horizons_by_project_class": {
+    "major_institutional_partnership": [
+      90,
+      120,
+      180,
+      270,
+      365,
+      548,
+      730
+    ],
+    "athlete_or_talent_collaboration": [
+      60,
+      90,
+      120,
+      180,
+      270,
+      365
+    ],
+    "original_artwork_no_formal_partnership": [
+      30,
+      60,
+      90,
+      120,
+      180,
+      270
+    ],
+    "print_content_or_promo_opportunity": [
+      7,
+      14,
+      30,
+      60,
+      90,
+      120,
+      180
+    ],
+    "today_relevance": [
+      0
+    ]
+  },
+  "suppression_policy": {
+    "schema_version": "alert_suppression_policy_v1",
+    "policy_version": "v1.0.0"
+  },
+  "policy_content_hash": "471ef92dc367d359e6b351ffcacce7b3a5cd7f8b79e89d52b531a5747f488b21"
+}

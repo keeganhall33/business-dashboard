@@ -1,0 +1,88 @@
+{
+  "schema_version": "sports_milestone_calendar_v1",
+  "calendar_version": "v2.0.0",
+  "fixture_status": "test_only",
+  "milestones": [
+    {
+      "schema_version": "sports_milestone_v1",
+      "milestone_id": "mlb_opening_day_2027",
+      "milestone_type": "major_team_or_league_event",
+      "subject_entities": [
+        {
+          "entity_type": "league",
+          "entity_id": "mlb",
+          "label": "MLB"
+        }
+      ],
+      "team": null,
+      "league": "mlb",
+      "geographic_market": "us",
+      "original_event_date": null,
+      "milestone_date": "2027-03-25",
+      "anniversary_number": null,
+      "season_or_year": "2027",
+      "championship_or_achievement_type": null,
+      "historical_significance": "medium",
+      "fan_collector_relevance": "high",
+      "partnership_potential": "medium",
+      "licensing_rights_considerations": [
+        "league marks require review"
+      ],
+      "evidence_refs": [
+        {
+          "label": "Synthetic fixture",
+          "url": "https://example.invalid/milestones/mlb_opening_day_2027",
+          "note": "test-only"
+        }
+      ],
+      "source_ids": [
+        "calendar.sports.milestones"
+      ],
+      "confidence": "low",
+      "correction_status": "none",
+      "review_status": "unreviewed",
+      "content_hash": "ace28e81e2e56dd44fca9380cf64744dcc609e2acb123f8b3db6398ec45b90fd"
+    },
+    {
+      "schema_version": "sports_milestone_v1",
+      "milestone_id": "nba_finals_game1_2027",
+      "milestone_type": "championship_anniversary",
+      "subject_entities": [
+        {
+          "entity_type": "league",
+          "entity_id": "nba",
+          "label": "NBA"
+        }
+      ],
+      "team": null,
+      "league": "nba",
+      "geographic_market": "us",
+      "original_event_date": null,
+      "milestone_date": "2027-06-03",
+      "anniversary_number": null,
+      "season_or_year": "2027",
+      "championship_or_achievement_type": "finals",
+      "historical_significance": "high",
+      "fan_collector_relevance": "high",
+      "partnership_potential": "high",
+      "licensing_rights_considerations": [
+        "league marks require review"
+      ],
+      "evidence_refs": [
+        {
+          "label": "Synthetic fixture",
+          "url": "https://example.invalid/milestones/nba_finals_game1_2027",
+          "note": "test-only"
+        }
+      ],
+      "source_ids": [
+        "calendar.sports.milestones"
+      ],
+      "confidence": "low",
+      "correction_status": "none",
+      "review_status": "unreviewed",
+      "content_hash": "bb5cdd52a107b78773aa5e48f1ba8855bc3543af2d6e4a8700598ec353ef8fc3"
+    }
+  ],
+  "calendar_content_hash": "d819a825f1c9dc9368d38cc825d57d1e74809ed39bf1f31406d606b9905817b0"
+}

@@ -5,23 +5,34 @@
 
 import fs from "node:fs";
 
-import { buildMilestoneHorizonAlerts, parseMilestoneHorizonPolicy } from "../src/lib/external-intelligence/milestones/milestone-horizon.ts";
+import { parseSportsMilestoneCalendar } from "../src/lib/external-intelligence/milestones/contracts.ts";
+import { parseAlertLeadTimePolicy } from "../src/lib/external-intelligence/milestones/alert-policy.ts";
+import { buildMilestoneHorizonAlertsV2 } from "../src/lib/external-intelligence/milestones/horizon-engine.ts";
 
 export function generateMilestoneHorizonReport(input = { now_ymd: "2026-12-01" }) {
-  const calendar = JSON.parse(fs.readFileSync("config/milestones/v1/milestones.wave1.fixture.json", "utf8"));
-  const policyJson = JSON.parse(fs.readFileSync("config/milestones/v1/milestone_horizon_policy.v1.json", "utf8"));
-  const policy = parseMilestoneHorizonPolicy(policyJson);
+  const calendarJson = JSON.parse(
+    fs.readFileSync("config/milestones/v1/fixtures/milestones.wave1.synthetic.v2.json", "utf8")
+  );
+  const leadTimeJson = JSON.parse(fs.readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8"));
 
-  const alerts = buildMilestoneHorizonAlerts({ calendar, policy, now_ymd: input.now_ymd });
+  const calendar = parseSportsMilestoneCalendar(calendarJson);
+  const lead_time_policy = parseAlertLeadTimePolicy(leadTimeJson);
+
+  const alerts = buildMilestoneHorizonAlertsV2({ calendar, lead_time_policy, now_ymd: input.now_ymd });
 
   const lines = [];
   lines.push("External Intelligence — Milestone Horizon Report (B1.1)");
   lines.push(`now=${input.now_ymd}`);
-  lines.push(`policy_version=${policy.policy_version} policy_hash=${policy.policy_content_hash}`);
+  lines.push(
+    `lead_time_policy_version=${lead_time_policy.policy_version} policy_hash=${lead_time_policy.policy_content_hash}`
+  );
+  lines.push(`calendar_version=${calendar.calendar_version} calendar_hash=${calendar.calendar_content_hash}`);
   lines.push("");
 
   for (const a of alerts) {
-    lines.push(`- ${a.alert_date} :: ${a.label} :: event=${a.event_date} :: hash=${a.alert_hash}`);
+    lines.push(
+      `- ${a.alert_date} :: milestone=${a.milestone_id} :: horizon=${a.horizon_days}d :: class=${a.project_class} :: stage=${a.planning_stage} :: event=${a.milestone_date} :: suppression=${a.suppression_identity} :: hash=${a.alert_hash}`
+    );
   }
 
   return lines.join("\n");

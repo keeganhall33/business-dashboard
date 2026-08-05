@@ -47,11 +47,11 @@
   "recommended_collection_mode": "disabled",
   "status": "blocked_access_method",
   "remaining_blockers": [
-    "no approved automated access method",
-    "terms review not completed",
-    "legal review not completed",
+    "carrier-by-carrier official feed qualification needed",
     "environment not approved for collection",
-    "carrier-by-carrier official feed qualification needed"
+    "legal review not completed",
+    "no approved automated access method",
+    "terms review not completed"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",

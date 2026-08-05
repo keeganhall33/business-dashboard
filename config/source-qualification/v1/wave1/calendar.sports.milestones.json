@@ -8,9 +8,14 @@
   "reviewed_access_method": "manual_review",
   "official_documentation_refs": [
     {
-      "label": "Governed composite calendar source",
-      "url": "https://github.com/keeganhall33/business-dashboard",
-      "note": "This is an internal governed composite; do not automate until canonical source list and rules are approved."
+      "label": "Naismith Memorial Basketball Hall of Fame — Events (example official calendar category)",
+      "url": "https://www.hoophall.com/events/",
+      "note": "Example category; composite must preserve underlying sources and their restrictions."
+    },
+    {
+      "label": "MLB press release newsroom (example official league source category)",
+      "url": "https://www.mlb.com/press-release",
+      "note": "Example category only; not a qualified automated source yet."
     }
   ],
   "terms_access_review_status": "not_reviewed",
@@ -41,8 +46,8 @@
   "status": "blocked_implementation",
   "remaining_blockers": [
     "composite source definition not finalized",
-    "terms/legal review not completed for underlying sources",
-    "environment not approved for collection"
+    "environment not approved for collection",
+    "terms/legal review not completed for underlying sources"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",
@@ -53,5 +58,5 @@
       "url": "https://github.com/keeganhall33/business-dashboard"
     }
   ],
-  "qualification_content_hash": "2b7fe042fdc619eb010b5d266de6a3b71121fd86c2498fde4979e2d815ef398b"
+  "qualification_content_hash": "0e66fee2fd71cc3fd632e75a7a2789a87aa94eca6f99b011005854f567584838"
 }

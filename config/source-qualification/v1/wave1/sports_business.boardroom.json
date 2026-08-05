@@ -44,11 +44,11 @@
   "recommended_collection_mode": "disabled",
   "status": "blocked_pending_terms_review",
   "remaining_blockers": [
-    "terms review not completed",
+    "adapter not implemented",
+    "environment not approved for collection",
     "legal review not completed",
     "no licensed feed or approved newsletter workflow established",
-    "environment not approved for collection",
-    "adapter not implemented"
+    "terms review not completed"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",

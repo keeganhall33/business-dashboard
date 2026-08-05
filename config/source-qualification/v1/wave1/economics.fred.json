@@ -49,13 +49,13 @@
     "exceeding documented usage policies"
   ],
   "recommended_collection_mode": "disabled",
-  "status": "blocked_pending_credentials",
+  "status": "blocked_pending_terms_review",
   "remaining_blockers": [
-    "missing FRED API key",
-    "terms review not completed",
-    "legal review not completed",
+    "adapter not implemented",
     "environment not approved for collection",
-    "adapter not implemented"
+    "legal review not completed",
+    "missing FRED API key",
+    "terms review not completed"
   ],
   "reviewer": "keegan",
   "reviewed_at": "2026-08-05T14:00:00.000Z",
@@ -70,5 +70,5 @@
       "url": "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
     }
   ],
-  "qualification_content_hash": "0f737671bd6c0ad6f96ec15fcf88f5382e4f3e20e8e2330c667785b5776e037c"
+  "qualification_content_hash": "64e5fe55c3d77bdb19edc49f5039a5dd7ca849af6da2d38d8ad6fc1e842f2f26"
 }
