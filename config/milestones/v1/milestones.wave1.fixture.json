@@ -1,0 +1,25 @@
+{
+  "schema_version": "sports_milestone_calendar_v1",
+  "calendar_version": "v1.0.0",
+  "fixture_status": "test_only",
+  "milestones": [
+    {
+      "milestone_id": "mlb_opening_day_2027",
+      "domain": "sports",
+      "league": "mlb",
+      "label": "MLB Opening Day",
+      "event_date": "2027-03-25",
+      "importance": "high",
+      "notes": "Test fixture only; replace with governed calendar source."
+    },
+    {
+      "milestone_id": "nba_finals_game1_2027",
+      "domain": "sports",
+      "league": "nba",
+      "label": "NBA Finals (Game 1)",
+      "event_date": "2027-06-03",
+      "importance": "high",
+      "notes": "Test fixture only."
+    }
+  ]
+}
