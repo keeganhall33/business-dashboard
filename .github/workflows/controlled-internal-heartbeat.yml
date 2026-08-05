@@ -1,0 +1,182 @@
+name: Controlled Internal Heartbeat (one-shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_phrase:
+        description: 'Must equal: "CONTROLLED_INTERNAL_HEARTBEAT_APPROVED"'
+        required: true
+        type: string
+      requested_by:
+        description: 'Operator identity (audit only; no secrets)'
+        required: true
+        type: string
+      invocation_id:
+        description: 'Unique invocation id (UUID)'
+        required: true
+        type: string
+      configuration_version:
+        description: 'Identifier for this controlled run (e.g. b3-controlled-run-2026-08-05-1)'
+        required: true
+        type: string
+      expires_at:
+        description: 'UTC ISO timestamp ~5 minutes after requested_at (e.g. 2026-08-05T20:45:00.000Z)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-internal-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run one-shot controlled internal heartbeat
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - name: Validate approval phrase
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.approval_phrase }}" != "CONTROLLED_INTERNAL_HEARTBEAT_APPROVED" ]; then
+            echo "Invalid approval phrase."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Build invocation payload (no secrets)
+        id: invocation
+        shell: bash
+        env:
+          INVOCATION_ID: ${{ inputs.invocation_id }}
+          REQUESTED_BY: ${{ inputs.requested_by }}
+          CONFIG_VERSION: ${{ inputs.configuration_version }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+        run: |
+          set -euo pipefail
+          node --import tsx -e '
+            import { computeManualInvocationHash } from "./src/lib/external-intelligence/orchestration/manual-invocation";
+            const now = new Date();
+            const payload = {
+              schema_version: "manual_heartbeat_invocation_v1",
+              invocation_id: process.env.INVOCATION_ID,
+              environment: "production",
+              approved_internal_job_names: [
+                "external-source-watchdog-v1",
+                "milestone-horizon-scan-v1",
+                "expired-lease-recovery-v1",
+                "expired-milestone-alert-cleanup-v1"
+              ],
+              dry_run: false,
+              requested_at: now.toISOString(),
+              requested_by: process.env.REQUESTED_BY,
+              expires_at: process.env.EXPIRES_AT,
+              configuration_version: process.env.CONFIG_VERSION
+            };
+            const content_hash = computeManualInvocationHash(payload);
+            // Never echo secrets (none are present). Print only the JSON payload itself.
+            process.stdout.write(JSON.stringify({ ...payload, content_hash }));
+          ' > invocation.json
+
+      - name: Execute one-shot operator script (no HTTP)
+        shell: bash
+        env:
+          OPERATOR_ENVIRONMENT: production
+          CONTROLLED_INTERNAL_HEARTBEAT_APPROVED: "true"
+          OPERATOR_EXPECTED_SUPABASE_PROJECT_REF: ibjsjosplgbqevmnvvpf
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          INVOCATION_JSON=$(cat invocation.json)
+          node --import tsx ./scripts/run-controlled-external-intelligence-heartbeat.ts --invocation-json "$INVOCATION_JSON"
+
+      - name: Post-run verification snapshot (safe output)
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          node --import tsx -e '
+            import { getExternalIntelligenceSupabaseClient } from "./src/lib/external-intelligence/persistence/supabase/client";
+            import { loadProductionSourceRegistryV1 } from "./src/lib/external-intelligence/config/load-production-source-registry";
+            const supabase = getExternalIntelligenceSupabaseClient({});
+            const nowIso = new Date().toISOString();
+            const canonical = loadProductionSourceRegistryV1().file.sources.map(s => s.source_id).sort();
+
+            async function count(table, filter) {
+              let q = supabase.from(table).select("*", { count: "exact", head: true });
+              if (filter) q = filter(q);
+              const { count, error } = await q;
+              if (error) throw error;
+              return count ?? 0;
+            }
+
+            async function getIds() {
+              const { data, error } = await supabase.from("external_collection_health_v1").select("source_id");
+              if (error) throw error;
+              return (data ?? []).map(r => String(r.source_id)).sort();
+            }
+
+            async function main() {
+              const healthRows = await count("external_collection_health_v1");
+              const ids = await getIds();
+              const distinct = new Set(ids).size;
+              const enabledSchedules = await count("external_collection_schedules_v1", q => q.eq("enabled", true));
+              const totalJobs = await count("external_collection_jobs_v1");
+              const activeJobs = await count("external_collection_jobs_v1", q =>
+                q.or(
+                  [
+                    "status.in.(queued,leased,running)",
+                    `and(status.eq.retry_wait,next_retry_at.is.null)`,
+                    `and(status.eq.retry_wait,next_retry_at.lte.${nowIso})`
+                  ].join(",")
+                )
+              );
+              const milestones = await count("sports_milestones_v1");
+              const milestoneVersions = await count("sports_milestone_versions_v1");
+              const milestoneAlerts = await count("sports_milestone_alerts_v1");
+              const evidenceRefs = await count("external_evidence_references_v1");
+              const claims = await count("external_claims_v1");
+              const signals = await count("external_signals_v1");
+              const activeLease = await count("internal_orchestration_locks_v1", q => q.eq("lock_key", "external-intelligence-heartbeat").gt("expires_at", nowIso));
+              const recurringRows = await count("scheduled_jobs", q => q.eq("job_key", "external-intelligence-heartbeat"));
+
+              const matchCanonical = ids.length === canonical.length && ids.every((v, i) => v === canonical[i]);
+
+              console.log(JSON.stringify({
+                external_collection_health_v1: { rows: healthRows, distinct_sources: distinct, canonical_match: matchCanonical },
+                external_collection_schedules_v1: { enabled: enabledSchedules },
+                external_collection_jobs_v1: { total: totalJobs, active_executable: activeJobs },
+                sports_milestones: { milestones, versions: milestoneVersions, alerts: milestoneAlerts },
+                a5: { evidence_refs: evidenceRefs, claims, signals },
+                orchestration: { active_heartbeat_leases: activeLease, recurring_heartbeat_rows: recurringRows }
+              }, null, 2));
+            }
+
+            main().catch((e) => {
+              console.error("post_run_verification_failed", { message: e?.message ?? String(e) });
+              process.exitCode = 1;
+            });
+          '
