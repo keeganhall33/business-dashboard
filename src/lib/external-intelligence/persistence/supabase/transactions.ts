@@ -22,7 +22,13 @@ export const EXTERNAL_INTELLIGENCE_RPCS = {
   completeRun: "complete_external_processing_run_v1",
   redactEvidence: "redact_external_evidence_payload_v1",
   redactClaim: "redact_external_claim_payload_v1",
-  redactSignal: "redact_external_signal_payload_v1"
+  redactSignal: "redact_external_signal_payload_v1",
+
+  // Phase B2: milestones + alerts.
+  persistSportsMilestone: "persist_sports_milestone_v1",
+  upsertSportsMilestoneAlerts: "upsert_sports_milestone_alerts_v1",
+  invalidateObsoleteSportsMilestoneAlerts: "invalidate_obsolete_sports_milestone_alerts_v1",
+  expireSportsMilestoneAlerts: "expire_sports_milestone_alerts_v1"
 } as const;
 
 type RpcErrorLike = { message?: string; code?: string };
