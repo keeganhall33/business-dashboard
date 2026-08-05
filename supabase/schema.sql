@@ -698,7 +698,7 @@ begin
   if coalesce(nullif(in_lease_owner,''),'') = '' then
     raise exception 'invalid_argument' using errcode = '22023';
   end if;
-  if in_lease_seconds is null or in_lease_seconds <= 0 then
+  if in_lease_seconds is null or in_lease_seconds <= 0 or in_lease_seconds > 600 then
     raise exception 'invalid_argument' using errcode = '22023';
   end if;
 
@@ -763,11 +763,31 @@ begin
   if coalesce(nullif(in_lease_token,''),'') = '' then
     raise exception 'invalid_argument' using errcode = '22023';
   end if;
-  if in_lease_seconds is null or in_lease_seconds <= 0 then
+  if in_lease_seconds is null or in_lease_seconds <= 0 or in_lease_seconds > 600 then
     raise exception 'invalid_argument' using errcode = '22023';
   end if;
 
   v_expires := now() + make_interval(secs => in_lease_seconds);
+
+  if not exists (select 1 from public.internal_orchestration_locks_v1 where lock_key = in_lock_key) then
+    raise exception 'lock_not_acquired' using errcode = 'P0001';
+  end if;
+  if exists (
+    select 1 from public.internal_orchestration_locks_v1
+      where lock_key = in_lock_key
+        and lease_token is not null
+        and lease_token <> in_lease_token
+  ) then
+    raise exception 'lock_token_mismatch' using errcode = 'P0001';
+  end if;
+  if exists (
+    select 1 from public.internal_orchestration_locks_v1
+      where lock_key = in_lock_key
+        and lease_token = in_lease_token
+        and (public.internal_orchestration_locks_v1.expires_at is null or public.internal_orchestration_locks_v1.expires_at <= now())
+  ) then
+    raise exception 'lock_expired' using errcode = 'P0001';
+  end if;
 
   update public.internal_orchestration_locks_v1
     set expires_at = v_expires, heartbeat_at = now(), updated_at = now()
@@ -802,6 +822,15 @@ begin
   end if;
   if coalesce(nullif(in_lease_token,''),'') = '' then
     raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1 from public.internal_orchestration_locks_v1
+      where lock_key = in_lock_key
+        and lease_token is not null
+        and lease_token <> in_lease_token
+  ) then
+    raise exception 'lock_token_mismatch' using errcode = 'P0001';
   end if;
 
   update public.internal_orchestration_locks_v1

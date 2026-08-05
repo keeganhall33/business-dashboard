@@ -13,6 +13,7 @@ import { INTERNAL_ORCHESTRATION_JOBS_V1 } from "@/lib/external-intelligence/orch
 import type { InternalOrchestrationJobKey } from "@/lib/external-intelligence/orchestration/internal-jobs";
 import { InternalOrchestrationJobsRepository } from "@/lib/external-intelligence/orchestration/internal-jobs.repository";
 import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchestration/due";
+import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external-intelligence/orchestration/operational-health";
 
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 300);
@@ -45,7 +46,8 @@ export async function runExternalIntelligenceHeartbeatV1() {
       // We must enforce global exclusion here using a durable DB lease.
       const lockKey = "external-intelligence-heartbeat";
       const leaseOwner = `heartbeat:${process.pid}`;
-      const leaseSeconds = 120;
+      // Upper-bounded lease; renewed between handlers.
+      const leaseSeconds = 300;
       const now = new Date();
       const nowIso = now.toISOString();
       const nowYmd = nowIso.slice(0, 10);
@@ -64,11 +66,12 @@ export async function runExternalIntelligenceHeartbeatV1() {
         const results: Record<string, unknown> = {};
 
         // Refresh lease before doing any work.
-        await renewInternalOrchestrationLockV1({
+        const renewed0 = await renewInternalOrchestrationLockV1({
           lock_key: lockKey,
           lease_token: lease.lease_token,
           lease_seconds: leaseSeconds
         });
+        if (!renewed0.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
 
         // Ensure DB contains canonical job definitions (still disabled by default).
         const jobsRepo = new InternalOrchestrationJobsRepository();
@@ -102,6 +105,14 @@ export async function runExternalIntelligenceHeartbeatV1() {
             });
             await jobsRepo.updateAfterRun({ job_name: jobName, next_run_at: nextDue, now_iso: nowIso, succeeded: true });
             results[jobName] = { status: "succeeded", next_run_at: nextDue, output: out };
+
+            // Renew lease between handlers to prevent expiry mid-run.
+            const renewed = await renewInternalOrchestrationLockV1({
+              lock_key: lockKey,
+              lease_token: lease.lease_token,
+              lease_seconds: leaseSeconds
+            });
+            if (!renewed.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
           } catch (e) {
             // Failure: keep next_run_at unchanged so hourly heartbeat can retry.
             await jobsRepo.updateAfterRun({
@@ -111,6 +122,13 @@ export async function runExternalIntelligenceHeartbeatV1() {
               succeeded: false
             });
             results[jobName] = { status: "failed", error: safeErrorSummary(e) };
+
+            const renewed = await renewInternalOrchestrationLockV1({
+              lock_key: lockKey,
+              lease_token: lease.lease_token,
+              lease_seconds: leaseSeconds
+            });
+            if (!renewed.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
           }
         }
 
@@ -127,6 +145,9 @@ export async function runExternalIntelligenceHeartbeatV1() {
         });
         throw error;
       } finally {
+        // Staleness and repeated failure evaluation uses existing alert mechanism.
+        // It must not treat lock contention as an incident.
+        await evaluateInternalOrchestrationOperationalHealthV1({ now_iso: nowIso });
         await releaseInternalOrchestrationLockV1({ lock_key: lockKey, lease_token: lease.lease_token });
       }
     },

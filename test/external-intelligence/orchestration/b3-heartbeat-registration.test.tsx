@@ -20,3 +20,9 @@ test("b3 internal job registry: includes required handlers and remains disabled 
     assert.ok(job.concurrency_key.length > 0);
   }
 });
+
+test("deployment alone does not enable internal orchestration jobs", () => {
+  for (const job of INTERNAL_ORCHESTRATION_JOBS_V1) {
+    assert.equal(job.enabled, false);
+  }
+});
