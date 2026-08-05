@@ -7,6 +7,13 @@ import {
 
 function safeSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 300);
+  if (error && typeof error === "object") {
+    try {
+      return JSON.stringify(error).slice(0, 300);
+    } catch {
+      return Object.prototype.toString.call(error).slice(0, 300);
+    }
+  }
   return String(error).slice(0, 300);
 }
 

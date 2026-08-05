@@ -472,12 +472,52 @@ export async function runControlledExternalIntelligenceHeartbeatV1WithDeps(
   }
 
   const claimedAt = claim.claimed_at;
-  const pre = await deps.snapshotPreconditions({ expected_project_ref: input.expected_project_ref, now_iso: deps.nowIso() });
 
-  const unresolvedHighBefore = await deps.getUnresolvedHighSeverityOrchestrationAlerts();
-  const unresolvedHighBeforeIds = new Set(
-    unresolvedHighBefore.map((a) => String((a as unknown as { alert_id: string }).alert_id))
-  );
+  let pre: PreconditionSnapshot;
+  let unresolvedHighBeforeIds: Set<string>;
+  try {
+    pre = await deps.snapshotPreconditions({ expected_project_ref: input.expected_project_ref, now_iso: deps.nowIso() });
+    const unresolvedHighBefore = await deps.getUnresolvedHighSeverityOrchestrationAlerts();
+    unresolvedHighBeforeIds = new Set(
+      unresolvedHighBefore.map((a) => String((a as unknown as { alert_id: string }).alert_id))
+    );
+  } catch (error) {
+    // Preserve the atomic claim but ensure the audit captures the failure.
+    const failed: ControlledAuditV1 = {
+      schema_version: "controlled_internal_heartbeat_audit_v1",
+      operator_version: operatorVersion(),
+      invocation_id: invocation.invocation_id,
+      invocation_hash: invocation.content_hash,
+
+      requested_by: invocation.requested_by,
+      requested_at: invocation.requested_at,
+      expires_at: invocation.expires_at,
+      environment: "production",
+      approved_internal_job_names: invocation.approved_internal_job_names.slice() as InternalOrchestrationJobKey[],
+
+      claimed_at: claimedAt,
+
+      started_at: null,
+      completed_at: deps.nowIso(),
+      status: "failed",
+
+      status_history: [auditTransition(null, "claimed", "atomic_claim"), auditTransition("claimed", "failed", "exception")],
+
+      preconditions: {},
+      pre_run_counts: {},
+      post_run_counts: {},
+
+      heartbeat_result: null,
+
+      restoration: { attempted: false, restored: false, error: null },
+
+      safe_error_code: "controlled_run_failed",
+      safe_error_summary: safeSummary(error)
+    };
+
+    await deps.upsertSystemState(auditKey, failed);
+    throw error;
+  }
 
   const baseAudit: ControlledAuditV1 = {
     schema_version: "controlled_internal_heartbeat_audit_v1",
