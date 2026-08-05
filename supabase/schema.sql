@@ -1511,9 +1511,9 @@ begin
   end if;
 
   select * into existing
-  from external_evidence_reference_versions_v1
-  where evidence_reference_id = in_evidence_reference_id
-    and content_hash = in_content_hash;
+  from public.external_evidence_reference_versions_v1 ev
+  where ev.evidence_reference_id = in_evidence_reference_id
+    and ev.content_hash = in_content_hash;
 
   if found then
     if not (
@@ -1555,7 +1555,7 @@ begin
       in_source_id,
       in_source_config_version,
       in_legal_policy_version
-    ) on conflict (evidence_reference_id) do nothing;
+    ) on conflict on constraint external_evidence_references_v1_pkey do nothing;
 
     insert into external_evidence_reference_versions_v1(
       evidence_reference_id,
@@ -1626,23 +1626,95 @@ as $fn$
 declare
   v record;
 begin
-  if current_user is distinct from 'service_role' then
+  if session_user is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   if in_redaction_reason is null or length(in_redaction_reason)=0 then
     raise exception using errcode='P0001', message='invalid_argument';
   end if;
-  select * into v from public.external_evidence_reference_versions_v1
-  where evidence_reference_id=in_evidence_reference_id and content_hash=in_content_hash;
+  select * into v from public.external_evidence_reference_versions_v1 ev
+  where ev.evidence_reference_id=in_evidence_reference_id and ev.content_hash=in_content_hash;
   if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
   if v.legal_hold then raise exception using errcode='P0001', message='legal_hold_block'; end if;
-  update public.external_evidence_reference_versions_v1
+  update public.external_evidence_reference_versions_v1 ev
     set payload_json=null,
         payload_available=false,
         content_redacted_at=coalesce(content_redacted_at, timezone('utc', now())),
         redaction_reason=in_redaction_reason
-  where evidence_reference_id=in_evidence_reference_id and content_hash=in_content_hash;
+  where ev.evidence_reference_id=in_evidence_reference_id and ev.content_hash=in_content_hash;
   evidence_reference_id := in_evidence_reference_id;
+  content_hash := in_content_hash;
+  redacted := true;
+  return next;
+end;
+$fn$;
+
+create or replace function redact_external_claim_payload_v1(
+  in_claim_id text,
+  in_content_hash text,
+  in_redaction_reason text
+)
+returns table (claim_id text, content_hash text, redacted boolean)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v record;
+begin
+  if session_user is distinct from 'service_role' then
+    raise exception using errcode = '42501', message = 'unauthorized';
+  end if;
+  if in_redaction_reason is null or length(in_redaction_reason)=0 then
+    raise exception using errcode='P0001', message='invalid_argument';
+  end if;
+  select * into v from public.external_claim_versions_v1
+  where claim_id=in_claim_id and content_hash=in_content_hash;
+  if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
+  if v.legal_hold then raise exception using errcode='P0001', message='legal_hold_block'; end if;
+  update public.external_claim_versions_v1
+    set payload_json=null,
+        payload_available=false,
+        content_redacted_at=coalesce(content_redacted_at, timezone('utc', now())),
+        redaction_reason=in_redaction_reason
+  where claim_id=in_claim_id and content_hash=in_content_hash;
+  claim_id := in_claim_id;
+  content_hash := in_content_hash;
+  redacted := true;
+  return next;
+end;
+$fn$;
+
+create or replace function redact_external_signal_payload_v1(
+  in_signal_id text,
+  in_content_hash text,
+  in_redaction_reason text
+)
+returns table (signal_id text, content_hash text, redacted boolean)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v record;
+begin
+  if session_user is distinct from 'service_role' then
+    raise exception using errcode = '42501', message = 'unauthorized';
+  end if;
+  if in_redaction_reason is null or length(in_redaction_reason)=0 then
+    raise exception using errcode='P0001', message='invalid_argument';
+  end if;
+  select * into v from public.external_signal_versions_v1
+  where signal_id=in_signal_id and content_hash=in_content_hash;
+  if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
+  if v.legal_hold then raise exception using errcode='P0001', message='legal_hold_block'; end if;
+  update public.external_signal_versions_v1
+    set payload_json=null,
+        payload_available=false,
+        content_redacted_at=coalesce(content_redacted_at, timezone('utc', now())),
+        redaction_reason=in_redaction_reason
+  where signal_id=in_signal_id and content_hash=in_content_hash;
+  signal_id := in_signal_id;
   content_hash := in_content_hash;
   redacted := true;
   return next;
@@ -1747,7 +1819,7 @@ begin
       'new',
       'none',
       in_interpretation_policy_version
-    ) on conflict (claim_id) do nothing;
+    ) on conflict on constraint external_claims_v1_pkey do nothing;
 
     insert into external_claim_versions_v1(
       claim_id,
@@ -1943,7 +2015,7 @@ begin
       'none',
       in_disposition,
       in_confidence_summary_json
-    ) on conflict (signal_id) do nothing;
+    ) on conflict on constraint external_signals_v1_pkey do nothing;
 
     insert into external_signal_versions_v1(
       signal_id,
@@ -2116,7 +2188,7 @@ declare
   inserted_version boolean := false;
   replay boolean := false;
 begin
-  if current_user is distinct from 'service_role' then
+  if session_user is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
 
@@ -2214,9 +2286,9 @@ begin
     inserted_version := true;
   end if;
 
-  update public.external_evidence_references_v1
+  update public.external_evidence_references_v1 es
     set current_content_hash = in_content_hash
-  where evidence_reference_id = in_evidence_reference_id;
+  where es.evidence_reference_id = in_evidence_reference_id;
 
   evidence_reference_id := in_evidence_reference_id;
   content_hash := in_content_hash;
@@ -2240,7 +2312,7 @@ declare
   edge jsonb;
   missing_edges integer := 0;
 begin
-  if current_user is distinct from 'service_role' then
+  if session_user is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   select * into r from public.external_processing_runs_v1 where run_id = in_run_id;
