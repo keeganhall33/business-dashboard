@@ -78,3 +78,35 @@ test("b3 durable lock RPCs exist and are service_role-only in migration + schema
   // Historical migration remains unmodified.
   assert.ok(mig.includes("v_token := encode(gen_random_bytes(32), 'hex');"));
 });
+
+test("b3.2 acquire lock function body preserves semantics and qualifies pgcrypto", () => {
+  const migFix = fs.readFileSync(
+    "supabase/migrations/20260805_external_intelligence_phase_b3_2_lock_pgcrypto_qualify.sql",
+    "utf8"
+  );
+  const body = sliceBetween(migFix, "function public.acquire_internal_orchestration_lock_v1", "$fn$;");
+
+  // Exact identity + security posture.
+  assert.ok(body.includes("function public.acquire_internal_orchestration_lock_v1("));
+  assert.ok(body.includes("security definer"));
+  assert.ok(body.includes("set search_path to 'public'"));
+
+  // Token generation: schema-qualified pgcrypto + hex encoding.
+  assert.ok(body.includes("extensions.gen_random_bytes(32)"));
+  assert.ok(body.includes("encode(extensions.gen_random_bytes(32), 'hex')"));
+
+  // Duration bounds preserved.
+  assert.ok(body.includes("in_lease_seconds <= 0"));
+  assert.ok(body.includes("in_lease_seconds > 600"));
+
+  // Insert-first semantics preserved.
+  assert.ok(/on conflict \(lock_key\) do nothing/i.test(body));
+
+  // Takeover condition preserved.
+  assert.ok(/expires_at is null or .*expires_at <= now\(\)/i.test(body));
+
+  // Contention returns acquired=false.
+  assert.ok(body.includes("acquired := false"));
+  assert.ok(body.includes("lease_token := null"));
+  assert.ok(body.includes("expires_at := null"));
+});

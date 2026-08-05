@@ -1,5 +1,21 @@
--- Rollback: restore previous B3 acquire function definition (unqualified gen_random_bytes)
--- NOTE: This rollback is for controlled review/testing only.
+-- Rollback (guarded): This migration fixed a production outage caused by unqualified
+-- pgcrypto function resolution under `search_path = public`.
+--
+-- Reintroducing `gen_random_bytes(32)` without schema qualification will fail when
+-- pgcrypto is installed in `extensions` (Supabase default), causing lock acquisition to
+-- fail at runtime.
+--
+-- Therefore, this rollback is intentionally FAIL-CLOSED.
+-- If you truly need a rollback, author a separate, reviewed migration that preserves
+-- a working token generator under the proven extension schema.
+
+do $$
+begin
+  raise exception using
+    errcode = 'P0001',
+    message = 'unsafe_rollback: B3.2 lock acquire token generation fix must not be rolled back to unqualified gen_random_bytes';
+end;
+$$;
 
 create or replace function public.acquire_internal_orchestration_lock_v1(
   in_lock_key text,
