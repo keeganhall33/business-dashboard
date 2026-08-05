@@ -18,7 +18,8 @@ export async function runExternalSourceWatchdogV1(input: { now_iso: string }) {
 
   const schedule_enabled_by_source_id = Object.fromEntries(sourceIds.map((id) => [id, false]));
   for (const row of schedules ?? []) {
-    schedule_enabled_by_source_id[String((row as any).source_id)] = Boolean((row as any).enabled);
+    const r = row as unknown as { source_id: string; enabled: boolean };
+    schedule_enabled_by_source_id[String(r.source_id)] = Boolean(r.enabled);
   }
 
   // In B3 we intentionally keep collection blocked.
@@ -37,4 +38,3 @@ export async function runExternalSourceWatchdogV1(input: { now_iso: string }) {
     healthRowsUpserted: records.length
   };
 }
-

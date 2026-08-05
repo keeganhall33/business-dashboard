@@ -11,7 +11,7 @@ test("b3 internal job registry: includes required handlers and remains disabled 
     "expired-lease-recovery-v1",
     "expired-milestone-alert-cleanup-v1"
   ]) {
-    assert.ok(names.has(required as any));
+    assert.ok(names.has(required as (typeof INTERNAL_ORCHESTRATION_JOBS_V1)[number]["job_name"]));
   }
 
   for (const job of INTERNAL_ORCHESTRATION_JOBS_V1) {

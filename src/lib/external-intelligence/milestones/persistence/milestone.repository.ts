@@ -170,7 +170,8 @@ export class SportsMilestoneRepository {
         .maybeSingle();
       if (v.error) throw new Error(`Failed to fetch version payload: ${v.error.message}`);
       if (!v.data) continue;
-      milestones.push(parseSportsMilestone((v.data as any).canonical_payload_json));
+      const payload = (v.data as unknown as { canonical_payload_json: unknown }).canonical_payload_json;
+      milestones.push(parseSportsMilestone(payload));
     }
     return milestones;
   }
