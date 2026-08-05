@@ -702,7 +702,7 @@ begin
     raise exception 'invalid_argument' using errcode = '22023';
   end if;
 
-  v_token := encode(gen_random_bytes(32), 'hex');
+  v_token := encode(extensions.gen_random_bytes(32), 'hex');
   v_expires := now() + make_interval(secs => in_lease_seconds);
 
   insert into public.internal_orchestration_locks_v1(
