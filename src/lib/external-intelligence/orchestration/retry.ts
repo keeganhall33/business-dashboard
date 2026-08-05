@@ -8,7 +8,9 @@ export type RetryClassification = {
 };
 
 export function classifyCollectionFailure(input: { error_code: string }): RetryClassification {
-  const c = input.error_code;
+  // Aliases: keep internal/system error codes mapped onto governed failure classes.
+  // `handler_timeout` is produced by the internal heartbeat timeout wrapper.
+  const c = input.error_code === "handler_timeout" ? "timeout" : input.error_code;
 
   const retryable: FailureClass[] = [
     "transient_network",

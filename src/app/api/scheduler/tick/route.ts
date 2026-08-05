@@ -20,6 +20,7 @@ import { runIndustryNewsPulse } from "@/lib/scheduler/industryNewsPulse";
 import { runScoreboardRefresh } from "@/lib/scheduler/scoreboardRefresh";
 import { runIntelligenceTrafficQualityDaily } from "@/lib/scheduler/intelligenceTrafficQualityDaily";
 import { runFusionDailyDecisionV1 } from "@/lib/scheduler/fusionDailyDecisionV1";
+import { runExternalIntelligenceHeartbeatV1 } from "@/lib/scheduler/externalIntelligenceHeartbeat";
 
 export const runtime = "nodejs";
 
@@ -46,7 +47,10 @@ const runners: Record<string, JobRunner> = {
   "industry-news-pulse": runIndustryNewsPulse,
   "scoreboard-refresh": runScoreboardRefresh,
   "intelligence-traffic-quality": runIntelligenceTrafficQualityDaily,
-  "fusion-daily-decision-v1": runFusionDailyDecisionV1
+  "fusion-daily-decision-v1": runFusionDailyDecisionV1,
+
+  // Phase B3 (dormant until scheduled_jobs row exists): internal orchestration only.
+  "external-intelligence-heartbeat": runExternalIntelligenceHeartbeatV1
 };
 
 /**
