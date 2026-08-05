@@ -1,4 +1,4 @@
-import "server-only";
+import "@/lib/server-only";
 import { createClient } from "@supabase/supabase-js";
 
 export function getSupabaseServerClient() {
