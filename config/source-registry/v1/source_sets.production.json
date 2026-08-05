@@ -1,0 +1,253 @@
+{
+  "schema_version": "production_source_sets_v1",
+  "source_sets_config_version": "v1.0.0",
+  "generated_at": null,
+  "fixture_status": "production",
+  "production_eligibility": "enabled",
+  "owner": "keegan",
+  "source_sets": [
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.sports.official",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Official sports sources only. Membership never enables collection by itself.",
+      "domains": ["sports"],
+      "maximum_active_members": 10,
+      "diversity_requirement": "must include primary official sources; avoid single-league monoculture",
+      "legal_access_policy": "manual-only until terms reviewed per-source",
+      "duplicate_handling_policy": "syndication does not count as independent confirmation",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "low",
+      "inclusion_reasons": ["official"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "sports.major_leagues.official", "role": "primary", "member_enabled": false, "inclusion_reason": "official" },
+        { "source_id": "sports.ncaa.official", "role": "primary", "member_enabled": false, "inclusion_reason": "official" },
+        { "source_id": "calendar.sports.milestones", "role": "primary", "member_enabled": false, "inclusion_reason": "planning" }
+      ],
+      "replacement_rules": "members may be added/removed only via PR with legal+ops review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.sports_business.reporting",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Sports business reporting sources. No automated collection assumed.",
+      "domains": ["sports_business"],
+      "maximum_active_members": 10,
+      "diversity_requirement": "must include at least 2 independent outlets before automation is ever considered",
+      "legal_access_policy": "manual-only until explicit licensing/terms approvals are recorded",
+      "duplicate_handling_policy": "treat cross-posts as duplicates; prefer original reporting",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "medium",
+      "inclusion_reasons": ["business"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "sports_business.sportico", "role": "primary", "member_enabled": false, "inclusion_reason": "business" },
+        { "source_id": "sports_business.boardroom", "role": "primary", "member_enabled": false, "inclusion_reason": "business" },
+        { "source_id": "sports_business.front_office_sports", "role": "primary", "member_enabled": false, "inclusion_reason": "business" }
+      ],
+      "replacement_rules": "membership changes require review; no auto-enable",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.art.and_galleries",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Art and gallery market catalysts (rosters, auctions).",
+      "domains": ["art_market"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include at least one auction + one gallery-type source",
+      "legal_access_policy": "manual-only unless licensing is confirmed",
+      "duplicate_handling_policy": "auction listings may repeat; dedupe by lot/work id",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "medium",
+      "inclusion_reasons": ["market"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "art_market.sothebys", "role": "primary", "member_enabled": false, "inclusion_reason": "auction" },
+        { "source_id": "galleries.curated.rosters", "role": "primary", "member_enabled": false, "inclusion_reason": "galleries" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.memorabilia.and_trading_cards",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Memorabilia and trading cards market observation.",
+      "domains": ["memorabilia", "trading_cards"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include at least one auction + one data provider",
+      "legal_access_policy": "manual-only unless licensing verified",
+      "duplicate_handling_policy": "syndicated sales data treated as duplicate",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "medium",
+      "inclusion_reasons": ["market"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "memorabilia.heritage", "role": "primary", "member_enabled": false, "inclusion_reason": "auction" },
+        { "source_id": "trading_cards.psa", "role": "primary", "member_enabled": false, "inclusion_reason": "grading" },
+        { "source_id": "trading_cards.card_ladder", "role": "primary", "member_enabled": false, "inclusion_reason": "market_data" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.licensing.and_rights",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Licensing, trademarks, and rights-holder governance.",
+      "domains": ["licensing"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include at least one official registry source",
+      "legal_access_policy": "metadata-only unless reviewed",
+      "duplicate_handling_policy": "treat repeated filings as updates, not duplicates",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "medium",
+      "inclusion_reasons": ["licensing"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "licensing.uspto.trademarks", "role": "primary", "member_enabled": false, "inclusion_reason": "registry" },
+        { "source_id": "licensing.rights_holders.newsrooms", "role": "primary", "member_enabled": false, "inclusion_reason": "newsroom" }
+      ],
+      "replacement_rules": "membership changes require legal review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.entertainment.and_music",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Entertainment and music catalysts.",
+      "domains": ["entertainment", "music"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include at least two independent outlets",
+      "legal_access_policy": "manual-only until terms/licensing verified",
+      "duplicate_handling_policy": "cross-posts treated as duplicates",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "medium",
+      "inclusion_reasons": ["catalysts"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "entertainment.deadline", "role": "primary", "member_enabled": false, "inclusion_reason": "reporting" },
+        { "source_id": "entertainment.variety", "role": "primary", "member_enabled": false, "inclusion_reason": "reporting" },
+        { "source_id": "music.pollstar", "role": "primary", "member_enabled": false, "inclusion_reason": "music" },
+        { "source_id": "social.youtube", "role": "primary", "member_enabled": false, "inclusion_reason": "metadata" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.competitor.monitoring",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Competitor monitoring (curated).",
+      "domains": ["competition"],
+      "maximum_active_members": 50,
+      "diversity_requirement": "must include direct and indirect competitors",
+      "legal_access_policy": "manual-only",
+      "duplicate_handling_policy": "treat mirrored pages as duplicates",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "high",
+      "inclusion_reasons": ["monitoring"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "competitors.curated.set", "role": "primary", "member_enabled": false, "inclusion_reason": "curated" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.platform.and_regulatory",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Platform and regulatory changes that affect operations and risk.",
+      "domains": ["platform", "risk"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include platform + regulatory sources",
+      "legal_access_policy": "manual-only until explicitly approved",
+      "duplicate_handling_policy": "treat reposted change logs as duplicates",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "low",
+      "inclusion_reasons": ["risk"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "platform.meta.policy_updates", "role": "primary", "member_enabled": false, "inclusion_reason": "policy" },
+        { "source_id": "platform.google.policy_updates", "role": "primary", "member_enabled": false, "inclusion_reason": "policy" },
+        { "source_id": "regulatory.us.releases", "role": "primary", "member_enabled": false, "inclusion_reason": "regulatory" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.ops.and_shipping",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Operations and shipping sources.",
+      "domains": ["operations"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include at least one primary carrier alert",
+      "legal_access_policy": "manual-only",
+      "duplicate_handling_policy": "dedupe by carrier+incident",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "low",
+      "inclusion_reasons": ["ops"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "ops.shipping.alerts", "role": "primary", "member_enabled": false, "inclusion_reason": "alerts" }
+      ],
+      "replacement_rules": "membership changes require ops review",
+      "lifecycle_status": "active"
+    },
+
+    {
+      "schema_version": "production_source_sets_v1",
+      "source_set_id": "set.market.demand.and_economics",
+      "version": "v1.0.0",
+      "owner": "keegan",
+      "purpose": "Market demand and economics context.",
+      "domains": ["market", "economics", "demand"],
+      "maximum_active_members": 20,
+      "diversity_requirement": "must include one macro source + one demand proxy",
+      "legal_access_policy": "metadata-only where possible; otherwise disabled",
+      "duplicate_handling_policy": "series updates replace prior points",
+      "update_cadence": "monthly",
+      "review_cadence": "quarterly",
+      "noise_budget": "low",
+      "inclusion_reasons": ["context"],
+      "member_roles": ["primary"],
+      "members": [
+        { "source_id": "economics.fred", "role": "primary", "member_enabled": false, "inclusion_reason": "macro" },
+        { "source_id": "search.google_trends", "role": "primary", "member_enabled": false, "inclusion_reason": "demand" }
+      ],
+      "replacement_rules": "membership changes require review",
+      "lifecycle_status": "active"
+    }
+  ]
+}
