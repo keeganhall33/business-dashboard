@@ -1,12 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { advanceScheduleNextRun, heartbeat } from "@/lib/external-intelligence/orchestration/heartbeat";
+import {
+  advanceScheduleNextRun,
+  heartbeat,
+  type ScheduleRow
+} from "@/lib/external-intelligence/orchestration/heartbeat";
 
 test("heartbeat: due enabled eligible schedule enqueues exactly one logical job (idempotent)", () => {
   const now = "2026-08-05T00:00:00.000Z";
 
-  const schedules: any[] = [
+  const schedules: ScheduleRow[] = [
     {
       schedule_id: "sch1",
       source_id: "economics.fred",
@@ -26,7 +30,7 @@ test("heartbeat: due enabled eligible schedule enqueues exactly one logical job 
 
   const res1 = heartbeat({
     now_iso: now,
-    schedules: schedules as any,
+    schedules,
     existing_jobs_by_logical_key: new Set(),
     is_schedule_eligible_now: () => ({ ok: true, reason: null }),
     maximum_jobs_to_enqueue: 10
@@ -38,7 +42,7 @@ test("heartbeat: due enabled eligible schedule enqueues exactly one logical job 
 
   const res2 = heartbeat({
     now_iso: now,
-    schedules: schedules as any,
+    schedules,
     existing_jobs_by_logical_key: new Set([logicalKey]),
     is_schedule_eligible_now: () => ({ ok: true, reason: null }),
     maximum_jobs_to_enqueue: 10
@@ -50,7 +54,7 @@ test("heartbeat: due enabled eligible schedule enqueues exactly one logical job 
 test("heartbeat: ineligible schedule does not enqueue and records blocked reason", () => {
   const now = "2026-08-05T00:00:00.000Z";
 
-  const schedules: any[] = [
+  const schedules: ScheduleRow[] = [
     {
       schedule_id: "sch1",
       source_id: "economics.fred",
@@ -70,7 +74,7 @@ test("heartbeat: ineligible schedule does not enqueue and records blocked reason
 
   const res = heartbeat({
     now_iso: now,
-    schedules: schedules as any,
+    schedules,
     existing_jobs_by_logical_key: new Set(),
     is_schedule_eligible_now: () => ({ ok: false, reason: "eligibility_not_allowed_now" }),
     maximum_jobs_to_enqueue: 10
@@ -81,7 +85,7 @@ test("heartbeat: ineligible schedule does not enqueue and records blocked reason
 });
 
 test("advanceScheduleNextRun: deterministic", () => {
-  const s: any = {
+  const s: ScheduleRow = {
     schedule_id: "sch1",
     source_id: "economics.fred",
     source_config_version: "v1.0.0",
