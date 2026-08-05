@@ -72,3 +72,36 @@ export async function evaluateInternalOrchestrationOperationalHealthV1(input: { 
 
   return { ok: true };
 }
+
+export function evaluateOperationalEscalationV1(input: {
+  now_iso: string;
+  enabledJobs: Array<{ job_name: string; last_success_at: string | null }>;
+  recentHeartbeatStatuses: string[];
+}): {
+  heartbeatConsecutiveFailed: number;
+  watchdogStale: boolean;
+  milestoneScanStale: boolean;
+} {
+  const isStale = (thenIso: string) => hoursSince(input.now_iso, thenIso) > 26;
+
+  let watchdogStale = false;
+  let milestoneScanStale = false;
+
+  for (const j of input.enabledJobs) {
+    if (!j.last_success_at) continue;
+    if (j.job_name === "external-source-watchdog-v1" && isStale(j.last_success_at)) watchdogStale = true;
+    if (j.job_name === "milestone-horizon-scan-v1" && isStale(j.last_success_at)) milestoneScanStale = true;
+  }
+
+  let consecutiveFailed = 0;
+  for (const s of input.recentHeartbeatStatuses) {
+    if (s === "failed") consecutiveFailed += 1;
+    else break;
+  }
+
+  return {
+    heartbeatConsecutiveFailed: consecutiveFailed,
+    watchdogStale,
+    milestoneScanStale
+  };
+}
