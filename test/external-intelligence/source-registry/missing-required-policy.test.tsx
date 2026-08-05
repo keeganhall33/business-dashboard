@@ -9,18 +9,21 @@ test("missing required policy fails closed (config bundle blocks)", () => {
   const orig = fs.readFileSync;
 
   // Simulate a missing required policy file by intercepting fs reads.
-  (fs as any).readFileSync = (p: any, ...rest: any[]) => {
+  const fsPatch = fs as unknown as { readFileSync: typeof fs.readFileSync };
+  fsPatch.readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+    const [p] = args;
     if (String(p).includes("config/policies/confidence/v1.0.0.json")) {
-      const e: any = new Error("ENOENT");
+      const e = new Error("ENOENT") as Error & { code?: string };
       e.code = "ENOENT";
       throw e;
     }
-    return orig(p, ...rest);
-  };
+    return orig(...args);
+  }) as typeof fs.readFileSync;
 
   try {
     assert.throws(() => loadExternalIntelligenceConfigV1());
   } finally {
-    (fs as any).readFileSync = orig;
+    const fsRestore = fs as unknown as { readFileSync: typeof fs.readFileSync };
+    fsRestore.readFileSync = orig;
   }
 });
