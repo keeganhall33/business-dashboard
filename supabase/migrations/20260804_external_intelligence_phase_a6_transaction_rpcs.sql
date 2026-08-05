@@ -600,9 +600,9 @@ begin
   end loop;
 
   select * into existing
-  from public.external_signal_versions_v1
-  where signal_id = in_signal_id
-    and content_hash = in_content_hash;
+  from public.external_signal_versions_v1 sv
+  where sv.signal_id = in_signal_id
+    and sv.content_hash = in_content_hash;
 
   if found then
     if not (
@@ -709,11 +709,11 @@ begin
     inserted_version := true;
   end if;
 
-  update public.external_signals_v1
+  update public.external_signals_v1 ss
     set current_content_hash = in_content_hash,
         disposition = in_disposition,
         confidence_summary_json = in_confidence_summary_json
-  where signal_id = in_signal_id;
+  where ss.signal_id = in_signal_id;
 
   -- Persist required provenance edges (idempotent, no misleading polymorphic FKs).
   for edge in select * from jsonb_array_elements(in_required_provenance_edges_json)
@@ -907,7 +907,9 @@ begin
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
 
-  select * into r from public.external_processing_runs_v1 where run_id = in_run_id;
+  select * into r
+  from public.external_processing_runs_v1 pr
+  where pr.run_id = in_run_id;
   if not found then
     raise exception using errcode = 'P0001', message = 'linked_version_not_found';
   end if;
@@ -964,10 +966,20 @@ begin
     raise exception using errcode='P0001', message='incomplete_write_set';
   end if;
 
-  update public.external_processing_runs_v1
+  -- Idempotent completion:
+  -- - If already completed and still valid, return success with no side effects.
+  -- - If not completed, perform the status transition and set completed_at.
+  if r.status = 'completed' then
+    run_id := in_run_id;
+    resulting_status := 'completed';
+    return next;
+    return;
+  end if;
+
+  update public.external_processing_runs_v1 pr
     set status = 'completed',
         completed_at = timezone('utc', now())
-  where run_id = in_run_id;
+  where pr.run_id = in_run_id;
 
   run_id := in_run_id;
   resulting_status := 'completed';

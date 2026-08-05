@@ -1999,9 +1999,9 @@ begin
   end loop;
 
   select * into existing
-  from external_signal_versions_v1
-  where signal_id = in_signal_id
-    and content_hash = in_content_hash;
+  from public.external_signal_versions_v1 sv
+  where sv.signal_id = in_signal_id
+    and sv.content_hash = in_content_hash;
 
   if found then
     replay := true;
@@ -2080,11 +2080,11 @@ begin
     inserted_version := true;
   end if;
 
-  update external_signals_v1
+  update public.external_signals_v1 ss
     set current_content_hash = in_content_hash,
         disposition = in_disposition,
         confidence_summary_json = in_confidence_summary_json
-  where signal_id = in_signal_id;
+  where ss.signal_id = in_signal_id;
 
   for edge in select * from jsonb_array_elements(in_required_provenance_edges_json)
   loop
@@ -2320,7 +2320,9 @@ begin
   if session_user is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
-  select * into r from public.external_processing_runs_v1 where run_id = in_run_id;
+  select * into r
+  from public.external_processing_runs_v1 pr
+  where pr.run_id = in_run_id;
   if not found then raise exception using errcode='P0001', message='linked_version_not_found'; end if;
   if r.persisted_output_count is distinct from r.expected_output_count then
     raise exception using errcode='P0001', message='run_completion_blocked';
@@ -2359,7 +2361,19 @@ begin
   if missing_edges > 0 then
     raise exception using errcode='P0001', message='incomplete_write_set';
   end if;
-  update public.external_processing_runs_v1 set status='completed', completed_at=timezone('utc', now()) where run_id=in_run_id;
+
+  if r.status = 'completed' then
+    run_id := in_run_id;
+    resulting_status := 'completed';
+    return next;
+    return;
+  end if;
+
+  update public.external_processing_runs_v1 pr
+    set status='completed',
+        completed_at=timezone('utc', now())
+  where pr.run_id=in_run_id;
+
   run_id := in_run_id;
   resulting_status := 'completed';
   return next;
