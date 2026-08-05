@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           node --import tsx -e '
-            import { computeManualInvocationHash } from "./src/lib/external-intelligence/orchestration/manual-invocation";
+            import { computeManualInvocationHash } from "./src/lib/external-intelligence/orchestration/manual-invocation.ts";
             const now = new Date();
             const payload = {
               schema_version: "manual_heartbeat_invocation_v1",
@@ -119,8 +119,8 @@ jobs:
         run: |
           set -euo pipefail
           node --import tsx -e '
-            import { getExternalIntelligenceSupabaseClient } from "./src/lib/external-intelligence/persistence/supabase/client";
-            import { loadProductionSourceRegistryV1 } from "./src/lib/external-intelligence/config/load-production-source-registry";
+            import { getExternalIntelligenceSupabaseClient } from "./src/lib/external-intelligence/persistence/supabase/client.ts";
+            import { loadProductionSourceRegistryV1 } from "./src/lib/external-intelligence/config/load-production-source-registry.ts";
             const supabase = getExternalIntelligenceSupabaseClient({});
             const nowIso = new Date().toISOString();
             const canonical = loadProductionSourceRegistryV1().file.sources.map(s => s.source_id).sort();
