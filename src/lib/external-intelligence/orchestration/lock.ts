@@ -7,14 +7,38 @@ export class OrchestrationLockError extends Error {
   constructor(
     public code:
       | "lock_not_acquired"
+      | "lock_rpc_error"
       | "lock_token_mismatch"
       | "lock_expired"
       | "lock_renewal_failed"
       | "lock_release_failed",
-    message?: string
+    message?: string,
+    public metadata?: {
+      supabase_code?: string;
+      supabase_message?: string;
+      supabase_details?: string;
+      supabase_hint?: string;
+      http_status?: number;
+    }
   ) {
     super(message ?? code);
   }
+}
+
+type SupabaseRpcErrorLike = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+  status?: number;
+};
+
+function formatSupabaseRpcErrorSafe(error: SupabaseRpcErrorLike) {
+  const code = error.code ? ` code=${error.code}` : "";
+  const status = typeof error.status === "number" ? ` status=${error.status}` : "";
+  const msg = error.message ? ` message=${error.message}` : "";
+  // Keep details/hint out of the primary message (can be large); store them in metadata.
+  return `rpc_error:${code}${status}${msg}`.trim();
 }
 
 export type InternalOrchestrationLease = {
@@ -37,7 +61,17 @@ export async function acquireInternalOrchestrationLockV1(input: {
     in_lease_owner: input.lease_owner,
     in_lease_seconds: input.lease_seconds
   });
-  if (error) throw new OrchestrationLockError("lock_not_acquired", "lock_not_acquired");
+
+  if (error) {
+    const e = error as unknown as SupabaseRpcErrorLike;
+    throw new OrchestrationLockError("lock_rpc_error", formatSupabaseRpcErrorSafe(e), {
+      supabase_code: e.code,
+      supabase_message: e.message,
+      supabase_details: e.details,
+      supabase_hint: e.hint,
+      http_status: e.status
+    });
+  }
   const row = (data as unknown as InternalOrchestrationLease[] | null)?.[0] ?? null;
   return {
     acquired: Boolean(row?.acquired),
