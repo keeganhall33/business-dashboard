@@ -310,9 +310,9 @@ as $fn$
 begin
   update public.external_collection_jobs_v1
     set lease_expires_at = now() + make_interval(secs => in_lease_seconds), updated_at = now()
-    where job_id = in_job_id
-      and lease_owner = in_lease_owner
-      and lease_expires_at > now();
+    where public.external_collection_jobs_v1.job_id = in_job_id
+      and public.external_collection_jobs_v1.lease_owner = in_lease_owner
+      and public.external_collection_jobs_v1.lease_expires_at > now();
 
   return query
     select j.job_id, j.lease_expires_at from public.external_collection_jobs_v1 j
@@ -338,8 +338,8 @@ begin
       lease_acquired_at = null,
       lease_expires_at = null,
       updated_at = now()
-    where job_id = in_job_id
-      and lease_owner = in_lease_owner;
+    where public.external_collection_jobs_v1.job_id = in_job_id
+      and public.external_collection_jobs_v1.lease_owner = in_lease_owner;
 
   return query select j.job_id, j.status from public.external_collection_jobs_v1 j where j.job_id = in_job_id;
 end;
