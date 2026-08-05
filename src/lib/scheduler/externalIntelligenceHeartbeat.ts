@@ -9,6 +9,10 @@ import { runMilestoneHorizonScanV1 } from "@/lib/external-intelligence/orchestra
 import { runExpiredLeaseRecoveryV1 } from "@/lib/external-intelligence/orchestration/handlers/lease-recovery-v1";
 import { runExpiredMilestoneAlertCleanupV1 } from "@/lib/external-intelligence/orchestration/handlers/milestone-alert-cleanup-v1";
 import { createSystemAlert, getOpenAlertByDedupeKey } from "@/lib/supabase/queries";
+import { INTERNAL_ORCHESTRATION_JOBS_V1 } from "@/lib/external-intelligence/orchestration/internal-jobs";
+import type { InternalOrchestrationJobKey } from "@/lib/external-intelligence/orchestration/internal-jobs";
+import { InternalOrchestrationJobsRepository } from "@/lib/external-intelligence/orchestration/internal-jobs.repository";
+import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchestration/due";
 
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 300);
@@ -66,10 +70,49 @@ export async function runExternalIntelligenceHeartbeatV1() {
           lease_seconds: leaseSeconds
         });
 
-        results["expired-lease-recovery-v1"] = await runExpiredLeaseRecoveryV1();
-        results["expired-milestone-alert-cleanup-v1"] = await runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso });
-        results["external-source-watchdog-v1"] = await runExternalSourceWatchdogV1({ now_iso: nowIso });
-        results["milestone-horizon-scan-v1"] = await runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso });
+        // Ensure DB contains canonical job definitions (still disabled by default).
+        const jobsRepo = new InternalOrchestrationJobsRepository();
+        await jobsRepo.upsertDefinitions(INTERNAL_ORCHESTRATION_JOBS_V1);
+
+        // Recurring activation: governed by DB enabled flags + next_run_at.
+        const enabledJobs = await jobsRepo.listEnabledJobsForEnv("production");
+
+        const handlers: Record<InternalOrchestrationJobKey, () => Promise<unknown>> = {
+          "expired-lease-recovery-v1": () => runExpiredLeaseRecoveryV1(),
+          "expired-milestone-alert-cleanup-v1": () => runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso }),
+          "external-source-watchdog-v1": () => runExternalSourceWatchdogV1({ now_iso: nowIso }),
+          "milestone-horizon-scan-v1": () => runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso })
+        };
+
+        for (const job of enabledJobs) {
+          const jobName = job.job_name as InternalOrchestrationJobKey;
+          const runner = handlers[jobName];
+
+          if (!isDueUtc({ now_iso: nowIso, next_run_at: job.next_run_at })) {
+            results[jobName] = { status: "skipped", reason: "not_due", next_run_at: job.next_run_at };
+            continue;
+          }
+
+          try {
+            const out = await runner();
+            const cadenceType = job.cadence_type === "hourly" || job.cadence_type === "daily" ? job.cadence_type : "daily";
+            const nextDue = computeNextDueUtc({
+              now_iso: nowIso,
+              cadence: { type: cadenceType, minutes: job.cadence_minutes ?? undefined }
+            });
+            await jobsRepo.updateAfterRun({ job_name: jobName, next_run_at: nextDue, now_iso: nowIso, succeeded: true });
+            results[jobName] = { status: "succeeded", next_run_at: nextDue, output: out };
+          } catch (e) {
+            // Failure: keep next_run_at unchanged so hourly heartbeat can retry.
+            await jobsRepo.updateAfterRun({
+              job_name: jobName,
+              next_run_at: job.next_run_at ?? nowIso,
+              now_iso: nowIso,
+              succeeded: false
+            });
+            results[jobName] = { status: "failed", error: safeErrorSummary(e) };
+          }
+        }
 
         return {
           status: "succeeded",

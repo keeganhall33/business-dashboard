@@ -623,7 +623,7 @@ create table if not exists system_state (
 );
 
 -- =========================================================
--- B3. DURABLE INTERNAL ORCHESTRATION LOCK
+-- B3. DURABLE INTERNAL ORCHESTRATION LOCK + JOB REGISTRY
 -- =========================================================
 
 create table if not exists public.internal_orchestration_locks_v1 (
@@ -639,6 +639,44 @@ create table if not exists public.internal_orchestration_locks_v1 (
 
 create index if not exists internal_orchestration_locks_v1__expires_idx
   on public.internal_orchestration_locks_v1 (expires_at);
+
+create table if not exists public.internal_orchestration_jobs_v1 (
+  job_name text primary key,
+  job_version text not null,
+  handler_identity text not null,
+
+  enabled boolean not null default false,
+  environment text not null,
+
+  cadence_type text not null,
+  cadence_minutes integer,
+  timezone text not null default 'UTC',
+
+  timeout_seconds integer not null,
+  maximum_attempts integer not null,
+  concurrency_key text not null,
+
+  next_run_at timestamptz,
+  last_run_at timestamptz,
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+
+  review_by text,
+  governing_policy_version text not null,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint internal_orchestration_jobs_v1__cadence_type_check
+    check (cadence_type in ('hourly','daily')),
+  constraint internal_orchestration_jobs_v1__environment_check
+    check (environment in ('production','staging','local')),
+  constraint internal_orchestration_jobs_v1__maximum_attempts_check
+    check (maximum_attempts >= 0)
+);
+
+create index if not exists internal_orchestration_jobs_v1__enabled_due_idx
+  on public.internal_orchestration_jobs_v1 (enabled, next_run_at);
 
 create or replace function public.acquire_internal_orchestration_lock_v1(
   in_lock_key text,
@@ -795,6 +833,10 @@ revoke execute on function public.release_internal_orchestration_lock_v1(text,te
 grant execute on function public.acquire_internal_orchestration_lock_v1(text,text,integer) to service_role;
 grant execute on function public.renew_internal_orchestration_lock_v1(text,text,integer) to service_role;
 grant execute on function public.release_internal_orchestration_lock_v1(text,text) to service_role;
+
+revoke all on table public.internal_orchestration_jobs_v1 from public;
+revoke all on table public.internal_orchestration_jobs_v1 from anon, authenticated;
+grant all on table public.internal_orchestration_jobs_v1 to service_role;
 
 -- Phase 2 Intelligence: v1 persisted chain tables
 -- Facts → Findings → Hypotheses → Opportunities → Recommendations → Outcomes
