@@ -139,7 +139,7 @@ export class SportsMilestoneRepository {
     const row = q.data as unknown as SportsMilestoneVersionRow;
     try {
       return parseSportsMilestone(row.canonical_payload_json);
-    } catch (e) {
+    } catch {
       // Fail closed: do not attempt to "repair" corrupt rows in the repository.
       throw new PersistenceIdempotencyConflictError("integrity_conflict");
     }

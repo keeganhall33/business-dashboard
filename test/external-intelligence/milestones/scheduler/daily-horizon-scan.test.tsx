@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { parseSportsMilestoneCalendar } from "@/lib/external-intelligence/milestones/contracts";
 import { parseAlertLeadTimePolicy } from "@/lib/external-intelligence/milestones/alert-policy";
 import { runDailyMilestoneHorizonScanV1 } from "@/lib/external-intelligence/milestones/scheduler/daily-horizon-scan";
+import type { SportsMilestoneAlertsRepository } from "@/lib/external-intelligence/milestones/persistence/milestone-alerts.repository";
 
 class FakeRepo {
   calls: Array<string> = [];
@@ -36,7 +37,7 @@ test("daily horizon scan: calls upsert + invalidation + expiry in order and retu
     now_iso: "2026-08-05T12:00:00.000Z",
     calendar: cal,
     lead_time_policy: pol,
-    repo: repo as any
+    repo: repo as unknown as SportsMilestoneAlertsRepository
   });
 
   assert.deepEqual(repo.calls, ["upsert", "invalidate", "expire"]);
