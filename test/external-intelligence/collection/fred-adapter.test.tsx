@@ -47,7 +47,7 @@ test("FRED collector dry-run performs no network access", async () => {
       source_sets_hash: "b".repeat(64),
       eligibility_fingerprint: "c".repeat(64),
       // plan is not used in dry-run.
-      plan: {} as any,
+      plan: {} as unknown as Parameters<typeof c.collect>[0]["plan"],
       requested_time_window: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-02T00:00:00.000Z" },
       cursor: "series_id=TEST",
       environment: "local",

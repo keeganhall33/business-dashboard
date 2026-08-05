@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { guardCollectionExecution } from "@/lib/external-intelligence/collection/guard";
 
 test("collector guard: dry-run validation rejects ineligible-now plans", () => {
-  const req: any = {
+  const req = {
     source_id: "economics.fred",
     registry_version: "v1.0.0",
     registry_hash: "a".repeat(64),
@@ -58,7 +58,7 @@ test("collector guard: dry-run validation rejects ineligible-now plans", () => {
     maximum_artifact_count: 100
   };
 
-  const deps: any = {
+  const deps = {
     source: { source_id: "economics.fred", source_config_version: "v1.0.0", authentication_required: false },
     eligibility: req.plan.eligibility_evaluation,
     policy_refs: req.plan.policy_refs,
@@ -69,7 +69,10 @@ test("collector guard: dry-run validation rejects ineligible-now plans", () => {
     environment_approved_for_collection: false
   };
 
-  const res = guardCollectionExecution({ req, deps });
+  const res = guardCollectionExecution({
+    req: req as unknown as Parameters<typeof guardCollectionExecution>[0]["req"],
+    deps: deps as unknown as Parameters<typeof guardCollectionExecution>[0]["deps"]
+  });
   assert.equal(res.ok, false);
   // Guard is fail-closed: invalid plan rejects before eligibility evaluation.
   assert.equal(res.error?.code, "PLAN_INVALID");
