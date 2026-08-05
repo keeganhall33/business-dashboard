@@ -7,15 +7,38 @@ export type CollectionEnvironment = "production" | "staging" | "local";
 export type CollectionMode = "automated" | "manual" | "metadata_only";
 
 export type SourceEligibilityResult = {
+  /** Whether the requested mode is currently permitted now. */
   allowed: boolean;
-  allowed_modes: Array<"automated" | "manual" | "metadata_only" | "disabled">;
+
+  /** Current collection eligibility (independent of requested_mode). */
+  allowed_now: boolean;
+  currently_allowed_modes: Array<"automated" | "manual" | "metadata_only">;
+
+  /** Potential pathways after blockers are resolved (not current eligibility). */
+  potentially_permitted_modes: Array<"automated" | "manual" | "metadata_only">;
+  pathway_requirements_by_mode: Record<"automated" | "manual" | "metadata_only", string[]>;
+
+  /** Universal blockers apply to every current collection mode. */
+  universal_blockers: string[];
+
+  /** Mode-specific blockers apply only to a particular mode. */
+  mode_specific_blockers: Record<"automated" | "manual" | "metadata_only", string[]>;
+
+  /** Convenience union of universal + mode-specific blockers. */
   blocking_reasons: string[];
   warnings: string[];
+
   review_required: boolean;
   review_by: string | null;
 
+  lifecycle_status: ProductionSourceRegistryEntry["lifecycle_status"];
+  implementation_status: ProductionSourceRegistryEntry["implementation_status"];
+  access_status: ProductionSourceRegistryEntry["access_status"];
+
   governing_source_config_version: string;
   governing_registry_version: string;
+  governing_registry_hash: string;
+  governing_source_sets_hash: string;
   governing_policy_refs: PolicyRef[];
 
   evaluation_fingerprint: string;
@@ -28,22 +51,26 @@ function fingerprintFor(input: {
   registry_hash: string;
   source_sets_hash: string;
   policy_refs: PolicyRef[];
-  blocking_reasons: string[];
+  universal_blockers: string[];
+  mode_specific_blockers: Record<"automated" | "manual" | "metadata_only", string[]>;
   warnings: string[];
 }): string {
   return sha256CanonicalJson({
-    v: "eligibility/v1",
+    v: "eligibility/v2",
     source_id: input.source_id,
     env: input.env,
     requested_mode: input.requested_mode,
     registry_hash: input.registry_hash,
     source_sets_hash: input.source_sets_hash,
-    policy_refs: input.policy_refs.map((p) => ({
-      policy_name: p.policy_name,
-      semantic_version: p.semantic_version,
-      content_hash: p.content_hash
-    })),
-    blocking_reasons: input.blocking_reasons,
+    policy_refs: input.policy_refs
+      .map((p) => ({
+        policy_name: p.policy_name,
+        semantic_version: p.semantic_version,
+        content_hash: p.content_hash
+      }))
+      .sort((a, b) => `${a.policy_name}@${a.semantic_version}`.localeCompare(`${b.policy_name}@${b.semantic_version}`)),
+    universal_blockers: input.universal_blockers,
+    mode_specific_blockers: input.mode_specific_blockers,
     warnings: input.warnings
   });
 }
@@ -51,8 +78,11 @@ function fingerprintFor(input: {
 /**
  * Canonical production eligibility evaluator (authoritative).
  *
- * Fail-closed: any unknown/missing/unsafe state blocks automated collection.
- * This function is the single source of truth for eligibility rules.
+ * It answers: "Can this source be collected through this method, in this environment, right now?"
+ *
+ * Fail-closed:
+ * - Universal blockers shut down every current mode.
+ * - Potential pathways are reported separately and must never be treated as current eligibility.
  */
 export function evaluateSourceEligibility(input: {
   env: CollectionEnvironment;
@@ -72,83 +102,139 @@ export function evaluateSourceEligibility(input: {
   retention_honorable: boolean;
   environment_approved_for_collection: boolean;
 }): SourceEligibilityResult {
-  const blocking_reasons: string[] = [];
+  const universal_blockers: string[] = [];
+  const mode_specific_blockers: SourceEligibilityResult["mode_specific_blockers"] = {
+    automated: [],
+    manual: [],
+    metadata_only: []
+  };
   const warnings: string[] = [];
 
-  // Unknown/malformed states are blocked by schema validation upstream.
-
-  // Explicit governance gates.
-  if (!input.source.enabled) blocking_reasons.push("source_disabled");
+  // Universal governance gates.
+  if (!input.source.enabled) universal_blockers.push("source_disabled");
 
   if (["proposed", "paused", "retired", "replaced"].includes(input.source.lifecycle_status)) {
-    blocking_reasons.push(`lifecycle_block:${input.source.lifecycle_status}`);
+    universal_blockers.push(`lifecycle_block:${input.source.lifecycle_status}`);
   }
 
   if (input.source.implementation_status !== "operational") {
-    blocking_reasons.push(`implementation_not_operational:${input.source.implementation_status}`);
+    universal_blockers.push(`implementation_not_operational:${input.source.implementation_status}`);
   }
 
-  if (input.source.terms_review_status === "not_reviewed") blocking_reasons.push("terms_not_reviewed");
+  // Terms are universal blockers unless fully reviewed and permissible.
+  if (input.source.terms_review_status === "not_reviewed") universal_blockers.push("terms_not_reviewed");
   if (input.source.terms_review_status === "restricted" && input.source.approved_fallback_method === "disabled") {
-    blocking_reasons.push("terms_restricted_no_approved_method");
+    universal_blockers.push("terms_restricted_no_approved_method");
   }
-  if (input.source.terms_review_status === "prohibited") blocking_reasons.push("terms_prohibited");
+  if (input.source.terms_review_status === "prohibited") universal_blockers.push("terms_prohibited");
 
-  if (input.source.automation_suitability === "prohibited") blocking_reasons.push("automation_prohibited");
+  if (!input.legal_review_current) universal_blockers.push("legal_review_expired_or_missing");
 
-  if (input.source.authentication_required && !input.authentication_available) {
-    blocking_reasons.push("authentication_required_unavailable");
-  }
-  if (input.source.paywalled && !input.paywall_satisfied) blocking_reasons.push("paywall_unsatisfied");
-  if (input.source.licensing_required && !input.licensing_satisfied) blocking_reasons.push("licensing_unsatisfied");
-
-  if (!input.legal_review_current) blocking_reasons.push("legal_review_expired_or_missing");
-
-  if (["broken", "revoked"].includes(input.source.access_status)) {
-    blocking_reasons.push(`access_status_block:${input.source.access_status}`);
+  if (["revoked"].includes(input.source.access_status)) {
+    universal_blockers.push(`access_status_block:${input.source.access_status}`);
   }
 
-  if (!input.retention_honorable) blocking_reasons.push("retention_unhonorable");
+  if (!input.retention_honorable) universal_blockers.push("retention_unhonorable");
 
   // Policies must be present and pinned.
-  if (input.policy_refs.length === 0) blocking_reasons.push("required_policy_missing");
+  if (input.policy_refs.length === 0) universal_blockers.push("required_policy_missing");
 
-  // Environment must be explicitly approved for collection.
-  if (!input.environment_approved_for_collection) blocking_reasons.push("environment_not_approved");
+  // Environment must be explicitly approved for any current collection.
+  if (!input.environment_approved_for_collection) universal_blockers.push("environment_not_approved");
 
-  // Terms approval never overrides other blockers.
-  if (input.source.terms_review_status === "approved" && blocking_reasons.length > 0) {
+  // Mode-specific gates.
+  if (["broken"].includes(input.source.access_status)) {
+    // Broken access blocks current automated. A separately approved manual method could exist later.
+    mode_specific_blockers.automated.push(`access_status_block:${input.source.access_status}`);
+  }
+
+  if (input.source.automation_suitability === "manual_only") {
+    mode_specific_blockers.automated.push("automation_manual_only");
+    mode_specific_blockers.metadata_only.push("automation_manual_only");
+  }
+  if (input.source.automation_suitability === "metadata_only") {
+    mode_specific_blockers.automated.push("automation_metadata_only");
+    mode_specific_blockers.manual.push("automation_metadata_only");
+  }
+  if (input.source.automation_suitability === "prohibited") {
+    mode_specific_blockers.automated.push("automation_prohibited");
+  }
+
+  if (input.source.authentication_required && !input.authentication_available) {
+    mode_specific_blockers.automated.push("authentication_required_unavailable");
+  }
+  if (input.source.paywalled && !input.paywall_satisfied) mode_specific_blockers.automated.push("paywall_unsatisfied");
+  if (input.source.licensing_required && !input.licensing_satisfied) mode_specific_blockers.automated.push("licensing_unsatisfied");
+
+  // Current eligibility: universal blockers shut down every mode.
+  const currently_allowed_modes: Array<"automated" | "manual" | "metadata_only"> = [];
+  if (universal_blockers.length === 0) {
+    const automatedOk =
+      mode_specific_blockers.automated.length === 0 && input.source.automation_suitability === "allowed";
+    const manualOk = mode_specific_blockers.manual.length === 0;
+    const metadataOk = mode_specific_blockers.metadata_only.length === 0;
+
+    if (automatedOk) currently_allowed_modes.push("automated");
+    if (manualOk) currently_allowed_modes.push("manual");
+    if (metadataOk) currently_allowed_modes.push("metadata_only");
+  }
+
+  const allowed_now = currently_allowed_modes.length > 0;
+  const allowed = currently_allowed_modes.includes(input.requested_mode);
+
+  // Potential pathways (separate from current eligibility).
+  const potentially_permitted_modes: Array<"automated" | "manual" | "metadata_only"> = [];
+  const pathway_requirements_by_mode: SourceEligibilityResult["pathway_requirements_by_mode"] = {
+    automated: [],
+    manual: [],
+    metadata_only: []
+  };
+
+  if (input.source.terms_review_status !== "prohibited") {
+    if (input.source.approved_fallback_method === "manual_review") {
+      potentially_permitted_modes.push("manual");
+      pathway_requirements_by_mode.manual.push("enable_source");
+      pathway_requirements_by_mode.manual.push("implementation_operational");
+      pathway_requirements_by_mode.manual.push("terms_review_approved_or_restricted_with_method");
+      pathway_requirements_by_mode.manual.push("legal_review_current");
+      pathway_requirements_by_mode.manual.push("environment_approved");
+    }
+
+    if (input.source.approved_fallback_method === "metadata_only") {
+      potentially_permitted_modes.push("metadata_only");
+      pathway_requirements_by_mode.metadata_only.push("enable_source");
+      pathway_requirements_by_mode.metadata_only.push("implementation_operational");
+      pathway_requirements_by_mode.metadata_only.push("terms_review_approved_or_restricted_with_method");
+      pathway_requirements_by_mode.metadata_only.push("legal_review_current");
+      pathway_requirements_by_mode.metadata_only.push("environment_approved");
+    }
+
+    if (input.source.automation_suitability === "allowed") {
+      potentially_permitted_modes.push("automated");
+      pathway_requirements_by_mode.automated.push("enable_source");
+      pathway_requirements_by_mode.automated.push("implementation_operational");
+      pathway_requirements_by_mode.automated.push("terms_review_approved_or_restricted_with_method");
+      pathway_requirements_by_mode.automated.push("legal_review_current");
+      pathway_requirements_by_mode.automated.push("environment_approved");
+      if (input.source.authentication_required) pathway_requirements_by_mode.automated.push("authentication_available");
+      if (input.source.paywalled) pathway_requirements_by_mode.automated.push("paywall_satisfied");
+      if (input.source.licensing_required) pathway_requirements_by_mode.automated.push("licensing_satisfied");
+    }
+  }
+
+  const combinedBlockersForWarning = [...universal_blockers, ...Object.values(mode_specific_blockers).flat()];
+  if (input.source.terms_review_status === "approved" && combinedBlockersForWarning.length > 0) {
     warnings.push("terms_approved_but_other_blockers_present");
   }
 
-  // Mode gating.
-  const allowed_modes: SourceEligibilityResult["allowed_modes"] = [];
-
-  const automatedBlocked =
-    blocking_reasons.length > 0 ||
-    input.source.automation_suitability !== "allowed" ||
-    input.requested_mode !== "automated";
-
-  if (!automatedBlocked) allowed_modes.push("automated");
-
-  // Manual may remain possible only when explicitly permitted.
-  const manualPermitted =
-    !["prohibited"].includes(input.source.terms_review_status) &&
-    input.source.approved_fallback_method === "manual_review" &&
-    input.source.automation_suitability !== "prohibited";
-
-  if (manualPermitted) allowed_modes.push("manual");
-
-  const metadataPermitted =
-    input.source.automation_suitability === "metadata_only" && input.source.approved_fallback_method === "metadata_only";
-
-  if (metadataPermitted) allowed_modes.push("metadata_only");
-
-  if (allowed_modes.length === 0) allowed_modes.push("disabled");
-
-  const allowed = allowed_modes.includes(input.requested_mode);
-
   const review_required = input.source.terms_review_status !== "approved";
+
+  const normalizedUniversal = universal_blockers.slice().sort((a, b) => a.localeCompare(b));
+  const normalizedModeSpecific = {
+    automated: mode_specific_blockers.automated.slice().sort((a, b) => a.localeCompare(b)),
+    manual: mode_specific_blockers.manual.slice().sort((a, b) => a.localeCompare(b)),
+    metadata_only: mode_specific_blockers.metadata_only.slice().sort((a, b) => a.localeCompare(b))
+  };
 
   const evaluation_fingerprint = fingerprintFor({
     source_id: input.source.source_id,
@@ -157,20 +243,45 @@ export function evaluateSourceEligibility(input: {
     registry_hash: input.registry_hash,
     source_sets_hash: input.source_sets_hash,
     policy_refs: input.policy_refs,
-    blocking_reasons,
+    universal_blockers: normalizedUniversal,
+    mode_specific_blockers: normalizedModeSpecific,
     warnings
   });
 
+  const blocking_reasons = [...normalizedUniversal, ...Object.values(normalizedModeSpecific).flat()].sort((a, b) =>
+    a.localeCompare(b)
+  );
+
   return {
     allowed,
-    allowed_modes,
+    allowed_now,
+    currently_allowed_modes: currently_allowed_modes.slice().sort((a, b) => a.localeCompare(b)),
+
+    potentially_permitted_modes: [...new Set(potentially_permitted_modes)].sort((a, b) => a.localeCompare(b)),
+    pathway_requirements_by_mode: {
+      automated: pathway_requirements_by_mode.automated.slice().sort((a, b) => a.localeCompare(b)),
+      manual: pathway_requirements_by_mode.manual.slice().sort((a, b) => a.localeCompare(b)),
+      metadata_only: pathway_requirements_by_mode.metadata_only.slice().sort((a, b) => a.localeCompare(b))
+    },
+
+    universal_blockers: normalizedUniversal,
+    mode_specific_blockers: normalizedModeSpecific,
+
     blocking_reasons,
     warnings,
     review_required,
     review_by: input.source.review_by,
+
+    lifecycle_status: input.source.lifecycle_status,
+    implementation_status: input.source.implementation_status,
+    access_status: input.source.access_status,
+
     governing_source_config_version: input.source.source_config_version,
     governing_registry_version: input.registry_version,
+    governing_registry_hash: input.registry_hash,
+    governing_source_sets_hash: input.source_sets_hash,
     governing_policy_refs: input.policy_refs,
+
     evaluation_fingerprint
   };
 }

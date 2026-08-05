@@ -8,12 +8,18 @@ async function loadReportModule() {
   return import(url.href);
 }
 
-test("eligibility report: deterministic and contains all canonical ids", async () => {
+test("eligibility report: deterministic and includes current + potential summaries", async () => {
   const { generateEligibilityReport } = await loadReportModule();
   const r1 = generateEligibilityReport();
   const r2 = generateEligibilityReport();
 
   assert.equal(r1, r2);
+
+  // Current eligibility should be fully blocked given the production config is fail-closed.
+  assert.ok(r1.includes("automated_eligible_now=0"));
+  assert.ok(r1.includes("manual_eligible_now=0"));
+  assert.ok(r1.includes("metadata_only_eligible_now=0"));
+  assert.ok(r1.includes("fully_blocked_now=24"));
 
   for (const id of [
     "sports.major_leagues.official",

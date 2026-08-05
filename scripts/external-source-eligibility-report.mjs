@@ -28,6 +28,18 @@ export function generateEligibilityReport() {
   lines.push(`source_sets_version=${sets.source_sets_config_version} source_sets_hash=${source_sets_hash}`);
   lines.push("");
 
+  // Summary counts (current vs potential).
+  let automatedNow = 0;
+  let manualNow = 0;
+  let metadataNow = 0;
+  let fullyBlockedNow = 0;
+
+  let potentialAutomated = 0;
+  let potentialManual = 0;
+  let potentialMetadata = 0;
+
+  const records = [];
+
   for (const s of registry.sources) {
     const r = evaluateSourceEligibility({
       env: "production",
@@ -46,16 +58,63 @@ export function generateEligibilityReport() {
       environment_approved_for_collection: false
     });
 
+    const autoAllowedNow = r.currently_allowed_modes.includes("automated");
+    const manualAllowedNow = r.currently_allowed_modes.includes("manual");
+    const metadataAllowedNow = r.currently_allowed_modes.includes("metadata_only");
+
+    if (autoAllowedNow) automatedNow++;
+    if (manualAllowedNow) manualNow++;
+    if (metadataAllowedNow) metadataNow++;
+    if (!autoAllowedNow && !manualAllowedNow && !metadataAllowedNow) fullyBlockedNow++;
+
+    if (r.potentially_permitted_modes.includes("automated")) potentialAutomated++;
+    if (r.potentially_permitted_modes.includes("manual")) potentialManual++;
+    if (r.potentially_permitted_modes.includes("metadata_only")) potentialMetadata++;
+
+    records.push({ s, r });
+  }
+
+  lines.push("Summary (current eligibility now)");
+  lines.push(`total_sources=${registry.sources.length}`);
+  lines.push(`automated_eligible_now=${automatedNow}`);
+  lines.push(`manual_eligible_now=${manualNow}`);
+  lines.push(`metadata_only_eligible_now=${metadataNow}`);
+  lines.push(`fully_blocked_now=${fullyBlockedNow}`);
+  lines.push("");
+
+  lines.push("Summary (potential pathways after blockers)");
+  lines.push(`potentially_automatable=${potentialAutomated}`);
+  lines.push(`potentially_manual=${potentialManual}`);
+  lines.push(`potentially_metadata_only=${potentialMetadata}`);
+  lines.push("");
+
+  // Per-source sections (deterministic ordering).
+  records.sort((a, b) => a.s.source_id.localeCompare(b.s.source_id));
+
+  for (const { s, r } of records) {
     const setsFor = (setMembership.get(s.source_id) ?? []).slice().sort();
 
     lines.push(`- ${s.source_id}`);
+    lines.push(`  display_name=${s.display_name}`);
     lines.push(`  lifecycle=${s.lifecycle_status} impl=${s.implementation_status} access=${s.access_status}`);
-    lines.push(`  automation_allowed=${r.allowed_modes.includes("automated")}`);
-    lines.push(`  manual_allowed=${r.allowed_modes.includes("manual")}`);
-    lines.push(`  metadata_only_allowed=${r.allowed_modes.includes("metadata_only")}`);
-    lines.push(`  primary_blockers=${r.blocking_reasons.slice(0, 6).join(",") || "none"}`);
+
+    lines.push(`  allowed_now=${r.allowed_now}`);
+    lines.push(`  currently_allowed_modes=${r.currently_allowed_modes.join(",") || "none"}`);
+
+    lines.push(`  potentially_permitted_modes=${r.potentially_permitted_modes.join(",") || "none"}`);
+    lines.push(`  universal_blockers=${r.universal_blockers.join(",") || "none"}`);
+    lines.push(`  mode_blockers.automated=${r.mode_specific_blockers.automated.join(",") || "none"}`);
+    lines.push(`  mode_blockers.manual=${r.mode_specific_blockers.manual.join(",") || "none"}`);
+    lines.push(`  mode_blockers.metadata_only=${r.mode_specific_blockers.metadata_only.join(",") || "none"}`);
+
+    lines.push(`  primary_blockers=${r.blocking_reasons.slice(0, 8).join(",") || "none"}`);
+    lines.push(`  warnings=${r.warnings.join(",") || "none"}`);
+
     lines.push(`  terms=${s.terms_review_status} review_by=${s.review_by ?? "none"}`);
+    lines.push(`  last_legal_review_at=${s.last_legal_review_at ?? "none"}`);
     lines.push(`  source_sets=${setsFor.join(",") || "none"}`);
+    lines.push(`  expected_relevance=${s.expected_relevance} expected_noise=${s.expected_noise}`);
+    lines.push(`  evaluation_fingerprint=${r.evaluation_fingerprint}`);
     lines.push("");
   }
 
