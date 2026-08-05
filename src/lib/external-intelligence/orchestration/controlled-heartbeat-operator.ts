@@ -335,7 +335,8 @@ async function getLatestUnresolvedHighSeverityOrchestrationAlerts() {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("system_alerts")
-    .select("alert_id,dedupe_key,severity,alert_type,created_at")
+    // Production schema uses `id` as the primary identifier.
+    .select("id,dedupe_key,severity,alert_type,created_at")
     .eq("is_resolved", false)
     .eq("severity", "high")
     .eq("alert_type", "orchestration_failure")
@@ -478,9 +479,7 @@ export async function runControlledExternalIntelligenceHeartbeatV1WithDeps(
   try {
     pre = await deps.snapshotPreconditions({ expected_project_ref: input.expected_project_ref, now_iso: deps.nowIso() });
     const unresolvedHighBefore = await deps.getUnresolvedHighSeverityOrchestrationAlerts();
-    unresolvedHighBeforeIds = new Set(
-      unresolvedHighBefore.map((a) => String((a as unknown as { alert_id: string }).alert_id))
-    );
+    unresolvedHighBeforeIds = new Set(unresolvedHighBefore.map((a) => String((a as unknown as { id: string }).id)));
   } catch (error) {
     // Preserve the atomic claim but ensure the audit captures the failure.
     const failed: ControlledAuditV1 = {
@@ -669,9 +668,7 @@ export async function runControlledExternalIntelligenceHeartbeatV1WithDeps(
     }
 
     const unresolvedHighAfter = await deps.getUnresolvedHighSeverityOrchestrationAlerts();
-    const newHigh = unresolvedHighAfter.filter(
-      (a) => !unresolvedHighBeforeIds.has(String((a as unknown as { alert_id: string }).alert_id))
-    );
+    const newHigh = unresolvedHighAfter.filter((a) => !unresolvedHighBeforeIds.has(String((a as unknown as { id: string }).id)));
     if (newHigh.length > 0) throw new Error("postcondition_failed:new_high_severity_alert");
 
     const completedAt = deps.nowIso();
