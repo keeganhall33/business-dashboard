@@ -75,7 +75,10 @@ jobs:
         run: |
           set -euo pipefail
           node --import tsx -e '
-            import { computeManualInvocationHash } from "./src/lib/external-intelligence/orchestration/manual-invocation.ts";
+            const mod = await import("./src/lib/external-intelligence/orchestration/manual-invocation.ts");
+            const computeManualInvocationHash = (mod as any).computeManualInvocationHash ?? (mod as any).default?.computeManualInvocationHash;
+            if (typeof computeManualInvocationHash !== "function") throw new Error("missing_computeManualInvocationHash");
+
             const now = new Date();
             const payload = {
               schema_version: "manual_heartbeat_invocation_v1",
@@ -119,8 +122,13 @@ jobs:
         run: |
           set -euo pipefail
           node --import tsx -e '
-            import { getExternalIntelligenceSupabaseClient } from "./src/lib/external-intelligence/persistence/supabase/client.ts";
-            import { loadProductionSourceRegistryV1 } from "./src/lib/external-intelligence/config/load-production-source-registry.ts";
+            const clientMod = await import("./src/lib/external-intelligence/persistence/supabase/client.ts");
+            const registryMod = await import("./src/lib/external-intelligence/config/load-production-source-registry.ts");
+            const getExternalIntelligenceSupabaseClient = (clientMod as any).getExternalIntelligenceSupabaseClient ?? (clientMod as any).default?.getExternalIntelligenceSupabaseClient;
+            const loadProductionSourceRegistryV1 = (registryMod as any).loadProductionSourceRegistryV1 ?? (registryMod as any).default?.loadProductionSourceRegistryV1;
+            if (typeof getExternalIntelligenceSupabaseClient !== "function") throw new Error("missing_getExternalIntelligenceSupabaseClient");
+            if (typeof loadProductionSourceRegistryV1 !== "function") throw new Error("missing_loadProductionSourceRegistryV1");
+
             const supabase = getExternalIntelligenceSupabaseClient({});
             const nowIso = new Date().toISOString();
             const canonical = loadProductionSourceRegistryV1().file.sources.map(s => s.source_id).sort();
