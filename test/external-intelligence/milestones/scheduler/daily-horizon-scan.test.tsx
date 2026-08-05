@@ -63,8 +63,9 @@ test("daily horizon scan: zero milestones is valid and yields zero inserted/exis
 
   const repo = new FakeRepo();
   // Override upsert to assert we saw zero alerts.
-  repo.upsertFromHorizonAlerts = async (input: any) => {
-    repo.lastAlertsCount = input.alerts.length;
+  repo.upsertFromHorizonAlerts = async (input: unknown) => {
+    const alerts = (input as { alerts: unknown[] }).alerts;
+    repo.lastAlertsCount = alerts.length;
     repo.calls.push("upsert");
     return { inserted_count: 0, existing_count: 0, skipped_count: 0 };
   };
