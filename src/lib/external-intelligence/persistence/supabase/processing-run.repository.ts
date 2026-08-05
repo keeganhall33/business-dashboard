@@ -4,6 +4,7 @@ import type { ProcessingRunRecord } from "@/lib/external-intelligence/persistenc
 import { processingRunIdempotencyKey } from "@/lib/external-intelligence/persistence/idempotency";
 import { PersistenceNotFoundError } from "@/lib/external-intelligence/persistence/errors";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
+import { EXTERNAL_INTELLIGENCE_RPCS, runRpc } from "@/lib/external-intelligence/persistence/supabase/transactions";
 
 export class ProcessingRunRepository {
   async upsertRun(input: ProcessingRunRecord, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
@@ -38,5 +39,21 @@ export class ProcessingRunRepository {
     if (q.error) throw new Error(`Failed to fetch run: ${q.error.message}`);
     if (!q.data) throw new PersistenceNotFoundError(`Run not found: ${run_id}`);
     return q.data as unknown as ProcessingRunRecord;
+  }
+
+  /**
+   * Invariant-safe completion: the database is authoritative.
+   * This method never sets status=completed directly.
+   */
+  async completeProcessingRun(run_id: string, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
+    const supabase = getExternalIntelligenceSupabaseClient({ client: opts?.client });
+    const res = await runRpc<Array<{ run_id: string; resulting_status: string }>>({
+      client: supabase,
+      fn: EXTERNAL_INTELLIGENCE_RPCS.completeRun,
+      args: { in_run_id: run_id }
+    });
+    const row = res[0];
+    if (!row) throw new Error("unknown_db_error");
+    return row;
   }
 }
