@@ -14,6 +14,7 @@ import type { InternalOrchestrationJobKey } from "@/lib/external-intelligence/or
 import { InternalOrchestrationJobsRepository } from "@/lib/external-intelligence/orchestration/internal-jobs.repository";
 import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchestration/due";
 import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external-intelligence/orchestration/operational-health";
+import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/orchestration/timeout";
 
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 300);
@@ -52,6 +53,8 @@ export async function runExternalIntelligenceHeartbeatV1() {
       const nowIso = now.toISOString();
       const nowYmd = nowIso.slice(0, 10);
 
+      const safetyMarginSeconds = 20;
+
       const lease = await acquireInternalOrchestrationLockV1({
         lock_key: lockKey,
         lease_owner: leaseOwner,
@@ -80,11 +83,11 @@ export async function runExternalIntelligenceHeartbeatV1() {
         // Recurring activation: governed by DB enabled flags + next_run_at.
         const enabledJobs = await jobsRepo.listEnabledJobsForEnv("production");
 
-        const handlers: Record<InternalOrchestrationJobKey, () => Promise<unknown>> = {
-          "expired-lease-recovery-v1": () => runExpiredLeaseRecoveryV1(),
-          "expired-milestone-alert-cleanup-v1": () => runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso }),
-          "external-source-watchdog-v1": () => runExternalSourceWatchdogV1({ now_iso: nowIso }),
-          "milestone-horizon-scan-v1": () => runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso })
+        const handlers: Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>> = {
+          "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
+          "expired-milestone-alert-cleanup-v1": (signal) => runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso, signal }),
+          "external-source-watchdog-v1": (signal) => runExternalSourceWatchdogV1({ now_iso: nowIso, signal }),
+          "milestone-horizon-scan-v1": (signal) => runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso, signal })
         };
 
         for (const job of enabledJobs) {
@@ -96,8 +99,50 @@ export async function runExternalIntelligenceHeartbeatV1() {
             continue;
           }
 
+          // Renew lease before starting each handler.
+          const renewedBefore = await renewInternalOrchestrationLockV1({
+            lock_key: lockKey,
+            lease_token: lease.lease_token,
+            lease_seconds: leaseSeconds
+          });
+          if (!renewedBefore.renewed || !renewedBefore.expires_at) return { status: "blocked", reason: "lock_renewal_failed" };
+
+          const leaseRemainingMs = remainingLeaseMs({ now_iso: nowIso, expires_at_iso: renewedBefore.expires_at });
+          const timeoutSeconds = Number(job.timeout_seconds);
+          if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 600) {
+            results[jobName] = { status: "failed", error_code: "invalid_timeout" };
+            break;
+          }
+          const requiredMs = (timeoutSeconds + safetyMarginSeconds) * 1000;
+          if (timeoutSeconds + safetyMarginSeconds > leaseSeconds) {
+            results[jobName] = { status: "failed", error_code: "handler_timeout_exceeds_lease" };
+            break;
+          }
+          if (leaseRemainingMs < requiredMs) {
+            results[jobName] = { status: "blocked", reason: "insufficient_lease_time" };
+            break;
+          }
+
           try {
-            const out = await runner();
+            const timed = await runWithTimeout({
+              name: jobName,
+              timeout_ms: timeoutSeconds * 1000,
+              fn: (signal) => runner(signal)
+            });
+
+            if (!timed.ok) {
+              // Timeout: do not continue to later handlers.
+              await jobsRepo.updateAfterRun({
+                job_name: jobName,
+                next_run_at: job.next_run_at ?? nowIso,
+                now_iso: nowIso,
+                succeeded: false
+              });
+              results[jobName] = { status: "failed", error_code: timed.code, error: timed.safe_summary };
+              break;
+            }
+
+            const out = timed.value;
             const cadenceType = job.cadence_type === "hourly" || job.cadence_type === "daily" ? job.cadence_type : "daily";
             const nextDue = computeNextDueUtc({
               now_iso: nowIso,
@@ -105,14 +150,6 @@ export async function runExternalIntelligenceHeartbeatV1() {
             });
             await jobsRepo.updateAfterRun({ job_name: jobName, next_run_at: nextDue, now_iso: nowIso, succeeded: true });
             results[jobName] = { status: "succeeded", next_run_at: nextDue, output: out };
-
-            // Renew lease between handlers to prevent expiry mid-run.
-            const renewed = await renewInternalOrchestrationLockV1({
-              lock_key: lockKey,
-              lease_token: lease.lease_token,
-              lease_seconds: leaseSeconds
-            });
-            if (!renewed.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
           } catch (e) {
             // Failure: keep next_run_at unchanged so hourly heartbeat can retry.
             await jobsRepo.updateAfterRun({
@@ -122,13 +159,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
               succeeded: false
             });
             results[jobName] = { status: "failed", error: safeErrorSummary(e) };
-
-            const renewed = await renewInternalOrchestrationLockV1({
-              lock_key: lockKey,
-              lease_token: lease.lease_token,
-              lease_seconds: leaseSeconds
-            });
-            if (!renewed.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
+            break;
           }
         }
 

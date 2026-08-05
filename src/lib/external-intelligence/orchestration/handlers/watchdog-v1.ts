@@ -6,7 +6,8 @@ import { evaluateSourceEligibility } from "@/lib/external-intelligence/config/ev
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import { evaluateAndPersistDailyWatchdogV1 } from "@/lib/external-intelligence/orchestration/watchdog-persist";
 
-export async function runExternalSourceWatchdogV1(input: { now_iso: string }) {
+export async function runExternalSourceWatchdogV1(input: { now_iso: string; signal?: AbortSignal }) {
+  if (input.signal?.aborted) throw new Error("handler_aborted");
   const supabase = getExternalIntelligenceSupabaseClient({});
   const { file: registry, registry_hash } = loadProductionSourceRegistryV1();
   const sourceIds = registry.sources.map((s) => s.source_id);
@@ -58,6 +59,8 @@ export async function runExternalSourceWatchdogV1(input: { now_iso: string }) {
     allowed_now_by_source_id,
     adapter_operational_by_source_id
   });
+
+  if (input.signal?.aborted) throw new Error("handler_aborted");
 
   return {
     sourcesEvaluated: records.length,
