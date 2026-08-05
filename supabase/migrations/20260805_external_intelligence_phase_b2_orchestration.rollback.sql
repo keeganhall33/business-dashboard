@@ -3,6 +3,10 @@
 
 begin;
 
+drop function if exists public.upsert_sports_milestone_alerts_v1(jsonb);
+drop function if exists public.invalidate_obsolete_sports_milestone_alerts_v1();
+drop function if exists public.expire_sports_milestone_alerts_v1(timestamptz);
+
 drop function if exists public.persist_sports_milestone_v1(
   text,text,text,jsonb,jsonb,jsonb,jsonb,text,text,text,text,date,date,integer,text,text,text,jsonb,text
 );

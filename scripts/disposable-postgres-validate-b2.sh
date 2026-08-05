@@ -104,4 +104,83 @@ echo "rollback/reapply"
 apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.rollback.sql"
 apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
 
+# Alert lifecycle: upsert + replay + preserve dismissed/ack + invalidation + expiry.
+echo "alert test"
+
+# Recreate milestone state after rollback/reapply.
+${psql_base[@]} -d b2test -c "select * from public.persist_sports_milestone_v1(
+  'm1', repeat('1',64), 'sports_milestone_v1',
+  '{\"schema_version\":\"sports_milestone_v1\",\"milestone_id\":\"m1\",\"milestone_type\":\"championship_anniversary\",\"milestone_date\":\"2027-06-03\"}'::jsonb,
+  '$POLICY_JSON'::jsonb,
+  '[{\"label\":\"x\",\"url\":\"https://example.invalid\"}]'::jsonb,
+  '[\"calendar.sports.milestones\"]'::jsonb,
+  'championship_anniversary','nba',null,'nba',null,'2027-06-03',null,
+  'major_institutional_partnership','high','high','[]'::jsonb,'none'
+);" >/dev/null
+
+# Upsert one pending alert.
+ALERT_PAYLOAD="[{
+  \"alert_id\":\"a1\",
+  \"milestone_id\":\"m1\",
+  \"milestone_content_hash\":$(printf '"%s"' "$(printf '1%.0s' {1..64})"),
+  \"horizon_days\":30,
+  \"policy_version\":\"v1.0.0\",
+  \"suppression_policy_version\":\"v1.0.0\",
+  \"suppression_identity\":\"sup1\",
+  \"alert_hash\":\"h1\",
+  \"project_class\":\"major_institutional_partnership\",
+  \"planning_stage\":\"draft\",
+  \"milestone_date\":\"2027-06-03\",
+  \"days_remaining_at_creation\":300,
+  \"reason_codes\":[\"lead_time\"],
+  \"expires_at\":\"2026-08-06T00:00:00Z\"
+}]"
+
+INS1="$(${psql_base[@]} -d b2test -tA -c "select inserted_count from public.upsert_sports_milestone_alerts_v1('$ALERT_PAYLOAD'::jsonb);")"
+[ "$INS1" = "1" ]
+
+# Replay identical input: no duplicate.
+INS2="$(${psql_base[@]} -d b2test -tA -c "select inserted_count from public.upsert_sports_milestone_alerts_v1('$ALERT_PAYLOAD'::jsonb);")"
+[ "$INS2" = "0" ]
+
+COUNT1="$(${psql_base[@]} -d b2test -tA -c "select count(*) from public.sports_milestone_alerts_v1 where suppression_identity='sup1';")"
+[ "$COUNT1" = "1" ]
+
+# Dismiss should not be reset.
+${psql_base[@]} -d b2test -c "update public.sports_milestone_alerts_v1 set status='dismissed', dismissed_at=now() where suppression_identity='sup1';" >/dev/null
+${psql_base[@]} -d b2test -c "select * from public.upsert_sports_milestone_alerts_v1('$ALERT_PAYLOAD'::jsonb);" >/dev/null
+STATUS_AFTER="$(${psql_base[@]} -d b2test -tA -c "select status from public.sports_milestone_alerts_v1 where suppression_identity='sup1';")"
+[ "$STATUS_AFTER" = "dismissed" ]
+
+# Create a new version for milestone and move current pointer; invalidation should affect only pending alerts.
+${psql_base[@]} -d b2test -c "select * from public.persist_sports_milestone_v1(
+  'm1', repeat('3',64), 'sports_milestone_v1',
+  '{\"schema_version\":\"sports_milestone_v1\",\"milestone_id\":\"m1\",\"milestone_type\":\"championship_anniversary\",\"milestone_date\":\"2027-06-03\"}'::jsonb,
+  '$POLICY_JSON'::jsonb,
+  '[{\"label\":\"x\",\"url\":\"https://example.invalid\"}]'::jsonb,
+  '[\"calendar.sports.milestones\"]'::jsonb,
+  'championship_anniversary','nba',null,'nba',null,'2027-06-03',null,
+  'major_institutional_partnership','high','high','[]'::jsonb,'none'
+);" >/dev/null
+
+# Insert a pending alert referencing the old hash and then invalidate.
+${psql_base[@]} -d b2test -c "insert into public.sports_milestone_alerts_v1(alert_id,milestone_id,milestone_content_hash,horizon_days,policy_version,suppression_policy_version,suppression_identity,alert_hash,project_class,planning_stage,milestone_date,days_remaining_at_creation,status,reason_codes,expires_at)
+values ('a2','m1',repeat('1',64),30,'v1.0.0','v1.0.0','sup2','h2','major_institutional_partnership','draft','2027-06-03',300,'pending','{}','2026-08-06T00:00:00Z')
+on conflict do nothing;" >/dev/null
+
+INV1="$(${psql_base[@]} -d b2test -tA -c "select public.invalidate_obsolete_sports_milestone_alerts_v1();")"
+[ "$INV1" = "1" ]
+INV2="$(${psql_base[@]} -d b2test -tA -c "select public.invalidate_obsolete_sports_milestone_alerts_v1();")"
+[ "$INV2" = "0" ]
+
+# Expiry: only pending alerts should expire.
+${psql_base[@]} -d b2test -c "insert into public.sports_milestone_alerts_v1(alert_id,milestone_id,milestone_content_hash,horizon_days,policy_version,suppression_policy_version,suppression_identity,alert_hash,project_class,planning_stage,milestone_date,days_remaining_at_creation,status,reason_codes,expires_at)
+values ('a3','m1',repeat('3',64),30,'v1.0.0','v1.0.0','sup3','h3','major_institutional_partnership','draft','2027-06-03',300,'pending','{}','2026-08-05T00:00:00Z')
+on conflict do nothing;" >/dev/null
+
+EXP1="$(${psql_base[@]} -d b2test -tA -c "select public.expire_sports_milestone_alerts_v1('2026-08-05T12:00:00Z'::timestamptz);")"
+[ "$EXP1" = "1" ]
+EXP2="$(${psql_base[@]} -d b2test -tA -c "select public.expire_sports_milestone_alerts_v1('2026-08-05T12:00:00Z'::timestamptz);")"
+[ "$EXP2" = "0" ]
+
 echo "OK"

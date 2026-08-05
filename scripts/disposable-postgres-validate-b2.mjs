@@ -107,6 +107,88 @@ try {
   }
   if (!conflictOk) throw new Error("expected milestone conflict");
 
+  // Alert lifecycle: upsert + replay + preserve dismissed/ack + invalidation + expiry.
+  const alertPayload = JSON.stringify([
+    {
+      alert_id: "a1",
+      milestone_id: "m1",
+      milestone_content_hash: "1".repeat(64),
+      horizon_days: 30,
+      policy_version: "v1.0.0",
+      suppression_policy_version: "v1.0.0",
+      suppression_identity: "sup1",
+      alert_hash: "h1",
+      project_class: "major_institutional_partnership",
+      planning_stage: "draft",
+      milestone_date: "2027-06-03",
+      days_remaining_at_creation: 300,
+      reason_codes: ["lead_time"],
+      expires_at: "2026-08-06T00:00:00Z"
+    }
+  ]);
+
+  const inserted1 = psqlDb([
+    "-tA",
+    "-c",
+    `select inserted_count from public.upsert_sports_milestone_alerts_v1('${alertPayload}'::jsonb);`
+  ]);
+  if (inserted1.trim() !== "1") throw new Error("expected alert insert");
+
+  const inserted2 = psqlDb([
+    "-tA",
+    "-c",
+    `select inserted_count from public.upsert_sports_milestone_alerts_v1('${alertPayload}'::jsonb);`
+  ]);
+  if (inserted2.trim() !== "0") throw new Error("expected alert idempotent replay");
+
+  const alertCount = psqlDb([
+    "-tA",
+    "-c",
+    "select count(*) from public.sports_milestone_alerts_v1 where suppression_identity='sup1';"
+  ]);
+  if (alertCount.trim() !== "1") throw new Error("expected single alert row");
+
+  // Dismissed alerts are historical and must not be reset by upsert.
+  psqlDb([
+    "-c",
+    "update public.sports_milestone_alerts_v1 set status='dismissed', dismissed_at=now() where suppression_identity='sup1';"
+  ]);
+  psqlDb([
+    "-c",
+    `select * from public.upsert_sports_milestone_alerts_v1('${alertPayload}'::jsonb);`
+  ]);
+  const statusAfter = psqlDb([
+    "-tA",
+    "-c",
+    "select status from public.sports_milestone_alerts_v1 where suppression_identity='sup1';"
+  ]);
+  if (statusAfter.trim() !== "dismissed") throw new Error("dismissed alert was modified by upsert");
+
+  // Obsolete pending alerts should invalidate when milestone current pointer changes.
+  psqlDb([
+    "-c",
+    `select * from public.persist_sports_milestone_v1('m1', repeat('3',64), 'sports_milestone_v1', '${payload1}'::jsonb, '[{"policy_name":"confidence","semantic_version":"v1.0.0","content_hash":"${"2".repeat(64)}"}]'::jsonb, '[{"label":"x","url":"https://example.invalid"}]'::jsonb, '["calendar.sports.milestones"]'::jsonb, 'championship_anniversary', 'nba', null, 'nba', null, '2027-06-03', null, 'major_institutional_partnership', 'high', 'high', '[]'::jsonb, 'none');`
+  ]);
+
+  psqlDb([
+    "-c",
+    "insert into public.sports_milestone_alerts_v1(alert_id,milestone_id,milestone_content_hash,horizon_days,policy_version,suppression_policy_version,suppression_identity,alert_hash,project_class,planning_stage,milestone_date,days_remaining_at_creation,status,reason_codes,expires_at) values ('a2','m1',repeat('1',64),30,'v1.0.0','v1.0.0','sup2','h2','major_institutional_partnership','draft','2027-06-03',300,'pending','{}','2026-08-06T00:00:00Z') on conflict do nothing;"
+  ]);
+  const inv1 = psqlDb(["-tA", "-c", "select public.invalidate_obsolete_sports_milestone_alerts_v1();"]);
+  if (inv1.trim() !== "1") throw new Error("expected 1 invalidation");
+  const inv2 = psqlDb(["-tA", "-c", "select public.invalidate_obsolete_sports_milestone_alerts_v1();"]);
+  if (inv2.trim() !== "0") throw new Error("expected idempotent invalidation");
+
+  // Expiry: only pending alerts at/after timestamp.
+  psqlDb([
+    "-c",
+    "insert into public.sports_milestone_alerts_v1(alert_id,milestone_id,milestone_content_hash,horizon_days,policy_version,suppression_policy_version,suppression_identity,alert_hash,project_class,planning_stage,milestone_date,days_remaining_at_creation,status,reason_codes,expires_at) values ('a3','m1',repeat('3',64),30,'v1.0.0','v1.0.0','sup3','h3','major_institutional_partnership','draft','2027-06-03',300,'pending','{}','2026-08-05T00:00:00Z') on conflict do nothing;"
+  ]);
+  const exp1 = psqlDb(["-tA", "-c", "select public.expire_sports_milestone_alerts_v1('2026-08-05T12:00:00Z'::timestamptz);"]);
+  if (exp1.trim() !== "1") throw new Error("expected 1 expiry");
+  const exp2 = psqlDb(["-tA", "-c", "select public.expire_sports_milestone_alerts_v1('2026-08-05T12:00:00Z'::timestamptz);"]);
+  if (exp2.trim() !== "0") throw new Error("expected idempotent expiry");
+
   // Rollback and reapply.
   psqlDb(["-f", b2rb]);
   psqlDb(["-f", b2]);

@@ -214,6 +214,9 @@ create table if not exists public.sports_milestone_alerts_v1 (
 create index if not exists sports_milestone_alerts_v1__status_idx
   on public.sports_milestone_alerts_v1 (status);
 
+create index if not exists sports_milestone_alerts_v1__milestone_idx
+  on public.sports_milestone_alerts_v1 (milestone_id, status);
+
 commit;
 
 -- =========================================================
@@ -488,20 +491,182 @@ begin
 end;
 $fn$;
 
+create or replace function public.upsert_sports_milestone_alerts_v1(in_alerts jsonb)
+returns table(inserted_count integer, existing_count integer, skipped_count integer, alert_ids text[], suppression_identities text[])
+language plpgsql
+security definer
+set search_path to 'public'
+as $fn$
+declare
+  a jsonb;
+  v_inserted integer := 0;
+  v_existing integer := 0;
+  v_skipped integer := 0;
+  v_alert_id text;
+  v_suppression_identity text;
+  v_milestone_id text;
+  v_milestone_content_hash text;
+  v_current_hash text;
+begin
+  if jsonb_typeof(in_alerts) is distinct from 'array' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+
+  alert_ids := '{}'::text[];
+  suppression_identities := '{}'::text[];
+
+  for a in select * from jsonb_array_elements(in_alerts) loop
+    v_alert_id := nullif(a->>'alert_id','');
+    v_suppression_identity := nullif(a->>'suppression_identity','');
+    v_milestone_id := nullif(a->>'milestone_id','');
+    v_milestone_content_hash := nullif(a->>'milestone_content_hash','');
+
+    if v_alert_id is null
+      or v_suppression_identity is null
+      or v_milestone_id is null
+      or v_milestone_content_hash is null
+      or nullif(a->>'horizon_days','') is null
+      or nullif(a->>'policy_version','') is null
+      or nullif(a->>'suppression_policy_version','') is null
+      or nullif(a->>'alert_hash','') is null
+      or nullif(a->>'project_class','') is null
+      or nullif(a->>'planning_stage','') is null
+      or nullif(a->>'milestone_date','') is null
+      or nullif(a->>'days_remaining_at_creation','') is null
+    then
+      raise exception 'invalid_argument' using errcode = '22023';
+    end if;
+
+    select m.current_content_hash
+      into v_current_hash
+      from public.sports_milestones_v1 m
+      where m.milestone_id = v_milestone_id;
+
+    if v_current_hash is null then
+      raise exception 'integrity_conflict' using errcode = '23503';
+    end if;
+    if v_current_hash <> v_milestone_content_hash then
+      raise exception 'integrity_conflict' using errcode = '23514';
+    end if;
+
+    insert into public.sports_milestone_alerts_v1(
+      alert_id,
+      milestone_id,
+      milestone_content_hash,
+      horizon_days,
+      policy_version,
+      suppression_policy_version,
+      suppression_identity,
+      alert_hash,
+      project_class,
+      planning_stage,
+      milestone_date,
+      days_remaining_at_creation,
+      status,
+      reason_codes,
+      created_at,
+      expires_at
+    ) values (
+      v_alert_id,
+      v_milestone_id,
+      v_milestone_content_hash,
+      (a->>'horizon_days')::integer,
+      a->>'policy_version',
+      a->>'suppression_policy_version',
+      v_suppression_identity,
+      a->>'alert_hash',
+      a->>'project_class',
+      a->>'planning_stage',
+      (a->>'milestone_date')::date,
+      (a->>'days_remaining_at_creation')::integer,
+      'pending',
+      coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(a->'reason_codes','[]'::jsonb)) x), '{}'::text[]),
+      now(),
+      nullif(a->>'expires_at','')::timestamptz
+    ) on conflict (suppression_identity) do nothing;
+
+    if found then
+      v_inserted := v_inserted + 1;
+      alert_ids := array_append(alert_ids, v_alert_id);
+      suppression_identities := array_append(suppression_identities, v_suppression_identity);
+    else
+      v_existing := v_existing + 1;
+      alert_ids := array_append(alert_ids, (select s.alert_id from public.sports_milestone_alerts_v1 s where s.suppression_identity = v_suppression_identity));
+      suppression_identities := array_append(suppression_identities, v_suppression_identity);
+    end if;
+  end loop;
+
+  inserted_count := v_inserted;
+  existing_count := v_existing;
+  skipped_count := v_skipped;
+  return next;
+end;
+$fn$;
+
+create or replace function public.invalidate_obsolete_sports_milestone_alerts_v1()
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $fn$
+declare
+  v_count integer;
+begin
+  update public.sports_milestone_alerts_v1 a
+    set status = 'invalidated', invalidated_at = now()
+    from public.sports_milestones_v1 m
+    where a.milestone_id = m.milestone_id
+      and a.status = 'pending'
+      and a.milestone_content_hash <> m.current_content_hash;
+
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$fn$;
+
+create or replace function public.expire_sports_milestone_alerts_v1(in_now timestamptz)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $fn$
+declare
+  v_count integer;
+begin
+  update public.sports_milestone_alerts_v1
+    set status = 'expired'
+    where status = 'pending'
+      and expires_at is not null
+      and expires_at <= in_now;
+
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$fn$;
+
 revoke execute on function public.lease_external_collection_job_v1(text,integer,integer,integer) from public;
 revoke execute on function public.renew_external_collection_job_lease_v1(text,text,integer) from public;
 revoke execute on function public.release_external_collection_job_lease_v1(text,text,text) from public;
 revoke execute on function public.recover_expired_external_collection_leases_v1() from public;
 revoke execute on function public.persist_sports_milestone_v1(text,text,text,jsonb,jsonb,jsonb,jsonb,text,text,text,text,date,date,integer,text,text,text,jsonb,text) from public;
+revoke execute on function public.upsert_sports_milestone_alerts_v1(jsonb) from public;
+revoke execute on function public.invalidate_obsolete_sports_milestone_alerts_v1() from public;
+revoke execute on function public.expire_sports_milestone_alerts_v1(timestamptz) from public;
 
 revoke execute on function public.lease_external_collection_job_v1(text,integer,integer,integer) from anon, authenticated;
 revoke execute on function public.renew_external_collection_job_lease_v1(text,text,integer) from anon, authenticated;
 revoke execute on function public.release_external_collection_job_lease_v1(text,text,text) from anon, authenticated;
 revoke execute on function public.recover_expired_external_collection_leases_v1() from anon, authenticated;
 revoke execute on function public.persist_sports_milestone_v1(text,text,text,jsonb,jsonb,jsonb,jsonb,text,text,text,text,date,date,integer,text,text,text,jsonb,text) from anon, authenticated;
+revoke execute on function public.upsert_sports_milestone_alerts_v1(jsonb) from anon, authenticated;
+revoke execute on function public.invalidate_obsolete_sports_milestone_alerts_v1() from anon, authenticated;
+revoke execute on function public.expire_sports_milestone_alerts_v1(timestamptz) from anon, authenticated;
 
 grant execute on function public.lease_external_collection_job_v1(text,integer,integer,integer) to service_role;
 grant execute on function public.renew_external_collection_job_lease_v1(text,text,integer) to service_role;
 grant execute on function public.release_external_collection_job_lease_v1(text,text,text) to service_role;
 grant execute on function public.recover_expired_external_collection_leases_v1() to service_role;
 grant execute on function public.persist_sports_milestone_v1(text,text,text,jsonb,jsonb,jsonb,jsonb,text,text,text,text,date,date,integer,text,text,text,jsonb,text) to service_role;
+grant execute on function public.upsert_sports_milestone_alerts_v1(jsonb) to service_role;
+grant execute on function public.invalidate_obsolete_sports_milestone_alerts_v1() to service_role;
+grant execute on function public.expire_sports_milestone_alerts_v1(timestamptz) to service_role;
