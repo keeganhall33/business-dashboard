@@ -8,14 +8,32 @@ import { computeMilestoneCalendarHash } from "@/lib/external-intelligence/milest
 import { SportsMilestoneRepository } from "@/lib/external-intelligence/milestones/persistence/milestone.repository";
 import { runDailyMilestoneHorizonScanV1 } from "@/lib/external-intelligence/milestones/scheduler/daily-horizon-scan";
 
+type MilestoneHorizonScanDeps = {
+  repo: Pick<SportsMilestoneRepository, "listCurrentMilestonesForHorizonScan">;
+  runScan: typeof runDailyMilestoneHorizonScanV1;
+  loadLeadTimePolicyJson: () => unknown;
+};
+
+const DEFAULT_DEPS: MilestoneHorizonScanDeps = {
+  repo: new SportsMilestoneRepository(),
+  runScan: runDailyMilestoneHorizonScanV1,
+  loadLeadTimePolicyJson: () => JSON.parse(fs.readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8"))
+};
+
 export async function runMilestoneHorizonScanV1(input: { now_ymd: string; now_iso: string; signal?: AbortSignal }) {
+  return runMilestoneHorizonScanV1WithDeps(input, DEFAULT_DEPS);
+}
+
+export async function runMilestoneHorizonScanV1WithDeps(
+  input: { now_ymd: string; now_iso: string; signal?: AbortSignal },
+  deps: MilestoneHorizonScanDeps
+) {
   if (input.signal?.aborted) throw new Error("handler_aborted");
   // Approved lead-time policy.
-  const policyJson = JSON.parse(fs.readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8"));
+  const policyJson = deps.loadLeadTimePolicyJson();
   const lead_time_policy = parseAlertLeadTimePolicy(policyJson);
 
-  const repo = new SportsMilestoneRepository();
-  const current = await repo.listCurrentMilestonesForHorizonScan();
+  const current = await deps.repo.listCurrentMilestonesForHorizonScan();
   if (input.signal?.aborted) throw new Error("handler_aborted");
 
   const calendarBase = {
@@ -30,7 +48,7 @@ export async function runMilestoneHorizonScanV1(input: { now_ymd: string; now_is
     calendar_content_hash: computeMilestoneCalendarHash(calendarBase)
   };
 
-  const result = await runDailyMilestoneHorizonScanV1({
+  const result = await deps.runScan({
     now_ymd: input.now_ymd,
     now_iso: input.now_iso,
     calendar,

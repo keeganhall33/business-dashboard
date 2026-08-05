@@ -57,6 +57,8 @@ test("daily horizon scan: zero milestones is valid and yields zero inserted/exis
     ...base,
     calendar_content_hash: computeMilestoneCalendarHash(base)
   });
+
+  assert.match(cal.calendar_content_hash, /^[0-9a-f]{64}$/);
   const pol = parseAlertLeadTimePolicy(
     JSON.parse(fs.readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8"))
   );
