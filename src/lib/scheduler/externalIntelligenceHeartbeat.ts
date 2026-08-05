@@ -16,6 +16,47 @@ import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchest
 import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external-intelligence/orchestration/operational-health";
 import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/orchestration/timeout";
 
+type HeartbeatDeps = {
+  withJobRun: typeof withJobRun;
+  now: () => Date;
+
+  acquireLock: typeof acquireInternalOrchestrationLockV1;
+  renewLock: typeof renewInternalOrchestrationLockV1;
+  releaseLock: typeof releaseInternalOrchestrationLockV1;
+
+  jobsRepo: () => InternalOrchestrationJobsRepository;
+
+  alertOperationalFailure: typeof alertOperationalFailure;
+  evaluateOperationalHealth: typeof evaluateInternalOrchestrationOperationalHealthV1;
+
+  runWithTimeout: typeof runWithTimeout;
+
+  handlers: (input: { nowIso: string; nowYmd: string }) => Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>>;
+};
+
+const DEFAULT_DEPS: HeartbeatDeps = {
+  withJobRun,
+  now: () => new Date(),
+
+  acquireLock: acquireInternalOrchestrationLockV1,
+  renewLock: renewInternalOrchestrationLockV1,
+  releaseLock: releaseInternalOrchestrationLockV1,
+
+  jobsRepo: () => new InternalOrchestrationJobsRepository(),
+
+  alertOperationalFailure,
+  evaluateOperationalHealth: evaluateInternalOrchestrationOperationalHealthV1,
+
+  runWithTimeout,
+
+  handlers: ({ nowIso, nowYmd }) => ({
+    "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
+    "expired-milestone-alert-cleanup-v1": (signal) => runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso, signal }),
+    "external-source-watchdog-v1": (signal) => runExternalSourceWatchdogV1({ now_iso: nowIso, signal }),
+    "milestone-horizon-scan-v1": (signal) => runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso, signal })
+  })
+};
+
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 300);
   return String(error).slice(0, 300);
@@ -40,7 +81,13 @@ async function alertOperationalFailure(input: { dedupeKey: string; title: string
  * IMPORTANT: this runner must not execute any external collectors.
  */
 export async function runExternalIntelligenceHeartbeatV1() {
-  return withJobRun({
+  return runExternalIntelligenceHeartbeatV1WithDeps();
+}
+
+export async function runExternalIntelligenceHeartbeatV1WithDeps(overrides?: Partial<HeartbeatDeps>) {
+  const deps: HeartbeatDeps = { ...DEFAULT_DEPS, ...(overrides ?? {}) };
+
+  return deps.withJobRun({
     jobKey: "external-intelligence-heartbeat",
     fn: async () => {
       // NOTE: The central scheduler tick does not provide atomic job claiming.
@@ -49,13 +96,13 @@ export async function runExternalIntelligenceHeartbeatV1() {
       const leaseOwner = `heartbeat:${process.pid}`;
       // Upper-bounded lease; renewed between handlers.
       const leaseSeconds = 300;
-      const now = new Date();
+      const now = deps.now();
       const nowIso = now.toISOString();
       const nowYmd = nowIso.slice(0, 10);
 
       const safetyMarginSeconds = 20;
 
-      const lease = await acquireInternalOrchestrationLockV1({
+      const lease = await deps.acquireLock({
         lock_key: lockKey,
         lease_owner: leaseOwner,
         lease_seconds: leaseSeconds
@@ -69,7 +116,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
         const results: Record<string, unknown> = {};
 
         // Refresh lease before doing any work.
-        const renewed0 = await renewInternalOrchestrationLockV1({
+        const renewed0 = await deps.renewLock({
           lock_key: lockKey,
           lease_token: lease.lease_token,
           lease_seconds: leaseSeconds
@@ -77,18 +124,13 @@ export async function runExternalIntelligenceHeartbeatV1() {
         if (!renewed0.renewed) return { status: "blocked", reason: "lock_renewal_failed" };
 
         // Ensure DB contains canonical job definitions (still disabled by default).
-        const jobsRepo = new InternalOrchestrationJobsRepository();
+        const jobsRepo = deps.jobsRepo();
         await jobsRepo.upsertDefinitions(INTERNAL_ORCHESTRATION_JOBS_V1);
 
         // Recurring activation: governed by DB enabled flags + next_run_at.
         const enabledJobs = await jobsRepo.listEnabledJobsForEnv("production");
 
-        const handlers: Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>> = {
-          "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
-          "expired-milestone-alert-cleanup-v1": (signal) => runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso, signal }),
-          "external-source-watchdog-v1": (signal) => runExternalSourceWatchdogV1({ now_iso: nowIso, signal }),
-          "milestone-horizon-scan-v1": (signal) => runMilestoneHorizonScanV1({ now_ymd: nowYmd, now_iso: nowIso, signal })
-        };
+        const handlers = deps.handlers({ nowIso, nowYmd });
 
         for (const job of enabledJobs) {
           const jobName = job.job_name as InternalOrchestrationJobKey;
@@ -100,7 +142,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
           }
 
           // Renew lease before starting each handler.
-          const renewedBefore = await renewInternalOrchestrationLockV1({
+          const renewedBefore = await deps.renewLock({
             lock_key: lockKey,
             lease_token: lease.lease_token,
             lease_seconds: leaseSeconds
@@ -124,7 +166,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
           }
 
           try {
-            const timed = await runWithTimeout({
+            const timed = await deps.runWithTimeout({
               name: jobName,
               timeout_ms: timeoutSeconds * 1000,
               fn: (signal) => runner(signal)
@@ -169,7 +211,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
           results
         };
       } catch (error) {
-        await alertOperationalFailure({
+        await deps.alertOperationalFailure({
           dedupeKey: `orchestration:heartbeat:failed`,
           title: "Internal orchestration heartbeat failed",
           summary: safeErrorSummary(error)
@@ -178,8 +220,8 @@ export async function runExternalIntelligenceHeartbeatV1() {
       } finally {
         // Staleness and repeated failure evaluation uses existing alert mechanism.
         // It must not treat lock contention as an incident.
-        await evaluateInternalOrchestrationOperationalHealthV1({ now_iso: nowIso });
-        await releaseInternalOrchestrationLockV1({ lock_key: lockKey, lease_token: lease.lease_token });
+        await deps.evaluateOperationalHealth({ now_iso: nowIso });
+        await deps.releaseLock({ lock_key: lockKey, lease_token: lease.lease_token });
       }
     },
     summarize: (result) => ({
