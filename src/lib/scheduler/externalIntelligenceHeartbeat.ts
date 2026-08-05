@@ -1,5 +1,9 @@
 import { withJobRun } from "@/lib/scheduler/jobLogger";
-import { acquireGlobalOrchestrationLockV1, releaseGlobalOrchestrationLockV1 } from "@/lib/external-intelligence/orchestration/lock";
+import {
+  acquireInternalOrchestrationLockV1,
+  releaseInternalOrchestrationLockV1,
+  renewInternalOrchestrationLockV1
+} from "@/lib/external-intelligence/orchestration/lock";
 import { runExternalSourceWatchdogV1 } from "@/lib/external-intelligence/orchestration/handlers/watchdog-v1";
 import { runMilestoneHorizonScanV1 } from "@/lib/external-intelligence/orchestration/handlers/milestone-horizon-scan-v1";
 import { runExpiredLeaseRecoveryV1 } from "@/lib/external-intelligence/orchestration/handlers/lease-recovery-v1";
@@ -33,18 +37,34 @@ export async function runExternalIntelligenceHeartbeatV1() {
   return withJobRun({
     jobKey: "external-intelligence-heartbeat",
     fn: async () => {
-      const lockKey = 914_000_001;
+      // NOTE: The central scheduler tick does not provide atomic job claiming.
+      // We must enforce global exclusion here using a durable DB lease.
+      const lockKey = "external-intelligence-heartbeat";
+      const leaseOwner = `heartbeat:${process.pid}`;
+      const leaseSeconds = 120;
       const now = new Date();
       const nowIso = now.toISOString();
       const nowYmd = nowIso.slice(0, 10);
 
-      const { acquired } = await acquireGlobalOrchestrationLockV1({ lock_key: lockKey });
-      if (!acquired) {
+      const lease = await acquireInternalOrchestrationLockV1({
+        lock_key: lockKey,
+        lease_owner: leaseOwner,
+        lease_seconds: leaseSeconds
+      });
+
+      if (!lease.acquired || !lease.lease_token) {
         return { status: "blocked", reason: "lock_not_acquired" };
       }
 
       try {
         const results: Record<string, unknown> = {};
+
+        // Refresh lease before doing any work.
+        await renewInternalOrchestrationLockV1({
+          lock_key: lockKey,
+          lease_token: lease.lease_token,
+          lease_seconds: leaseSeconds
+        });
 
         results["expired-lease-recovery-v1"] = await runExpiredLeaseRecoveryV1();
         results["expired-milestone-alert-cleanup-v1"] = await runExpiredMilestoneAlertCleanupV1({ now_iso: nowIso });
@@ -64,7 +84,7 @@ export async function runExternalIntelligenceHeartbeatV1() {
         });
         throw error;
       } finally {
-        await releaseGlobalOrchestrationLockV1({ lock_key: lockKey });
+        await releaseInternalOrchestrationLockV1({ lock_key: lockKey, lease_token: lease.lease_token });
       }
     },
     summarize: (result) => ({
@@ -73,4 +93,3 @@ export async function runExternalIntelligenceHeartbeatV1() {
     })
   });
 }
-

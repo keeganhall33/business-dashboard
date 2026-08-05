@@ -623,45 +623,178 @@ create table if not exists system_state (
 );
 
 -- =========================================================
--- B3. INTERNAL ORCHESTRATION LOCK RPCs
+-- B3. DURABLE INTERNAL ORCHESTRATION LOCK
 -- =========================================================
 
-create or replace function public.try_advisory_lock_v1(in_lock_key bigint)
-returns boolean
+create table if not exists public.internal_orchestration_locks_v1 (
+  lock_key text primary key,
+  lease_token text,
+  lease_owner text,
+  acquired_at timestamptz,
+  expires_at timestamptz,
+  heartbeat_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists internal_orchestration_locks_v1__expires_idx
+  on public.internal_orchestration_locks_v1 (expires_at);
+
+create or replace function public.acquire_internal_orchestration_lock_v1(
+  in_lock_key text,
+  in_lease_owner text,
+  in_lease_seconds integer
+)
+returns table(acquired boolean, lease_token text, expires_at timestamptz)
 language plpgsql
 security definer
 set search_path to 'public'
 as $fn$
 declare
-  v_acquired boolean;
+  v_token text;
+  v_expires timestamptz;
 begin
-  select pg_try_advisory_lock(in_lock_key) into v_acquired;
-  return coalesce(v_acquired,false);
+  if coalesce(nullif(in_lock_key,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+  if coalesce(nullif(in_lease_owner,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+  if in_lease_seconds is null or in_lease_seconds <= 0 then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+
+  v_token := encode(gen_random_bytes(32), 'hex');
+  v_expires := now() + make_interval(secs => in_lease_seconds);
+
+  insert into public.internal_orchestration_locks_v1(
+    lock_key, lease_token, lease_owner, acquired_at, expires_at, heartbeat_at, updated_at
+  ) values (
+    in_lock_key, v_token, in_lease_owner, now(), v_expires, now(), now()
+  ) on conflict (lock_key) do nothing;
+
+  if found then
+    acquired := true;
+    lease_token := v_token;
+    expires_at := v_expires;
+    return next;
+    return;
+  end if;
+
+  update public.internal_orchestration_locks_v1
+    set
+      lease_token = v_token,
+      lease_owner = in_lease_owner,
+      acquired_at = now(),
+      expires_at = v_expires,
+      heartbeat_at = now(),
+      updated_at = now()
+    where public.internal_orchestration_locks_v1.lock_key = in_lock_key
+      and (public.internal_orchestration_locks_v1.expires_at is null or public.internal_orchestration_locks_v1.expires_at <= now());
+
+  if found then
+    acquired := true;
+    lease_token := v_token;
+    expires_at := v_expires;
+  else
+    acquired := false;
+    lease_token := null;
+    expires_at := null;
+  end if;
+
+  return next;
 end;
 $fn$;
 
-create or replace function public.advisory_unlock_v1(in_lock_key bigint)
-returns boolean
+create or replace function public.renew_internal_orchestration_lock_v1(
+  in_lock_key text,
+  in_lease_token text,
+  in_lease_seconds integer
+)
+returns table(renewed boolean, expires_at timestamptz)
 language plpgsql
 security definer
 set search_path to 'public'
 as $fn$
 declare
-  v_released boolean;
+  v_expires timestamptz;
 begin
-  select pg_advisory_unlock(in_lock_key) into v_released;
-  return coalesce(v_released,false);
+  if coalesce(nullif(in_lock_key,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+  if coalesce(nullif(in_lease_token,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+  if in_lease_seconds is null or in_lease_seconds <= 0 then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+
+  v_expires := now() + make_interval(secs => in_lease_seconds);
+
+  update public.internal_orchestration_locks_v1
+    set expires_at = v_expires, heartbeat_at = now(), updated_at = now()
+    where public.internal_orchestration_locks_v1.lock_key = in_lock_key
+      and public.internal_orchestration_locks_v1.lease_token = in_lease_token
+      and public.internal_orchestration_locks_v1.expires_at > now();
+
+  if found then
+    renewed := true;
+    expires_at := v_expires;
+  else
+    renewed := false;
+    expires_at := null;
+  end if;
+
+  return next;
 end;
 $fn$;
 
-revoke execute on function public.try_advisory_lock_v1(bigint) from public;
-revoke execute on function public.advisory_unlock_v1(bigint) from public;
+create or replace function public.release_internal_orchestration_lock_v1(
+  in_lock_key text,
+  in_lease_token text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path to 'public'
+as $fn$
+begin
+  if coalesce(nullif(in_lock_key,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
+  if coalesce(nullif(in_lease_token,''),'') = '' then
+    raise exception 'invalid_argument' using errcode = '22023';
+  end if;
 
-revoke execute on function public.try_advisory_lock_v1(bigint) from anon, authenticated;
-revoke execute on function public.advisory_unlock_v1(bigint) from anon, authenticated;
+  update public.internal_orchestration_locks_v1
+    set
+      lease_token = null,
+      lease_owner = null,
+      acquired_at = null,
+      expires_at = null,
+      updated_at = now()
+    where public.internal_orchestration_locks_v1.lock_key = in_lock_key
+      and public.internal_orchestration_locks_v1.lease_token = in_lease_token;
 
-grant execute on function public.try_advisory_lock_v1(bigint) to service_role;
-grant execute on function public.advisory_unlock_v1(bigint) to service_role;
+  return true;
+end;
+$fn$;
+
+revoke all on table public.internal_orchestration_locks_v1 from public;
+revoke all on table public.internal_orchestration_locks_v1 from anon, authenticated;
+grant all on table public.internal_orchestration_locks_v1 to service_role;
+
+revoke execute on function public.acquire_internal_orchestration_lock_v1(text,text,integer) from public;
+revoke execute on function public.renew_internal_orchestration_lock_v1(text,text,integer) from public;
+revoke execute on function public.release_internal_orchestration_lock_v1(text,text) from public;
+
+revoke execute on function public.acquire_internal_orchestration_lock_v1(text,text,integer) from anon, authenticated;
+revoke execute on function public.renew_internal_orchestration_lock_v1(text,text,integer) from anon, authenticated;
+revoke execute on function public.release_internal_orchestration_lock_v1(text,text) from anon, authenticated;
+
+grant execute on function public.acquire_internal_orchestration_lock_v1(text,text,integer) to service_role;
+grant execute on function public.renew_internal_orchestration_lock_v1(text,text,integer) to service_role;
+grant execute on function public.release_internal_orchestration_lock_v1(text,text) to service_role;
 
 -- Phase 2 Intelligence: v1 persisted chain tables
 -- Facts → Findings → Hypotheses → Opportunities → Recommendations → Outcomes
