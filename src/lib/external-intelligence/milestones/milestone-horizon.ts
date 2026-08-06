@@ -22,6 +22,9 @@ export const SportsMilestoneCalendarSchema = z
     schema_version: z.literal("sports_milestone_calendar_v1"),
     calendar_version: z.string().min(1).max(64),
     fixture_status: z.enum(["test_only", "production"]).default("test_only"),
+    // LEGACY CONTRACT (do not use for B3 production horizon scanning).
+    // B3 uses the canonical calendar contract in `milestones/contracts.ts`, where an empty
+    // milestone set is a valid dormant production state.
     milestones: z.array(SportsMilestoneSchema).min(1)
   })
   .strict();
