@@ -33,33 +33,23 @@ function getOn(doc: WorkflowDoc): WorkflowOn {
 }
 
 test("workflows: YAML parses and exposes expected triggers", () => {
-  const schedulerPath = ".github/workflows/production-scheduler-heartbeat.yml";
   const managePath = ".github/workflows/manage-recurring-internal-orchestration.yml";
   const controlPath = ".github/workflows/controlled-internal-heartbeat.yml";
 
-  const scheduler = readWorkflow(schedulerPath);
   const manage = readWorkflow(managePath);
   const control = readWorkflow(controlPath);
 
-  const schedulerOn = getOn(scheduler.parsed);
   const manageOn = getOn(manage.parsed);
   const controlOn = getOn(control.parsed);
-
-  assert.ok("workflow_dispatch" in schedulerOn);
-  assert.ok(Array.isArray(schedulerOn.schedule));
 
   assert.ok("workflow_dispatch" in manageOn);
   assert.ok("workflow_dispatch" in controlOn);
 
   // Ensure no push or pull_request triggers were introduced.
-  for (const on of [schedulerOn, manageOn, controlOn]) {
+  for (const on of [manageOn, controlOn]) {
     assert.ok(!("push" in on));
     assert.ok(!("pull_request" in on));
   }
-
-  // Ensure scheduler cadence remains */5.
-  const sched = schedulerOn.schedule?.[0];
-  assert.equal(sched?.cron, "*/5 * * * *");
 });
 
 test("workflows: exactly one five-minute tick trigger workflow exists", () => {
@@ -77,5 +67,6 @@ test("workflows: exactly one five-minute tick trigger workflow exists", () => {
     }
   }
 
-  assert.deepEqual(matches, ["production-scheduler-heartbeat.yml"]);
+  // GitHub Actions is no longer the scheduler tick trigger provider.
+  assert.deepEqual(matches, []);
 });
