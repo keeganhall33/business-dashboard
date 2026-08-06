@@ -17,7 +17,9 @@ export const SportsMilestoneSchema = z
   })
   .strict();
 
-export const SportsMilestoneCalendarSchema = z
+// Legacy horizon engine module (not used by B3 production horizon scanning).
+// Keep types/names distinct from the canonical B3 calendar contract in `milestones/contracts.ts`.
+export const LegacySportsMilestoneCalendarSchema = z
   .object({
     schema_version: z.literal("sports_milestone_calendar_v1"),
     calendar_version: z.string().min(1).max(64),
@@ -26,7 +28,7 @@ export const SportsMilestoneCalendarSchema = z
   })
   .strict();
 
-export type SportsMilestoneCalendar = z.infer<typeof SportsMilestoneCalendarSchema>;
+export type LegacySportsMilestoneCalendar = z.infer<typeof LegacySportsMilestoneCalendarSchema>;
 
 export const MilestoneAlertWindowSchema = z
   .object({
@@ -92,11 +94,11 @@ function addDays(dateYmd: string, deltaDays: number): string {
 }
 
 export function buildMilestoneHorizonAlerts(input: {
-  calendar: SportsMilestoneCalendar;
+  calendar: LegacySportsMilestoneCalendar;
   policy: MilestoneHorizonPolicy;
   now_ymd: string;
 }): MilestoneHorizonAlert[] {
-  const calendar = SportsMilestoneCalendarSchema.parse(input.calendar);
+  const calendar = LegacySportsMilestoneCalendarSchema.parse(input.calendar);
   const policy = parseMilestoneHorizonPolicy(input.policy);
 
   const alerts: MilestoneHorizonAlert[] = [];

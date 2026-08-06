@@ -28,7 +28,7 @@ function makeDeps(overrides: Partial<ControlledHeartbeatDeps> = {}): ControlledH
         external_collection_jobs_total: 0,
         external_collection_jobs_active_executable: 0
       },
-      a5Counts: { evidence_refs: 10, claims: 20, signals: 30 }
+      a5Counts: { evidence_refs: 1, claims: 1, signals: 1 }
     }),
 
     readAllInternalJobsForEnv: async () => [],
@@ -293,6 +293,66 @@ test("b3.1 operator: no HTTP/Vercel requests are made by the operator wrapper", 
 
   assert.equal(fetchCalls, 0);
   globalThis.fetch = originalFetch;
+});
+
+test("b3.3 operator validator: milestone handler succeeded with zero counts is accepted", async () => {
+  process.env.CONTROLLED_INTERNAL_HEARTBEAT_APPROVED = "true";
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://ibjsjosplgbqevmnvvpf.supabase.co";
+  process.env.OPERATOR_EXPECTED_SUPABASE_PROJECT_REF = "ibjsjosplgbqevmnvvpf";
+  process.env.OPERATOR_ENVIRONMENT = "production";
+
+  const deps = makeDeps({
+    validateInvocation: () =>
+      ({
+      schema_version: "manual_heartbeat_invocation_v1",
+      invocation_id: "inv-milestone-zero",
+      environment: "production",
+      approved_internal_job_names: APPROVED,
+      dry_run: false,
+      requested_at: "2026-08-05T00:00:00.000Z",
+      requested_by: "keegan",
+      expires_at: "2026-08-06T00:00:00.000Z",
+      configuration_version: "x",
+      content_hash: "h"
+    }) satisfies ManualHeartbeatInvocationV1,
+    // Force no pre-existing high alerts.
+    getUnresolvedHighSeverityOrchestrationAlerts: async () => [],
+    runHeartbeat: async () => ({
+      status: "succeeded",
+      results: {
+        "external-source-watchdog-v1": { status: "succeeded", output: { sourcesEvaluated: 24, healthRowsUpserted: 24 } },
+        "milestone-horizon-scan-v1": {
+          status: "succeeded",
+          output: { milestonesEvaluated: 0, alertsInserted: 0, alertsExisting: 0, alertsInvalidated: 0, alertsExpired: 0 }
+        },
+        "expired-lease-recovery-v1": { status: "succeeded", output: { recovered_count: 0 } },
+        "expired-milestone-alert-cleanup-v1": { status: "succeeded", output: { expired_count: 0, invalidated_count: 0 } }
+      }
+    }),
+    // Post-run DB verification gates.
+    getTableCountOrNull: async (table) => {
+      if (table === "external_collection_health_v1") return 24;
+      if (table === "sports_milestones_v1") return 0;
+      if (table === "sports_milestone_versions_v1") return 0;
+      if (table === "sports_milestone_alerts_v1") return 0;
+      if (table === "external_evidence_references_v1") return 1;
+      if (table === "external_claims_v1") return 1;
+      if (table === "external_signals_v1") return 1;
+      return 0;
+    },
+    getDistinctHealthSourceCount: async () => 24,
+    getHealthSourceIds: async () => ["a", "b"],
+    getCanonicalProductionSourceIds: () => ["a", "b"],
+    getActiveHeartbeatLeaseCount: async () => 0,
+    getRecurringHeartbeatRowCount: async () => 0
+  });
+
+  const out = await runControlledExternalIntelligenceHeartbeatV1WithDeps(deps, {
+    expected_project_ref: "ibjsjosplgbqevmnvvpf",
+    invocation_json: {}
+  });
+
+  assert.equal(out.ok, true);
 });
 
 test("b3.1 operator: alert comparison uses production-shaped id field; pre-existing alerts do not fail; new high-severity fails", async () => {
