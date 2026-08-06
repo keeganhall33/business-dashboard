@@ -35,6 +35,10 @@ test("b4.3 supabase cron migration: secure cron trigger contract", () => {
   assert.match(raw, /for v_job in \(\s*\n\s*select jobid from cron\.job where jobname = 'production-scheduler-tick-v1'/);
   assert.match(raw, /cron\.unschedule/);
 
+  // Command literal must be isolated (no nested $$ collision) and must remain exact.
+  assert.ok(!raw.includes("command := $$"));
+  assert.match(raw, /command := 'select public\.run_production_scheduler_tick_v1\(\);'/);
+
   // Async HTTP observability: capture request id from net.http_post.
   assert.match(raw, /select net\.http_post\(/);
   assert.match(raw, /into v_request_id/);

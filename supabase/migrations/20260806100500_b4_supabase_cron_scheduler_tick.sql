@@ -88,7 +88,7 @@ begin
   perform cron.schedule(
     job_name := 'production-scheduler-tick-v1',
     schedule := '*/5 * * * *',
-    command := $$select public.run_production_scheduler_tick_v1();$$
+    command := 'select public.run_production_scheduler_tick_v1();'
   );
 end;
 $$;
