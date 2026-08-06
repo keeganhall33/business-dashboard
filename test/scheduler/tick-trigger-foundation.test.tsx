@@ -5,8 +5,6 @@ import path from "node:path";
 
 import { assertSchedulerAuth } from "@/lib/scheduler/auth";
 
-const ROOT = process.cwd();
-
 function makeRequest(headers: Record<string, string>) {
   return new Request("https://example.com/api/scheduler/tick", {
     method: "POST",
@@ -14,17 +12,17 @@ function makeRequest(headers: Record<string, string>) {
   });
 }
 
-test("vercel.json defines exactly one cron for /api/scheduler/tick every 5 minutes", () => {
-  const vercelJsonPath = path.join(ROOT, "vercel.json");
-  const raw = fs.readFileSync(vercelJsonPath, "utf8");
-  const parsed = JSON.parse(raw) as { crons?: Array<{ path: string; schedule: string }> };
+test("governed tick trigger workflow exists and runs every five minutes", () => {
+  const workflowPath = path.resolve(process.cwd(), ".github/workflows/scheduler-tick.yml");
+  const raw = fs.readFileSync(workflowPath, "utf8");
 
-  assert.ok(Array.isArray(parsed.crons));
-  assert.equal(parsed.crons!.length, 1);
-  assert.deepEqual(parsed.crons![0], { path: "/api/scheduler/tick", schedule: "*/5 * * * *" });
+  // Keep parsing lightweight: assert the exact cron expression and the correct route fragment.
+  assert.match(raw, /name:\s*Scheduler Tick Trigger/);
+  assert.match(raw, /cron:\s*"\*\/5 \* \* \* \*"/);
+  assert.match(raw, /\/api\/scheduler\/tick/);
 });
 
-test("scheduler auth: Authorization Bearer <SCHEDULER_SECRET> is accepted (Vercel Cron compatible)", async () => {
+test("scheduler auth: Authorization Bearer <SCHEDULER_SECRET> is accepted", async () => {
   process.env.SCHEDULER_SECRET = "test-secret";
   const req = makeRequest({ Authorization: "Bearer test-secret" });
   await assert.doesNotReject(() => assertSchedulerAuth(req));

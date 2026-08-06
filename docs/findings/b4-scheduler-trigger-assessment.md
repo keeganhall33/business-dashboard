@@ -26,11 +26,13 @@ This repository does not contain the infrastructure definition for that external
 
 ## Governed trigger foundation (this PR)
 
-- Added a repository-governed Vercel Cron definition in `vercel.json`:
-  - path: `/api/scheduler/tick`
-  - schedule: `*/5 * * * *` (every five minutes)
+- Added a repository-governed GitHub Actions schedule that calls the existing tick route:
+  - workflow: `.github/workflows/scheduler-tick.yml`
+  - target: `POST /api/scheduler/tick`
+  - cadence: `*/5 * * * *` (every five minutes)
+  - auth: `Authorization: Bearer $SCHEDULER_SECRET` (reuses existing scheduler secret)
 
-This is intended to provide a verifiable production tick trigger once deployed to production.
+This is intended to provide a verifiable production tick trigger once merged.
 
 ## What is NOT yet directly verified (blocker)
 
