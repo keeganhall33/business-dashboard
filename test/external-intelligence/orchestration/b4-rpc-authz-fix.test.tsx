@@ -24,9 +24,15 @@ test("b4 RPC auth fix: uses PostgREST JWT role, not session_user", () => {
   assert.match(raw, /security definer/i);
   assert.match(raw, /set search_path = public/i);
 
-  // Must preserve grants: only service_role/postgres get EXECUTE.
+  // Must preserve grants: fail-closed (PUBLIC/anon/authenticated revoked) and service_role allowed.
+  // Note: postgres is the function owner and can execute by default; an explicit GRANT is not required.
+  assert.match(raw, /revoke all on function public\.activate_external_intelligence_internal_orchestration_v1[\s\S]*from public;/);
+  assert.match(raw, /revoke all on function public\.activate_external_intelligence_internal_orchestration_v1[\s\S]*from anon;/);
+  assert.match(raw, /revoke all on function public\.activate_external_intelligence_internal_orchestration_v1[\s\S]*from authenticated;/);
   assert.match(raw, /grant execute on function public\.activate_external_intelligence_internal_orchestration_v1[\s\S]*to service_role;/);
-  assert.match(raw, /grant execute on function public\.activate_external_intelligence_internal_orchestration_v1[\s\S]*to postgres;/);
+
+  assert.match(raw, /revoke all on function public\.disable_external_intelligence_internal_orchestration_v1[\s\S]*from public;/);
+  assert.match(raw, /revoke all on function public\.disable_external_intelligence_internal_orchestration_v1[\s\S]*from anon;/);
+  assert.match(raw, /revoke all on function public\.disable_external_intelligence_internal_orchestration_v1[\s\S]*from authenticated;/);
   assert.match(raw, /grant execute on function public\.disable_external_intelligence_internal_orchestration_v1[\s\S]*to service_role;/);
-  assert.match(raw, /grant execute on function public\.disable_external_intelligence_internal_orchestration_v1[\s\S]*to postgres;/);
 });
