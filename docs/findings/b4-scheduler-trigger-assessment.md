@@ -19,10 +19,18 @@ This repository does not contain the infrastructure definition for that external
 
 ## Direct trigger inspection attempts (results)
 
-- Vercel Cron (project-level): **no cron jobs found** (`vercel crons ls` on the linked `business-dashboard` project).
+- Vercel Cron (project-level, existing): **no cron jobs found** (`vercel crons ls` on the linked `business-dashboard` project).
 - GitHub Actions: no workflow in `.github/workflows/*` invokes `/api/scheduler/tick`.
 - Fly.io: `fly.toml` contains no scheduled process or cron configuration.
 - Supabase pg_cron: no `pg_cron` usage or `cron.schedule(...)` present in `supabase/**`.
+
+## Governed trigger foundation (this PR)
+
+- Added a repository-governed Vercel Cron definition in `vercel.json`:
+  - path: `/api/scheduler/tick`
+  - schedule: `*/5 * * * *` (every five minutes)
+
+This is intended to provide a verifiable production tick trigger once deployed to production.
 
 ## What is NOT yet directly verified (blocker)
 
