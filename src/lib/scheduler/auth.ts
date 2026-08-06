@@ -17,15 +17,21 @@ async function verifyGithubToken(token: string | null) {
 }
 
 export async function assertSchedulerAuth(request: Request) {
-  const suppliedSecret = request.headers.get("x-scheduler-secret");
   const expectedSecret = process.env.SCHEDULER_SECRET;
 
+  const suppliedSecret = request.headers.get("x-scheduler-secret");
   if (expectedSecret && suppliedSecret === expectedSecret) {
     return;
   }
 
   const authHeader = request.headers.get("authorization") ?? request.headers.get("x-github-token");
   const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+
+  // Vercel Cron can send Authorization: Bearer <CRON_SECRET>. We reuse the existing
+  // scheduler secret so no additional secret distribution is required.
+  if (expectedSecret && token === expectedSecret) {
+    return;
+  }
 
   if (await verifyGithubToken(token ?? null)) {
     return;
