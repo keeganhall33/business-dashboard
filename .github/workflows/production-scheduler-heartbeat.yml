@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - name: Guard: required secrets
+      - name: "Guard: required secrets"
         env:
           SCHEDULER_TICK_URL: ${{ secrets.SCHEDULER_TICK_URL }}
           SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
