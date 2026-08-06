@@ -1,0 +1,81 @@
+name: Manage recurring internal orchestration (Phase B4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "inspect | activate | disable"
+        required: true
+        type: choice
+        options:
+          - inspect
+          - activate
+          - disable
+      requested_by:
+        description: "Non-secret operator identity (audit only)"
+        required: true
+        type: string
+      approval_phrase:
+        description: "Must equal: I UNDERSTAND THIS MUTATES PRODUCTION"
+        required: true
+        type: string
+
+concurrency:
+  group: manage-recurring-internal-orchestration-production
+  cancel-in-progress: false
+
+jobs:
+  manage:
+    name: "${{ inputs.action }} (production)"
+    runs-on: ubuntu-latest
+    environment: Production
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Guard: approval phrase
+        run: |
+          if [ "${{ inputs.approval_phrase }}" != "I UNDERSTAND THIS MUTATES PRODUCTION" ]; then
+            echo "Invalid approval phrase" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci
+
+      - name: Run action
+        env:
+          OPERATOR_ENVIRONMENT: production
+          B4_RECURRING_INTERNAL_ORCHESTRATION_APPROVED: "true"
+          B4_ACTION: ${{ inputs.action }}
+          B4_REQUESTED_BY: ${{ inputs.requested_by }}
+          # Supabase secrets (GitHub Actions only)
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.action }}" = "inspect" ]; then
+            node --import tsx ./scripts/b4-activate-recurring-internal-orchestration.ts
+            exit 0
+          fi
+
+          if [ "${{ inputs.action }}" = "activate" ]; then
+            export B4_ACTIVATION_ID="activation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            node --import tsx ./scripts/b4-activate-recurring-internal-orchestration.ts
+            exit 0
+          fi
+
+          if [ "${{ inputs.action }}" = "disable" ]; then
+            export B4_DISABLE_ID="disable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            node --import tsx ./scripts/b4-disable-recurring-internal-orchestration.ts
+            exit 0
+          fi
+
+          echo "Unknown action" >&2
+          exit 1

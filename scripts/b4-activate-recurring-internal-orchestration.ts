@@ -1,9 +1,13 @@
 import "@/lib/server-only";
 
+import crypto from "node:crypto";
+
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 
 export const B4_HEARTBEAT_JOB_KEY = "external-intelligence-heartbeat" as const;
 export const B4_HEARTBEAT_ROUTE_PATH = "/api/scheduler/tick" as const;
+export const B4_EXPECTED_PROJECT_REF = "ibjsjosplgbqevmnvvpf" as const;
+export const B4_CONFIGURATION_VERSION = "b4.recurring_internal_orchestration.v1" as const;
 
 export type B4ActivationConfig = {
   job_key: typeof B4_HEARTBEAT_JOB_KEY;
@@ -40,6 +44,35 @@ export type B4ActivateDeps = {
   supabase: ReturnType<typeof getExternalIntelligenceSupabaseClient>;
 };
 
+function parseProjectRefFromSupabaseUrl(url: string): string | null {
+  // https://<ref>.supabase.co
+  const match = url.match(/^https:\/\/([a-z0-9]{20})\.supabase\.co/i);
+  return match?.[1] ?? null;
+}
+
+function stableStringify(value: unknown): string {
+  if (value == null) return "null";
+  if (typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+
+export function computeB4ConfigurationHash(config: B4ActivationConfig): string {
+  const payload = stableStringify({
+    configuration_version: B4_CONFIGURATION_VERSION,
+    heartbeat: {
+      job_key: config.job_key,
+      cron_expression: config.cron_expression,
+      timezone: config.timezone,
+      route_path: config.route_path
+    },
+    internal_jobs: [...config.enable_jobs].sort()
+  });
+  return crypto.createHash("sha256").update(payload).digest("hex");
+}
+
 export function requireB4ApprovalFlags() {
   if (process.env.OPERATOR_ENVIRONMENT !== "production") {
     throw new Error("precondition_failed:operator_env_not_production");
@@ -47,6 +80,15 @@ export function requireB4ApprovalFlags() {
   if (process.env.B4_RECURRING_INTERNAL_ORCHESTRATION_APPROVED !== "true") {
     throw new Error("precondition_failed:missing_b4_approval_flag");
   }
+}
+
+export function requireExpectedProjectRef() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) throw new Error("precondition_failed:missing_supabase_url");
+  const ref = parseProjectRefFromSupabaseUrl(supabaseUrl);
+  if (!ref) throw new Error("precondition_failed:unable_to_parse_project_ref");
+  if (ref !== B4_EXPECTED_PROJECT_REF) throw new Error("precondition_failed:wrong_supabase_project");
+  return ref;
 }
 
 export async function snapshotB4SafetyGates(deps: B4ActivateDeps) {
@@ -88,59 +130,73 @@ export async function snapshotB4SafetyGates(deps: B4ActivateDeps) {
   };
 }
 
-export async function upsertRecurringHeartbeatRow(deps: B4ActivateDeps, config: B4ActivationConfig) {
-  const { error } = await deps.supabase.from("scheduled_jobs").upsert(
-    {
-      job_key: config.job_key,
-      job_name: config.job_name,
-      cron_expression: config.cron_expression,
-      timezone: config.timezone,
-      route_path: config.route_path,
-      is_active: true,
-      // Ensure it becomes eligible immediately; tick will compute next_run_at.
-      next_run_at: deps.nowIso()
-    },
-    { onConflict: "job_key" }
-  );
-  if (error) throw error;
-}
-
-export async function enableInternalJobs(deps: B4ActivateDeps, jobNames: string[]) {
-  const { error } = await deps.supabase
-    .from("internal_orchestration_jobs_v1")
-    .update({ enabled: true, updated_at: deps.nowIso() })
-    .eq("environment", "production")
-    .in("job_name", jobNames);
-  if (error) throw error;
-}
-
 export async function activateB4RecurringInternalOrchestration(deps: B4ActivateDeps, config = DEFAULT_B4_CONFIG) {
   requireB4ApprovalFlags();
+  requireExpectedProjectRef();
 
+  const activationId = process.env.B4_ACTIVATION_ID;
+  if (!activationId) throw new Error("precondition_failed:missing_activation_id");
+  const requestedBy = process.env.B4_REQUESTED_BY ?? "unknown";
+
+  const configurationHash = computeB4ConfigurationHash(config);
+
+  // Prefer the atomic DB boundary over script-level multi-write updates.
+  const { data, error } = await deps.supabase.rpc("activate_external_intelligence_internal_orchestration_v1", {
+    in_activation_id: activationId,
+    in_configuration_version: B4_CONFIGURATION_VERSION,
+    in_configuration_hash: configurationHash,
+    in_environment: "production",
+    in_requested_by: requestedBy,
+    in_requested_at: deps.nowIso(),
+    in_review_by: "owner",
+    in_governing_policy_reference: "external-intelligence.phase-b4.v1",
+    in_expected_project_ref: B4_EXPECTED_PROJECT_REF
+  });
+  if (error) throw new Error(`B4 activation RPC failed: ${error.message}`);
+  return { ok: true, result: data } as const;
+}
+
+export async function inspectB4RecurringInternalOrchestration(deps: B4ActivateDeps) {
+  requireExpectedProjectRef();
   const gates = await snapshotB4SafetyGates(deps);
-  if (
-    gates.recurring_heartbeat_rows !== 0 ||
-    gates.active_heartbeat_leases !== 0 ||
-    gates.enabled_external_schedules !== 0 ||
-    gates.active_external_jobs !== 0
-  ) {
-    throw new Error("precondition_failed:b4_safety_gate_blocked");
-  }
+  const [{ data: scheduled }, { data: internalJobs }] = await Promise.all([
+    deps.supabase
+      .from("scheduled_jobs")
+      .select("job_key,cron_expression,timezone,route_path,is_active,next_run_at,last_run_at")
+      .eq("job_key", B4_HEARTBEAT_JOB_KEY)
+      .limit(1),
+    deps.supabase
+      .from("internal_orchestration_jobs_v1")
+      .select("job_name,enabled,next_run_at,last_success_at,last_failure_at,environment")
+      .eq("environment", "production")
+      .in("job_name", DEFAULT_B4_CONFIG.enable_jobs)
+      .order("job_name", { ascending: true })
+  ]);
 
-  await upsertRecurringHeartbeatRow(deps, config);
-  await enableInternalJobs(deps, config.enable_jobs);
-
-  return { ok: true } as const;
+  return {
+    ok: true,
+    gates,
+    scheduled_job: scheduled?.[0] ?? null,
+    internal_jobs: internalJobs ?? []
+  } as const;
 }
 
 async function main() {
   const supabase = getExternalIntelligenceSupabaseClient({});
   const deps: B4ActivateDeps = { nowIso: () => new Date().toISOString(), supabase };
-  await activateB4RecurringInternalOrchestration(deps);
+
+  const mode = (process.env.B4_ACTION ?? "activate") as "inspect" | "activate";
+  if (mode === "inspect") {
+    const res = await inspectB4RecurringInternalOrchestration(deps);
+    console.log(JSON.stringify(res, null, 2));
+    return;
+  }
+
+  const res = await activateB4RecurringInternalOrchestration(deps);
+  console.log(JSON.stringify(res, null, 2));
 }
 
 if (process.argv[1]?.includes("b4-activate-recurring-internal-orchestration")) {
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
   main().catch((e) => {
     console.error("B4 activation failed", { message: e?.message ?? String(e) });
     process.exitCode = 1;
