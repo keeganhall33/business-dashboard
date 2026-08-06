@@ -17,13 +17,21 @@ Source: `src/app/api/scheduler/tick/route.ts`
 
 This repository does not contain the infrastructure definition for that external runner.
 
-## What is NOT represented in this repository (unknown)
+## Direct trigger inspection attempts (results)
 
-The following are **not** represented in-repo and therefore cannot be asserted without separate provider/dashboard inspection:
+- Vercel Cron (project-level): **no cron jobs found** (`vercel crons ls` on the linked `business-dashboard` project).
+- GitHub Actions: no workflow in `.github/workflows/*` invokes `/api/scheduler/tick`.
+- Fly.io: `fly.toml` contains no scheduled process or cron configuration.
+- Supabase pg_cron: no `pg_cron` usage or `cron.schedule(...)` present in `supabase/**`.
 
-- Trigger provider (Vercel Cron vs Fly vs GitHub Actions vs an external cron host)
-- Cadence of the external trigger (tick route recommends every minute; production could differ)
-- Timeout/retry semantics (these are defined by the runner provider)
+## What is NOT yet directly verified (blocker)
+
+The following remain **unverified** without separate production infrastructure inspection:
+
+- Exact trigger provider (external uptime/cron service vs out-of-band config)
+- Exact tick cadence
+- Authentication header configuration in the trigger
+- Timeout/retry/overlap behavior of the trigger runner
 
 ## Operational dependency for B4
 
