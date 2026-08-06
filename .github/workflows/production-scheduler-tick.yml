@@ -1,4 +1,4 @@
-name: Scheduler Tick Trigger
+name: Production Scheduler Tick
 
 on:
   workflow_dispatch: {}

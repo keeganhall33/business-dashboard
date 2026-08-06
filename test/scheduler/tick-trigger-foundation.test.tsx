@@ -13,13 +13,27 @@ function makeRequest(headers: Record<string, string>) {
 }
 
 test("governed tick trigger workflow exists and runs every five minutes", () => {
-  const workflowPath = path.resolve(process.cwd(), ".github/workflows/scheduler-tick.yml");
+  const workflowsDir = path.resolve(process.cwd(), ".github/workflows");
+  const workflowFiles = fs
+    .readdirSync(workflowsDir)
+    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+    .filter((name) => name.includes("scheduler") && name.includes("tick"));
+
+  // Exactly one scheduled tick workflow should exist.
+  assert.deepEqual(workflowFiles, ["production-scheduler-tick.yml"]);
+
+  const workflowPath = path.join(workflowsDir, "production-scheduler-tick.yml");
   const raw = fs.readFileSync(workflowPath, "utf8");
 
-  // Keep parsing lightweight: assert the exact cron expression and the correct route fragment.
-  assert.match(raw, /name:\s*Scheduler Tick Trigger/);
+  // Must include manual dispatch + five-minute schedule, and target the tick route.
+  assert.match(raw, /name:\s*Production Scheduler Tick/);
+  assert.match(raw, /workflow_dispatch:\s*\{\}/);
   assert.match(raw, /cron:\s*"\*\/5 \* \* \* \*"/);
   assert.match(raw, /\/api\/scheduler\/tick/);
+
+  // Must NOT include push/pull_request triggers.
+  assert.ok(!/\n\s*push:\s*/.test(raw));
+  assert.ok(!/\n\s*pull_request:\s*/.test(raw));
 });
 
 test("scheduler auth: Authorization Bearer <SCHEDULER_SECRET> is accepted", async () => {
