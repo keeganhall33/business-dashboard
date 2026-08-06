@@ -1,7 +1,7 @@
 import "@/lib/server-only";
 
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
-import { B4_HEARTBEAT_JOB_KEY } from "@/scripts/b4-activate-recurring-internal-orchestration";
+import { B4_HEARTBEAT_JOB_KEY } from "./b4-activate-recurring-internal-orchestration";
 
 export type B4DisableDeps = {
   nowIso: () => string;
