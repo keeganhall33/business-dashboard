@@ -5,16 +5,14 @@ begin;
 
 do $$
 declare
-  v_job_id integer;
+  v_job record;
 begin
-  select jobid into v_job_id
-  from cron.job
-  where jobname = 'production-scheduler-tick-v1'
-  limit 1;
-
-  if v_job_id is not null then
-    perform cron.unschedule(v_job_id);
-  end if;
+  -- Idempotent: unschedule all matching canonical jobs if present.
+  for v_job in (
+    select jobid from cron.job where jobname = 'production-scheduler-tick-v1'
+  ) loop
+    perform cron.unschedule(v_job.jobid);
+  end loop;
 end;
 $$;
 
