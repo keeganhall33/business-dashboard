@@ -4,9 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const MIGRATION = "supabase/migrations/20260806100500_b4_supabase_cron_scheduler_tick.sql";
+const TIMEOUT_FIX = "supabase/migrations/20260806160500_scheduler_tick_pg_net_timeout.sql";
 
 test("b4.3 supabase cron migration: secure cron trigger contract", () => {
   const raw = fs.readFileSync(path.resolve(process.cwd(), MIGRATION), "utf8");
+  const timeoutFix = fs.readFileSync(path.resolve(process.cwd(), TIMEOUT_FIX), "utf8");
 
   // Identity + cadence + route.
   assert.match(raw, /production-scheduler-tick-v1/);
@@ -42,4 +44,8 @@ test("b4.3 supabase cron migration: secure cron trigger contract", () => {
   // Async HTTP observability: capture request id from net.http_post.
   assert.match(raw, /select net\.http_post\(/);
   assert.match(raw, /into v_request_id/);
+
+  // Timeout override must be explicit and bounded (pg_net default is 5000ms).
+  assert.match(timeoutFix, /v_timeout_ms\s+integer\s*:=\s*15000/);
+  assert.match(timeoutFix, /timeout_milliseconds\s*:=\s*v_timeout_ms/);
 });
