@@ -3302,8 +3302,18 @@ declare
 
   v_next_hour timestamptz;
   v_next_midnight timestamptz;
+
+  v_jwt_role text;
+  v_claims text;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
 
@@ -3755,8 +3765,18 @@ declare
   v_unknown_enabled_jobs integer := 0;
   v_pre jsonb;
   v_post jsonb;
+
+  v_jwt_role text;
+  v_claims text;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
 

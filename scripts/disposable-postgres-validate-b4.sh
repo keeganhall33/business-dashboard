@@ -11,6 +11,7 @@ B2="$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
 B3="$MIG_DIR/20260805_external_intelligence_phase_b3_internal_activation.sql"
 B4="$MIG_DIR/20260805_external_intelligence_phase_b4_recurring_activation.sql"
 B4RB="$MIG_DIR/20260805_external_intelligence_phase_b4_recurring_activation.rollback.sql"
+FIX="$MIG_DIR/20260806152500_external_intelligence_b4_rpc_authz_fix.sql"
 
 TMP="${TMPDIR:-/tmp}/b4pg-$$"
 mkdir -p "$TMP"
@@ -43,6 +44,7 @@ psql_base=(psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$PGPORT" -U "$(whoami)" -d b
 "${psql_base[@]}" -c "do \$\$ begin create role anon; exception when duplicate_object then null; end \$\$;" >/dev/null
 "${psql_base[@]}" -c "do \$\$ begin create role authenticated; exception when duplicate_object then null; end \$\$;" >/dev/null
 "${psql_base[@]}" -c "do \$\$ begin create role service_role; exception when duplicate_object then null; end \$\$;" >/dev/null
+"${psql_base[@]}" -c "do \$\$ begin create role postgres; exception when duplicate_object then null; end \$\$;" >/dev/null
 
 apply "$A5"
 apply "$A61"
@@ -50,13 +52,29 @@ apply "$B2"
 apply "$B3"
 apply "$B4"
 
+# Apply authz fix (service_role JWT semantics) and prove rerun safety.
+apply "$FIX"
+
 # Rerun safety
 apply "$B4"
+apply "$FIX"
 
 echo "activate: dormant state"
 ACT1="a1"
 HASH="1111111111111111111111111111111111111111111111111111111111111111"
-OUT1="$(${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
+
+echo "activate: unauthorized call (no jwt role) fails closed and does not mutate"
+set +e
+${psql_base[@]} -tA -c "select result_code from public.activate_external_intelligence_internal_orchestration_v1('unauth','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" >/dev/null 2>&1
+UNAUTH_CODE=$?
+set -e
+[ $UNAUTH_CODE -ne 0 ]
+C0A="$(${psql_base[@]} -tA -c "select count(*) from public.scheduled_jobs where job_key='external-intelligence-heartbeat';")"
+[ "$C0A" = "0" ]
+C0B="$(${psql_base[@]} -tA -c "select count(*) from public.internal_orchestration_jobs_v1 where environment='production' and enabled=true;" )"
+[ "$C0B" = "0" ]
+
+OUT1="$(${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
 [ "$OUT1" = "activated" ]
 
 # exactly one scheduled row
@@ -72,35 +90,35 @@ NEXT1="$(${psql_base[@]} -tA -c "select next_run_at from public.scheduled_jobs w
 
 echo "activate: identical active configuration => idempotent replay"
 ACT2="a2"
-OUT2="$(${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT2}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
+OUT2="$(${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT2}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
 [ "$OUT2" = "idempotent_replay" ]
 NEXT2="$(${psql_base[@]} -tA -c "select next_run_at from public.scheduled_jobs where job_key='external-intelligence-heartbeat';")"
 [ "$NEXT1" = "$NEXT2" ]
 
 echo "activate: conflicting configuration fails closed"
 set +e
-${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.activate_external_intelligence_internal_orchestration_v1('a3','v1','2222222222222222222222222222222222222222222222222222222222222222','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" >/dev/null 2>&1
+${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.activate_external_intelligence_internal_orchestration_v1('a3','v1','2222222222222222222222222222222222222222222222222222222222222222','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" >/dev/null 2>&1
 CONFLICT_CODE=$?
 set -e
 [ $CONFLICT_CODE -ne 0 ]
 
 echo "activate: duplicate activation_id rejected"
 set +e
-${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" >/dev/null 2>&1
+${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.activate_external_intelligence_internal_orchestration_v1('${ACT1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" >/dev/null 2>&1
 DUP_CODE=$?
 set -e
 [ $DUP_CODE -ne 0 ]
 
 echo "activate: partial state repaired (one job disabled)"
 ${psql_base[@]} -c "update public.internal_orchestration_jobs_v1 set enabled=false where job_name='milestone-horizon-scan-v1';" >/dev/null
-OUTP="$(${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.activate_external_intelligence_internal_orchestration_v1('a4','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
+OUTP="$(${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.activate_external_intelligence_internal_orchestration_v1('a4','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
 [ "$OUTP" = "idempotent_replay" ]
 C3="$(${psql_base[@]} -tA -c "select count(*) from public.internal_orchestration_jobs_v1 where environment='production' and enabled=true;" )"
 [ "$C3" = "4" ]
 
 echo "disable: atomic"
 DIS1="d1"
-OUTD1="$(${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.disable_external_intelligence_internal_orchestration_v1('${DIS1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
+OUTD1="$(${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.disable_external_intelligence_internal_orchestration_v1('${DIS1}','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
 [ "$OUTD1" = "disabled" ]
 
 C4="$(${psql_base[@]} -tA -c "select count(*) from public.scheduled_jobs where job_key='external-intelligence-heartbeat' and is_active=true;" )"
@@ -109,11 +127,12 @@ C5="$(${psql_base[@]} -tA -c "select count(*) from public.internal_orchestration
 [ "$C5" = "0" ]
 
 echo "disable: idempotent replay when already disabled"
-OUTD2="$(${psql_base[@]} -tA -c "set session authorization service_role; select result_code from public.disable_external_intelligence_internal_orchestration_v1('d2','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
+OUTD2="$(${psql_base[@]} -tA -c "select set_config('request.jwt.claim.role','service_role', true); select result_code from public.disable_external_intelligence_internal_orchestration_v1('d2','v1','${HASH}','production','tester',now(),'owner','policy','ibjsjosplgbqevmnvvpf');" | tail -n 1)"
 [ "$OUTD2" = "idempotent_replay" ]
 
 echo "rollback + reapply"
 apply "$B4RB"
 apply "$B4"
+apply "$FIX"
 
 echo OK
