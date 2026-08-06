@@ -1,25 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-async function loadContracts() {
-  const mod = (await import("@/lib/external-intelligence/milestones/contracts")) as unknown as {
-    computeMilestoneCalendarHash?: Function;
-    parseSportsMilestoneCalendar?: Function;
-    default?: {
-      computeMilestoneCalendarHash?: Function;
-      parseSportsMilestoneCalendar?: Function;
-    };
-  };
-  const compute = mod.computeMilestoneCalendarHash ?? mod.default?.computeMilestoneCalendarHash;
-  const parse = mod.parseSportsMilestoneCalendar ?? mod.default?.parseSportsMilestoneCalendar;
-  if (typeof compute !== "function" || typeof parse !== "function") {
+import * as contractsMod from "@/lib/external-intelligence/milestones/contracts";
+
+type ContractsApi = {
+  computeMilestoneCalendarHash: (input: unknown) => string;
+  parseSportsMilestoneCalendar: (input: unknown) => unknown;
+};
+
+function getContracts(): ContractsApi {
+  const maybeDefault = (contractsMod as unknown as { default?: unknown }).default;
+  const api = (maybeDefault ?? contractsMod) as unknown as Partial<ContractsApi>;
+  if (typeof api.computeMilestoneCalendarHash !== "function" || typeof api.parseSportsMilestoneCalendar !== "function") {
     throw new Error("missing_contract_exports");
   }
-  return { compute, parse };
+  return api as ContractsApi;
 }
 
-test("SportsMilestoneCalendar: empty milestones array is accepted (dormant production)", async () => {
-  const { compute, parse } = await loadContracts();
+test("SportsMilestoneCalendar: empty milestones array is accepted (dormant production)", () => {
+  const { computeMilestoneCalendarHash: compute, parseSportsMilestoneCalendar: parse } = getContracts();
   const base = {
     schema_version: "sports_milestone_calendar_v1" as const,
     calendar_version: "production",
@@ -35,8 +34,8 @@ test("SportsMilestoneCalendar: empty milestones array is accepted (dormant produ
   assert.equal(parsed.milestones.length, 0);
 });
 
-test("SportsMilestoneCalendar: milestones field is required and must be an array", async () => {
-  const { compute, parse } = await loadContracts();
+test("SportsMilestoneCalendar: milestones field is required and must be an array", () => {
+  const { computeMilestoneCalendarHash: compute, parseSportsMilestoneCalendar: parse } = getContracts();
   const base = {
     schema_version: "sports_milestone_calendar_v1" as const,
     calendar_version: "production",
@@ -64,8 +63,8 @@ test("SportsMilestoneCalendar: milestones field is required and must be an array
   });
 });
 
-test("SportsMilestoneCalendar: hash mismatch is rejected (recomputed, not shape-only)", async () => {
-  const { parse } = await loadContracts();
+test("SportsMilestoneCalendar: hash mismatch is rejected (recomputed, not shape-only)", () => {
+  const { parseSportsMilestoneCalendar: parse } = getContracts();
   assert.throws(() => {
     parse({
       schema_version: "sports_milestone_calendar_v1",
