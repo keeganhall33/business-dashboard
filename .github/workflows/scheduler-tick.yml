@@ -1,7 +1,7 @@
 name: Scheduler Tick Trigger
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
     - cron: "*/5 * * * *" # wake the scheduler every five minutes
 
