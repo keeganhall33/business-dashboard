@@ -14,20 +14,27 @@ function makeRequest(headers: Record<string, string>) {
 
 test("governed tick trigger workflow exists and runs every five minutes", () => {
   const workflowsDir = path.resolve(process.cwd(), ".github/workflows");
-  const workflowFiles = fs
-    .readdirSync(workflowsDir)
-    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
-    .filter((name) => name.includes("scheduler") && name.includes("tick"));
+  const workflowFiles = fs.readdirSync(workflowsDir).filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"));
 
-  // Exactly one scheduled tick workflow should exist.
-  assert.deepEqual(workflowFiles, ["production-scheduler-tick.yml"]);
+  const matches: string[] = [];
+  for (const file of workflowFiles) {
+    const raw = fs.readFileSync(path.join(workflowsDir, file), "utf8");
+    const hasTickPath = raw.includes("/api/scheduler/tick");
+    const hasFiveMinuteCron = /cron:\s*"\*\/5 \* \* \* \*"/.test(raw);
+    if (hasTickPath && hasFiveMinuteCron) {
+      matches.push(file);
+    }
+  }
 
-  const workflowPath = path.join(workflowsDir, "production-scheduler-tick.yml");
+  // Exactly one five-minute scheduler tick trigger workflow should exist.
+  assert.deepEqual(matches, ["production-scheduler-heartbeat.yml"]);
+
+  const workflowPath = path.join(workflowsDir, "production-scheduler-heartbeat.yml");
   const raw = fs.readFileSync(workflowPath, "utf8");
 
   // Must include manual dispatch + five-minute schedule, and target the tick route.
-  assert.match(raw, /name:\s*Production Scheduler Tick/);
-  assert.match(raw, /workflow_dispatch:\s*\{\}/);
+  assert.match(raw, /name:\s*Production Scheduler Heartbeat/);
+  assert.match(raw, /workflow_dispatch:\s*$/m);
   assert.match(raw, /cron:\s*"\*\/5 \* \* \* \*"/);
   assert.match(raw, /\/api\/scheduler\/tick/);
 
