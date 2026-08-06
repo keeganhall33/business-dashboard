@@ -302,7 +302,8 @@ test("b3.3 operator validator: milestone handler succeeded with zero counts is a
   process.env.OPERATOR_ENVIRONMENT = "production";
 
   const deps = makeDeps({
-    validateInvocation: () => ({
+    validateInvocation: () =>
+      ({
       schema_version: "manual_heartbeat_invocation_v1",
       invocation_id: "inv-milestone-zero",
       environment: "production",
@@ -313,7 +314,7 @@ test("b3.3 operator validator: milestone handler succeeded with zero counts is a
       expires_at: "2026-08-06T00:00:00.000Z",
       configuration_version: "x",
       content_hash: "h"
-    }) as any,
+    }) satisfies ManualHeartbeatInvocationV1,
     // Force no pre-existing high alerts.
     getUnresolvedHighSeverityOrchestrationAlerts: async () => [],
     runHeartbeat: async () => ({
