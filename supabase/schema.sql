@@ -2791,10 +2791,10 @@ begin
         schedule_policy_version = in_mode,
         next_run_at = now(),
         updated_at = now()
-    where schedule_id = 'internal.lifecycle_probe:production'
-      and source_id = 'internal.lifecycle_probe'
-      and environment = 'production'
-      and collection_mode = 'internal/no-network';
+    where public.external_collection_schedules_v1.schedule_id = 'internal.lifecycle_probe:production'
+      and public.external_collection_schedules_v1.source_id = 'internal.lifecycle_probe'
+      and public.external_collection_schedules_v1.environment = 'production'
+      and public.external_collection_schedules_v1.collection_mode = 'internal/no-network';
 
   v_key := 'b5.lifecycle_probe.enable:' || extract(epoch from now())::bigint::text;
   insert into public.system_state(key, value_json, updated_at)
@@ -2841,18 +2841,18 @@ begin
         lease_acquired_at = null,
         lease_expires_at = null,
         updated_at = now()
-    where schedule_id = 'internal.lifecycle_probe:production'
-      and source_id = 'internal.lifecycle_probe'
-      and status in ('queued','retry_wait','leased','running');
+    where public.external_collection_jobs_v1.schedule_id = 'internal.lifecycle_probe:production'
+      and public.external_collection_jobs_v1.source_id = 'internal.lifecycle_probe'
+      and public.external_collection_jobs_v1.status in ('queued','retry_wait','leased','running');
 
   update public.external_collection_schedules_v1
     set enabled = false,
         next_run_at = null,
         updated_at = now()
-    where schedule_id = 'internal.lifecycle_probe:production'
-      and source_id = 'internal.lifecycle_probe'
-      and environment = 'production'
-      and collection_mode = 'internal/no-network';
+    where public.external_collection_schedules_v1.schedule_id = 'internal.lifecycle_probe:production'
+      and public.external_collection_schedules_v1.source_id = 'internal.lifecycle_probe'
+      and public.external_collection_schedules_v1.environment = 'production'
+      and public.external_collection_schedules_v1.collection_mode = 'internal/no-network';
 
   v_key := 'b5.lifecycle_probe.disable:' || extract(epoch from now())::bigint::text;
   insert into public.system_state(key, value_json, updated_at)

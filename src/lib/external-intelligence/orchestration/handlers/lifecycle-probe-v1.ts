@@ -7,7 +7,6 @@ import { heartbeat, advanceScheduleNextRun } from "@/lib/external-intelligence/o
 import type { ScheduleRow } from "@/lib/external-intelligence/orchestration/heartbeat";
 import { leaseNextExternalCollectionJobV1, releaseExternalCollectionJobLeaseV1 } from "@/lib/external-intelligence/orchestration/job-leasing";
 import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestration/job-retry-lifecycle";
-import { withNoNetwork } from "@/lib/external-intelligence/orchestration/no-network";
 
 export const LIFECYCLE_PROBE_SOURCE_ID = "internal.lifecycle_probe" as const;
 export const LIFECYCLE_PROBE_SCHEDULE_ID = "internal.lifecycle_probe:production" as const;
@@ -173,26 +172,34 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
 
   const mode = parseProbeMode(String(schedule.schedule_policy_version));
 
-  const execResult = await withNoNetwork(async () => {
-    // Deterministic internal computation.
-    const digest = createHash("sha256").update(`${leased.job_id}|${schedule.schedule_policy_version}`).digest("hex");
+  // Deterministic internal computation.
+  // NOTE: We do not monkeypatch process-global networking primitives.
+  // The probe is made safe by structural dependency boundaries + tests.
+  const digest = createHash("sha256").update(`${leased.job_id}|${schedule.schedule_policy_version}`).digest("hex");
 
-    type ErrorWithCode = Error & { error_code?: string };
+  type ErrorWithCode = Error & { error_code?: string };
 
-    if (mode === "synthetic_retryable_failure") {
-      const error: ErrorWithCode = new Error(`synthetic_failure:transient_network:${digest.slice(0, 12)}`);
-      error.error_code = "transient_network";
-      throw error;
+  const execResult:
+    | { ok: true; value: { ok: true; digest_prefix: string } }
+    | { ok: false; error: unknown } = (() => {
+    try {
+      if (mode === "synthetic_retryable_failure") {
+        const error: ErrorWithCode = new Error(`synthetic_failure:transient_network:${digest.slice(0, 12)}`);
+        error.error_code = "transient_network";
+        throw error;
+      }
+
+      if (mode === "synthetic_permanent_failure") {
+        const error: ErrorWithCode = new Error(`synthetic_failure:invalid_configuration:${digest.slice(0, 12)}`);
+        error.error_code = "invalid_configuration";
+        throw error;
+      }
+
+      return { ok: true, value: { ok: true as const, digest_prefix: digest.slice(0, 12) } };
+    } catch (error) {
+      return { ok: false, error };
     }
-
-    if (mode === "synthetic_permanent_failure") {
-      const error: ErrorWithCode = new Error(`synthetic_failure:invalid_configuration:${digest.slice(0, 12)}`);
-      error.error_code = "invalid_configuration";
-      throw error;
-    }
-
-    return { ok: true as const, digest_prefix: digest.slice(0, 12) };
-  });
+  })();
 
   const completedAt = new Date().toISOString();
 
