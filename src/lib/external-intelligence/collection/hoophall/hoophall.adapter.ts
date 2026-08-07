@@ -19,15 +19,16 @@ async function fetchBoundedHtml(input: {
   fetch: typeof fetch;
   timeout_ms: number;
   max_bytes: number;
+  max_redirects: number;
 }): Promise<FetchResult> {
   const u = requireHttpsAndHost(input.url);
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), input.timeout_ms);
   try {
-    // Deny redirects by inspecting 3xx manually.
     const res = await input.fetch(u.toString(), {
       method: "GET",
+      // We keep redirects manual and perform a single, explicitly validated hop ourselves.
       redirect: "manual",
       signal: ac.signal,
       headers: {
@@ -36,14 +37,29 @@ async function fetchBoundedHtml(input: {
       }
     });
 
-    // If redirect, fail closed unless same-host https and no chain.
+    // Allow exactly one canonical same-host redirect when configured.
     if (res.status >= 300 && res.status < 400) {
+      if (input.max_redirects <= 0) {
+        const loc = res.headers.get("location");
+        if (!loc) throw new Error("hoophall_network_blocked:redirect_missing_location");
+        throw new Error("hoophall_network_blocked:redirect_not_allowed");
+      }
+
       const loc = res.headers.get("location");
       if (!loc) throw new Error("hoophall_network_blocked:redirect_missing_location");
       const target = new URL(loc, u.toString());
       requireHttpsAndHost(target.toString());
-      // We refuse to follow redirects in B6 to avoid chains.
-      throw new Error("hoophall_network_blocked:redirect_not_allowed");
+
+      if (target.toString() === u.toString()) {
+        throw new Error("hoophall_network_blocked:redirect_loop");
+      }
+
+      // One-hop only: follow once with max_redirects=0.
+      return fetchBoundedHtml({
+        ...input,
+        url: target.toString(),
+        max_redirects: 0
+      });
     }
 
     if (res.status !== 200) throw new Error(`hoophall_http_error:${res.status}`);
@@ -96,7 +112,9 @@ export async function collectHoophallNewsroomV1(input: {
       url: HOOPHALL_NEWSROOM_URL,
       fetch: input.fetch,
       timeout_ms: 10_000,
-      max_bytes: 1_500_000
+      max_bytes: 1_500_000,
+      // Live evidence: https://www.hoophall.com/news/ may 301 to https://www.hoophall.com/news.
+      max_redirects: 1
     });
 
     const listing = parseHoophallNewsroomListing({ url: listingRes.final_url, html: listingRes.body_utf8 });
@@ -116,7 +134,13 @@ export async function collectHoophallNewsroomV1(input: {
       const needsDetail = !(item.listing_description ?? "").match(/\b\w+\s+\d{1,2},\s+\d{4}\b/);
       if (!needsDetail) continue;
       requireHttpsAndHost(item.url);
-      const detailRes = await fetchBoundedHtml({ url: item.url, fetch: input.fetch, timeout_ms: 10_000, max_bytes: 1_500_000 });
+      const detailRes = await fetchBoundedHtml({
+        url: item.url,
+        fetch: input.fetch,
+        timeout_ms: 10_000,
+        max_bytes: 1_500_000,
+        max_redirects: 1
+      });
       const parsed = parseHoophallArticleDetail({ url: detailRes.final_url, html: detailRes.body_utf8 });
       details.push({
         url: parsed.url,

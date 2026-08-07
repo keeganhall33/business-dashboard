@@ -31,7 +31,74 @@ test("b6 hoophall: rejects wrong host and refuses redirects", async () => {
 
   assert.equal(out.ok, false);
   const err = (out as { ok: false; error: string }).error;
-  assert.ok(String(err).startsWith("hoophall_network_blocked:"));
+  assert.ok(String(err).includes("wrong_host"));
+});
+
+test("b6 hoophall: allows one same-host canonical redirect and revalidates final URL", async () => {
+  const listingBody = `<div class="news-feed-list"><div class="news-feed-item-wrapper"><span class="overline-title">Friday, August 07, 2026</span><h5 class="article-title"><a href="https://www.hoophall.com/news/item-1">Item</a></h5><div class="article-description">July 15, 2026</div></div></div></div></div>`;
+  let call = 0;
+  const fetch: MockFetch = async () => {
+    call += 1;
+    if (call === 1) {
+      return mockResponse({ status: 301, headers: { location: "https://www.hoophall.com/news" }, body: "" });
+    }
+    return mockResponse({ status: 200, headers: { "content-type": "text/html" }, body: listingBody });
+  };
+
+  const out = await collectHoophallNewsroomV1({
+    now_iso: "2026-08-07T00:00:00.000Z",
+    // @ts-expect-error fetch type mismatch is acceptable in test: we inject a MockFetch.
+    fetch,
+    detail_fetch_cap: 0
+  });
+
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.equal(out.listing.items.length, 1);
+});
+
+test("b6 hoophall: second redirect fails closed", async () => {
+  let call = 0;
+  const fetch: MockFetch = async () => {
+    call += 1;
+    if (call === 1) {
+      return mockResponse({ status: 301, headers: { location: "https://www.hoophall.com/news" }, body: "" });
+    }
+    return mockResponse({ status: 302, headers: { location: "https://www.hoophall.com/news" }, body: "" });
+  };
+
+  const out = await collectHoophallNewsroomV1({
+    now_iso: "2026-08-07T00:00:00.000Z",
+    // @ts-expect-error fetch type mismatch is acceptable in test: we inject a MockFetch.
+    fetch,
+    detail_fetch_cap: 0
+  });
+
+  assert.equal(out.ok, false);
+  const err = (out as { ok: false; error: string }).error;
+  assert.ok(err.includes("redirect"));
+});
+
+test("b6 hoophall: redirect loop fails closed", async () => {
+  let call = 0;
+  const fetch: MockFetch = async () => {
+    call += 1;
+    if (call === 1) {
+      return mockResponse({ status: 301, headers: { location: "https://www.hoophall.com/news/" }, body: "" });
+    }
+    return mockResponse({ status: 200, headers: { "content-type": "text/html" }, body: "<div class=\"news-feed-list\"></div>" });
+  };
+
+  const out = await collectHoophallNewsroomV1({
+    now_iso: "2026-08-07T00:00:00.000Z",
+    // @ts-expect-error test injects MockFetch; type mismatch is expected.
+    fetch,
+    detail_fetch_cap: 0
+  });
+
+  assert.equal(out.ok, false);
+  const err = (out as { ok: false; error: string }).error;
+  assert.ok(err.includes("redirect_loop"));
 });
 
 test("b6 hoophall: enforces response size cap", async () => {
