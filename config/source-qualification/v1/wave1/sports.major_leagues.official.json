@@ -3,7 +3,7 @@
   "source_id": "sports.major_leagues.official",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "public_web",
   "official_documentation_refs": [
@@ -57,5 +57,5 @@
       "url": "https://www.mlb.com/press-release"
     }
   ],
-  "qualification_content_hash": "dae1ef00daeb7fb7fda1f354c6ec7dbcbb7764269f1793a036205a90d07b4711"
+  "qualification_content_hash": "e3194ad3c0cafc0e47ca915446bfd4cba5bfe40771bf1b10157f7e0ab2d58e17"
 }

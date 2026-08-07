@@ -16,6 +16,7 @@ import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchest
 import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external-intelligence/orchestration/operational-health";
 import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/orchestration/timeout";
 import { runExternalLifecycleProbeLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/lifecycle-probe-v1";
+import { runHoophallCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/hoophall-collection-v1";
 
 type HeartbeatDeps = {
   withJobRun: typeof withJobRun;
@@ -33,6 +34,7 @@ type HeartbeatDeps = {
   runWithTimeout: typeof runWithTimeout;
 
   runLifecycleProbe: typeof runExternalLifecycleProbeLaneV1;
+  runHoophall: typeof runHoophallCollectionLaneV1;
 
   handlers: (input: { nowIso: string; nowYmd: string }) => Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>>;
 };
@@ -53,6 +55,7 @@ const DEFAULT_DEPS: HeartbeatDeps = {
   runWithTimeout,
 
   runLifecycleProbe: runExternalLifecycleProbeLaneV1,
+  runHoophall: runHoophallCollectionLaneV1,
 
   handlers: ({ nowIso, nowYmd }) => ({
     "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
@@ -219,6 +222,14 @@ export async function runExternalIntelligenceHeartbeatV1WithDeps(overrides?: Par
           results["lifecycle-probe-v1"] = probeOut;
         } else {
           results["lifecycle-probe-v1"] = { status: "skipped", reason: "missing_supabase_env" };
+        }
+
+        // Phase B6: first real source (Hoophall). Remains disabled by default; no production activation here.
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          const out = await deps.runHoophall({ now_iso: nowIso });
+          results["hoophall-collection-v1"] = out;
+        } else {
+          results["hoophall-collection-v1"] = { status: "skipped", reason: "missing_supabase_env" };
         }
 
         return {

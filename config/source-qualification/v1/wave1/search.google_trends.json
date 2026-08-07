@@ -3,7 +3,7 @@
   "source_id": "search.google_trends",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "official_api",
   "official_documentation_refs": [
@@ -59,5 +59,5 @@
       "url": "https://developers.google.com/search/apis/trends"
     }
   ],
-  "qualification_content_hash": "216c81aeef3b6cede09e30b6a65d32b679a82faa8eb5d781a3dbb6a6c3eb4605"
+  "qualification_content_hash": "e45a80205afaccbea6972afbae3667a5fc51d0e9d3b213432f32d01d3f4f59fb"
 }

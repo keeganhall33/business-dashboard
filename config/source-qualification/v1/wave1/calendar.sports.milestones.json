@@ -3,7 +3,7 @@
   "source_id": "calendar.sports.milestones",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "manual_review",
   "official_documentation_refs": [
@@ -58,5 +58,5 @@
       "url": "https://github.com/keeganhall33/business-dashboard"
     }
   ],
-  "qualification_content_hash": "0e66fee2fd71cc3fd632e75a7a2789a87aa94eca6f99b011005854f567584838"
+  "qualification_content_hash": "04f878541262a460606d39af73e1e19f6eb8a2a7e42617a9f03ae222983f2902"
 }

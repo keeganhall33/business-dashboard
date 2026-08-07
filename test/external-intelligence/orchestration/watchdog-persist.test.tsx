@@ -12,7 +12,7 @@ class FakeRepo {
   }
 }
 
-test("watchdog persistence: evaluates all 24 sources and upserts once", async () => {
+test("watchdog persistence: evaluates all sources and upserts once", async () => {
   const { file: registry } = loadProductionSourceRegistryV1();
   const ids = registry.sources.map((s) => s.source_id);
 
@@ -29,7 +29,7 @@ test("watchdog persistence: evaluates all 24 sources and upserts once", async ()
     repo: repo as unknown as ExternalCollectionHealthRepository
   });
 
-  assert.equal(records.length, 24);
+  assert.equal(records.length, 25);
   assert.equal(repo.writes.length, 1);
-  assert.equal(repo.writes[0].length, 24);
+  assert.equal(repo.writes[0].length, 25);
 });

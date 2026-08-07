@@ -3,7 +3,7 @@
   "source_id": "ops.shipping.alerts",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "manual_review",
   "official_documentation_refs": [
@@ -66,5 +66,5 @@
       "url": "https://developers.usps.com/"
     }
   ],
-  "qualification_content_hash": "c1245b4aa584f1da31f65b7bdacc07b5f25684924b0e57378dafc8d68afbcf9c"
+  "qualification_content_hash": "214971712ddb16540bf9b5af7393ef432e47b973f12a8e28a5b9180282c433bf"
 }

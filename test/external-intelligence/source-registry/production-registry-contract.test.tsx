@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { loadProductionSourceRegistryV1 } from "@/lib/external-intelligence/config/load-production-source-registry";
 
-test("production source registry: all 24 canonical source ids exist exactly once", () => {
+test("production source registry: all canonical source ids exist exactly once", () => {
   const { file, registry_hash } = loadProductionSourceRegistryV1();
 
   assert.equal(file.schema_version, "production_source_registry_v1");
@@ -12,14 +12,15 @@ test("production source registry: all 24 canonical source ids exist exactly once
   assert.match(registry_hash, /^[a-f0-9]{64}$/);
 
   const ids = file.sources.map((s) => s.source_id);
-  assert.equal(ids.length, 24);
+  assert.equal(ids.length, 25);
 
   const unique = new Set(ids);
-  assert.equal(unique.size, 24);
+  assert.equal(unique.size, 25);
 
   const expected = [
     "sports.major_leagues.official",
     "sports.ncaa.official",
+    "sports.basketball.hoophall.official",
     "sports_business.sportico",
     "sports_business.boardroom",
     "sports_business.front_office_sports",
