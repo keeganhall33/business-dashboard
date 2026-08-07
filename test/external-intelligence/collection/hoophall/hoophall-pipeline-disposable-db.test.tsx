@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
 
 import { createDisposableDb } from "../../persistence/supabase/_rpc-disposable-db";
 import { computeMilestoneCalendarHash, computeMilestoneContentHash, parseSportsMilestoneCalendar } from "@/lib/external-intelligence/milestones/contracts";
@@ -188,9 +189,7 @@ test("b6 hoophall pipeline: EvidenceReference -> Claim -> SportsMilestone persis
   );
 
   // Horizon engine consumption proof (contract-level): calendar parses and produces alerts when within horizon.
-  const policyJson = JSON.parse(
-    require("node:fs").readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8")
-  );
+  const policyJson = JSON.parse(fs.readFileSync("config/milestones/v1/alert_lead_time_policy.v1.json", "utf8"));
   const policy = parseAlertLeadTimePolicy(policyJson);
   const calendar = parseSportsMilestoneCalendar({
     schema_version: "sports_milestone_calendar_v1",

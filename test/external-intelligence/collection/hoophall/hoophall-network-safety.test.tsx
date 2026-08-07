@@ -93,12 +93,12 @@ test("b6 hoophall: timeout surfaces as hoophall_timeout", async () => {
   const fetch: MockFetch = async () => {
     // Simulate an AbortError thrown by fetch.
     const e = new Error("aborted");
-    (e as any).name = "AbortError";
+    (e as Error & { name: string }).name = "AbortError";
     throw e;
   };
   const out = await collectHoophallNewsroomV1({
     now_iso: "2026-08-07T00:00:00.000Z",
-    // @ts-expect-error
+    // @ts-expect-error fetch type mismatch is acceptable in test: we inject a MockFetch.
     fetch,
     detail_fetch_cap: 1
   });
