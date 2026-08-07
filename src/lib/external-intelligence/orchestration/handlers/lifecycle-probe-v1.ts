@@ -71,7 +71,7 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
 
   if (schedule.environment !== "production") return { status: "skipped", reason: "wrong_environment" } as const;
   if (schedule.source_id !== LIFECYCLE_PROBE_SOURCE_ID) return { status: "blocked", reason: "probe_identity_mismatch" } as const;
-  if (String((schedule as any).collection_mode) !== "internal/no-network") {
+  if (String(schedule.collection_mode) !== "internal/no-network") {
     return { status: "blocked", reason: "probe_collection_mode_invalid" } as const;
   }
 
@@ -117,15 +117,15 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
       run_after: job.run_after,
       status: "queued",
       attempt_count: 0,
-      maximum_attempts: Number((schedule as any).maximum_attempts ?? 3) || 3,
+      maximum_attempts: Number(schedule.maximum_attempts ?? 3) || 3,
       input_fingerprint: job.input_fingerprint,
       idempotency_key: job.idempotency_key,
-      concurrency_key: String((schedule as any).concurrency_key ?? "internal:lifecycle_probe")
+      concurrency_key: String(schedule.concurrency_key ?? "internal:lifecycle_probe")
     });
 
     // Idempotent insert: ignore conflicts.
     if (insertError) {
-      const msg = String((insertError as any).message ?? "");
+      const msg = "message" in insertError ? String((insertError as { message: string }).message ?? "") : "";
       if (!msg.toLowerCase().includes("duplicate") && !msg.toLowerCase().includes("unique")) throw insertError;
     } else {
       enqueued += 1;
@@ -134,8 +134,18 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
 
   // Lease + run exactly one probe job.
   const leaseOwner = `probe:${process.pid}`;
+  const leaseClient = {
+    rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+      // supabase-js rpc returns a builder; awaiting yields { data, error }.
+      const res = await supabase.rpc(fn, args);
+      return {
+        data: (res.data as T | null) ?? null,
+        error: res.error ? { message: res.error.message } : null
+      };
+    }
+  };
   const leased = await leaseNextExternalCollectionJobV1({
-    client: supabase,
+    client: leaseClient,
     lease_owner: leaseOwner,
     lease_seconds: 60,
     caps: { global_limit: 1, per_concurrency_key_limit: 1 }
@@ -148,7 +158,7 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
 
   if (leased.source_id !== LIFECYCLE_PROBE_SOURCE_ID) {
     // Fail closed: never run unknown jobs.
-    await releaseExternalCollectionJobLeaseV1({ client: supabase, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "blocked" });
+    await releaseExternalCollectionJobLeaseV1({ client: leaseClient, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "blocked" });
     return { status: "blocked", reason: "leased_non_probe_job", job_id: leased.job_id } as const;
   }
 
@@ -167,15 +177,17 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
     // Deterministic internal computation.
     const digest = createHash("sha256").update(`${leased.job_id}|${schedule.schedule_policy_version}`).digest("hex");
 
+    type ErrorWithCode = Error & { error_code?: string };
+
     if (mode === "synthetic_retryable_failure") {
-      const error = new Error(`synthetic_failure:transient_network:${digest.slice(0, 12)}`);
-      (error as any).error_code = "transient_network";
+      const error: ErrorWithCode = new Error(`synthetic_failure:transient_network:${digest.slice(0, 12)}`);
+      error.error_code = "transient_network";
       throw error;
     }
 
     if (mode === "synthetic_permanent_failure") {
-      const error = new Error(`synthetic_failure:invalid_configuration:${digest.slice(0, 12)}`);
-      (error as any).error_code = "invalid_configuration";
+      const error: ErrorWithCode = new Error(`synthetic_failure:invalid_configuration:${digest.slice(0, 12)}`);
+      error.error_code = "invalid_configuration";
       throw error;
     }
 
@@ -193,7 +205,7 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
       .eq("lease_owner", leaseOwner);
     if (doneError) throw doneError;
 
-    await releaseExternalCollectionJobLeaseV1({ client: supabase, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "succeeded" });
+    await releaseExternalCollectionJobLeaseV1({ client: leaseClient, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "succeeded" });
 
     const { error: schedError } = await supabase
       .from("external_collection_schedules_v1")
@@ -206,7 +218,7 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
 
   // Failure path: apply canonical retry policy.
   const error = execResult.error;
-  const errorCode = String((error as any)?.error_code ?? "handler_timeout");
+  const errorCode = error instanceof Error && "error_code" in error ? String((error as { error_code?: string }).error_code ?? "handler_timeout") : "handler_timeout";
   const { data: jobRow, error: jobReadError } = await supabase
     .from("external_collection_jobs_v1")
     .select("attempt_count,maximum_attempts")
@@ -214,8 +226,9 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
     .maybeSingle();
   if (jobReadError) throw jobReadError;
 
-  const attempt_count = Number((jobRow as any)?.attempt_count ?? 0) + 1;
-  const maximum_attempts = Number((jobRow as any)?.maximum_attempts ?? 3);
+  const jr = (jobRow ?? null) as null | { attempt_count: number | null; maximum_attempts: number | null };
+  const attempt_count = Number(jr?.attempt_count ?? 0) + 1;
+  const maximum_attempts = Number(jr?.maximum_attempts ?? 3);
 
   const outcome = nextJobStateAfterFailure({
     now_iso: input.now_iso,
@@ -241,7 +254,7 @@ export async function runExternalLifecycleProbeLaneV1(input: { now_iso: string }
   if (failUpdateError) throw failUpdateError;
 
   await releaseExternalCollectionJobLeaseV1({
-    client: supabase,
+    client: leaseClient,
     job_id: leased.job_id,
     lease_owner: leaseOwner,
     new_status: outcome.next_status
