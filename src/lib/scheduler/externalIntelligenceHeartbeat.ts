@@ -15,6 +15,7 @@ import { InternalOrchestrationJobsRepository } from "@/lib/external-intelligence
 import { computeNextDueUtc, isDueUtc } from "@/lib/external-intelligence/orchestration/due";
 import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external-intelligence/orchestration/operational-health";
 import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/orchestration/timeout";
+import { runExternalLifecycleProbeLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/lifecycle-probe-v1";
 
 type HeartbeatDeps = {
   withJobRun: typeof withJobRun;
@@ -30,6 +31,8 @@ type HeartbeatDeps = {
   evaluateOperationalHealth: typeof evaluateInternalOrchestrationOperationalHealthV1;
 
   runWithTimeout: typeof runWithTimeout;
+
+  runLifecycleProbe: typeof runExternalLifecycleProbeLaneV1;
 
   handlers: (input: { nowIso: string; nowYmd: string }) => Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>>;
 };
@@ -48,6 +51,8 @@ const DEFAULT_DEPS: HeartbeatDeps = {
   evaluateOperationalHealth: evaluateInternalOrchestrationOperationalHealthV1,
 
   runWithTimeout,
+
+  runLifecycleProbe: runExternalLifecycleProbeLaneV1,
 
   handlers: ({ nowIso, nowYmd }) => ({
     "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
@@ -203,6 +208,17 @@ export async function runExternalIntelligenceHeartbeatV1WithDeps(overrides?: Par
             results[jobName] = { status: "failed", error: safeErrorSummary(e) };
             break;
           }
+        }
+
+        // Phase B5: governed external job lifecycle proof lane.
+        // This MUST be internal-only and MUST NOT perform any external network request.
+        // It is DB-governed via external_collection_schedules_v1 and disabled by default.
+        // Unit tests run without Supabase env vars; skip probe lane there.
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          const probeOut = await deps.runLifecycleProbe({ now_iso: nowIso });
+          results["lifecycle-probe-v1"] = probeOut;
+        } else {
+          results["lifecycle-probe-v1"] = { status: "skipped", reason: "missing_supabase_env" };
         }
 
         return {
