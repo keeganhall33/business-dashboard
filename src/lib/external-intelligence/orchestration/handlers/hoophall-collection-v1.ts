@@ -240,7 +240,8 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string }) {
     } as const;
   } catch (error) {
     const completedAt = new Date().toISOString();
-    const errorCode = "invalid_configuration";
+    const msg = safeErrorSummary(error);
+    const errorCode = msg.includes("hoophall_timeout") ? "handler_timeout" : "invalid_configuration";
     const { data: jobRow } = await supabase
       .from("external_collection_jobs_v1")
       .select("attempt_count,maximum_attempts")

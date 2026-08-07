@@ -21,6 +21,18 @@ test("b6 hoophall: listing parses deterministically and yields canonical URLs + 
   assert.deepEqual(urls.slice().sort(), urls);
 });
 
+test("b6 hoophall: parser tolerates harmless whitespace + extra classes", () => {
+  const html = fs
+    .readFileSync("test/fixtures/hoophall/news_listing.html", "utf8")
+    .replaceAll('class="news-feed-item-wrapper"', 'class="news-feed-item-wrapper extra"')
+    .replaceAll('class="article-title"', 'class="article-title foo"')
+    .replaceAll('class="article-description"', 'class="article-description bar"')
+    .replaceAll("<span class=\"overline-title\">", "<span\n class=\"overline-title baz\">\n");
+
+  const out = parseHoophallNewsroomListing({ url: HOOPHALL_NEWSROOM_URL, html });
+  assert.ok(out.items.length >= 5);
+});
+
 test("b6 hoophall: detail parses stable published label + headline", () => {
   const html = fs.readFileSync("test/fixtures/hoophall/detail_enshrinement_presenters.html", "utf8");
   const out = parseHoophallArticleDetail({
@@ -32,4 +44,3 @@ test("b6 hoophall: detail parses stable published label + headline", () => {
   assert.ok(out.published_label);
   assert.ok(out.published_label?.match(/\b\d{4}\b/));
 });
-

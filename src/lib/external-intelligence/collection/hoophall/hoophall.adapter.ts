@@ -57,6 +57,11 @@ async function fetchBoundedHtml(input: {
     if (bytes > input.max_bytes) throw new Error("hoophall_response_too_large");
     const body = Buffer.from(ab).toString("utf8");
     return { final_url: u.toString(), status: res.status, content_type: contentType, body_utf8: body, bytes };
+  } catch (err) {
+    if (err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted"))) {
+      throw new Error("hoophall_timeout");
+    }
+    throw err;
   } finally {
     clearTimeout(t);
   }
@@ -99,11 +104,15 @@ export async function collectHoophallNewsroomV1(input: {
     // Deterministic selection: stable order by URL, then take first N for potential detail fetch.
     const candidates = listing.items.slice().sort((a, b) => a.url.localeCompare(b.url));
 
-    // Detail fetch only if listing description does not already contain an explicit YYYY or full date.
+    // Detail fetch only if listing description does not already contain an explicit Month DD, YYYY.
     const details: Array<{ url: string; headline: string; published_label: string | null; excerpt: string | null; raw_hash: string }> = [];
     let detail_fetches = 0;
+    let deferred_detail_candidates = 0;
     for (const item of candidates) {
-      if (detail_fetches >= input.detail_fetch_cap) break;
+      if (detail_fetches >= input.detail_fetch_cap) {
+        deferred_detail_candidates += 1;
+        continue;
+      }
       const needsDetail = !(item.listing_description ?? "").match(/\b\w+\s+\d{1,2},\s+\d{4}\b/);
       if (!needsDetail) continue;
       requireHttpsAndHost(item.url);
@@ -129,7 +138,10 @@ export async function collectHoophallNewsroomV1(input: {
         now_iso: input.now_iso,
         listing_status: listingRes.status,
         listing_bytes: listingRes.bytes,
-        listing_final_url: listingRes.final_url
+        listing_final_url: listingRes.final_url,
+        detail_fetch_cap: input.detail_fetch_cap,
+        detail_fetches,
+        deferred_detail_candidates
       }
     };
   } catch (error) {
@@ -140,4 +152,3 @@ export async function collectHoophallNewsroomV1(input: {
     };
   }
 }
-

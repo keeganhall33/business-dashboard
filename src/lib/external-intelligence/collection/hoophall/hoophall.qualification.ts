@@ -70,6 +70,10 @@ export function classifyHoophallCategory(input: { headline: string; snippet: str
   return null;
 }
 
+export function _testExtractFirstExplicitDateYmd(text: string) {
+  return extractFirstExplicitDateYmd(text);
+}
+
 export function buildHoophallEvidenceReference(input: {
   url: string;
   headline: string;

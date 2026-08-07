@@ -51,3 +51,58 @@ test("b6 hoophall: enforces response size cap", async () => {
   const err = (out as { ok: false; error: string }).error;
   assert.ok(String(err).includes("response_too_large"));
 });
+
+test("b6 hoophall: detail fetch cap is exactly enforced (5) and remaining candidates are deferred", async () => {
+  // Build a minimal listing HTML with 6 items, each requiring detail (no Month DD, YYYY in listing).
+  const mk = (i: number) => `
+    <div class="news-feed-item-wrapper">
+      <span class="overline-title">Friday, August 07, 2026</span>
+      <h5 class="article-title"><a href="https://www.hoophall.com/news/item-${i}">Item ${i}</a></h5>
+      <div class="article-description">No explicit date here.</div>
+    </div></div></div>`;
+  const listingHtml = `<div class="news-feed-list">${[1, 2, 3, 4, 5, 6].map(mk).join("\n")}</div>`;
+
+  let detailCalls = 0;
+  const fetch: MockFetch = async (url) => {
+    if (String(url).endsWith("/news/")) {
+      return mockResponse({ status: 200, headers: { "content-type": "text/html" }, body: listingHtml });
+    }
+    detailCalls += 1;
+    return mockResponse({
+      status: 200,
+      headers: { "content-type": "text/html" },
+      body: `<div class="hero-body news"><span class="overline-title">July 15, 2026</span><h1>Item</h1></div>`
+    });
+  };
+
+  const out = await collectHoophallNewsroomV1({
+    now_iso: "2026-08-07T00:00:00.000Z",
+    // @ts-expect-error - fetch signature compatible
+    fetch,
+    detail_fetch_cap: 5
+  });
+
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.equal(detailCalls, 5);
+  assert.equal(out.meta.detail_fetches, 5);
+  assert.equal(out.meta.deferred_detail_candidates, 1);
+});
+
+test("b6 hoophall: timeout surfaces as hoophall_timeout", async () => {
+  const fetch: MockFetch = async () => {
+    // Simulate an AbortError thrown by fetch.
+    const e = new Error("aborted");
+    (e as any).name = "AbortError";
+    throw e;
+  };
+  const out = await collectHoophallNewsroomV1({
+    now_iso: "2026-08-07T00:00:00.000Z",
+    // @ts-expect-error
+    fetch,
+    detail_fetch_cap: 1
+  });
+  assert.equal(out.ok, false);
+  const err = (out as { ok: false; error: string }).error;
+  assert.ok(err.includes("hoophall_timeout"));
+});
