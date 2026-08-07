@@ -80,7 +80,9 @@ test("b3 heartbeat: acquired=true with token succeeds (no handlers enabled)", as
 
   const out = await runExternalIntelligenceHeartbeatV1WithDeps(overrides);
   assert.equal(out.status, "succeeded");
-  assert.deepEqual(out.results, {});
+  assert.deepEqual(out.results, {
+    "lifecycle-probe-v1": { status: "skipped", reason: "missing_supabase_env" }
+  });
 });
 
 test("b3 heartbeat: empty RPC data fails closed as acquired=false", async () => {
