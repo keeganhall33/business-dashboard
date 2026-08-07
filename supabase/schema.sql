@@ -1871,9 +1871,18 @@ security definer
 set search_path = public
 as $fn$
 declare
+  v_jwt_role text;
+  v_claims text;
   v record;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   if in_redaction_reason is null or length(in_redaction_reason)=0 then
@@ -1907,9 +1916,18 @@ security definer
 set search_path = public
 as $fn$
 declare
+  v_jwt_role text;
+  v_claims text;
   v record;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   if in_redaction_reason is null or length(in_redaction_reason)=0 then
@@ -1943,9 +1961,18 @@ security definer
 set search_path = public
 as $fn$
 declare
+  v_jwt_role text;
+  v_claims text;
   v record;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   if in_redaction_reason is null or length(in_redaction_reason)=0 then
@@ -2433,12 +2460,21 @@ security definer
 set search_path = public
 as $fn$
 declare
+  v_jwt_role text;
+  v_claims text;
   existing record;
   version_exists boolean;
   inserted_version boolean := false;
   replay boolean := false;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
 
@@ -2555,6 +2591,8 @@ security definer
 set search_path = public
 as $fn$
 declare
+  v_jwt_role text;
+  v_claims text;
   r record;
   v jsonb;
   obj_id text;
@@ -2562,7 +2600,14 @@ declare
   edge jsonb;
   missing_edges integer := 0;
 begin
-  if session_user is distinct from 'service_role' then
+  v_jwt_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  if v_jwt_role is null then
+    v_claims := nullif(current_setting('request.jwt.claims', true), '');
+    if v_claims is not null then
+      v_jwt_role := nullif((v_claims::jsonb ->> 'role'), '');
+    end if;
+  end if;
+  if v_jwt_role is distinct from 'service_role' then
     raise exception using errcode = '42501', message = 'unauthorized';
   end if;
   select * into r
