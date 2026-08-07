@@ -19,7 +19,7 @@ test("eligibility report: deterministic and includes current + potential summari
   assert.ok(r1.includes("automated_eligible_now=0"));
   assert.ok(r1.includes("manual_eligible_now=0"));
   assert.ok(r1.includes("metadata_only_eligible_now=0"));
-  assert.ok(r1.includes("fully_blocked_now=24"));
+  assert.ok(r1.includes("fully_blocked_now=25"));
 
   for (const id of [
     "sports.major_leagues.official",

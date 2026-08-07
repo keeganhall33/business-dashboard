@@ -3,7 +3,7 @@
   "source_id": "economics.fred",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "official_api",
   "official_documentation_refs": [
@@ -70,5 +70,5 @@
       "url": "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
     }
   ],
-  "qualification_content_hash": "64e5fe55c3d77bdb19edc49f5039a5dd7ca849af6da2d38d8ad6fc1e842f2f26"
+  "qualification_content_hash": "099dd0fa307973345759c81aec0759d9a03164d821e465afc1a7296e3687e4d9"
 }

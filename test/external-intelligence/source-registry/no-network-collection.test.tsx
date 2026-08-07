@@ -11,6 +11,6 @@ test("source governance loaders do not require network access", () => {
   const { file: registry } = loadProductionSourceRegistryV1();
   const { file: sets } = loadProductionSourceSetsV1({ knownSourceIds: registry.sources.map((s) => s.source_id) });
 
-  assert.equal(registry.sources.length, 24);
+  assert.equal(registry.sources.length, 25);
   assert.ok(sets.source_sets.length >= 5);
 });

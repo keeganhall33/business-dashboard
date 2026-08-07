@@ -21,7 +21,7 @@ test("production registry loader uses fixed repository path (no env-controlled p
 
   try {
     const { file } = loadProductionSourceRegistryV1();
-    assert.equal(file.sources.length, 24);
+    assert.equal(file.sources.length, 25);
   } finally {
     const fsRestore = fs as unknown as { readFileSync: typeof fs.readFileSync };
     fsRestore.readFileSync = orig;

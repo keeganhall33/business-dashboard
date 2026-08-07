@@ -3,7 +3,7 @@
   "source_id": "licensing.uspto.trademarks",
   "source_config_version": "v1.0.0",
   "registry_schema_version": "production_source_registry_v1",
-  "registry_hash": "a381909d1bcdf415095af4b8d4b81c412d8512a39a3fc581433c03eb0ae2629c",
+  "registry_hash": "73c4fb3478bd266feebe6037c8e21115aa047ba1e7279b59ede1a7b8f0cdde84",
   "source_sets_hash": "f2e34204de112e1897500a17d414554555bad4231f9993676f800d44e2710e58",
   "reviewed_access_method": "structured_export",
   "official_documentation_refs": [
@@ -69,5 +69,5 @@
       "url": "https://www.uspto.gov/trademarks/apply/check-status-view-documents/trademark-bulk-data"
     }
   ],
-  "qualification_content_hash": "4eac007980d500df3bf37a9fc6b8df6cad111f6fb5c288b66729181509e3f19f"
+  "qualification_content_hash": "4ed65dc32d5ef574809ef66d936fe94964c4f9caec9f19608abb02351c2395dc"
 }
