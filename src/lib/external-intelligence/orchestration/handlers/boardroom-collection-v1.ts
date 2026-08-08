@@ -103,12 +103,24 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
       policy_version: "boardroom.rss.v1"
     });
 
+    // IMPORTANT (recollection idempotency): persistEvidenceReference may replay an existing semantic
+    // evidence version (same fingerprint). In that case, the in-memory `evidence` object still
+    // contains fresh occurrence metadata (retrieved_at/collected_at). Downstream qualification
+    // must be derived from the immutable persisted evidence payload to avoid creating a new
+    // Claim version on every recollection.
+    type EvidenceVersionLike = { payload_available: boolean; payload_json: unknown };
+    const maybeGetVersion = (evidenceRepo as unknown as { getVersion?: (ref: unknown) => Promise<EvidenceVersionLike> }).getVersion;
+    const persistedEvidenceVersion = typeof maybeGetVersion === "function" ? await maybeGetVersion(evRes.ref) : null;
+    const evidenceForDownstream = persistedEvidenceVersion?.payload_available
+      ? (persistedEvidenceVersion.payload_json as typeof evidence)
+      : evidence;
+
     let dq:
       | ReturnType<typeof qualifyEvidenceReferenceDownstreamV1>
       | { status: "error"; reason_codes: string[]; claims: []; sports_milestones: [] };
     try {
       dq = deps.qualifyDownstream({
-        evidence,
+        evidence: evidenceForDownstream,
         now_iso: input.now_iso,
         source_context: { kind: "boardroom" }
       });
