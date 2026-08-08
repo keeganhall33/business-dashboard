@@ -17,6 +17,11 @@ import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestrat
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
 import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
+import {
+  normalizeBoardroomOneShotFilter,
+  filterBoardroomItemsForOneShot,
+  type BoardroomOneShotFilter
+} from "@/lib/external-intelligence/orchestration/handlers/boardroom-one-shot-filter";
 
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
 const MAX_ITEMS_PER_RUN = 5;
@@ -26,7 +31,12 @@ function safeErrorSummary(error: unknown) {
   return String(error).slice(0, 240);
 }
 
-export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mode?: "scheduler" | "one_shot" }) {
+export async function runBoardroomCollectionLaneV1(input: {
+  now_iso: string;
+  mode?: "scheduler" | "one_shot";
+  // One-shot only: optional narrow filter for controlled production proofs.
+  one_shot_filter?: null | BoardroomOneShotFilter;
+}) {
   const supabase = getExternalIntelligenceSupabaseClient({});
 
   // Safety: refuse if any other real external schedule is enabled.
@@ -60,6 +70,8 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
   };
 
   const mode = input.mode ?? "scheduler";
+
+  const oneShotFilter = mode === "one_shot" ? normalizeBoardroomOneShotFilter(input.one_shot_filter ?? null) : null;
 
   if (schedule.environment !== "production") return { status: "skipped", reason: "wrong_environment" } as const;
   if (schedule.source_id !== BOARDROOM_SOURCE_ID) return { status: "blocked", reason: "source_id_mismatch" } as const;
@@ -153,12 +165,20 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
     const out = await collectBoardroomRssV1({ now_iso: input.now_iso, max_items: MAX_ITEMS_PER_RUN });
     if (!out.ok) throw new Error(out.error);
 
+    const sel = mode === "one_shot"
+      ? filterBoardroomItemsForOneShot({
+          items: out.items,
+          filter: oneShotFilter,
+          computeEvidenceReferenceId: computeBoardroomEvidenceReferenceId
+        })
+      : { filtered: out.items, skipped_count: 0, mode: "unfiltered" as const };
+
     const evidenceRepo = new EvidenceReferenceRepository();
     const claimRepo = new ClaimRepository();
     let wroteEvidence = 0;
     let wroteClaims = 0;
 
-    for (const [idx, item] of out.items.entries()) {
+    for (const [idx, item] of sel.filtered.entries()) {
       const evidence_reference_id = computeBoardroomEvidenceReferenceId({ canonical_url: item.canonical_url });
       const source_item_id = computeBoardroomSourceItemId({ canonical_url: item.canonical_url, guid: item.guid });
       const evidence = buildBoardroomEvidenceReference({
@@ -236,6 +256,11 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
       enqueued,
       job_id: leased.job_id,
       wrote: { evidence: wroteEvidence, claims: wroteClaims },
+      selection: {
+        mode: sel.mode,
+        skipped_items: sel.skipped_count,
+        filter: oneShotFilter
+      },
       next_run_at: mode === "scheduler" ? nextRunAt : null
     } as const;
   } catch (error) {
