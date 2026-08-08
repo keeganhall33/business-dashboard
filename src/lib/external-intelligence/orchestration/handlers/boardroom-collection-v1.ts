@@ -17,16 +17,141 @@ import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestrat
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
 import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
+import {
+  normalizeBoardroomOneShotFilter,
+  filterBoardroomItemsForOneShot,
+  type BoardroomOneShotFilter
+} from "@/lib/external-intelligence/orchestration/handlers/boardroom-one-shot-filter";
 
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
 const MAX_ITEMS_PER_RUN = 5;
+
+type BoardroomLaneDeps = {
+  computeEvidenceReferenceId: typeof computeBoardroomEvidenceReferenceId;
+  computeSourceItemId: typeof computeBoardroomSourceItemId;
+  buildEvidenceReference: typeof buildBoardroomEvidenceReference;
+  qualifyDownstream: typeof qualifyEvidenceReferenceDownstreamV1;
+  createEvidenceRepo: () => EvidenceReferenceRepository;
+  createClaimRepo: () => ClaimRepository;
+};
+
+const DEFAULT_DEPS: BoardroomLaneDeps = {
+  computeEvidenceReferenceId: computeBoardroomEvidenceReferenceId,
+  computeSourceItemId: computeBoardroomSourceItemId,
+  buildEvidenceReference: buildBoardroomEvidenceReference,
+  qualifyDownstream: qualifyEvidenceReferenceDownstreamV1,
+  createEvidenceRepo: () => new EvidenceReferenceRepository(),
+  createClaimRepo: () => new ClaimRepository()
+};
+
+export async function __test__processBoardroomCollectedItemsV1(input: {
+  now_iso: string;
+  mode: "scheduler" | "one_shot";
+  one_shot_filter: ReturnType<typeof normalizeBoardroomOneShotFilter>;
+  collected_items: Array<{
+    canonical_url: string;
+    guid: string | null;
+    title: string;
+    published_at_iso: string | null;
+    author: string | null;
+    categories: string[];
+    excerpt: string | null;
+    rss_content_html: string | null;
+  }>;
+  deps?: Partial<BoardroomLaneDeps>;
+}) {
+  const deps: BoardroomLaneDeps = { ...DEFAULT_DEPS, ...(input.deps ?? {}) } as BoardroomLaneDeps;
+
+  const sel =
+    input.mode === "one_shot"
+      ? filterBoardroomItemsForOneShot({
+          items: input.collected_items,
+          filter: input.one_shot_filter,
+          computeEvidenceReferenceId: deps.computeEvidenceReferenceId
+        })
+      : { filtered: input.collected_items, skipped_count: 0, mode: "unfiltered" as const };
+
+  const evidenceRepo = deps.createEvidenceRepo();
+  const claimRepo = deps.createClaimRepo();
+
+  let wroteEvidence = 0;
+  let wroteClaims = 0;
+
+  for (const [idx, item] of sel.filtered.entries()) {
+    const evidence_reference_id = deps.computeEvidenceReferenceId({ canonical_url: item.canonical_url });
+    const source_item_id = deps.computeSourceItemId({ canonical_url: item.canonical_url, guid: item.guid });
+    const evidence = deps.buildEvidenceReference({
+      evidence_reference_id,
+      canonical_url: item.canonical_url,
+      guid: item.guid,
+      source_item_id,
+      title: item.title,
+      published_at_iso: item.published_at_iso,
+      collected_at_iso: input.now_iso,
+      author: item.author,
+      categories: item.categories,
+      excerpt: item.excerpt,
+      rss_content_html: item.rss_content_html,
+      feed_url: BOARDROOM_RSS_URL,
+      rss_position: idx
+    });
+
+    const evRes = await evidenceRepo.persistEvidenceReference({
+      evidence,
+      policy_refs_json: [{ policy_name: "boardroom.rss", semantic_version: "v1", content_hash: "ph" }],
+      policy_version: "boardroom.rss.v1"
+    });
+
+    let dq:
+      | ReturnType<typeof qualifyEvidenceReferenceDownstreamV1>
+      | { status: "error"; reason_codes: string[]; claims: []; sports_milestones: [] };
+    try {
+      dq = deps.qualifyDownstream({
+        evidence,
+        now_iso: input.now_iso,
+        source_context: { kind: "boardroom" }
+      });
+    } catch (e) {
+      dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
+    }
+
+    if (dq.status === "qualified" && dq.claims.length) {
+      for (const claim of dq.claims) {
+        await claimRepo.persistClaim({
+          claim,
+          evidence_version_ref: evRes.ref,
+          policy_refs_json: [{ policy_name: "generalized_claim_v1", semantic_version: "v1", content_hash: "ph" }],
+          interpretation_policy_hash: "ph",
+          edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+        });
+        wroteClaims += 1;
+      }
+    }
+    wroteEvidence += 1;
+  }
+
+  return {
+    selection: {
+      mode: sel.mode,
+      skipped_items: sel.skipped_count,
+      selected_items: sel.filtered.length,
+      filter: input.one_shot_filter
+    },
+    wrote: { evidence: wroteEvidence, claims: wroteClaims }
+  };
+}
 
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 240);
   return String(error).slice(0, 240);
 }
 
-export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mode?: "scheduler" | "one_shot" }) {
+export async function runBoardroomCollectionLaneV1(input: {
+  now_iso: string;
+  mode?: "scheduler" | "one_shot";
+  // One-shot only: optional narrow filter for controlled production proofs.
+  one_shot_filter?: null | BoardroomOneShotFilter;
+}) {
   const supabase = getExternalIntelligenceSupabaseClient({});
 
   // Safety: refuse if any other real external schedule is enabled.
@@ -60,6 +185,8 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
   };
 
   const mode = input.mode ?? "scheduler";
+
+  const oneShotFilter = mode === "one_shot" ? normalizeBoardroomOneShotFilter(input.one_shot_filter ?? null) : null;
 
   if (schedule.environment !== "production") return { status: "skipped", reason: "wrong_environment" } as const;
   if (schedule.source_id !== BOARDROOM_SOURCE_ID) return { status: "blocked", reason: "source_id_mismatch" } as const;
@@ -153,66 +280,12 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
     const out = await collectBoardroomRssV1({ now_iso: input.now_iso, max_items: MAX_ITEMS_PER_RUN });
     if (!out.ok) throw new Error(out.error);
 
-    const evidenceRepo = new EvidenceReferenceRepository();
-    const claimRepo = new ClaimRepository();
-    let wroteEvidence = 0;
-    let wroteClaims = 0;
-
-    for (const [idx, item] of out.items.entries()) {
-      const evidence_reference_id = computeBoardroomEvidenceReferenceId({ canonical_url: item.canonical_url });
-      const source_item_id = computeBoardroomSourceItemId({ canonical_url: item.canonical_url, guid: item.guid });
-      const evidence = buildBoardroomEvidenceReference({
-        evidence_reference_id,
-        canonical_url: item.canonical_url,
-        guid: item.guid,
-        source_item_id,
-        title: item.title,
-        published_at_iso: item.published_at_iso,
-        collected_at_iso: input.now_iso,
-        author: item.author,
-        categories: item.categories,
-        excerpt: item.excerpt,
-        rss_content_html: item.rss_content_html,
-        feed_url: BOARDROOM_RSS_URL,
-        rss_position: idx
-      });
-
-      const evRes = await evidenceRepo.persistEvidenceReference({
-        evidence,
-        policy_refs_json: [{ policy_name: "boardroom.rss", semantic_version: "v1", content_hash: "ph" }],
-        policy_version: "boardroom.rss.v1"
-      });
-
-      // Shared downstream qualification stage (Boardroom generalized claims V1).
-      // Downstream failure must not erase successfully persisted evidence.
-      let dq:
-        | ReturnType<typeof qualifyEvidenceReferenceDownstreamV1>
-        | { status: "error"; reason_codes: string[]; claims: []; sports_milestones: [] };
-      try {
-        dq = qualifyEvidenceReferenceDownstreamV1({
-          evidence,
-          now_iso: input.now_iso,
-          source_context: { kind: "boardroom" }
-        });
-      } catch (e) {
-        dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
-      }
-
-      // Persist ONLY admitted claims. Zero claims is normal.
-      if (dq.status === "qualified" && dq.claims.length) {
-        for (const claim of dq.claims) {
-          await claimRepo.persistClaim({
-            claim,
-            evidence_version_ref: evRes.ref,
-            policy_refs_json: [{ policy_name: "generalized_claim_v1", semantic_version: "v1", content_hash: "ph" }],
-            interpretation_policy_hash: "ph",
-            edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
-          });
-          wroteClaims += 1;
-        }
-      }
-      wroteEvidence += 1;
-    }
+    const processed = await __test__processBoardroomCollectedItemsV1({
+      now_iso: input.now_iso,
+      mode,
+      one_shot_filter: oneShotFilter,
+      collected_items: out.items
+    });
 
     const completedAt = new Date().toISOString();
     const nextRunAt = advanceScheduleNextRun({ now_iso: input.now_iso, schedule });
@@ -235,7 +308,8 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
       mode,
       enqueued,
       job_id: leased.job_id,
-      wrote: { evidence: wroteEvidence, claims: wroteClaims },
+      wrote: processed.wrote,
+      selection: processed.selection,
       next_run_at: mode === "scheduler" ? nextRunAt : null
     } as const;
   } catch (error) {

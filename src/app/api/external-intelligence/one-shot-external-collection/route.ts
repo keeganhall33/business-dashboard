@@ -11,21 +11,48 @@ const BodySchema = z
   .object({
     schedule_id: z.string().min(1),
     dry_run: z.boolean().optional().default(false),
-    requested_by: z.string().min(1).max(120).optional().default("unknown")
+    requested_by: z.string().min(1).max(120).optional().default("unknown"),
+
+    // One-shot only: optional narrow filter for Boardroom controlled proofs.
+    boardroom: z
+      .object({
+        evidence_reference_ids: z.array(z.string().min(1)).min(1).max(10).optional(),
+        canonical_urls: z.array(z.string().url()).min(1).max(10).optional()
+      })
+      .strict()
+      .optional()
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    // Fail closed: an explicitly supplied boardroom filter must contain at least one selector.
+    if (val.boardroom) {
+      const hasIds = (val.boardroom.evidence_reference_ids ?? []).length > 0;
+      const hasUrls = (val.boardroom.canonical_urls ?? []).length > 0;
+      if (!hasIds && !hasUrls) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["boardroom"], message: "empty_boardroom_filter" });
+      }
+    }
+  });
 
 type OneShotHandler = {
   schedule_id: string;
   source_id: string;
-  run_lane_one_shot: (input: { now_iso: string }) => Promise<unknown>;
+  run_lane_one_shot: (input: {
+    now_iso: string;
+    one_shot_filter: null | { evidence_reference_ids?: string[]; canonical_urls?: string[] };
+  }) => Promise<unknown>;
 };
 
 const ONE_SHOT_ALLOWLIST: Record<string, OneShotHandler> = {
   "sports_business.boardroom:production": {
     schedule_id: "sports_business.boardroom:production",
     source_id: "sports_business.boardroom",
-    run_lane_one_shot: (input) => runBoardroomCollectionLaneV1({ ...input, mode: "one_shot" })
+    run_lane_one_shot: (input) =>
+      runBoardroomCollectionLaneV1({
+        ...input,
+        mode: "one_shot",
+        one_shot_filter: input.one_shot_filter
+      })
   },
   "sports.basketball.hoophall.official:production": {
     schedule_id: "sports.basketball.hoophall.official:production",
@@ -36,6 +63,25 @@ const ONE_SHOT_ALLOWLIST: Record<string, OneShotHandler> = {
 
 function badRequest(error: string) {
   return NextResponse.json({ ok: false, error }, { status: 400 });
+}
+
+export function __test__parseOneShotBody(input: unknown) {
+  const body = BodySchema.parse(input);
+
+  // Boardroom filter is allowlisted for boardroom schedule only.
+  const boardroomScheduleId = "sports_business.boardroom:production" as const;
+  if (body.boardroom && body.schedule_id !== boardroomScheduleId) {
+    throw new Error("boardroom_filter_not_allowed_for_schedule");
+  }
+
+  const one_shot_filter = body.boardroom
+    ? {
+        evidence_reference_ids: body.boardroom.evidence_reference_ids,
+        canonical_urls: body.boardroom.canonical_urls
+      }
+    : null;
+
+  return { body, one_shot_filter };
 }
 
 /**
@@ -64,13 +110,21 @@ export async function POST(request: Request) {
     return badRequest("schedule_not_allowlisted");
   }
 
+  let one_shot_filter: null | { evidence_reference_ids?: string[]; canonical_urls?: string[] };
+  try {
+    one_shot_filter = __test__parseOneShotBody(body).one_shot_filter;
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : "invalid_json");
+  }
+
   // Non-mutating validation mode.
   if (body.dry_run) {
     return NextResponse.json({
       ok: true,
       dry_run: true,
       schedule_id: handler.schedule_id,
-      source_id: handler.source_id
+      source_id: handler.source_id,
+      one_shot_filter
     });
   }
 
@@ -78,7 +132,7 @@ export async function POST(request: Request) {
 
   // One-shot execution must not depend on schedule due-ness (next_run_at) and
   // must not permanently mutate schedule state.
-  const laneOut = await handler.run_lane_one_shot({ now_iso: nowIso });
+  const laneOut = await handler.run_lane_one_shot({ now_iso: nowIso, one_shot_filter });
 
   return NextResponse.json({
     ok: true,
