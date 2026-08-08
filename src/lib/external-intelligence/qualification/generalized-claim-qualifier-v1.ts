@@ -40,6 +40,26 @@ function stripHtmlToText(input: string): string {
   );
 }
 
+function cleanExtractedEntityNameV1(name: string): string {
+  // We only have title+excerpt, so extra trailing clause text is common.
+  // Precision-first trimming: remove obvious continuations after a proper-noun entity.
+  let n = normalizeWhitespace(name);
+
+  // Trim at common continuation tokens when they appear as lowercase words.
+  // Example (BR-1): "Google's DeepMind may make business sense" -> "Google's DeepMind"
+  n = n.replace(/\s+(may|might|can|could|should|would|but|as|which|that)\b[\s\S]*$/i, (full, kw) => {
+    // Only apply when the keyword is lowercase in the original match window.
+    // (We avoid trimming when the keyword is part of a proper name.)
+    return /\s+[a-z]/.test(` ${kw}`) ? "" : full;
+  });
+
+  // Remove trailing punctuation.
+  n = n.replace(/[\s\]\)\"'”]+$/g, "");
+  n = n.replace(/^[\[\(\"'“]+/g, "");
+
+  return normalizeWhitespace(n);
+}
+
 function normalizeKnownPossessiveArtifactsV1(name: string): string {
   // Narrow, defensible normalization:
   // Boardroom excerpt includes "Google's DeepMind" for the proper name "Google DeepMind".
@@ -119,7 +139,9 @@ function extractPartneredWithFromTextV1(text: string): PartnershipExtraction | n
   // 4) X's ... partnership with Y
   // e.g. "A24's $75 million partnership with Google's DeepMind"
   {
-    const m = t.match(/\b([^\s].*?)'s\s+.+?\bpartnership\s+with\s+(.+?)\b/i);
+    // Strict subject capture to avoid title false-positives (e.g. "It's").
+    // V1: only admit when the subject is a single explicit token (A24, Nike, etc.).
+    const m = t.match(/\b([A-Z0-9][A-Za-z0-9&.-]{1,})'s\s+[^.]*?\bpartnership\s+with\s+([^.;,]+)/i);
     if (m?.[1] && m?.[2]) {
       const subject_name = normalizeWhitespace(m[1]);
       const object_name = normalizeWhitespace(m[2]);
@@ -151,21 +173,21 @@ export function qualifyGeneralizedClaimsV1(input: {
   retrieved_at_iso: string;
 }): GeneralizedClaimQualifierResultV1 {
   try {
-    const title = input.title ? stripHtmlToText(input.title) : "";
-    const excerpt = input.excerpt ? stripHtmlToText(input.excerpt) : "";
-    const combined = normalizeWhitespace(`${title} ${excerpt}`);
+    const titleText = input.title ? stripHtmlToText(input.title) : "";
+    const excerptText = input.excerpt ? stripHtmlToText(input.excerpt) : "";
 
-    if (!combined) {
+    if (!titleText && !excerptText) {
       return { status: "not_qualified", reason_codes: ["missing_text"], claims: [] };
     }
 
-    const partnered = extractPartneredWithFromTextV1(combined);
+    // Precision-first: prefer excerpt/description over headline to avoid false matches (e.g. "It's" in titles).
+    const partnered = extractPartneredWithFromTextV1(excerptText) ?? extractPartneredWithFromTextV1(titleText);
     if (!partnered) {
       return { status: "not_qualified", reason_codes: ["no_explicit_partnership"], claims: [] };
     }
 
-    const subjectName = normalizeKnownPossessiveArtifactsV1(partnered.subject_name);
-    const objectName = normalizeKnownPossessiveArtifactsV1(partnered.object_name);
+    const subjectName = normalizeKnownPossessiveArtifactsV1(cleanExtractedEntityNameV1(partnered.subject_name));
+    const objectName = normalizeKnownPossessiveArtifactsV1(cleanExtractedEntityNameV1(partnered.object_name));
 
     if (!subjectName || !objectName) {
       return { status: "not_qualified", reason_codes: ["missing_subject_or_object"], claims: [] };
