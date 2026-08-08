@@ -59,19 +59,14 @@ describe("one-shot external collection route", () => {
   });
 
   it("enables, runs lane, and disables", async () => {
-    const supabase = (getExternalIntelligenceSupabaseClient as unknown as () => { rpc: MockFn })();
-    const rpc = supabase.rpc;
-
     const res = await POST(makeRequest({ schedule_id: "sports_business.boardroom:production", requested_by: "test" }));
     expect(res.status).toBe(200);
     const auth = assertSchedulerAuth as unknown as MockFn;
     expect(auth.mock.calls.length).toBe(1);
 
-    // enable + disable RPCs
-    const rpcFns = rpc.mock.calls.map((c) => c[0]);
-    expect(rpcFns).toContain("enable_boardroom_collection_v1");
-    expect(rpcFns).toContain("disable_boardroom_collection_v1");
+    // Lane invoked once with one-shot mode.
     const lane = runBoardroomCollectionLaneV1 as unknown as MockFn;
     expect(lane.mock.calls.length).toBe(1);
+    expect(lane.mock.calls[0]?.[0]).toMatchObject({ mode: "one_shot" });
   });
 });

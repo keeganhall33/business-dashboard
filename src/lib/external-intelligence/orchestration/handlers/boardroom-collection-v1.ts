@@ -24,7 +24,7 @@ function safeErrorSummary(error: unknown) {
   return String(error).slice(0, 240);
 }
 
-export async function runBoardroomCollectionLaneV1(input: { now_iso: string }) {
+export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mode?: "scheduler" | "one_shot" }) {
   const supabase = getExternalIntelligenceSupabaseClient({});
 
   // Safety: refuse if any other real external schedule is enabled.
@@ -57,9 +57,22 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string }) {
     collection_mode: string;
   };
 
+  const mode = input.mode ?? "scheduler";
+
   if (schedule.environment !== "production") return { status: "skipped", reason: "wrong_environment" } as const;
   if (schedule.source_id !== BOARDROOM_SOURCE_ID) return { status: "blocked", reason: "source_id_mismatch" } as const;
-  if (!schedule.enabled) return { status: "skipped", reason: "disabled" } as const;
+  if (mode === "scheduler" && !schedule.enabled) return { status: "skipped", reason: "disabled" } as const;
+
+  // One-shot semantics: execute immediately without depending on persisted due-ness
+  // (next_run_at) and without mutating the schedule state.
+  const scheduleForHeartbeat: typeof schedule =
+    mode === "one_shot"
+      ? ({
+          ...schedule,
+          enabled: true,
+          next_run_at: input.now_iso
+        } as typeof schedule)
+      : schedule;
 
   // Existing logical jobs for idempotency.
   const { data: existingJobs, error: existingError } = await supabase
@@ -75,7 +88,7 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string }) {
 
   const hb = heartbeat({
     now_iso: input.now_iso,
-    schedules: [schedule],
+    schedules: [scheduleForHeartbeat],
     existing_jobs_by_logical_key: existingLogicalKeys,
     is_schedule_eligible_now: () => ({ ok: true, reason: null }),
     maximum_jobs_to_enqueue: 1
@@ -177,12 +190,21 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string }) {
       .eq("job_id", leased.job_id)
       .eq("lease_owner", leaseOwner);
     await releaseExternalCollectionJobLeaseV1({ client: leaseClient, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "succeeded" });
-    await supabase
-      .from("external_collection_schedules_v1")
-      .update({ next_run_at: nextRunAt, last_evaluated_at: input.now_iso, updated_at: completedAt })
-      .eq("schedule_id", schedule.schedule_id);
+    if (mode === "scheduler") {
+      await supabase
+        .from("external_collection_schedules_v1")
+        .update({ next_run_at: nextRunAt, last_evaluated_at: input.now_iso, updated_at: completedAt })
+        .eq("schedule_id", schedule.schedule_id);
+    }
 
-    return { status: "succeeded", enqueued, job_id: leased.job_id, wrote: { evidence: wroteEvidence }, next_run_at: nextRunAt } as const;
+    return {
+      status: "succeeded",
+      mode,
+      enqueued,
+      job_id: leased.job_id,
+      wrote: { evidence: wroteEvidence },
+      next_run_at: mode === "scheduler" ? nextRunAt : null
+    } as const;
   } catch (error) {
     const completedAt = new Date().toISOString();
     const msg = safeErrorSummary(error);
@@ -218,6 +240,13 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string }) {
       .eq("job_id", leased.job_id)
       .eq("lease_owner", leaseOwner);
     await releaseExternalCollectionJobLeaseV1({ client: leaseClient, job_id: leased.job_id, lease_owner: leaseOwner, new_status: outcome.next_status });
-    return { status: "failed", job_id: leased.job_id, error_code: errorCode, next_status: outcome.next_status, next_retry_at: outcome.next_retry_at_iso } as const;
+    return {
+      status: "failed",
+      mode,
+      job_id: leased.job_id,
+      error_code: errorCode,
+      next_status: outcome.next_status,
+      next_retry_at: outcome.next_retry_at_iso
+    } as const;
   }
 }
