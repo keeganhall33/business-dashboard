@@ -45,7 +45,7 @@ function mkBoardroomEvidence(input: { id: string; url: string; title: string }):
   };
 }
 
-describe("downstream qualification: Boardroom is explicit no-op", () => {
+describe("downstream qualification: Boardroom generalized claims v1", () => {
   const cases = [
     { label: "BR-1", id: "ev_2623049899a3bd37abf05087", url: "https://boardroom.tv/a24-ai-google-deepmind-movies-films/", title: "A24 Built Its Brand on Artists; Now It's Betting on AI" },
     { label: "BR-2", id: "ev_e911fbbfacd756c0cb7b0197", url: "https://boardroom.tv/apple-doesnt-need-to-win-ai-race/", title: "Why Apple Doesn't Need to Win the AI Race" },
@@ -55,18 +55,22 @@ describe("downstream qualification: Boardroom is explicit no-op", () => {
   ];
 
   for (const c of cases) {
-    it(`${c.label}: unsupported_domain_ruleset returns 0/0`, () => {
+    it(`${c.label}: BR-1 qualifies, others not_qualified`, () => {
       const out = qualifyEvidenceReferenceDownstreamV1({
         evidence: mkBoardroomEvidence({ id: c.id, url: c.url, title: c.title }),
         now_iso: "2026-08-08T00:00:00.000Z",
         source_context: { kind: "boardroom" }
       });
 
-      expect(out.status).toBe("unsupported");
-      expect(out.reason_codes).toContain("unsupported_domain_ruleset");
-      expect(out.claims.length).toBe(0);
+      if (c.label === "BR-1") {
+        expect(out.status).toBe("qualified");
+        expect(out.claims.length).toBe(1);
+        expect(out.claims[0]?.predicate).toBe("partnered_with");
+      } else {
+        expect(out.status).toBe("not_qualified");
+        expect(out.claims.length).toBe(0);
+      }
       expect(out.sports_milestones.length).toBe(0);
     });
   }
 });
-
