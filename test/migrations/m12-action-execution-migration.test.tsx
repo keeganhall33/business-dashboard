@@ -37,7 +37,7 @@ test("M12 execution migration forward SQL defines all 7 tables with RLS", () => 
 });
 
 test("M12 execution migration rollback SQL drops all 7 tables in FK-safe order", () => {
-  const sqlPath = path.join(process.cwd(), "supabase", "migrations", `${MIGRATION}.rollback.sql`);
+  const sqlPath = path.join(process.cwd(), "supabase", "rollbacks", `${MIGRATION}.sql`);
   const sql = read(sqlPath);
 
   const dropsInOrder = [

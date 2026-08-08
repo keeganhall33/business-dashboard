@@ -8,9 +8,9 @@ import { computeMilestoneCalendarHash, computeMilestoneContentHash, parseSportsM
 import { parseAlertLeadTimePolicy } from "@/lib/external-intelligence/milestones/alert-policy";
 import { buildMilestoneHorizonAlertsV2 } from "@/lib/external-intelligence/milestones/horizon-engine";
 
-const A5 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
-const A61 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
-const B2 = path.join(process.cwd(), "supabase/migrations/20260805_external_intelligence_phase_b2_orchestration.sql");
+const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
+const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
+const B2 = path.join(process.cwd(), "supabase/migrations/20260805010000_external_intelligence_phase_b2_orchestration.sql");
 const B6 = path.join(process.cwd(), "supabase/migrations/20260807195000_external_intelligence_phase_b6_hoophall_source.sql");
 
 test("b6 hoophall pipeline: EvidenceReference -> Claim -> SportsMilestone persists + versions + horizon consumes", () => {

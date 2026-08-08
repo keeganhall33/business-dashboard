@@ -276,7 +276,7 @@
           "public.woo_ingestion_runs_v1"
         ],
         "migrations": [
-          "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"
+          "supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql"
         ]
       },
       "api": {
@@ -307,7 +307,7 @@
       "evidence_files": [
         "scripts/run-woo-telemetry.mjs",
         "src/lib/woo/woo-ingestion.ts",
-        "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql",
+        "supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql",
         "supabase/schema.sql",
         ".github/workflows/dashboard-scheduler.yml"
       ]

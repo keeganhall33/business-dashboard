@@ -45,9 +45,9 @@ apply() {
 }
 
 MIG_DIR="supabase/migrations"
-apply "$MIG_DIR/20260804_external_intelligence_phase_a5.sql"
-apply "$MIG_DIR/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
+apply "$MIG_DIR/20260804010200_external_intelligence_phase_a5.sql"
+apply "$MIG_DIR/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql"
+apply "$MIG_DIR/20260805010000_external_intelligence_phase_b2_orchestration.sql"
 apply "$MIG_DIR/20260807201000_external_intelligence_phase_a6_rpc_authz_fix.sql"
 
 echo "A6 authz: missing jwt role fails closed"

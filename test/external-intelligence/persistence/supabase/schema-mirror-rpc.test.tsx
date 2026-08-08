@@ -6,7 +6,7 @@ import path from "node:path";
 const schemaPath = path.join(process.cwd(), "supabase/schema.sql");
 const migrationPath = path.join(
   process.cwd(),
-  "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
+  "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql"
 );
 
 test("schema.sql mirrors critical rpc identifiers + grants", () => {

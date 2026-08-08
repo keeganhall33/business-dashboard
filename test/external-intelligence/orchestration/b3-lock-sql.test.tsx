@@ -12,11 +12,11 @@ function sliceBetween(haystack: string, start: string, end: string) {
 
 test("b3 durable lock RPCs exist and are service_role-only in migration + schema mirror", () => {
   const mig = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b3_internal_activation.sql",
+    "supabase/migrations/20260805010200_external_intelligence_phase_b3_internal_activation.sql",
     "utf8"
   );
   const migFix = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b3_2_lock_pgcrypto_qualify.sql",
+    "supabase/migrations/20260805010100_external_intelligence_phase_b3_2_lock_pgcrypto_qualify.sql",
     "utf8"
   );
   const schema = fs.readFileSync("supabase/schema.sql", "utf8");
@@ -81,7 +81,7 @@ test("b3 durable lock RPCs exist and are service_role-only in migration + schema
 
 test("b3.2 acquire lock function body preserves semantics and qualifies pgcrypto", () => {
   const migFix = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b3_2_lock_pgcrypto_qualify.sql",
+    "supabase/migrations/20260805010100_external_intelligence_phase_b3_2_lock_pgcrypto_qualify.sql",
     "utf8"
   );
   const body = sliceBetween(migFix, "function public.acquire_internal_orchestration_lock_v1", "$fn$;");

@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 test("fusion migration guard: rollback order is dependency-safe and no reserved identifiers used", () => {
-  const fwd = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260803_add_fusion_v1_tables.sql"), "utf8");
+  const fwd = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260803010000_add_fusion_v1_tables.sql"), "utf8");
   const rb = fs.readFileSync(
-    path.join(process.cwd(), "supabase/migrations/20260803_add_fusion_v1_tables.rollback.sql"),
+    path.join(process.cwd(), "supabase/rollbacks/20260803_add_fusion_v1_tables.sql"),
     "utf8"
   );
 
@@ -23,4 +23,3 @@ test("fusion migration guard: rollback order is dependency-safe and no reserved 
   // Uniqueness key should include the declared onConflict key fields.
   assert.ok(/unique\(input_set_fingerprint,\s*fusion_policy_version,\s*fusion_score_version,\s*strategic_constraints_hash\)/i.test(fwd));
 });
-

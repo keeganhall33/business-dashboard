@@ -4,14 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 
 test("fusion production migrations: run status columns and scheduler job registration are narrow and rollback-safe", () => {
-  const fwdStatus = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260804_fusion_runs_v1_status_fields.sql"), "utf8");
+  const fwdStatus = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260804010100_fusion_runs_v1_status_fields.sql"), "utf8");
   const rbStatus = fs.readFileSync(
-    path.join(process.cwd(), "supabase/migrations/20260804_fusion_runs_v1_status_fields.rollback.sql"),
+    path.join(process.cwd(), "supabase/rollbacks/20260804_fusion_runs_v1_status_fields.sql"),
     "utf8"
   );
-  const fwdJob = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260804_add_fusion_daily_decision_job.sql"), "utf8");
+  const fwdJob = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260804010000_add_fusion_daily_decision_job.sql"), "utf8");
   const rbJob = fs.readFileSync(
-    path.join(process.cwd(), "supabase/migrations/20260804_add_fusion_daily_decision_job.rollback.sql"),
+    path.join(process.cwd(), "supabase/rollbacks/20260804_add_fusion_daily_decision_job.sql"),
     "utf8"
   );
 
@@ -26,4 +26,3 @@ test("fusion production migrations: run status columns and scheduler job registr
   // Job migration should only touch the single job_key.
   assert.ok(fwdJob.includes("fusion-daily-decision-v1"));
 });
-

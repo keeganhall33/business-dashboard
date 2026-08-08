@@ -29,7 +29,7 @@
           "confidence": "confirmed",
           "reconciliation_required": false,
           "known_gaps": ["No line-item/product dimension yet in telemetry table"],
-          "evidence_files": ["scripts/run-woo-telemetry.mjs", "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql", "supabase/schema.sql"]
+          "evidence_files": ["scripts/run-woo-telemetry.mjs", "supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql", "supabase/schema.sql"]
         },
         {
           "event_type": "ingestion_completed",
@@ -50,7 +50,7 @@
           "confidence": "confirmed",
           "reconciliation_required": false,
           "known_gaps": [],
-          "evidence_files": ["supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"]
+          "evidence_files": ["supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql"]
         }
       ]
     },

@@ -52,7 +52,7 @@
       "evidence_files": [
         "src/lib/data-confidence.ts",
         "src/app/api/dashboard/overview/route.ts",
-        "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"
+        "supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql"
       ],
       "earliest_roadmap_milestone": 1
     },
@@ -612,7 +612,7 @@
       "risk": "No accountability",
       "priority": "high",
       "evidence_files": [
-        "supabase/migrations/20260728_add_woo_order_telemetry_v1.sql"
+        "supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql"
       ],
       "earliest_roadmap_milestone": 8
     }

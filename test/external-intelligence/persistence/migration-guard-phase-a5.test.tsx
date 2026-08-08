@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const FWD = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
-const RB = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.rollback.sql");
+const FWD = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
+const RB = path.join(process.cwd(), "supabase/rollbacks/20260804_external_intelligence_phase_a5.sql");
 
 const REQUIRED_TABLES = [
   "external_evidence_references_v1",
