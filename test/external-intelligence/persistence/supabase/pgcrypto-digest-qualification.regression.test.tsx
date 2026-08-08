@@ -8,13 +8,20 @@ const migrationPath = path.join(
   process.cwd(),
   "supabase/migrations/20260808205200_schema_qualify_pgcrypto_digest.sql"
 );
+const signalMigrationPath = path.join(
+  process.cwd(),
+  "supabase/migrations/20260808211100_signal_schema_qualify_pgcrypto_digest.sql"
+);
 
 const QUALIFIED_SNIPPET =
   /edge_id\s*:=\s*encode\(\s*extensions\.digest\([\s\S]*?\)::text,\s*'sha256'::text\)\s*,\s*'hex'\s*\)/i;
+const QUALIFIED_SIGNAL_SNIPPET =
+  /edge_id\s*:=\s*encode\(\s*extensions\.digest\(\s*edge::text\s*,\s*'sha256'::text\s*\)\s*,\s*'hex'\s*\)/i;
 
 test("persist_external_claim_v1 schema-qualifies pgcrypto digest (extensions.digest + sha256::text)", () => {
   const schema = fs.readFileSync(schemaPath, "utf8");
   const mig = fs.readFileSync(migrationPath, "utf8");
+  const sigMig = fs.readFileSync(signalMigrationPath, "utf8");
 
   const sliceClaimFn = (sql: string) => {
     const start = sql.search(/create\s+or\s+replace\s+function\s+persist_external_claim_v1\b/i);
@@ -52,5 +59,15 @@ test("persist_external_claim_v1 schema-qualifies pgcrypto digest (extensions.dig
   assert.ok(
     !/edge_id\s*:=\s*encode\(\s*digest\(/i.test(migClaimFn),
     "migration must not use unqualified digest() in persist_external_claim_v1"
+  );
+
+  // Signal RPC: edge hashing must be schema-qualified as well.
+  assert.ok(
+    QUALIFIED_SIGNAL_SNIPPET.test(schema),
+    "schema.sql must schema-qualify digest() inside persist_external_signal_write_set_v1"
+  );
+  assert.ok(
+    QUALIFIED_SIGNAL_SNIPPET.test(sigMig),
+    "signal forward migration must schema-qualify digest() inside persist_external_signal_write_set_v1"
   );
 });
