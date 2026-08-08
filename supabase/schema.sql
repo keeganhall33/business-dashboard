@@ -2799,6 +2799,58 @@ insert into public.external_collection_schedules_v1(
   'owner'
 ) on conflict (schedule_id) do nothing;
 
+-- Boardroom RSS (V1) schedule row. Disabled by default.
+insert into public.external_collection_schedules_v1(
+  schedule_id,
+  source_id,
+  source_config_version,
+  registry_hash,
+  source_sets_hash,
+  eligibility_fingerprint,
+  schedule_policy_version,
+  cadence_type,
+  cadence_interval_seconds,
+  timezone,
+  schedule_metadata_json,
+  timeout_seconds,
+  lease_seconds,
+  maximum_concurrent_jobs,
+  maximum_attempts,
+  input_policy_json,
+  output_policy_json,
+  concurrency_key,
+  run_priority,
+  enabled,
+  collection_mode,
+  environment,
+  review_by
+)
+values (
+  'sports_business.boardroom:production',
+  'sports_business.boardroom',
+  'v1',
+  repeat('0',64),
+  repeat('0',64),
+  repeat('0',64),
+  'boardroom.rss.daily.v1',
+  'hourly',
+  3600,
+  'UTC',
+  jsonb_build_object('max_items_per_run', 5, 'feed_url', 'https://boardroom.tv/feed/'),
+  60,
+  300,
+  10,
+  3,
+  '{}'::jsonb,
+  '{}'::jsonb,
+  'sports_business:boardroom',
+  'low',
+  false,
+  'automated',
+  'production',
+  'legal'
+) on conflict (schedule_id) do nothing;
+
 create or replace function public.enable_external_lifecycle_probe_v1(
   in_requested_by text,
   in_environment text,

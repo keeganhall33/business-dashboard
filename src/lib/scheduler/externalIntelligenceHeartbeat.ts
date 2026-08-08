@@ -17,6 +17,7 @@ import { evaluateInternalOrchestrationOperationalHealthV1 } from "@/lib/external
 import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/orchestration/timeout";
 import { runExternalLifecycleProbeLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/lifecycle-probe-v1";
 import { runHoophallCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/hoophall-collection-v1";
+import { runBoardroomCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/boardroom-collection-v1";
 
 type HeartbeatDeps = {
   withJobRun: typeof withJobRun;
@@ -35,6 +36,7 @@ type HeartbeatDeps = {
 
   runLifecycleProbe: typeof runExternalLifecycleProbeLaneV1;
   runHoophall: typeof runHoophallCollectionLaneV1;
+  runBoardroom: typeof runBoardroomCollectionLaneV1;
 
   handlers: (input: { nowIso: string; nowYmd: string }) => Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>>;
 };
@@ -56,6 +58,7 @@ const DEFAULT_DEPS: HeartbeatDeps = {
 
   runLifecycleProbe: runExternalLifecycleProbeLaneV1,
   runHoophall: runHoophallCollectionLaneV1,
+  runBoardroom: runBoardroomCollectionLaneV1,
 
   handlers: ({ nowIso, nowYmd }) => ({
     "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
@@ -230,6 +233,14 @@ export async function runExternalIntelligenceHeartbeatV1WithDeps(overrides?: Par
           results["hoophall-collection-v1"] = out;
         } else {
           results["hoophall-collection-v1"] = { status: "skipped", reason: "missing_supabase_env" };
+        }
+
+        // Boardroom V1: evidence-only source lane. Remains disabled by default.
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          const out = await deps.runBoardroom({ now_iso: nowIso });
+          results["boardroom-collection-v1"] = out;
+        } else {
+          results["boardroom-collection-v1"] = { status: "skipped", reason: "missing_supabase_env" };
         }
 
         return {
