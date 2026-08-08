@@ -2,7 +2,7 @@ import "@/lib/server-only";
 
 import { HOOPHALL_SOURCE_ID } from "@/lib/external-intelligence/collection/hoophall/hoophall.contract";
 import { collectHoophallNewsroomV1 } from "@/lib/external-intelligence/collection/hoophall/hoophall.adapter";
-import { qualifyHoophallItemToMilestone, buildHoophallEvidenceReference, buildHoophallClaim, buildHoophallMilestone } from "@/lib/external-intelligence/collection/hoophall/hoophall.qualification";
+import { buildHoophallEvidenceReference } from "@/lib/external-intelligence/collection/hoophall/hoophall.qualification";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import { heartbeat, advanceScheduleNextRun, type ScheduleRow } from "@/lib/external-intelligence/orchestration/heartbeat";
 import { leaseNextExternalCollectionJobV1, releaseExternalCollectionJobLeaseV1 } from "@/lib/external-intelligence/orchestration/job-leasing";
@@ -10,6 +10,7 @@ import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestrat
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
 import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { SportsMilestoneRepository } from "@/lib/external-intelligence/milestones/persistence/milestone.repository";
+import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
 
 const HOOPHALL_SCHEDULE_ID = "sports.basketball.hoophall.official:production" as const;
 
@@ -170,12 +171,6 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
     }
 
     const detail = out.details.find((d) => d.url === first.url) ?? null;
-    const qual = qualifyHoophallItemToMilestone({
-      headline: first.headline,
-      listing_description: first.listing_description,
-      detail_excerpt: detail?.excerpt ?? null
-    });
-
     // Always persist evidence (minimum provenance) for the first item.
     const evidence = buildHoophallEvidenceReference({
       url: first.url,
@@ -195,37 +190,42 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
     let wroteClaims = 0;
     let wroteMilestones = 0;
 
-    if (qual.ok) {
-      const claim = buildHoophallClaim({
-        evidence_reference_id: evidence.evidence_reference_id,
-        predicate: "milestone_scheduled_for",
-        subject: null,
-        object_date_ymd: qual.milestone_date_ymd,
-        retrieved_at_iso: input.now_iso,
-        announcement_time_iso: null
-      });
-      const claimRepo = new ClaimRepository();
-      await claimRepo.persistClaim({
-        claim,
-        evidence_version_ref: evRes.ref,
-        policy_refs_json: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }],
-        interpretation_policy_hash: "ph",
-        edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
-      });
-      wroteClaims = 1;
+    // Generic downstream qualification stage (Hoophall parity).
+    const dq = qualifyEvidenceReferenceDownstreamV1({
+      evidence,
+      now_iso: input.now_iso,
+      source_context: {
+        kind: "hoophall",
+        headline: first.headline,
+        listing_description: first.listing_description,
+        detail_excerpt: detail?.excerpt ?? null
+      }
+    });
 
-      const milestone = buildHoophallMilestone({
-        category: qual.category,
-        milestone_date_ymd: qual.milestone_date_ymd,
-        evidence_url: first.url,
-        evidence_label: first.headline
-      });
-      const milestoneRepo = new SportsMilestoneRepository();
-      await milestoneRepo.persistMilestone({
-        milestone,
-        policy_refs: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }]
-      });
-      wroteMilestones = 1;
+    if (dq.status === "qualified") {
+      const claim = dq.claims[0] ?? null;
+      const milestone = dq.sports_milestones[0] ?? null;
+
+      if (claim) {
+        const claimRepo = new ClaimRepository();
+        await claimRepo.persistClaim({
+          claim,
+          evidence_version_ref: evRes.ref,
+          policy_refs_json: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }],
+          interpretation_policy_hash: "ph",
+          edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+        });
+        wroteClaims = 1;
+      }
+
+      if (milestone) {
+        const milestoneRepo = new SportsMilestoneRepository();
+        await milestoneRepo.persistMilestone({
+          milestone,
+          policy_refs: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }]
+        });
+        wroteMilestones = 1;
+      }
     }
 
     const completedAt = new Date().toISOString();
