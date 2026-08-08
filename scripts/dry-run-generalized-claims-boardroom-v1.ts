@@ -94,6 +94,8 @@ async function main() {
       retrieved_at_iso: new Date().toISOString()
     });
 
+    const phraseById = new Map(q.diagnostics.supporting_phrases.map((p) => [p.claim_id, p.supporting_phrase] as const));
+
     out.push({
       evidence_reference_id: s.evidence_reference_id,
       source_id: s.source_id,
@@ -111,7 +113,7 @@ async function main() {
         confidence: c.extraction_confidence,
         claim_id: c.claim_id,
         claim_fingerprint: c.claim_fingerprint,
-        supporting_phrase: c.supporting_phrase
+        supporting_phrase: phraseById.get(c.claim_id) ?? null
       }))
     });
   }
