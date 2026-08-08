@@ -2360,7 +2360,7 @@ begin
 
   for edge in select * from jsonb_array_elements(in_required_provenance_edges_json)
   loop
-    edge_id := encode(digest(edge::text, 'sha256'), 'hex');
+    edge_id := encode(extensions.digest(edge::text, 'sha256'::text), 'hex');
     insert into external_provenance_edges_v1(
       edge_id,
       from_object_type,from_object_id,from_content_hash,
