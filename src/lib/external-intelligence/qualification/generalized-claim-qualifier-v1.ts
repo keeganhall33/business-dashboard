@@ -10,7 +10,10 @@ export type GeneralizedClaimQualifierStatusV1 = "qualified" | "not_qualified" | 
 export type GeneralizedClaimQualifierResultV1 = {
   status: GeneralizedClaimQualifierStatusV1;
   reason_codes: string[];
-  claims: Array<Claim & { supporting_phrase: string }>;
+  claims: Claim[];
+  diagnostics: {
+    supporting_phrases: Array<{ claim_id: string; supporting_phrase: string }>;
+  };
 };
 
 function sha256Hex(input: string): string {
@@ -177,20 +180,30 @@ export function qualifyGeneralizedClaimsV1(input: {
     const excerptText = input.excerpt ? stripHtmlToText(input.excerpt) : "";
 
     if (!titleText && !excerptText) {
-      return { status: "not_qualified", reason_codes: ["missing_text"], claims: [] };
+      return { status: "not_qualified", reason_codes: ["missing_text"], claims: [], diagnostics: { supporting_phrases: [] } };
     }
 
     // Precision-first: prefer excerpt/description over headline to avoid false matches (e.g. "It's" in titles).
     const partnered = extractPartneredWithFromTextV1(excerptText) ?? extractPartneredWithFromTextV1(titleText);
     if (!partnered) {
-      return { status: "not_qualified", reason_codes: ["no_explicit_partnership"], claims: [] };
+      return {
+        status: "not_qualified",
+        reason_codes: ["no_explicit_partnership"],
+        claims: [],
+        diagnostics: { supporting_phrases: [] }
+      };
     }
 
     const subjectName = normalizeKnownPossessiveArtifactsV1(cleanExtractedEntityNameV1(partnered.subject_name));
     const objectName = normalizeKnownPossessiveArtifactsV1(cleanExtractedEntityNameV1(partnered.object_name));
 
     if (!subjectName || !objectName) {
-      return { status: "not_qualified", reason_codes: ["missing_subject_or_object"], claims: [] };
+      return {
+        status: "not_qualified",
+        reason_codes: ["missing_subject_or_object"],
+        claims: [],
+        diagnostics: { supporting_phrases: [] }
+      };
     }
 
     const subject = buildProvisionalEntityRefV1({
@@ -234,15 +247,19 @@ export function qualifyGeneralizedClaimsV1(input: {
     };
 
     const claim_fingerprint = computeClaimFingerprint(base);
-    const claim: Claim & { supporting_phrase: string } = {
+    const claim: Claim = {
       ...base,
-      claim_fingerprint,
-      supporting_phrase: partnered.supporting_phrase
+      claim_fingerprint
     };
 
-    return { status: "qualified", reason_codes: [], claims: [claim] };
+    return {
+      status: "qualified",
+      reason_codes: [],
+      claims: [claim],
+      diagnostics: { supporting_phrases: [{ claim_id: claim.claim_id, supporting_phrase: partnered.supporting_phrase }] }
+    };
   } catch (error) {
     const msg = error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160);
-    return { status: "error", reason_codes: [`error:${msg}`], claims: [] };
+    return { status: "error", reason_codes: [`error:${msg}`], claims: [], diagnostics: { supporting_phrases: [] } };
   }
 }

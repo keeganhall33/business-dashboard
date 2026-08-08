@@ -14,6 +14,7 @@ describe("generalized claim qualifier v1: partnered_with (precision-first)", () 
 
     expect(out.status).toBe("qualified");
     expect(out.claims).toHaveLength(1);
+    expect(out.diagnostics.supporting_phrases).toHaveLength(1);
     const c = out.claims[0];
     expect(c.predicate).toBe("partnered_with");
     expect(c.subject?.canonical_name).toBe("A24");
