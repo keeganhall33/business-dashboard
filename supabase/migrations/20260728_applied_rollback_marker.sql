@@ -1,0 +1,16 @@
+-- Applied migration marker: 20260728
+--
+-- Production migration history contains:
+--   version = 20260728
+--   name    = add_woo_order_telemetry_v1.rollback
+--
+-- This repo stores rollback scripts under supabase/rollbacks/ and keeps them
+-- out of supabase/migrations/ to avoid Supabase CLI treating them as forward
+-- migrations.
+--
+-- This file exists solely to satisfy Supabase CLI reconciliation (it requires
+-- that every remote-applied migration version has a corresponding local
+-- migration file).
+--
+-- Intentionally NO-OP.
+
