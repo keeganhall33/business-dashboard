@@ -15,6 +15,7 @@ import { heartbeat, advanceScheduleNextRun, type ScheduleRow } from "@/lib/exter
 import { leaseNextExternalCollectionJobV1, releaseExternalCollectionJobLeaseV1 } from "@/lib/external-intelligence/orchestration/job-leasing";
 import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestration/job-retry-lifecycle";
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
+import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
 
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
 const MAX_ITEMS_PER_RUN = 5;
@@ -177,6 +178,14 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
         evidence,
         policy_refs_json: [{ policy_name: "boardroom.rss", semantic_version: "v1", content_hash: "ph" }],
         policy_version: "boardroom.rss.v1"
+      });
+
+      // Boardroom enters the generic downstream stage, but intentionally produces
+      // no structured outputs under current semantics.
+      void qualifyEvidenceReferenceDownstreamV1({
+        evidence,
+        now_iso: input.now_iso,
+        source_context: { kind: "boardroom" }
       });
       wroteEvidence += 1;
     }
