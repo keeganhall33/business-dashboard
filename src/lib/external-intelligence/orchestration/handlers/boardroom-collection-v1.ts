@@ -17,6 +17,7 @@ import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestrat
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
 import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
+import { PersistenceIdempotencyConflictError } from "@/lib/external-intelligence/persistence/errors";
 import {
   normalizeBoardroomOneShotFilter,
   filterBoardroomItemsForOneShot,
@@ -144,6 +145,13 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
 function safeErrorSummary(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 240);
   return String(error).slice(0, 240);
+}
+
+export function __test__classifyBoardroomErrorCode(input: { error: unknown; error_summary: string }) {
+  const msg = input.error_summary;
+  if (msg.includes("boardroom_timeout")) return "handler_timeout" as const;
+  if (input.error instanceof PersistenceIdempotencyConflictError) return "persistence_integrity_conflict" as const;
+  return "invalid_configuration" as const;
 }
 
 export async function runBoardroomCollectionLaneV1(input: {
@@ -315,7 +323,8 @@ export async function runBoardroomCollectionLaneV1(input: {
   } catch (error) {
     const completedAt = new Date().toISOString();
     const msg = safeErrorSummary(error);
-    const errorCode = msg.includes("boardroom_timeout") ? "handler_timeout" : "invalid_configuration";
+
+    const errorCode = __test__classifyBoardroomErrorCode({ error, error_summary: msg });
     const { data: jobRow } = await supabase
       .from("external_collection_jobs_v1")
       .select("attempt_count,maximum_attempts")

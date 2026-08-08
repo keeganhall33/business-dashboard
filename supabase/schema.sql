@@ -1763,9 +1763,27 @@ begin
     and ev.content_hash = in_content_hash;
 
   if found then
+    -- Replay-equivalence normalization (V1): strip allowlisted volatile observation fields.
+    -- NOTE: we do NOT overwrite the immutable stored payload_json; this is equality only.
     if not (
       existing.payload_available is not distinct from in_payload_available
-      and existing.payload_json is not distinct from in_payload_json
+      and (
+        jsonb_set(
+          (coalesce(existing.payload_json, '{}'::jsonb) - 'retrieved_at'),
+          '{provenance_metadata}',
+          (coalesce((coalesce(existing.payload_json, '{}'::jsonb) - 'retrieved_at')->'provenance_metadata','{}'::jsonb)
+            - 'collected_at' - 'rss_position'),
+          true
+        )
+      ) is not distinct from (
+        jsonb_set(
+          (coalesce(in_payload_json, '{}'::jsonb) - 'retrieved_at'),
+          '{provenance_metadata}',
+          (coalesce((coalesce(in_payload_json, '{}'::jsonb) - 'retrieved_at')->'provenance_metadata','{}'::jsonb)
+            - 'collected_at' - 'rss_position'),
+          true
+        )
+      )
       and existing.schema_version is not distinct from in_schema_version
       and existing.source_id is not distinct from in_source_id
       and existing.source_config_version is not distinct from in_source_config_version
@@ -2488,7 +2506,23 @@ begin
   if version_exists then
     if not (
       existing.payload_available is not distinct from in_payload_available
-      and existing.payload_json is not distinct from in_payload_json
+      and (
+        jsonb_set(
+          (coalesce(existing.payload_json, '{}'::jsonb) - 'retrieved_at'),
+          '{provenance_metadata}',
+          (coalesce((coalesce(existing.payload_json, '{}'::jsonb) - 'retrieved_at')->'provenance_metadata','{}'::jsonb)
+            - 'collected_at' - 'rss_position'),
+          true
+        )
+      ) is not distinct from (
+        jsonb_set(
+          (coalesce(in_payload_json, '{}'::jsonb) - 'retrieved_at'),
+          '{provenance_metadata}',
+          (coalesce((coalesce(in_payload_json, '{}'::jsonb) - 'retrieved_at')->'provenance_metadata','{}'::jsonb)
+            - 'collected_at' - 'rss_position'),
+          true
+        )
+      )
       and existing.schema_version is not distinct from in_schema_version
       and existing.source_id is not distinct from in_source_id
       and existing.source_config_version is not distinct from in_source_config_version
