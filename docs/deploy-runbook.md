@@ -95,3 +95,24 @@ Key harness paths:
 - `POST /api/collectors` (fixture write path)
 - `GET/POST /api/kpis` (fixture store)
 
+## 1Password CLI / production env (operations)
+
+Production Supabase credentials are normally resolved **locally** via 1Password secret refs:
+
+```bash
+op run --env-file .env.woo.ci -- <command>
+```
+
+Rules:
+
+- Never print resolved secret values (e.g. `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`).
+- If authenticated `op` commands hang, check for stale 1Password CLI daemons and recover **session-locally**:
+
+  ```bash
+  pkill -x op
+  ```
+
+  Only do this when you’ve confirmed the stuck process is the CLI daemon (not the 1Password desktop app).
+
+- A Keychain item for `OP_SERVICE_ACCOUNT_TOKEN` may exist but be empty. Do not assume it’s valid unless you verify it is non-empty.
+- Do not rotate/create credentials as the first troubleshooting step.
