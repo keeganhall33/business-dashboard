@@ -182,11 +182,16 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
 
       // Boardroom enters the generic downstream stage, but intentionally produces
       // no structured outputs under current semantics.
-      void qualifyEvidenceReferenceDownstreamV1({
-        evidence,
-        now_iso: input.now_iso,
-        source_context: { kind: "boardroom" }
-      });
+      try {
+        void qualifyEvidenceReferenceDownstreamV1({
+          evidence,
+          now_iso: input.now_iso,
+          source_context: { kind: "boardroom" }
+        });
+      } catch {
+        // Downstream qualification failure must not erase successfully persisted evidence.
+        // Boardroom V1 is evidence-only; failures are observable in lane results.
+      }
       wroteEvidence += 1;
     }
 

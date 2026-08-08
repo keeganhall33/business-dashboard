@@ -191,16 +191,23 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
     let wroteMilestones = 0;
 
     // Generic downstream qualification stage (Hoophall parity).
-    const dq = qualifyEvidenceReferenceDownstreamV1({
-      evidence,
-      now_iso: input.now_iso,
-      source_context: {
-        kind: "hoophall",
-        headline: first.headline,
-        listing_description: first.listing_description,
-        detail_excerpt: detail?.excerpt ?? null
-      }
-    });
+    let dq:
+      | ReturnType<typeof qualifyEvidenceReferenceDownstreamV1>
+      | { status: "error"; reason_codes: string[]; claims: []; sports_milestones: [] };
+    try {
+      dq = qualifyEvidenceReferenceDownstreamV1({
+        evidence,
+        now_iso: input.now_iso,
+        source_context: {
+          kind: "hoophall",
+          headline: first.headline,
+          listing_description: first.listing_description,
+          detail_excerpt: detail?.excerpt ?? null
+        }
+      });
+    } catch (e) {
+      dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
+    }
 
     if (dq.status === "qualified") {
       const claim = dq.claims[0] ?? null;
