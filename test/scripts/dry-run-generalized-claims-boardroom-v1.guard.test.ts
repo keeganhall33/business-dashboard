@@ -5,7 +5,7 @@ import path from "node:path";
 
 describe("dry-run script guard: no persistence imports", () => {
   it("script does not import persistence repositories or scheduler mutation", () => {
-    const p = path.join(process.cwd(), "scripts/dry-run-generalized-claims-boardroom-v1.mjs");
+    const p = path.join(process.cwd(), "scripts/dry-run-generalized-claims-boardroom-v1.ts");
     const text = fs.readFileSync(p, "utf8");
 
     // Hard disallow known write-path imports.

@@ -5,13 +5,16 @@
 // - Reads existing EvidenceReferences + current version payloads.
 // - Runs the generalized qualifier in-memory.
 // - Performs ZERO writes (no claim persistence, no schedule mutation, no enqueue).
+//
+// Run (production):
+// OPERATOR_ENVIRONMENT=production op run --env-file .env.woo.ci -- pnpm tsx scripts/dry-run-generalized-claims-boardroom-v1.ts --ids <...>
 
 import { createClient } from "@supabase/supabase-js";
 import assert from "node:assert";
 
-import { qualifyGeneralizedClaimsV1 } from "../src/lib/external-intelligence/qualification/generalized-claim-qualifier-v1";
+import { qualifyGeneralizedClaimsV1 } from "@/lib/external-intelligence/qualification/generalized-claim-qualifier-v1";
 
-function parseIds(argv) {
+function parseIds(argv: string[]): string[] | null {
   const idx = argv.indexOf("--ids");
   if (idx === -1) return null;
   const raw = argv[idx + 1];
@@ -23,7 +26,7 @@ function parseIds(argv) {
   return ids.length ? ids : null;
 }
 
-function redactedHost(url) {
+function redactedHost(url: string) {
   try {
     const u = new URL(url);
     return u.host;
@@ -69,10 +72,10 @@ async function main() {
     );
   if (e2) throw e2;
 
-  const vByKey = new Map();
+  const vByKey = new Map<string, any>();
   for (const v of vers ?? []) vByKey.set(`${v.evidence_reference_id}|${v.content_hash}`, v);
 
-  const out = [];
+  const out: any[] = [];
 
   for (const s of stable ?? []) {
     const v = vByKey.get(`${s.evidence_reference_id}|${s.current_content_hash}`) ?? null;
