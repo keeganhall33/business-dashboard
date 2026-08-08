@@ -79,7 +79,11 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
         source_id: ev.source_id,
         title,
         excerpt,
-        retrieved_at_iso: input.now_iso
+        // IMPORTANT: Claims are derived from persisted evidence text.
+        // We intentionally pin claim.retrieved_at to the evidence retrieval timestamp
+        // (not the current qualification runtime) so recollection can replay idempotently
+        // without attempting to create a new claim version for each run.
+        retrieved_at_iso: ev.retrieved_at
       });
 
       if (q.status === "qualified") {
@@ -118,7 +122,8 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
         predicate: "milestone_scheduled_for",
         subject: null,
         object_date_ymd,
-        retrieved_at_iso: input.now_iso,
+        // Pin to evidence retrieval time for idempotent replay on recollection.
+        retrieved_at_iso: ev.retrieved_at,
         announcement_time_iso: null
       });
 

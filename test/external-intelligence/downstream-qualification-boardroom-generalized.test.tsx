@@ -57,6 +57,10 @@ test("Boardroom downstream: explicit partnership excerpt qualifies to partnered_
   if (out.claims[0]!.object.kind === "entity") {
     assert.equal(out.claims[0]!.object.entity.canonical_name, "Google DeepMind");
   }
+
+  // Replay safety: Claim retrieved_at is pinned to evidence retrieval time,
+  // not the qualification runtime.
+  assert.equal(out.claims[0]!.retrieved_at, "2026-08-08T00:00:00.000Z");
   assert.equal(out.sports_milestones.length, 0);
 });
 
@@ -76,4 +80,3 @@ test("Boardroom downstream: non-partnership excerpt yields not_qualified and 0 c
   assert.equal(out.claims.length, 0);
   assert.equal(out.sports_milestones.length, 0);
 });
-
