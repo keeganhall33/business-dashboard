@@ -22,7 +22,17 @@ const BodySchema = z
       .strict()
       .optional()
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    // Fail closed: an explicitly supplied boardroom filter must contain at least one selector.
+    if (val.boardroom) {
+      const hasIds = (val.boardroom.evidence_reference_ids ?? []).length > 0;
+      const hasUrls = (val.boardroom.canonical_urls ?? []).length > 0;
+      if (!hasIds && !hasUrls) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["boardroom"], message: "empty_boardroom_filter" });
+      }
+    }
+  });
 
 type OneShotHandler = {
   schedule_id: string;
@@ -55,6 +65,25 @@ function badRequest(error: string) {
   return NextResponse.json({ ok: false, error }, { status: 400 });
 }
 
+export function __test__parseOneShotBody(input: unknown) {
+  const body = BodySchema.parse(input);
+
+  // Boardroom filter is allowlisted for boardroom schedule only.
+  const boardroomScheduleId = "sports_business.boardroom:production" as const;
+  if (body.boardroom && body.schedule_id !== boardroomScheduleId) {
+    throw new Error("boardroom_filter_not_allowed_for_schedule");
+  }
+
+  const one_shot_filter = body.boardroom
+    ? {
+        evidence_reference_ids: body.boardroom.evidence_reference_ids,
+        canonical_urls: body.boardroom.canonical_urls
+      }
+    : null;
+
+  return { body, one_shot_filter };
+}
+
 /**
  * One-shot external collection trigger.
  *
@@ -81,18 +110,12 @@ export async function POST(request: Request) {
     return badRequest("schedule_not_allowlisted");
   }
 
-  // Boardroom filter is allowlisted for boardroom schedule only.
-  const boardroomScheduleId = "sports_business.boardroom:production" as const;
-  if (body.boardroom && body.schedule_id !== boardroomScheduleId) {
-    return badRequest("boardroom_filter_not_allowed_for_schedule");
+  let one_shot_filter: null | { evidence_reference_ids?: string[]; canonical_urls?: string[] };
+  try {
+    one_shot_filter = __test__parseOneShotBody(body).one_shot_filter;
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : "invalid_json");
   }
-
-  const one_shot_filter = body.boardroom
-    ? {
-        evidence_reference_ids: body.boardroom.evidence_reference_ids,
-        canonical_urls: body.boardroom.canonical_urls
-      }
-    : null;
 
   // Non-mutating validation mode.
   if (body.dry_run) {
