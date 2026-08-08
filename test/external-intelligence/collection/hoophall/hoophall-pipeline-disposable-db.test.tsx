@@ -10,6 +10,14 @@ import { buildMilestoneHorizonAlertsV2 } from "@/lib/external-intelligence/miles
 
 const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
 const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
+const A6_AUTHZ = path.join(
+  process.cwd(),
+  "supabase/migrations/20260807201000_external_intelligence_phase_a6_rpc_authz_fix.sql"
+);
+const A6_DIGEST_FIX = path.join(
+  process.cwd(),
+  "supabase/migrations/20260808205200_schema_qualify_pgcrypto_digest.sql"
+);
 const B2 = path.join(process.cwd(), "supabase/migrations/20260805010000_external_intelligence_phase_b2_orchestration.sql");
 const B6 = path.join(process.cwd(), "supabase/migrations/20260807195000_external_intelligence_phase_b6_hoophall_source.sql");
 
@@ -20,6 +28,8 @@ test("b6 hoophall pipeline: EvidenceReference -> Claim -> SportsMilestone persis
     "do $$begin create role anon; exception when duplicate_object then null; end$$; do $$begin create role authenticated; exception when duplicate_object then null; end$$; do $$begin create role service_role login; exception when duplicate_object then null; end$$;"
   );
   db.file(A61);
+  db.file(A6_AUTHZ);
+  db.file(A6_DIGEST_FIX);
   db.file(B2);
   db.file(B6);
 

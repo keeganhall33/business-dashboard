@@ -6,6 +6,14 @@ import { createDisposableDb } from "./_rpc-disposable-db";
 
 const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
 const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
+const A6_AUTHZ = path.join(
+  process.cwd(),
+  "supabase/migrations/20260807201000_external_intelligence_phase_a6_rpc_authz_fix.sql"
+);
+const A6_DIGEST_FIX = path.join(
+  process.cwd(),
+  "supabase/migrations/20260808205200_schema_qualify_pgcrypto_digest.sql"
+);
 const A61RB = path.join(
   process.cwd(),
   "supabase/rollbacks/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
@@ -18,6 +26,8 @@ test("rpc idempotency + rollback/reapply sequence", () => {
     "do $$begin create role anon; exception when duplicate_object then null; end$$; do $$begin create role authenticated; exception when duplicate_object then null; end$$; do $$begin create role service_role login; exception when duplicate_object then null; end$$;"
   );
   db.file(A61);
+  db.file(A6_AUTHZ);
+  db.file(A6_DIGEST_FIX);
 
     const evPayload = "'{\"ok\":true}'";
     const call = () =>
@@ -197,4 +207,6 @@ test("rpc idempotency + rollback/reapply sequence", () => {
 
   // Reapply
   db.file(A61);
+  db.file(A6_AUTHZ);
+  db.file(A6_DIGEST_FIX);
 });
