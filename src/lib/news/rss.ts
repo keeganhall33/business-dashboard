@@ -4,8 +4,11 @@ export type FeedItem = {
   title: string;
   url: string;
   guid?: string | null;
+  author?: string | null;
+  categories?: string[] | null;
   publishedAt?: string | null;
   summary?: string | null;
+  contentHtml?: string | null;
   sourceFeedUrl: string;
 };
 
@@ -70,8 +73,15 @@ export function parseRssXml(xml: string, sourceFeedUrl: string): FeedItem[] {
         const title = pickText(item?.title) ?? "";
         const link = pickText(item?.link) ?? "";
         const guid = pickText(item?.guid);
+        const author = pickText(item?.["dc:creator"]);
+        const categories = coerceArray(item?.category)
+          .map((c) => pickText(c))
+          .filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+          .map((c) => c.trim());
         const published = pickText(item?.pubDate) ?? pickText(item?.date);
-        const summary = pickText(item?.description) ?? pickText(item?.["content:encoded"]);
+        const description = pickText(item?.description);
+        const contentHtml = pickText(item?.["content:encoded"]);
+        const summary = description ?? contentHtml;
 
         if (!title || !link) return [];
         return [
@@ -79,8 +89,11 @@ export function parseRssXml(xml: string, sourceFeedUrl: string): FeedItem[] {
           title: title.trim(),
           url: normalizeUrl(link.trim()),
           guid: guid?.trim() ?? null,
+          author: author?.trim() ?? null,
+          categories: categories.length ? categories : null,
           publishedAt: published ? new Date(published).toISOString() : null,
           summary: summary?.trim() ?? null,
+          contentHtml: contentHtml?.trim() ?? null,
           sourceFeedUrl
           } satisfies FeedItem
         ];
@@ -103,14 +116,23 @@ export function parseRssXml(xml: string, sourceFeedUrl: string): FeedItem[] {
       const published = pickText(entry?.published) ?? pickText(entry?.updated);
       const summary = pickText(entry?.summary) ?? pickText(entry?.content);
 
+      const author = pickText(entry?.author?.name) ?? pickText(entry?.author);
+      const categories = coerceArray(entry?.category)
+        .map((c) => pickText(c?.["@_term"] ?? c?.term ?? c))
+        .filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+        .map((c) => c.trim());
+
       if (!title || !linkHref) return [];
       return [
         {
         title: title.trim(),
         url: normalizeUrl(linkHref.trim()),
         guid: guid?.trim() ?? null,
+        author: author?.trim() ?? null,
+        categories: categories.length ? categories : null,
         publishedAt: published ? new Date(published).toISOString() : null,
         summary: summary?.trim() ?? null,
+        contentHtml: null,
         sourceFeedUrl
         } satisfies FeedItem
       ];
