@@ -5,12 +5,15 @@ import type { Claim } from "@/lib/external-intelligence/contracts/claim";
 import type { SportsMilestone } from "@/lib/external-intelligence/milestones/contracts";
 
 import { HOOPHALL_SOURCE_ID } from "@/lib/external-intelligence/collection/hoophall/hoophall.contract";
+import { BOARDROOM_SOURCE_ID } from "@/lib/external-intelligence/collection/boardroom/boardroom.contract";
 import {
   type HoophallMilestoneCategory,
   qualifyHoophallItemToMilestone,
   buildHoophallClaim,
   buildHoophallMilestone
 } from "@/lib/external-intelligence/collection/hoophall/hoophall.qualification";
+
+import { qualifyGeneralizedClaimsV1 } from "@/lib/external-intelligence/qualification/generalized-claim-qualifier-v1";
 
 export type DownstreamQualificationStatus = "qualified" | "not_qualified" | "unsupported" | "error";
 
@@ -61,9 +64,34 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
   try {
     const ev = input.evidence;
 
-    // Boardroom: intentionally no-op under current semantics.
     if (input.source_context.kind === "boardroom") {
-      return okEmpty({ status: "unsupported", reason_codes: ["unsupported_domain_ruleset"] });
+      // Boardroom: generalized deterministic claims (V1) based only on persisted title+excerpt.
+      if (ev.source_id !== BOARDROOM_SOURCE_ID) {
+        return okEmpty({ status: "unsupported", reason_codes: ["source_id_mismatch"] });
+      }
+
+      const pm = ev.provenance_metadata as Record<string, unknown>;
+      const title = typeof pm.title === "string" ? pm.title : null;
+      const excerpt = typeof pm.excerpt === "string" ? pm.excerpt : null;
+
+      const q = qualifyGeneralizedClaimsV1({
+        evidence_reference_id: ev.evidence_reference_id,
+        source_id: ev.source_id,
+        title,
+        excerpt,
+        retrieved_at_iso: input.now_iso
+      });
+
+      if (q.status === "qualified") {
+        return Object.freeze({ status: "qualified", reason_codes: [], claims: q.claims, sports_milestones: [] });
+      }
+
+      if (q.status === "error") {
+        return okEmpty({ status: "error", reason_codes: q.reason_codes.length ? q.reason_codes : ["generalized_claim_error"] });
+      }
+
+      // not_qualified is a normal successful outcome.
+      return okEmpty({ status: "not_qualified", reason_codes: q.reason_codes.length ? q.reason_codes : ["not_qualified"] });
     }
 
     // Hoophall parity path.

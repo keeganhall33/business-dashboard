@@ -15,6 +15,7 @@ import { heartbeat, advanceScheduleNextRun, type ScheduleRow } from "@/lib/exter
 import { leaseNextExternalCollectionJobV1, releaseExternalCollectionJobLeaseV1 } from "@/lib/external-intelligence/orchestration/job-leasing";
 import { nextJobStateAfterFailure } from "@/lib/external-intelligence/orchestration/job-retry-lifecycle";
 import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persistence/supabase/evidence-reference.repository";
+import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
 
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
@@ -153,7 +154,9 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
     if (!out.ok) throw new Error(out.error);
 
     const evidenceRepo = new EvidenceReferenceRepository();
+    const claimRepo = new ClaimRepository();
     let wroteEvidence = 0;
+    let wroteClaims = 0;
 
     for (const [idx, item] of out.items.entries()) {
       const evidence_reference_id = computeBoardroomEvidenceReferenceId({ canonical_url: item.canonical_url });
@@ -174,23 +177,39 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
         rss_position: idx
       });
 
-      await evidenceRepo.persistEvidenceReference({
+      const evRes = await evidenceRepo.persistEvidenceReference({
         evidence,
         policy_refs_json: [{ policy_name: "boardroom.rss", semantic_version: "v1", content_hash: "ph" }],
         policy_version: "boardroom.rss.v1"
       });
 
-      // Boardroom enters the generic downstream stage, but intentionally produces
-      // no structured outputs under current semantics.
+      // Shared downstream qualification stage (Boardroom generalized claims V1).
+      // Downstream failure must not erase successfully persisted evidence.
+      let dq:
+        | ReturnType<typeof qualifyEvidenceReferenceDownstreamV1>
+        | { status: "error"; reason_codes: string[]; claims: []; sports_milestones: [] };
       try {
-        void qualifyEvidenceReferenceDownstreamV1({
+        dq = qualifyEvidenceReferenceDownstreamV1({
           evidence,
           now_iso: input.now_iso,
           source_context: { kind: "boardroom" }
         });
-      } catch {
-        // Downstream qualification failure must not erase successfully persisted evidence.
-        // Boardroom V1 is evidence-only; failures are observable in lane results.
+      } catch (e) {
+        dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
+      }
+
+      // Persist ONLY admitted claims. Zero claims is normal.
+      if (dq.status === "qualified" && dq.claims.length) {
+        for (const claim of dq.claims) {
+          await claimRepo.persistClaim({
+            claim,
+            evidence_version_ref: evRes.ref,
+            policy_refs_json: [{ policy_name: "generalized_claim_v1", semantic_version: "v1", content_hash: "ph" }],
+            interpretation_policy_hash: "ph",
+            edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+          });
+          wroteClaims += 1;
+        }
       }
       wroteEvidence += 1;
     }
@@ -216,7 +235,7 @@ export async function runBoardroomCollectionLaneV1(input: { now_iso: string; mod
       mode,
       enqueued,
       job_id: leased.job_id,
-      wrote: { evidence: wroteEvidence },
+      wrote: { evidence: wroteEvidence, claims: wroteClaims },
       next_run_at: mode === "scheduler" ? nextRunAt : null
     } as const;
   } catch (error) {
