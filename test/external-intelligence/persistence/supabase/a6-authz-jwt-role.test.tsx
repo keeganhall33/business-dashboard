@@ -17,7 +17,7 @@ test("a6 authz: service_role jwt claim is required (request.jwt.claim.role), not
   assert.throws(() => {
     db.psqlAs(
       "service_role",
-      "select evidence_reference_id from persist_external_evidence_reference_v1('ev1', repeat('a',64), 'evidence_reference_v1','src','v1','lp','[]'::jsonb,null,null,null,'[]'::jsonb,'{}'::jsonb,'link_only',null,false,null,null,'r',true);"
+      "/*no_jwt*/ select evidence_reference_id from persist_external_evidence_reference_v1('ev1', repeat('a',64), 'evidence_reference_v1','src','v1','lp','[]'::jsonb,null,null,null,'[]'::jsonb,'{}'::jsonb,'link_only',null,false,null,null,'r',true);"
     );
   }, /unauthorized/);
 

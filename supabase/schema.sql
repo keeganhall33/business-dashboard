@@ -2145,7 +2145,7 @@ begin
     set current_content_hash = in_content_hash
   where cs.claim_id = in_claim_id;
 
-  edge_id := encode(digest(jsonb_build_object(
+  edge_id := encode(extensions.digest(jsonb_build_object(
     'from_object_type','claim',
     'from_object_id',in_claim_id,
     'from_content_hash',in_content_hash,
@@ -2154,7 +2154,7 @@ begin
     'to_content_hash',in_evidence_content_hash,
     'relation',in_edge_relation,
     'policy_hash',in_edge_policy_hash
-  )::text, 'sha256'), 'hex');
+  )::text, 'sha256'::text), 'hex');
 
   insert into external_provenance_edges_v1(
     edge_id,

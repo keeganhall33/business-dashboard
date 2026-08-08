@@ -100,6 +100,30 @@ export function createDisposableDb(): DisposableDb {
 
   execFileSync("createdb", ["-h", "127.0.0.1", "-p", String(c.port), dbname], { stdio: "ignore", env: baseEnv });
 
+  // Supabase production installs `pgcrypto` in the `extensions` schema.
+  // Our RPCs run SECURITY DEFINER with `search_path=public`, so schema-qualified
+  // calls must work even when `extensions` is not on the search_path.
+  execFileSync(
+    "psql",
+    [
+      "-h",
+      "127.0.0.1",
+      "-p",
+      String(c.port),
+      "-d",
+      dbname,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-X",
+      "-q",
+      "-t",
+      "-A",
+      "-c",
+      "create schema if not exists extensions; create extension if not exists pgcrypto with schema extensions;"
+    ],
+    { encoding: "utf8", env: baseEnv }
+  );
+
   const psql = (sql: string) => {
     return execFileSync(
       "psql",
@@ -124,6 +148,16 @@ export function createDisposableDb(): DisposableDb {
   };
 
   const psqlAs = (user: string, sql: string) => {
+    // Supabase RPCs require a PostgREST JWT role claim (not session_user).
+    // For disposable DB tests we emulate the claim for service_role calls.
+    const shouldInjectJwtRoleClaim =
+      user === "service_role" &&
+      !sql.includes("/*no_jwt*/") &&
+      !sql.includes("request.jwt.claim.role");
+
+    const effectiveSql = shouldInjectJwtRoleClaim
+      ? `select set_config('request.jwt.claim.role','service_role', true); ${sql}`
+      : sql;
     return execFileSync(
       "psql",
       [
@@ -142,7 +176,7 @@ export function createDisposableDb(): DisposableDb {
         "-t",
         "-A",
         "-c",
-        sql
+        effectiveSql
       ],
       { encoding: "utf8", env: baseEnv }
     ).trim();
