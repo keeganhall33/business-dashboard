@@ -31,16 +31,16 @@ apply() {
 }
 
 MIG_DIR="supabase/migrations"
-apply "$MIG_DIR/20260804_external_intelligence_phase_a5.sql"
+apply "$MIG_DIR/20260804010200_external_intelligence_phase_a5.sql"
 
 # Supabase migrations assume these roles exist.
 "${psql_base[@]}" -d b2test -c 'do $$ begin create role anon; exception when duplicate_object then end; $$;' >/dev/null
 "${psql_base[@]}" -d b2test -c 'do $$ begin create role authenticated; exception when duplicate_object then end; $$;' >/dev/null
 "${psql_base[@]}" -d b2test -c 'do $$ begin create role service_role; exception when duplicate_object then end; $$;' >/dev/null
 
-apply "$MIG_DIR/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"  # rerun
+apply "$MIG_DIR/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql"
+apply "$MIG_DIR/20260805010000_external_intelligence_phase_b2_orchestration.sql"
+apply "$MIG_DIR/20260805010000_external_intelligence_phase_b2_orchestration.sql"  # rerun
 
 # Lease concurrency: second lease should return empty.
 echo "lease test"
@@ -135,8 +135,8 @@ NEW_PAYLOAD="$(${psql_base[@]} -d b2test -tA -c "select canonical_payload_json->
 
 # Rollback and reapply.
 echo "rollback/reapply"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.rollback.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
+apply "supabase/rollbacks/20260805_external_intelligence_phase_b2_orchestration.sql"
+apply "$MIG_DIR/20260805010000_external_intelligence_phase_b2_orchestration.sql"
 
 # Alert lifecycle: upsert + replay + preserve dismissed/ack + invalidation + expiry.
 echo "alert test"

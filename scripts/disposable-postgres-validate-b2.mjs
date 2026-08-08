@@ -44,10 +44,10 @@ try {
 
   // Apply prerequisite migrations: A5 then A6.1 then B2.
   const migrationsDir = path.resolve("supabase/migrations");
-  const a5 = path.join(migrationsDir, "20260804_external_intelligence_phase_a5.sql");
-  const a61 = path.join(migrationsDir, "20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
-  const b2 = path.join(migrationsDir, "20260805_external_intelligence_phase_b2_orchestration.sql");
-  const b2rb = path.join(migrationsDir, "20260805_external_intelligence_phase_b2_orchestration.rollback.sql");
+  const a5 = path.join(migrationsDir, "20260804010200_external_intelligence_phase_a5.sql");
+  const a61 = path.join(migrationsDir, "20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
+  const b2 = path.join(migrationsDir, "20260805010000_external_intelligence_phase_b2_orchestration.sql");
+  const b2rb = path.join(process.cwd(), "supabase/rollbacks/20260805_external_intelligence_phase_b2_orchestration.sql");
 
   psqlDb(["-f", a5]);
   psqlDb(["-f", a61]);

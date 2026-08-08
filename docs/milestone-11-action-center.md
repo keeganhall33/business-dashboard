@@ -21,7 +21,7 @@ Milestone 11 adds a **durable, governed action lifecycle** that turns Milestone 
 
 Additive migration (local/staging):
 - `supabase/migrations/20260730_add_action_center_v1.sql`
-- `...rollback.sql`
+- `supabase/rollbacks/<migration>.sql`
 
 Core tables:
 - `action_actions_v1` — durable action record
@@ -155,4 +155,4 @@ Recommended staging steps:
    - create action from recommendation
    - prepare → ready → approve
    - verify audit events include idempotency keys
-3. Roll back with `...rollback.sql` and reapply to confirm reversibility.
+3. Roll back with the corresponding rollback script in `supabase/rollbacks/` and reapply to confirm reversibility.

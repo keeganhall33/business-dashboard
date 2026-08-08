@@ -13,7 +13,7 @@ This document is a tracked finding only. **No remediation is included in the B3.
 - `to_regprocedure('extensions.digest(text,text)')` under `search_path=public` → resolves
 
 ## Affected repo definitions
-- Migration: `supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql`
+- Migration: `supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql`
   - uses `digest(..., 'sha256')` for deterministic provenance edge IDs
 - Schema mirror: `supabase/schema.sql`
   - includes the same `digest(..., 'sha256')` expressions

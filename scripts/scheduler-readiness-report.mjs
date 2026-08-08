@@ -7,7 +7,7 @@ import fs from "node:fs";
 
 export function generateSchedulerReadinessReport() {
   const fwd = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b2_orchestration.sql",
+    "supabase/migrations/20260805010000_external_intelligence_phase_b2_orchestration.sql",
     "utf8"
   );
 

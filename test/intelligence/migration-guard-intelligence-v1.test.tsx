@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 test("intelligence v1 migration guard: findings table uses analysis_window (no unquoted window column)", () => {
-  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260803_intelligence_v1_tables.sql");
+  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260803010100_intelligence_v1_tables.sql");
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   // Must not define an unquoted column named window.
@@ -19,4 +19,3 @@ test("intelligence store mapping: Finding.window maps to analysis_window column"
   const src = fs.readFileSync(storePath, "utf8");
   assert.ok(src.includes("analysis_window: row.window"));
 });
-

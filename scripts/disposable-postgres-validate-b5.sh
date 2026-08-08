@@ -50,10 +50,10 @@ apply() {
 MIG_DIR="supabase/migrations"
 
 # Minimum schema needed for B5: A6 RPC base + B2 orchestrator tables/RPCs + B3/B4 lock/activation + B5 probe.
-apply "$MIG_DIR/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b2_orchestration.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b3_internal_activation.sql"
-apply "$MIG_DIR/20260805_external_intelligence_phase_b4_recurring_activation.sql"
+apply "$MIG_DIR/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql"
+apply "$MIG_DIR/20260805010000_external_intelligence_phase_b2_orchestration.sql"
+apply "$MIG_DIR/20260805010200_external_intelligence_phase_b3_internal_activation.sql"
+apply "$MIG_DIR/20260805010300_external_intelligence_phase_b4_recurring_activation.sql"
 apply "$MIG_DIR/20260807050000_external_intelligence_phase_b5_lifecycle_probe.sql"
 
 echo "B5: schedule exists and is disabled by default"

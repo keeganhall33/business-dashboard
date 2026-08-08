@@ -4,11 +4,11 @@ import fs from "node:fs";
 
 test("b2 migrations exist", () => {
   const fwd = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b2_orchestration.sql",
+    "supabase/migrations/20260805010000_external_intelligence_phase_b2_orchestration.sql",
     "utf8"
   );
   const rb = fs.readFileSync(
-    "supabase/migrations/20260805_external_intelligence_phase_b2_orchestration.rollback.sql",
+    "supabase/rollbacks/20260805_external_intelligence_phase_b2_orchestration.sql",
     "utf8"
   );
 

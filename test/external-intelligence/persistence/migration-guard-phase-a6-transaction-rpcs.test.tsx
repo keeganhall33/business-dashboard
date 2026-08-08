@@ -5,11 +5,11 @@ import path from "node:path";
 
 const FWD = path.join(
   process.cwd(),
-  "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
+  "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql"
 );
 const RB = path.join(
   process.cwd(),
-  "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.rollback.sql"
+  "supabase/rollbacks/20260804_external_intelligence_phase_a6_transaction_rpcs.sql"
 );
 
 const REQUIRED_FUNCS = [

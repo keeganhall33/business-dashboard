@@ -6,11 +6,11 @@ import { createDisposableDb } from "./_rpc-disposable-db";
 test("a6 authz: service_role jwt claim is required (request.jwt.claim.role), not session_user", () => {
   const db = createDisposableDb();
 
-  db.file("supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  db.file("supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   db.psql(
     "do $$begin create role anon; exception when duplicate_object then null; end$$; do $$begin create role authenticated; exception when duplicate_object then null; end$$; do $$begin create role service_role login; exception when duplicate_object then null; end$$;"
   );
-  db.file("supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
+  db.file("supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
   db.file("supabase/migrations/20260807201000_external_intelligence_phase_a6_rpc_authz_fix.sql");
 
   // Missing claim fails closed (even if connected as service_role DB role).

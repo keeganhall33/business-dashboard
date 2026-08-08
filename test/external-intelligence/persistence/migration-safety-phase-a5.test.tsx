@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 test("phase a5 migration safety: no reserved unquoted window column, no destructive changes to existing tables", () => {
-  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   // Reserved-word audit: do not define an unquoted column named window.
@@ -20,7 +20,7 @@ test("phase a5 migration safety: no reserved unquoted window column, no destruct
 });
 
 test("phase a5 migration safety: stable-current-version foreign keys exist and are deferrable", () => {
-  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   assert.ok(/constraint\s+external_evidence_references_v1__current_version_fk/i.test(sql));
@@ -31,7 +31,7 @@ test("phase a5 migration safety: stable-current-version foreign keys exist and a
 });
 
 test("phase a5 migration safety: retention payload consistency checks exist", () => {
-  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   assert.ok(/payload_available\s*=\s*true\s+and\s+payload_json\s+is\s+not\s+null/i.test(sql));
@@ -42,7 +42,7 @@ test("phase a5 migration safety: retention payload consistency checks exist", ()
 });
 
 test("phase a5 migration safety: processing run completeness checks exist", () => {
-  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   assert.ok(/external_processing_runs_v1__counts_check/i.test(sql));

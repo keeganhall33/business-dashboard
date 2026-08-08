@@ -28,7 +28,7 @@
 ### Storage shape
 
 - **Supabase schema/migrations:** `supabase/schema.sql`, `supabase/migrations/**`
-- **Woo telemetry tables (production-backed):** `supabase/migrations/20260728_add_woo_order_telemetry_v1.sql`
+- **Woo telemetry tables (production-backed):** `supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql`
 - **Scheduler tables:** `supabase/migrations/20260430_add_scheduler_tables.sql` + `supabase/phase4_scheduler.sql`
 - **Snapshot-style tables / feeds:** see `supabase/schema.sql` + `src/lib/supabase/**` (varies by source)
 
@@ -66,7 +66,7 @@
 - **Evidence:**
   - `scripts/run-woo-telemetry.mjs`
   - `src/lib/woo/woo-ingestion.ts`
-  - `supabase/migrations/20260728_add_woo_order_telemetry_v1.sql`
+  - `supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql`
   - `supabase/schema.sql` (RPC stub)
   - `.github/workflows/dashboard-scheduler.yml`
   - `src/components/dashboard/CommerceVisualsPanel.tsx`
@@ -442,7 +442,7 @@ Highlights:
 
 - Workflows: `.github/workflows/dashboard-scheduler.yml`
 - CI templates: `.env.website.ci`, `.env.meta.ci`, `.env.leads.ci`, `.env.cloudflare.ci`, `.env.woo.ci`
-- Woo telemetry: `scripts/run-woo-telemetry.mjs`, `src/lib/woo/woo-ingestion.ts`, `supabase/migrations/20260728_add_woo_order_telemetry_v1.sql`
+- Woo telemetry: `scripts/run-woo-telemetry.mjs`, `src/lib/woo/woo-ingestion.ts`, `supabase/migrations/20260621120000_add_woo_order_telemetry_v1.sql`
 - Dashboard API: `src/app/api/dashboard/overview/route.ts`
 - Confidence: `src/lib/data-confidence.ts`
 - Opportunity/action: `src/lib/opportunity-approval-pipeline.ts`, `src/app/api/opportunities/**`, `src/app/api/tasks/**`

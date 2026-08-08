@@ -24,11 +24,11 @@ function assertNotHas(haystack: string, needle: string) {
 test("a6 authz regression: seven RPCs use PostgREST JWT role gate (no session_user) and preserve security/grants", () => {
   const db = createDisposableDb();
 
-  db.file("supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+  db.file("supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
   db.psql(
     "do $$begin create role anon; exception when duplicate_object then null; end$$; do $$begin create role authenticated; exception when duplicate_object then null; end$$; do $$begin create role service_role login; exception when duplicate_object then null; end$$;"
   );
-  db.file("supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
+  db.file("supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
   db.file("supabase/migrations/20260807201000_external_intelligence_phase_a6_rpc_authz_fix.sql");
 
   for (const fn of RPCS) {

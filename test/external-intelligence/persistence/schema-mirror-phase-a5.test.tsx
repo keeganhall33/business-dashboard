@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const schemaPath = path.join(process.cwd(), "supabase/schema.sql");
-const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
+const migrationPath = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
 
 const CRITICAL_SNIPPETS: Array<{ name: string; pattern: RegExp }> = [
   {

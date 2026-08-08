@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { createDisposableDb } from "./_rpc-disposable-db";
 
-const A5 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
-const A61 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
+const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
+const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
 
 function asServiceRole(db: ReturnType<typeof createDisposableDb>) {
   db.psql("do $$begin create role service_role; exception when duplicate_object then null; end$$;");
