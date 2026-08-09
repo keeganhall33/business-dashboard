@@ -6,6 +6,7 @@ import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabas
 import { EXTERNAL_INTELLIGENCE_RPCS } from "@/lib/external-intelligence/persistence/supabase/transactions";
 import {
   PersistenceIdempotencyConflictError,
+  PersistenceClaimVersionIdentityConflictError,
   PersistenceLinkedVersionNotFoundError,
   PersistenceObjectTypeMismatchError
 } from "@/lib/external-intelligence/persistence/errors";
@@ -139,5 +140,24 @@ test("Claim: integrity error mapped", async () => {
         opts: { client: mock as any }
       }),
     (err: any) => err instanceof PersistenceIdempotencyConflictError
+  );
+});
+
+test("Claim: claim_version_identity_conflict mapped", async () => {
+  const mock = new MockSupabaseClient();
+  mock.onRpc(EXTERNAL_INTELLIGENCE_RPCS.persistClaim, () => ({ error: { message: "claim_version_identity_conflict" }, data: null }));
+
+  const repo = new ClaimRepository();
+  await assert.rejects(
+    () =>
+      repo.persistClaim({
+        claim: sampleClaim() as any,
+        evidence_version_ref: evidenceRef() as any,
+        policy_refs_json: [],
+        interpretation_policy_hash: hex("c"),
+        edge: { relation: "supports", policy_version: "prov/v1", policy_hash: hex("d") },
+        opts: { client: mock as any }
+      }),
+    (err: any) => err instanceof PersistenceClaimVersionIdentityConflictError
   );
 });

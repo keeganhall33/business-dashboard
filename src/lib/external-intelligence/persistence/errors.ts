@@ -12,6 +12,17 @@ export class PersistenceIdempotencyConflictError extends ExternalIntelligencePer
   name = "PersistenceIdempotencyConflictError";
 }
 
+/**
+ * Semantic-identity conflict for immutable Claim versions.
+ *
+ * Use when the persistence layer detects a payload mismatch for a Claim that is
+ * semantically the same under (claim_fingerprint, interpretation_policy_hash),
+ * but is not eligible for replay-equivalence.
+ */
+export class PersistenceClaimVersionIdentityConflictError extends ExternalIntelligencePersistenceError {
+  name = "PersistenceClaimVersionIdentityConflictError";
+}
+
 export class PersistenceCompletenessError extends ExternalIntelligencePersistenceError {
   name = "PersistenceCompletenessError";
 }

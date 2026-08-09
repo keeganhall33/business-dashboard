@@ -50,6 +50,18 @@ const CRITICAL_SNIPPETS: Array<{ name: string; pattern: RegExp }> = [
   }
 ];
 
+// Snippets that may be introduced after the Phase A5 migration but must be present in schema.sql.
+const SCHEMA_ONLY_SNIPPETS: Array<{ name: string; pattern: RegExp }> = [
+  {
+    name: "persist_external_claim_v1 semantic replay equivalence allows retrieved_at drift",
+    pattern: /payload_json\s*,\s*'\{\}'::jsonb\)\s*-\s*'retrieved_at'/i
+  },
+  {
+    name: "persist_external_claim_v1 emits claim_version_identity_conflict",
+    pattern: /claim_version_identity_conflict/i
+  }
+];
+
 test("phase a5 schema mirror: schema.sql contains critical external-intelligence definitions", () => {
   const schemaSql = fs.readFileSync(schemaPath, "utf8");
 
@@ -71,6 +83,10 @@ test("phase a5 schema mirror: schema.sql contains critical external-intelligence
 
   for (const s of CRITICAL_SNIPPETS) {
     assert.ok(s.pattern.test(schemaSql), `schema.sql missing critical snippet: ${s.name}`);
+  }
+
+  for (const s of SCHEMA_ONLY_SNIPPETS) {
+    assert.ok(s.pattern.test(schemaSql), `schema.sql missing required snippet: ${s.name}`);
   }
 });
 
