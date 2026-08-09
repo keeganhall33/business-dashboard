@@ -4,6 +4,7 @@ import { z } from "zod";
 import { assertSchedulerAuth } from "@/lib/scheduler/auth";
 import { runBoardroomCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/boardroom-collection-v1";
 import { runHoophallCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/hoophall-collection-v1";
+import { runSportsProCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/sportspro-collection-v1";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,17 @@ const BodySchema = z
 
     // One-shot only: optional narrow filter for Boardroom controlled proofs.
     boardroom: z
+      .object({
+        // Safety: keep the maximum explicitly-selected persistence targets <= 5.
+        // We reject oversized filters rather than silently truncating.
+        evidence_reference_ids: z.array(z.string().min(1)).min(1).max(5).optional(),
+        canonical_urls: z.array(z.string().url()).min(1).max(5).optional()
+      })
+      .strict()
+      .optional(),
+
+    // One-shot only: optional narrow filter for SportsPro controlled proofs.
+    sportspro: z
       .object({
         // Safety: keep the maximum explicitly-selected persistence targets <= 5.
         // We reject oversized filters rather than silently truncating.
@@ -34,6 +46,15 @@ const BodySchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["boardroom"], message: "empty_boardroom_filter" });
       }
     }
+
+    // Fail closed: an explicitly supplied sportspro filter must contain at least one selector.
+    if (val.sportspro) {
+      const hasIds = (val.sportspro.evidence_reference_ids ?? []).length > 0;
+      const hasUrls = (val.sportspro.canonical_urls ?? []).length > 0;
+      if (!hasIds && !hasUrls) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sportspro"], message: "empty_sportspro_filter" });
+      }
+    }
   });
 
 type OneShotHandler = {
@@ -51,6 +72,16 @@ const ONE_SHOT_ALLOWLIST: Record<string, OneShotHandler> = {
     source_id: "sports_business.boardroom",
     run_lane_one_shot: (input) =>
       runBoardroomCollectionLaneV1({
+        ...input,
+        mode: "one_shot",
+        one_shot_filter: input.one_shot_filter
+      })
+  },
+  "sports_business.sportspro:production": {
+    schedule_id: "sports_business.sportspro:production",
+    source_id: "sports_business.sportspro",
+    run_lane_one_shot: (input) =>
+      runSportsProCollectionLaneV1({
         ...input,
         mode: "one_shot",
         one_shot_filter: input.one_shot_filter
@@ -76,12 +107,23 @@ export function __test__parseOneShotBody(input: unknown) {
     throw new Error("boardroom_filter_not_allowed_for_schedule");
   }
 
+  // SportsPro filter is allowlisted for sportspro schedule only.
+  const sportsproScheduleId = "sports_business.sportspro:production" as const;
+  if (body.sportspro && body.schedule_id !== sportsproScheduleId) {
+    throw new Error("sportspro_filter_not_allowed_for_schedule");
+  }
+
   const one_shot_filter = body.boardroom
     ? {
         evidence_reference_ids: body.boardroom.evidence_reference_ids,
         canonical_urls: body.boardroom.canonical_urls
       }
-    : null;
+    : body.sportspro
+      ? {
+          evidence_reference_ids: body.sportspro.evidence_reference_ids,
+          canonical_urls: body.sportspro.canonical_urls
+        }
+      : null;
 
   return { body, one_shot_filter };
 }

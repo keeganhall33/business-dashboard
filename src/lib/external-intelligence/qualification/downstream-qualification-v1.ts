@@ -6,6 +6,7 @@ import type { SportsMilestone } from "@/lib/external-intelligence/milestones/con
 
 import { HOOPHALL_SOURCE_ID } from "@/lib/external-intelligence/collection/hoophall/hoophall.contract";
 import { BOARDROOM_SOURCE_ID } from "@/lib/external-intelligence/collection/boardroom/boardroom.contract";
+import { SPORTSPRO_SOURCE_ID } from "@/lib/external-intelligence/collection/sportspro/sportspro.contract";
 import {
   type HoophallMilestoneCategory,
   qualifyHoophallItemToMilestone,
@@ -35,7 +36,11 @@ type BoardroomSourceContext = {
   kind: "boardroom";
 };
 
-export type SourceContextV1 = HoophallSourceContext | BoardroomSourceContext;
+type SportsProSourceContext = {
+  kind: "sportspro";
+};
+
+export type SourceContextV1 = HoophallSourceContext | BoardroomSourceContext | SportsProSourceContext;
 
 function okEmpty(input: { status: DownstreamQualificationStatus; reason_codes: string[] }): DownstreamQualificationResultV1 {
   return Object.freeze({ status: input.status, reason_codes: input.reason_codes.slice(), claims: [], sports_milestones: [] });
@@ -64,9 +69,11 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
   try {
     const ev = input.evidence;
 
-    if (input.source_context.kind === "boardroom") {
-      // Boardroom: generalized deterministic claims (V1) based only on persisted title+excerpt.
-      if (ev.source_id !== BOARDROOM_SOURCE_ID) {
+    if (input.source_context.kind === "boardroom" || input.source_context.kind === "sportspro") {
+      // Boardroom + SportsPro: generalized deterministic claims (V1) based only on persisted title+excerpt.
+      // Predicate set remains unchanged; source controls only the evidence ingest.
+      const expectedSourceId = input.source_context.kind === "boardroom" ? BOARDROOM_SOURCE_ID : SPORTSPRO_SOURCE_ID;
+      if (ev.source_id !== expectedSourceId) {
         return okEmpty({ status: "unsupported", reason_codes: ["source_id_mismatch"] });
       }
 
