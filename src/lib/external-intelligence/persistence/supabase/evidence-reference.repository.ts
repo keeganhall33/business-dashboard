@@ -14,6 +14,29 @@ import { mapEvidenceStableRow, mapEvidenceVersionRow } from "@/lib/external-inte
 import { EXTERNAL_INTELLIGENCE_RPCS, runRpc } from "@/lib/external-intelligence/persistence/supabase/transactions";
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 
+/**
+ * Evidence VersionRef policy_version semantics:
+ * For EvidenceReference versions, policy_version MUST describe the persisted version's legal/access policy,
+ * not the current runtime lane configuration. This keeps immutable provenance pins stable across recollection.
+ */
+export function __test__createEvidenceReferenceVersionRef(input: {
+  evidence_reference_id: string;
+  content_hash: string;
+  schema_version: string;
+  legal_policy_version: string;
+  created_at_iso?: string;
+}): VersionRef {
+  return Object.freeze({
+    object_type: "evidence_reference",
+    object_id: input.evidence_reference_id,
+    version_id: null,
+    content_hash: input.content_hash,
+    schema_version: input.schema_version,
+    policy_version: input.legal_policy_version,
+    created_at: input.created_at_iso ?? new Date().toISOString()
+  });
+}
+
 export class EvidenceReferenceRepository {
   async getStable(evidence_reference_id: string, opts?: { client?: ReturnType<typeof getExternalIntelligenceSupabaseClient> }) {
     const supabase = getExternalIntelligenceSupabaseClient({ client: opts?.client });
@@ -140,15 +163,12 @@ export class EvidenceReferenceRepository {
     const row = res[0];
     if (!row) throw new Error("unknown_db_error");
 
-    const ref: VersionRef = {
-      object_type: "evidence_reference",
-      object_id: row.evidence_reference_id,
-      version_id: null,
+    const ref: VersionRef = __test__createEvidenceReferenceVersionRef({
+      evidence_reference_id: row.evidence_reference_id,
       content_hash: row.content_hash,
       schema_version: parsed.schema_version,
-      policy_version: input.policy_version,
-      created_at: new Date().toISOString()
-    };
+      legal_policy_version: parsed.legal_policy_version
+    });
 
     void computeContentHash;
 
