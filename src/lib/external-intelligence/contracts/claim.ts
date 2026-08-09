@@ -1,6 +1,11 @@
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 import { EntityRefSchema, type EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
 import type { ClaimVerificationState, ObservedVsInferred } from "@/lib/external-intelligence/contracts/enums";
+import {
+  ClaimQualifiersSchemaV2,
+  canonicalizeClaimQualifiersV2,
+  type ClaimQualifierV2
+} from "@/lib/external-intelligence/contracts/claim-qualifiers-v2";
 import { z } from "zod";
 
 export type ClaimRelevanceWindow = {
@@ -34,6 +39,10 @@ export type Claim = {
   subject: EntityRef | null; // nullable when entity is unresolved/ambiguous
   predicate: string;
   object: ClaimObject;
+
+  // V2: semantically meaningful relationship qualifiers (canonicalized + bounded).
+  // V1 payloads do not include this field.
+  qualifiers?: ClaimQualifierV2[];
 
   event_time: string | null;
   announcement_time: string | null;
@@ -92,7 +101,7 @@ const ClaimObjectSchema = z.union([ClaimObjectLiteralSchema, ClaimObjectEntitySc
 
 const ClaimSubjectSchema = EntityRefSchema.nullable();
 
-export const ClaimSchema = z
+const ClaimBaseSchema = z
   .object({
     claim_id: z.string().min(1),
     claim_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -131,10 +140,28 @@ export const ClaimSchema = z
   })
   .strict();
 
+export const ClaimV1Schema = ClaimBaseSchema
+  .extend({
+    // V1 payloads do NOT contain qualifiers.
+    schema_version: z.literal("claim_v1")
+  })
+  .strict();
+
+export const ClaimV2Schema = ClaimBaseSchema
+  .extend({
+    schema_version: z.literal("claim_v2"),
+    qualifiers: ClaimQualifiersSchemaV2
+  })
+  .strict();
+
+export const ClaimSchema = z.union([ClaimV1Schema, ClaimV2Schema]);
+
 export function computeClaimFingerprint(input: Omit<Claim, "claim_fingerprint">): string {
   // Deterministic fingerprint based on canonical claim content.
   // Note: claim_id is excluded so the fingerprint can be used to derive ids.
-  const stable = {
+  //
+  // V1 compatibility: projection must remain bit-for-bit identical to the historical V1 projection.
+  const stableV1 = {
     evidence_reference_id: input.evidence_reference_id,
     subject_entity_id: input.subject?.entity_id ?? null,
     predicate: input.predicate,
@@ -150,5 +177,11 @@ export function computeClaimFingerprint(input: Omit<Claim, "claim_fingerprint">)
     schema_version: input.schema_version,
     interpretation_policy_version: input.interpretation_policy_version
   };
-  return computeContentHash(stable);
+
+  if (input.schema_version !== "claim_v2") {
+    return computeContentHash(stableV1);
+  }
+
+  const canonicalQualifiers = canonicalizeClaimQualifiersV2((input as Claim).qualifiers ?? []);
+  return computeContentHash({ ...stableV1, qualifiers: canonicalQualifiers });
 }

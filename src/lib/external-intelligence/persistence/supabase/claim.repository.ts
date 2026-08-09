@@ -3,6 +3,7 @@ import "@/lib/server-only";
 import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
 import type { Claim } from "@/lib/external-intelligence/contracts/claim";
 import { ClaimSchema, computeClaimFingerprint } from "@/lib/external-intelligence/contracts/claim";
+import { canonicalizeClaimQualifiersV2 } from "@/lib/external-intelligence/contracts/claim-qualifiers-v2";
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 import { PersistenceNotFoundError, PersistenceObjectTypeMismatchError } from "@/lib/external-intelligence/persistence/errors";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
@@ -66,14 +67,24 @@ export class ClaimRepository {
       throw new PersistenceObjectTypeMismatchError("object_type_mismatch");
     }
 
-    const { claim_fingerprint: _claim_fingerprint, ...rest } = parsed;
+    // Canonicalize V2 qualifiers before integrity checks and persistence.
+    // V1 payloads are preserved as-is.
+    const canonicalParsed: Claim =
+      parsed.schema_version === "claim_v2"
+        ? {
+            ...parsed,
+            qualifiers: canonicalizeClaimQualifiersV2((parsed as Claim).qualifiers ?? [])
+          }
+        : parsed;
+
+    const { claim_fingerprint: _claim_fingerprint, ...rest } = canonicalParsed;
     void _claim_fingerprint;
     const computedFingerprint = computeClaimFingerprint(rest);
-    if (computedFingerprint !== parsed.claim_fingerprint) {
+    if (computedFingerprint !== canonicalParsed.claim_fingerprint) {
       throw new Error("integrity_conflict");
     }
 
-    const version_content_hash = computeContentHash(parsed);
+    const version_content_hash = computeContentHash(canonicalParsed);
     if (input.supplied_content_hash && input.supplied_content_hash !== version_content_hash) {
       throw new Error("content_hash_mismatch");
     }
@@ -85,11 +96,11 @@ export class ClaimRepository {
       client: supabase,
       fn: EXTERNAL_INTELLIGENCE_RPCS.persistClaim,
       args: {
-        in_claim_id: parsed.claim_id,
+        in_claim_id: canonicalParsed.claim_id,
         in_content_hash: version_content_hash,
-        in_schema_version: parsed.schema_version,
-        in_claim_fingerprint: parsed.claim_fingerprint,
-        in_interpretation_policy_version: parsed.interpretation_policy_version,
+        in_schema_version: canonicalParsed.schema_version,
+        in_claim_fingerprint: canonicalParsed.claim_fingerprint,
+        in_interpretation_policy_version: canonicalParsed.interpretation_policy_version,
         in_interpretation_policy_hash: input.interpretation_policy_hash,
 
         in_evidence_reference_id: input.evidence_version_ref.object_id,
@@ -97,11 +108,11 @@ export class ClaimRepository {
         in_evidence_version_ref_json: input.evidence_version_ref,
 
         in_policy_refs_json: input.policy_refs_json,
-        in_effective_at: parsed.event_time,
-        in_valid_from: parsed.relevance_window.start,
-        in_valid_until: parsed.relevance_window.end,
+        in_effective_at: canonicalParsed.event_time,
+        in_valid_from: canonicalParsed.relevance_window.start,
+        in_valid_until: canonicalParsed.relevance_window.end,
         in_supersedes_content_hashes: [],
-        in_payload_json: parsed,
+        in_payload_json: canonicalParsed,
         in_retention_policy: "retain",
         in_retention_expires_at: null,
         in_legal_hold: false,
@@ -123,8 +134,8 @@ export class ClaimRepository {
       object_id: row.claim_id,
       version_id: null,
       content_hash: row.content_hash,
-      schema_version: parsed.schema_version,
-      policy_version: parsed.interpretation_policy_version,
+      schema_version: canonicalParsed.schema_version,
+      policy_version: canonicalParsed.interpretation_policy_version,
       created_at: new Date().toISOString()
     };
     return Object.freeze({

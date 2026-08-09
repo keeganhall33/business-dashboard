@@ -18,7 +18,7 @@ function claimRef() {
     object_id: "c1",
     version_id: null,
     content_hash: hex("a"),
-    schema_version: "claim/v1",
+    schema_version: "claim_v1",
     policy_version: "ip/v1",
     created_at: "2026-08-05T00:00:00.000Z"
   } as const;

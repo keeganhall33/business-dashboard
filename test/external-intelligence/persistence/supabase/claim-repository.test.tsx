@@ -69,7 +69,7 @@ function sampleClaim() {
     contradiction_state: "none",
     correction_state: "none",
     relevance_window: { start: null, end: null },
-    schema_version: "claim/v1",
+    schema_version: "claim_v1",
     interpretation_policy_version: "ip/v1"
   } as any;
 
