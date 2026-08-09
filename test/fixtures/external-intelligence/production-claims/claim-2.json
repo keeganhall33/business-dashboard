@@ -1,0 +1,104 @@
+{
+  "claim_id": "cl_e3c89b410a043db766bcf711",
+  "content_hash": "b4b6f1ba828fc09f9920ac44486dcd21ebd6e3d1f28e8a87ad1aac51b81373e9",
+  "schema_version": "claim_v2",
+  "payload_json": {
+    "announcement_time": null,
+    "claim_fingerprint": "6c8536e83605479d5501b196fb563f7c31b48f13caafd20643e5adf9cdab4f81",
+    "claim_id": "cl_e3c89b410a043db766bcf711",
+    "contradiction_state": "none",
+    "correction_state": "none",
+    "event_time": null,
+    "evidence_reference_id": "ev_7acf1d21bdc0dff15d021946",
+    "extraction_confidence": {
+      "level": "high",
+      "reasons": [
+        "explicit_appointment_language_in_persisted_title_or_excerpt"
+      ]
+    },
+    "interpretation_policy_version": "generalized_claim_v2.appointed.deterministic.v1",
+    "object": {
+      "entity": {
+        "alias_provenance": [
+          {
+            "alias": "Ten Toes",
+            "evidence_reference_id": "ev_7acf1d21bdc0dff15d021946",
+            "source_id": "sports_business.sportspro"
+          }
+        ],
+        "aliases": [],
+        "ambiguity_flags": [],
+        "canonical_name": "Ten Toes",
+        "entity_id": "provisional:organization:9b2d3f13e916cbe833187a41",
+        "entity_resolution_version": "entity_resolution_v1.provisional_only",
+        "entity_type": "organization",
+        "last_verified_at": null,
+        "possible_entity_ids": [],
+        "resolution_confidence": {
+          "blockers": [],
+          "bounded_score": null,
+          "contradicting_reference_ids": [],
+          "level": "possible",
+          "missing_evidence_ids": [],
+          "reasons": [
+            "provisional_from_persisted_text"
+          ],
+          "supporting_reference_ids": []
+        },
+        "resolution_status": "unresolved",
+        "source_specific_ids": {},
+        "valid_from": null,
+        "valid_until": null
+      },
+      "kind": "entity"
+    },
+    "observed_vs_inferred": "observed",
+    "predicate": "appointed",
+    "qualifiers": [
+      {
+        "key": "appointment_role",
+        "value": "lead digital marketing",
+        "value_type": "string"
+      }
+    ],
+    "relevance_window": {
+      "end": null,
+      "start": null
+    },
+    "retrieved_at": "2026-08-09T12:09:16.790Z",
+    "schema_version": "claim_v2",
+    "subject": {
+      "alias_provenance": [
+        {
+          "alias": "Premier Padel",
+          "evidence_reference_id": "ev_7acf1d21bdc0dff15d021946",
+          "source_id": "sports_business.sportspro"
+        }
+      ],
+      "aliases": [],
+      "ambiguity_flags": [],
+      "canonical_name": "Premier Padel",
+      "entity_id": "provisional:organization:855052d8c715418165b6cb72",
+      "entity_resolution_version": "entity_resolution_v1.provisional_only",
+      "entity_type": "organization",
+      "last_verified_at": null,
+      "possible_entity_ids": [],
+      "resolution_confidence": {
+        "blockers": [],
+        "bounded_score": null,
+        "contradicting_reference_ids": [],
+        "level": "possible",
+        "missing_evidence_ids": [],
+        "reasons": [
+          "provisional_from_persisted_text"
+        ],
+        "supporting_reference_ids": []
+      },
+      "resolution_status": "unresolved",
+      "source_specific_ids": {},
+      "valid_from": null,
+      "valid_until": null
+    },
+    "verification_state": "unverified"
+  }
+}
