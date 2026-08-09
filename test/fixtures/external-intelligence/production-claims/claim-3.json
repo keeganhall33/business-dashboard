@@ -1,0 +1,104 @@
+{
+  "claim_id": "cl_506650e255d94915d1bb4b81",
+  "content_hash": "5b6ad1e025adbe5651eb737918e0d595c66817fe0157c5e1125fe245aa47b92c",
+  "schema_version": "claim_v2",
+  "payload_json": {
+    "announcement_time": null,
+    "claim_fingerprint": "c86e7dd7450f3986a5d61648c7b6c865264388135103551ad0e645e33fdd0405",
+    "claim_id": "cl_506650e255d94915d1bb4b81",
+    "contradiction_state": "none",
+    "correction_state": "none",
+    "event_time": null,
+    "evidence_reference_id": "ev_f1fa565a9fdf8831ec0e7d7b",
+    "extraction_confidence": {
+      "level": "high",
+      "reasons": [
+        "explicit_appointment_language_in_persisted_title_or_excerpt"
+      ]
+    },
+    "interpretation_policy_version": "generalized_claim_v2.appointed.deterministic.v1",
+    "object": {
+      "entity": {
+        "alias_provenance": [
+          {
+            "alias": "Ten Toes",
+            "evidence_reference_id": "ev_f1fa565a9fdf8831ec0e7d7b",
+            "source_id": "sports_business.sportspro"
+          }
+        ],
+        "aliases": [],
+        "ambiguity_flags": [],
+        "canonical_name": "Ten Toes",
+        "entity_id": "provisional:organization:9b2d3f13e916cbe833187a41",
+        "entity_resolution_version": "entity_resolution_v1.provisional_only",
+        "entity_type": "organization",
+        "last_verified_at": null,
+        "possible_entity_ids": [],
+        "resolution_confidence": {
+          "blockers": [],
+          "bounded_score": null,
+          "contradicting_reference_ids": [],
+          "level": "possible",
+          "missing_evidence_ids": [],
+          "reasons": [
+            "provisional_from_persisted_text"
+          ],
+          "supporting_reference_ids": []
+        },
+        "resolution_status": "unresolved",
+        "source_specific_ids": {},
+        "valid_from": null,
+        "valid_until": null
+      },
+      "kind": "entity"
+    },
+    "observed_vs_inferred": "observed",
+    "predicate": "appointed",
+    "qualifiers": [
+      {
+        "key": "appointment_role",
+        "value": "content agency",
+        "value_type": "string"
+      }
+    ],
+    "relevance_window": {
+      "end": null,
+      "start": null
+    },
+    "retrieved_at": "2026-08-09T12:09:16.790Z",
+    "schema_version": "claim_v2",
+    "subject": {
+      "alias_provenance": [
+        {
+          "alias": "MI London",
+          "evidence_reference_id": "ev_f1fa565a9fdf8831ec0e7d7b",
+          "source_id": "sports_business.sportspro"
+        }
+      ],
+      "aliases": [],
+      "ambiguity_flags": [],
+      "canonical_name": "MI London",
+      "entity_id": "provisional:organization:a17bfbbb67e7358bd55489b6",
+      "entity_resolution_version": "entity_resolution_v1.provisional_only",
+      "entity_type": "organization",
+      "last_verified_at": null,
+      "possible_entity_ids": [],
+      "resolution_confidence": {
+        "blockers": [],
+        "bounded_score": null,
+        "contradicting_reference_ids": [],
+        "level": "possible",
+        "missing_evidence_ids": [],
+        "reasons": [
+          "provisional_from_persisted_text"
+        ],
+        "supporting_reference_ids": []
+      },
+      "resolution_status": "unresolved",
+      "source_specific_ids": {},
+      "valid_from": null,
+      "valid_until": null
+    },
+    "verification_state": "unverified"
+  }
+}

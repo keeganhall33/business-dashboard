@@ -1,0 +1,97 @@
+{
+  "claim_id": "cl_aeff8c0fc82472845b1e758d",
+  "content_hash": "2fd5297932868c9d606453778f7913c6c88110c0e4f75815acff3ff45003c7c2",
+  "schema_version": "claim_v1",
+  "payload_json": {
+    "announcement_time": null,
+    "claim_fingerprint": "5dabdb35eaede07ba2e039423a174bc4333536be70c8a3bf6ad7d50d31feb14f",
+    "claim_id": "cl_aeff8c0fc82472845b1e758d",
+    "contradiction_state": "none",
+    "correction_state": "none",
+    "event_time": null,
+    "evidence_reference_id": "ev_2623049899a3bd37abf05087",
+    "extraction_confidence": {
+      "level": "high",
+      "reasons": [
+        "explicit_partnership_language_in_persisted_excerpt"
+      ]
+    },
+    "interpretation_policy_version": "generalized_claim_v1.partnered_with.deterministic.v1",
+    "object": {
+      "entity": {
+        "alias_provenance": [
+          {
+            "alias": "Google DeepMind",
+            "evidence_reference_id": "ev_2623049899a3bd37abf05087",
+            "source_id": "sports_business.boardroom"
+          }
+        ],
+        "aliases": [],
+        "ambiguity_flags": [],
+        "canonical_name": "Google DeepMind",
+        "entity_id": "provisional:organization:470e60f3dc2608fe3797122e",
+        "entity_resolution_version": "entity_resolution_v1.provisional_only",
+        "entity_type": "organization",
+        "last_verified_at": null,
+        "possible_entity_ids": [],
+        "resolution_confidence": {
+          "blockers": [],
+          "bounded_score": null,
+          "contradicting_reference_ids": [],
+          "level": "possible",
+          "missing_evidence_ids": [],
+          "reasons": [
+            "provisional_from_persisted_text"
+          ],
+          "supporting_reference_ids": []
+        },
+        "resolution_status": "unresolved",
+        "source_specific_ids": {},
+        "valid_from": null,
+        "valid_until": null
+      },
+      "kind": "entity"
+    },
+    "observed_vs_inferred": "observed",
+    "predicate": "partnered_with",
+    "relevance_window": {
+      "end": null,
+      "start": null
+    },
+    "retrieved_at": "2026-08-08T21:05:01.289Z",
+    "schema_version": "claim_v1",
+    "subject": {
+      "alias_provenance": [
+        {
+          "alias": "A24",
+          "evidence_reference_id": "ev_2623049899a3bd37abf05087",
+          "source_id": "sports_business.boardroom"
+        }
+      ],
+      "aliases": [],
+      "ambiguity_flags": [],
+      "canonical_name": "A24",
+      "entity_id": "provisional:organization:6ad9a7efad81aeba00b568cf",
+      "entity_resolution_version": "entity_resolution_v1.provisional_only",
+      "entity_type": "organization",
+      "last_verified_at": null,
+      "possible_entity_ids": [],
+      "resolution_confidence": {
+        "blockers": [],
+        "bounded_score": null,
+        "contradicting_reference_ids": [],
+        "level": "possible",
+        "missing_evidence_ids": [],
+        "reasons": [
+          "provisional_from_persisted_text"
+        ],
+        "supporting_reference_ids": []
+      },
+      "resolution_status": "unresolved",
+      "source_specific_ids": {},
+      "valid_from": null,
+      "valid_until": null
+    },
+    "verification_state": "unverified"
+  }
+}
