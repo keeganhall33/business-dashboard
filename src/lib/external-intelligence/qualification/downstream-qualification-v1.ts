@@ -15,6 +15,7 @@ import {
 } from "@/lib/external-intelligence/collection/hoophall/hoophall.qualification";
 
 import { qualifyGeneralizedClaimsV1 } from "@/lib/external-intelligence/qualification/generalized-claim-qualifier-v1";
+import { qualifyGeneralizedClaimsV2 } from "@/lib/external-intelligence/qualification/generalized-claim-qualifier-v2";
 
 export type DownstreamQualificationStatus = "qualified" | "not_qualified" | "unsupported" | "error";
 
@@ -70,8 +71,6 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
     const ev = input.evidence;
 
     if (input.source_context.kind === "boardroom" || input.source_context.kind === "sportspro") {
-      // Boardroom + SportsPro: generalized deterministic claims (V1) based only on persisted title+excerpt.
-      // Predicate set remains unchanged; source controls only the evidence ingest.
       const expectedSourceId = input.source_context.kind === "boardroom" ? BOARDROOM_SOURCE_ID : SPORTSPRO_SOURCE_ID;
       if (ev.source_id !== expectedSourceId) {
         return okEmpty({ status: "unsupported", reason_codes: ["source_id_mismatch"] });
@@ -81,17 +80,29 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
       const title = typeof pm.title === "string" ? pm.title : null;
       const excerpt = typeof pm.excerpt === "string" ? pm.excerpt : null;
 
-      const q = qualifyGeneralizedClaimsV1({
-        evidence_reference_id: ev.evidence_reference_id,
-        source_id: ev.source_id,
-        title,
-        excerpt,
-        // IMPORTANT: Claims are derived from persisted evidence text.
-        // We intentionally pin claim.retrieved_at to the evidence retrieval timestamp
-        // (not the current qualification runtime) so recollection can replay idempotently
-        // without attempting to create a new claim version for each run.
-        retrieved_at_iso: ev.retrieved_at
-      });
+      // IMPORTANT: Claims are derived from persisted evidence text.
+      // We intentionally pin claim.retrieved_at to the evidence retrieval timestamp
+      // (not the current qualification runtime) so recollection can replay idempotently.
+      const retrieved_at_iso = ev.retrieved_at;
+
+      // Boardroom remains on generalized_claim_v1 (partnered_with only).
+      // SportsPro upgrades to generalized_claim_v2 (adds appointed; SportsPro only).
+      const q =
+        input.source_context.kind === "sportspro"
+          ? qualifyGeneralizedClaimsV2({
+              evidence_reference_id: ev.evidence_reference_id,
+              source_id: ev.source_id,
+              title,
+              excerpt,
+              retrieved_at_iso
+            })
+          : qualifyGeneralizedClaimsV1({
+              evidence_reference_id: ev.evidence_reference_id,
+              source_id: ev.source_id,
+              title,
+              excerpt,
+              retrieved_at_iso
+            });
 
       if (q.status === "qualified") {
         return Object.freeze({ status: "qualified", reason_codes: [], claims: q.claims, sports_milestones: [] });
@@ -101,7 +112,6 @@ export function qualifyEvidenceReferenceDownstreamV1(input: {
         return okEmpty({ status: "error", reason_codes: q.reason_codes.length ? q.reason_codes : ["generalized_claim_error"] });
       }
 
-      // not_qualified is a normal successful outcome.
       return okEmpty({ status: "not_qualified", reason_codes: q.reason_codes.length ? q.reason_codes : ["not_qualified"] });
     }
 
