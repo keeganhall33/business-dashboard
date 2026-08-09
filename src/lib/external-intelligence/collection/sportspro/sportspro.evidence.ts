@@ -78,4 +78,3 @@ export function buildSportsProEvidenceReference(input: {
     schema_version: "evidence_reference_v1"
   };
 }
-

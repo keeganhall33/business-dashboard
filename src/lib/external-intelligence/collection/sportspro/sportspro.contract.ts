@@ -25,4 +25,3 @@ export const SportsProRssFeedSchema = z
     items: z.array(SportsProRssItemSchema)
   })
   .strict();
-

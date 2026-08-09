@@ -65,4 +65,3 @@ describe("SportsPro source v1", () => {
     expect(a.content_hash).not.toBe(b.content_hash);
   });
 });
-

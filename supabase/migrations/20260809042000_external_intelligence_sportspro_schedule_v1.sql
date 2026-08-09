@@ -54,4 +54,3 @@ insert into public.external_collection_schedules_v1(
 ) on conflict (schedule_id) do nothing;
 
 commit;
-
