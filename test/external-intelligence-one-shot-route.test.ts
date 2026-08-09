@@ -36,9 +36,14 @@ vi.mock("@/lib/external-intelligence/orchestration/handlers/hoophall-collection-
   runHoophallCollectionLaneV1: vi.fn(async () => ({ status: "succeeded" }))
 }));
 
+vi.mock("@/lib/external-intelligence/orchestration/handlers/sportspro-collection-v1", () => ({
+  runSportsProCollectionLaneV1: vi.fn(async () => ({ status: "succeeded" }))
+}));
+
 import { assertSchedulerAuth } from "@/lib/scheduler/auth";
 import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import { runBoardroomCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/boardroom-collection-v1";
+import { runSportsProCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/sportspro-collection-v1";
 import { POST } from "@/app/api/external-intelligence/one-shot-external-collection/route";
 
 type MockFn<TArgs extends unknown[] = unknown[], TResult = unknown> = {
@@ -90,5 +95,19 @@ describe("one-shot external collection route", () => {
     const json = (await res.json()) as unknown as { ok: boolean; lane?: { observability_v1?: { evidence?: { idempotent_replays?: number } } } };
     expect(json.ok).toBe(true);
     expect(json.lane?.observability_v1?.evidence?.idempotent_replays).toBe(1);
+  });
+
+  it("supports SportsPro one-shot allowlist", async () => {
+    const res = await POST(
+      makeRequest({
+        schedule_id: "sports_business.sportspro:production",
+        requested_by: "test",
+        sportspro: { evidence_reference_ids: ["ev_abc"] }
+      })
+    );
+    expect(res.status).toBe(200);
+    const lane = runSportsProCollectionLaneV1 as unknown as MockFn;
+    expect(lane.mock.calls.length).toBe(1);
+    expect(lane.mock.calls[0]?.[0]).toMatchObject({ mode: "one_shot" });
   });
 });

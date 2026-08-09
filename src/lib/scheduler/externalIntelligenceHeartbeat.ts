@@ -18,6 +18,7 @@ import { remainingLeaseMs, runWithTimeout } from "@/lib/external-intelligence/or
 import { runExternalLifecycleProbeLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/lifecycle-probe-v1";
 import { runHoophallCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/hoophall-collection-v1";
 import { runBoardroomCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/boardroom-collection-v1";
+import { runSportsProCollectionLaneV1 } from "@/lib/external-intelligence/orchestration/handlers/sportspro-collection-v1";
 
 type HeartbeatDeps = {
   withJobRun: typeof withJobRun;
@@ -37,6 +38,7 @@ type HeartbeatDeps = {
   runLifecycleProbe: typeof runExternalLifecycleProbeLaneV1;
   runHoophall: typeof runHoophallCollectionLaneV1;
   runBoardroom: typeof runBoardroomCollectionLaneV1;
+  runSportsPro: typeof runSportsProCollectionLaneV1;
 
   handlers: (input: { nowIso: string; nowYmd: string }) => Record<InternalOrchestrationJobKey, (signal: AbortSignal) => Promise<unknown>>;
 };
@@ -59,6 +61,7 @@ const DEFAULT_DEPS: HeartbeatDeps = {
   runLifecycleProbe: runExternalLifecycleProbeLaneV1,
   runHoophall: runHoophallCollectionLaneV1,
   runBoardroom: runBoardroomCollectionLaneV1,
+  runSportsPro: runSportsProCollectionLaneV1,
 
   handlers: ({ nowIso, nowYmd }) => ({
     "expired-lease-recovery-v1": (signal) => runExpiredLeaseRecoveryV1({ signal }),
@@ -241,6 +244,14 @@ export async function runExternalIntelligenceHeartbeatV1WithDeps(overrides?: Par
           results["boardroom-collection-v1"] = out;
         } else {
           results["boardroom-collection-v1"] = { status: "skipped", reason: "missing_supabase_env" };
+        }
+
+        // SportsPro V1: evidence-only source lane. Remains disabled by default.
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          const out = await deps.runSportsPro({ now_iso: nowIso });
+          results["sportspro-collection-v1"] = out;
+        } else {
+          results["sportspro-collection-v1"] = { status: "skipped", reason: "missing_supabase_env" };
         }
 
         return {
