@@ -11,7 +11,25 @@ vi.mock("@/lib/external-intelligence/persistence/supabase/client", () => ({
 }));
 
 vi.mock("@/lib/external-intelligence/orchestration/handlers/boardroom-collection-v1", () => ({
-  runBoardroomCollectionLaneV1: vi.fn(async () => ({ status: "succeeded" }))
+  runBoardroomCollectionLaneV1: vi.fn(async () => ({
+    status: "succeeded",
+    wrote: { evidence: 1, claims: 1 },
+    selection: { mode: "unfiltered", skipped_items: 0, selected_items: 1, filter: null },
+    observability_v1: {
+      collection: { fetched_items: 5, selected_items: 1, skipped_items: 4 },
+      evidence: { processed: 1, new_versions: 0, idempotent_replays: 1, errors: 0 },
+      qualification: {
+        processed: 1,
+        qualified: 1,
+        not_qualified: 0,
+        unsupported: 0,
+        errors: 0,
+        reason_codes: {}
+      },
+      claims: { proposed: 1, persistence_attempts: 1, new_versions: 0, idempotent_replays: 1, errors: 0 },
+      sports_milestones: { proposed: 0, persistence_attempts: 0, persisted: 0, errors: 0 }
+    }
+  }))
 }));
 
 vi.mock("@/lib/external-intelligence/orchestration/handlers/hoophall-collection-v1", () => ({
@@ -68,5 +86,9 @@ describe("one-shot external collection route", () => {
     const lane = runBoardroomCollectionLaneV1 as unknown as MockFn;
     expect(lane.mock.calls.length).toBe(1);
     expect(lane.mock.calls[0]?.[0]).toMatchObject({ mode: "one_shot" });
+
+    const json = (await res.json()) as unknown as { ok: boolean; lane?: { observability_v1?: { evidence?: { idempotent_replays?: number } } } };
+    expect(json.ok).toBe(true);
+    expect(json.lane?.observability_v1?.evidence?.idempotent_replays).toBe(1);
   });
 });
