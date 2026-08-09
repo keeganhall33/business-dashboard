@@ -42,7 +42,7 @@ create table if not exists public.external_events_v1 (
   correction_status text not null default 'none' check (correction_status in ('none','corrected','retracted','superseded')),
 
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- Note: stable->version FK is added after version table exists.
