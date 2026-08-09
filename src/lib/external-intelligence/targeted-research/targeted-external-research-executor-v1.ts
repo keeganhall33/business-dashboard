@@ -31,6 +31,7 @@ import {
 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
 import type {
   ExternalQuestionTypeV1,
+  FetchedPagePreviewV1,
   ResearchSourceCandidateV1,
   TargetedExternalResearchExecutorResultV1,
   TargetedExternalResearchPreviewV1
@@ -262,19 +263,10 @@ export async function executeTargetedExternalResearchPreviewV1(
   const reuse = await input.deps.evidenceReuseLookup({ source_id, canonical_url: selected[0].canonical_url });
 
   // Fetch preview (bounded, no recursion).
-  const fetched: Array<{
-    canonical_url: string;
-    http_status: number;
-    final_url: string;
-    content_type: string | null;
-    retention_mode: "link_only" | "structured_metadata";
-    title: string | null;
-    meta_description: string | null;
-    og_site_name: string | null;
-    og_title: string | null;
-    jsonld_types: string[];
-    raw_html: string | null;
-  }> = [];
+  const fetched: FetchedPagePreviewV1[] = [];
+  // EXECUTION-ONLY transient HTML, keyed by canonical_url. Must never be forwarded in the preview.
+  const transientHtmlByCanonicalUrl = new Map<string, string>();
+
   for (const s of selected) {
     const f = await fetchPagePreviewV1({
       canonical_url: s.canonical_url,
@@ -293,13 +285,15 @@ export async function executeTargetedExternalResearchPreviewV1(
         meta_description: null,
         og_site_name: null,
         og_title: null,
-        jsonld_types: [],
-        raw_html: null
+        jsonld_types: []
       });
       continue;
     }
 
-    fetched.push({ ...f.preview, raw_html: f.raw_html ?? null });
+    fetched.push(f.preview);
+    if (f.transient?.raw_html) {
+      transientHtmlByCanonicalUrl.set(s.canonical_url, f.transient.raw_html);
+    }
   }
 
   type ContextualBuilders = {
@@ -333,7 +327,7 @@ export async function executeTargetedExternalResearchPreviewV1(
       return { status: "blocked", reason: "bounded_excerpt_source_not_eligible" };
     }
 
-    const html = fetched[0]?.raw_html ?? null;
+    const html = transientHtmlByCanonicalUrl.get(selected[0].canonical_url) ?? null;
     if (typeof html !== "string" || !html) {
       return { status: "blocked", reason: "bounded_excerpt_requires_raw_html" };
     }
