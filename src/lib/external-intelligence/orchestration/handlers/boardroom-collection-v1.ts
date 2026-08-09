@@ -26,6 +26,11 @@ import {
   filterBoardroomItemsForOneShot,
   type BoardroomOneShotFilter
 } from "@/lib/external-intelligence/orchestration/handlers/boardroom-one-shot-filter";
+import {
+  bumpReasonCodes,
+  emptyExternalCollectionObservabilityV1,
+  type ExternalCollectionObservabilityV1
+} from "@/lib/external-intelligence/orchestration/observability-v1";
 
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
 const MAX_ITEMS_PER_RUN = 5;
@@ -81,6 +86,12 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
   let wroteEvidence = 0;
   let wroteClaims = 0;
 
+  let obs: ExternalCollectionObservabilityV1 = emptyExternalCollectionObservabilityV1({
+    fetched_items: input.collected_items.length,
+    selected_items: sel.filtered.length,
+    skipped_items: sel.skipped_count
+  });
+
   for (const [idx, item] of sel.filtered.entries()) {
     const evidence_reference_id = deps.computeEvidenceReferenceId({ canonical_url: item.canonical_url });
     const source_item_id = deps.computeSourceItemId({ canonical_url: item.canonical_url, guid: item.guid });
@@ -104,6 +115,16 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
       evidence,
       policy_refs_json: [{ policy_name: "boardroom.rss", semantic_version: "v1", content_hash: "ph" }],
       policy_version: "boardroom.rss.v1"
+    });
+
+    obs = Object.freeze({
+      ...obs,
+      evidence: {
+        ...obs.evidence,
+        processed: obs.evidence.processed + 1,
+        new_versions: obs.evidence.new_versions + (evRes.created_new_version ? 1 : 0),
+        idempotent_replays: obs.evidence.idempotent_replays + (evRes.idempotent_replay ? 1 : 0)
+      }
     });
 
     // IMPORTANT (recollection idempotency): persistEvidenceReference may replay an existing semantic
@@ -131,14 +152,57 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
       dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
     }
 
+    obs = Object.freeze({
+      ...obs,
+      qualification: {
+        ...obs.qualification,
+        processed: obs.qualification.processed + 1,
+        qualified: obs.qualification.qualified + (dq.status === "qualified" ? 1 : 0),
+        not_qualified: obs.qualification.not_qualified + (dq.status === "not_qualified" ? 1 : 0),
+        unsupported: obs.qualification.unsupported + (dq.status === "unsupported" ? 1 : 0),
+        errors: obs.qualification.errors + (dq.status === "error" ? 1 : 0),
+        reason_codes: bumpReasonCodes(obs.qualification.reason_codes, dq.reason_codes)
+      },
+      claims: {
+        ...obs.claims,
+        proposed: obs.claims.proposed + (dq.status === "qualified" ? dq.claims.length : 0)
+      },
+      sports_milestones: {
+        ...obs.sports_milestones,
+        proposed: obs.sports_milestones.proposed + (dq.status === "qualified" ? dq.sports_milestones.length : 0)
+      }
+    });
+
     if (dq.status === "qualified" && dq.claims.length) {
       for (const claim of dq.claims) {
-        await claimRepo.persistClaim({
-          claim,
-          evidence_version_ref: evRes.ref,
-          policy_refs_json: [{ policy_name: "generalized_claim_v1", semantic_version: "v1", content_hash: "ph" }],
-          interpretation_policy_hash: "ph",
-          edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+        let claimRes: Awaited<ReturnType<ClaimRepository["persistClaim"]>>;
+        try {
+          obs = Object.freeze({
+            ...obs,
+            claims: { ...obs.claims, persistence_attempts: obs.claims.persistence_attempts + 1 }
+          });
+          claimRes = await claimRepo.persistClaim({
+            claim,
+            evidence_version_ref: evRes.ref,
+            policy_refs_json: [{ policy_name: "generalized_claim_v1", semantic_version: "v1", content_hash: "ph" }],
+            interpretation_policy_hash: "ph",
+            edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+          });
+        } catch (e) {
+          obs = Object.freeze({
+            ...obs,
+            claims: { ...obs.claims, errors: obs.claims.errors + 1 }
+          });
+          throw e;
+        }
+
+        obs = Object.freeze({
+          ...obs,
+          claims: {
+            ...obs.claims,
+            new_versions: obs.claims.new_versions + (claimRes.created_new_version ? 1 : 0),
+            idempotent_replays: obs.claims.idempotent_replays + (claimRes.idempotent_replay ? 1 : 0)
+          }
         });
         wroteClaims += 1;
       }
@@ -153,7 +217,9 @@ export async function __test__processBoardroomCollectedItemsV1(input: {
       selected_items: sel.filtered.length,
       filter: input.one_shot_filter
     },
-    wrote: { evidence: wroteEvidence, claims: wroteClaims }
+    // Back-compat: "wrote" means persistence operations completed, not that new versions were created.
+    wrote: { evidence: wroteEvidence, claims: wroteClaims },
+    observability_v1: obs
   };
 }
 
@@ -338,6 +404,7 @@ export async function runBoardroomCollectionLaneV1(input: {
       job_id: leased.job_id,
       wrote: processed.wrote,
       selection: processed.selection,
+      observability_v1: processed.observability_v1,
       next_run_at: mode === "scheduler" ? nextRunAt : null
     } as const;
   } catch (error) {
