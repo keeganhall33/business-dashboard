@@ -1,6 +1,11 @@
 -- Fix persist_external_event_v1: avoid PL/pgSQL name ambiguity
 
-create or replace function public.persist_external_event_v1(
+-- Drop first to preserve the original return type.
+drop function if exists public.persist_external_event_v1(
+  text,text,text,text,text,text,jsonb,boolean,timestamptz,timestamptz,timestamptz,timestamptz,text,text,text,text,text,text
+);
+
+create function public.persist_external_event_v1(
   in_event_id text,
   in_content_hash text,
   in_schema_version text,
@@ -21,8 +26,8 @@ create or replace function public.persist_external_event_v1(
   in_link_id text
 )
 returns table(
-  out_event_id text,
-  out_content_hash text,
+  event_id text,
+  content_hash text,
   created_new_event boolean,
   created_new_version boolean,
   idempotent_replay boolean,
