@@ -64,3 +64,16 @@ test("one-shot API: explicitly empty arrays rejected", () => {
     /(Too small: expected array to have >=1 items|too_small)/
   );
 });
+
+test("one-shot API: boardroom filter cannot exceed 5 targets", () => {
+  assert.throws(
+    () =>
+      __test__parseOneShotBody({
+        schedule_id: "sports_business.boardroom:production",
+        dry_run: true,
+        requested_by: "test",
+        boardroom: { evidence_reference_ids: ["1", "2", "3", "4", "5", "6"] }
+      }),
+    /(Too big: expected array to have <=5 items|too_big)/
+  );
+});

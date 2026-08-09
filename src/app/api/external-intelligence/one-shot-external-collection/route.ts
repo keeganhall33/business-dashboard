@@ -16,8 +16,10 @@ const BodySchema = z
     // One-shot only: optional narrow filter for Boardroom controlled proofs.
     boardroom: z
       .object({
-        evidence_reference_ids: z.array(z.string().min(1)).min(1).max(10).optional(),
-        canonical_urls: z.array(z.string().url()).min(1).max(10).optional()
+        // Safety: keep the maximum explicitly-selected persistence targets <= 5.
+        // We reject oversized filters rather than silently truncating.
+        evidence_reference_ids: z.array(z.string().min(1)).min(1).max(5).optional(),
+        canonical_urls: z.array(z.string().url()).min(1).max(5).optional()
       })
       .strict()
       .optional()
