@@ -179,8 +179,10 @@ as $fn$
 declare
   existing_version record;
   inserted_event boolean := false;
+  inserted_event_count integer := 0;
   inserted_version boolean := false;
   inserted_link boolean := false;
+  inserted_link_count integer := 0;
   replay boolean := false;
 begin
   -- Validate linked claim version exists.
@@ -211,7 +213,8 @@ begin
   )
   on conflict (event_id) do nothing;
 
-  get diagnostics inserted_event = row_count > 0;
+  get diagnostics inserted_event_count = row_count;
+  inserted_event := inserted_event_count > 0;
 
   -- Fetch existing version row by identity.
   select * into existing_version
@@ -297,7 +300,8 @@ begin
   )
   on conflict (event_id, event_content_hash, claim_id, claim_content_hash) do nothing;
 
-  get diagnostics inserted_link = row_count > 0;
+  get diagnostics inserted_link_count = row_count;
+  inserted_link := inserted_link_count > 0;
 
   return query
     select in_event_id, in_content_hash, inserted_event, inserted_version, replay, inserted_link;
