@@ -1407,7 +1407,9 @@ create table if not exists external_evidence_reference_versions_v1 (
   supersedes_content_hashes jsonb not null default '[]'::jsonb,
   superseded_by_content_hash text,
   payload_json jsonb,
-  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','tombstone')),
+  -- Retention policy is the governing label for what we persist in payload_json.
+  -- NOTE: This is not a web crawler/archive surface; quote_only is bounded excerpt retention.
+  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','quote_only','summary_only','licensed_fulltext','tombstone')),
   retention_expires_at timestamptz,
   legal_hold boolean not null default false,
   access_revoked_at timestamptz,
@@ -1447,7 +1449,9 @@ create table if not exists external_claim_versions_v1 (
   supersedes_content_hashes jsonb not null default '[]'::jsonb,
   superseded_by_content_hash text,
   payload_json jsonb,
-  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','tombstone')),
+  -- Retention policy is the governing label for what we persist in payload_json.
+  -- NOTE: This is not a web crawler/archive surface; quote_only is bounded excerpt retention.
+  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','quote_only','summary_only','licensed_fulltext','tombstone')),
   retention_expires_at timestamptz,
   legal_hold boolean not null default false,
   access_revoked_at timestamptz,
@@ -1496,7 +1500,8 @@ create table if not exists external_signal_versions_v1 (
   supersedes_content_hashes jsonb not null default '[]'::jsonb,
   superseded_by_content_hash text,
   payload_json jsonb,
-  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','tombstone')),
+  -- Retention policy is the governing label for what we persist in payload_json.
+  retention_policy text not null default 'retain' check (retention_policy in ('retain','link_only','quote_only','summary_only','licensed_fulltext','tombstone')),
   retention_expires_at timestamptz,
   legal_hold boolean not null default false,
   access_revoked_at timestamptz,

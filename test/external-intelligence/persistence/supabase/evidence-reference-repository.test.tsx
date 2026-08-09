@@ -28,6 +28,7 @@ function sampleEvidence() {
     legal_policy_version: "legal/v1",
     retention_policy: "link_only",
     excerpt_or_summary_reference: null,
+    support_excerpts: [],
     source_credibility_prior: "high",
     correction_status: "none",
     retraction_status: "none",

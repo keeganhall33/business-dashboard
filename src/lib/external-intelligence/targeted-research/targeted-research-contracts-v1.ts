@@ -1,4 +1,4 @@
-export type ExternalQuestionTypeV1 = "ORGANIZATION_CONTEXT";
+export type ExternalQuestionTypeV1 = "ORGANIZATION_CONTEXT" | "AGENCY_SCOPE";
 
 export type ExternalSourceClassV1 =
   | "OFFICIAL_WEBSITE"
@@ -78,6 +78,26 @@ export type CandidateContextualClaimPreviewV1 = {
   support_rationale: string;
 };
 
+export type CandidateServiceScopeClaimPreviewV1 = {
+  predicate: "provides_service_to";
+  provider_entity_id: string;
+  provider_canonical_name: string;
+  client_entity_id: string;
+  client_canonical_name: string;
+
+  service_scope: string;
+  service_scope_label: string | null;
+  normalization_policy_version: string;
+  normalization_confidence: "low" | "medium" | "high";
+
+  claim_id: string;
+  claim_fingerprint: string;
+  content_hash: string;
+
+  clearly_supported: boolean;
+  support_rationale: string;
+};
+
 export type TargetedExternalResearchPreviewV1 = {
   research_question_id: string;
   candidate_id: string;
@@ -96,6 +116,7 @@ export type TargetedExternalResearchPreviewV1 = {
   prospective_evidence_reference_id: string;
 
   proposed_contextual_claims: CandidateContextualClaimPreviewV1[];
+  proposed_service_scope_claims: CandidateServiceScopeClaimPreviewV1[];
 };
 
 export type TargetedExternalResearchExecutorResultV1 =

@@ -52,6 +52,7 @@ export function buildSportsProEvidenceReference(input: {
     retention_policy: "link_only",
 
     excerpt_or_summary_reference: null,
+    support_excerpts: [],
     source_credibility_prior: "medium",
     correction_status: "none",
     retraction_status: "none",
