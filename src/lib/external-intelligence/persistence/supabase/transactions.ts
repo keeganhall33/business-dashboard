@@ -3,6 +3,7 @@ import "@/lib/server-only";
 import type { SupabaseServerClient } from "@/lib/external-intelligence/persistence/supabase/client";
 import {
   PersistenceIdempotencyConflictError,
+  PersistenceClaimVersionIdentityConflictError,
   PersistenceContentHashMismatchError,
   PersistenceInvalidArgumentError,
   PersistenceLegalHoldBlockedError,
@@ -44,6 +45,8 @@ function mapRpcError(error: RpcErrorLike): Error {
       return new PersistenceInvalidArgumentError(msg);
     case "integrity_conflict":
       return new PersistenceIdempotencyConflictError(msg);
+    case "claim_version_identity_conflict":
+      return new PersistenceClaimVersionIdentityConflictError(msg);
     case "linked_version_not_found":
       return new PersistenceLinkedVersionNotFoundError(msg);
     case "object_type_mismatch":

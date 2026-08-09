@@ -2052,9 +2052,12 @@ set search_path = public
 as $fn$
 declare
   existing record;
+  semantic record;
   inserted_version boolean := false;
   replay boolean := false;
   edge_id text;
+  normalized_existing jsonb;
+  normalized_incoming jsonb;
 begin
   perform 1 from public.external_evidence_reference_versions_v1 ev
   where ev.evidence_reference_id = in_evidence_reference_id
@@ -2069,6 +2072,7 @@ begin
     raise exception using errcode = 'P0001', message = 'version_ref_mismatch';
   end if;
 
+  -- Fast path: exact version identity replay by (claim_id, content_hash).
   select * into existing
   from public.external_claim_versions_v1 cv
   where cv.claim_id = in_claim_id
@@ -2095,68 +2099,111 @@ begin
       and existing.content_redacted_at is not distinct from in_content_redacted_at
       and existing.redaction_reason is not distinct from in_redaction_reason
     ) then
-      raise exception 'IntegrityConflict: claim_id=% content_hash=% already exists with different payload/legal state', in_claim_id, in_content_hash;
+      raise exception using errcode = 'P0001', message = 'integrity_conflict';
     end if;
     replay := true;
   else
-    insert into external_claims_v1(
-      claim_id,
-      current_content_hash,
-      lifecycle_status,
-      correction_status,
-      interpretation_policy_version
-    ) values (
-      in_claim_id,
-      in_content_hash,
-      'new',
-      'none',
-      in_interpretation_policy_version
-    ) on conflict on constraint external_claims_v1_pkey do nothing;
+    -- Semantic replay equivalence (V1): allow only payload_json.retrieved_at drift.
+    select * into semantic
+    from public.external_claim_versions_v1 cv
+    where cv.claim_id = in_claim_id
+      and cv.payload_available = true
+      and cv.claim_fingerprint is not distinct from in_claim_fingerprint
+      and cv.interpretation_policy_hash is not distinct from in_interpretation_policy_hash
+    limit 1;
 
-    insert into external_claim_versions_v1(
-      claim_id,
-      content_hash,
-      schema_version,
-      claim_fingerprint,
-      interpretation_policy_version,
-      interpretation_policy_hash,
-      evidence_reference_version_ref_json,
-      policy_refs_json,
-      effective_at,
-      valid_from,
-      valid_until,
-      supersedes_content_hashes,
-      payload_json,
-      retention_policy,
-      retention_expires_at,
-      legal_hold,
-      access_revoked_at,
-      content_redacted_at,
-      redaction_reason,
-      payload_available
-    ) values (
-      in_claim_id,
-      in_content_hash,
-      in_schema_version,
-      in_claim_fingerprint,
-      in_interpretation_policy_version,
-      in_interpretation_policy_hash,
-      in_evidence_version_ref_json,
-      in_policy_refs_json,
-      in_effective_at,
-      in_valid_from,
-      in_valid_until,
-      in_supersedes_content_hashes,
-      in_payload_json,
-      in_retention_policy,
-      in_retention_expires_at,
-      in_legal_hold,
-      in_access_revoked_at,
-      in_content_redacted_at,
-      in_redaction_reason,
-      in_payload_available
-    );
-    inserted_version := true;
+    if found then
+      if not (
+        semantic.payload_available is not distinct from in_payload_available
+        and semantic.schema_version is not distinct from in_schema_version
+        and semantic.claim_fingerprint is not distinct from in_claim_fingerprint
+        and semantic.interpretation_policy_version is not distinct from in_interpretation_policy_version
+        and semantic.interpretation_policy_hash is not distinct from in_interpretation_policy_hash
+        and semantic.evidence_reference_version_ref_json is not distinct from in_evidence_version_ref_json
+        and semantic.policy_refs_json is not distinct from in_policy_refs_json
+        and semantic.effective_at is not distinct from in_effective_at
+        and semantic.valid_from is not distinct from in_valid_from
+        and semantic.valid_until is not distinct from in_valid_until
+        and semantic.supersedes_content_hashes is not distinct from in_supersedes_content_hashes
+        and semantic.retention_policy is not distinct from in_retention_policy
+        and semantic.retention_expires_at is not distinct from in_retention_expires_at
+        and semantic.legal_hold is not distinct from in_legal_hold
+        and semantic.access_revoked_at is not distinct from in_access_revoked_at
+        and semantic.content_redacted_at is not distinct from in_content_redacted_at
+        and semantic.redaction_reason is not distinct from in_redaction_reason
+      ) then
+        raise exception using errcode = 'P0001', message = 'claim_version_identity_conflict';
+      end if;
+
+      normalized_existing := (coalesce(semantic.payload_json, '{}'::jsonb) - 'retrieved_at');
+      normalized_incoming := (coalesce(in_payload_json, '{}'::jsonb) - 'retrieved_at');
+
+      if normalized_existing is not distinct from normalized_incoming then
+        in_content_hash := semantic.content_hash;
+        replay := true;
+      else
+        raise exception using errcode = 'P0001', message = 'claim_version_identity_conflict';
+      end if;
+    else
+      insert into external_claims_v1(
+        claim_id,
+        current_content_hash,
+        lifecycle_status,
+        correction_status,
+        interpretation_policy_version
+      ) values (
+        in_claim_id,
+        in_content_hash,
+        'new',
+        'none',
+        in_interpretation_policy_version
+      ) on conflict on constraint external_claims_v1_pkey do nothing;
+
+      insert into external_claim_versions_v1(
+        claim_id,
+        content_hash,
+        schema_version,
+        claim_fingerprint,
+        interpretation_policy_version,
+        interpretation_policy_hash,
+        evidence_reference_version_ref_json,
+        policy_refs_json,
+        effective_at,
+        valid_from,
+        valid_until,
+        supersedes_content_hashes,
+        payload_json,
+        retention_policy,
+        retention_expires_at,
+        legal_hold,
+        access_revoked_at,
+        content_redacted_at,
+        redaction_reason,
+        payload_available
+      ) values (
+        in_claim_id,
+        in_content_hash,
+        in_schema_version,
+        in_claim_fingerprint,
+        in_interpretation_policy_version,
+        in_interpretation_policy_hash,
+        in_evidence_version_ref_json,
+        in_policy_refs_json,
+        in_effective_at,
+        in_valid_from,
+        in_valid_until,
+        in_supersedes_content_hashes,
+        in_payload_json,
+        in_retention_policy,
+        in_retention_expires_at,
+        in_legal_hold,
+        in_access_revoked_at,
+        in_content_redacted_at,
+        in_redaction_reason,
+        in_payload_available
+      );
+      inserted_version := true;
+    end if;
   end if;
 
   update public.external_claims_v1 cs
