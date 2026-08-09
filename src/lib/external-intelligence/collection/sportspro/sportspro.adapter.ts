@@ -85,7 +85,10 @@ export async function collectSportsProRssV1(input: { now_iso: string; max_items:
   try {
     const parsed = await fetchRssFeed(SPORTSPRO_RSS_URL, {
       timeoutMs: 10_000,
-      userAgent: "business-dashboard-bot"
+      // SportsPro currently blocks obvious bot UAs at the feed endpoint (CloudFront 403).
+      // Use a generic browser UA to access the publicly-available RSS.
+      // NOTE: We still operate under link-only retention and do not fetch bodies.
+      userAgent: "Mozilla/5.0"
     });
 
     const items = parsed
@@ -141,4 +144,3 @@ export function computeSportsProSourceItemId(input: { canonical_url: string; gui
 export function computeSportsProEvidenceReferenceId(input: { canonical_url: string }): string {
   return `ev_${sha256Hex(input.canonical_url).slice(0, 24)}`;
 }
-
