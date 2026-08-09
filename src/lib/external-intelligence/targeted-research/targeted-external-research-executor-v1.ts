@@ -137,8 +137,26 @@ function tryExtractClassificationFromPreview(input: {
     return out;
   }
 
-  // If title or meta description clearly contains "tour", map to league_or_tour (medium).
-  if (label.toLowerCase().includes("tour") || desc.toLowerCase().includes("tour")) {
+  const labelLc = label.toLowerCase();
+  const descLc = desc.toLowerCase();
+
+  // High-confidence direct phrasing: the page explicitly describes the org as a professional padel tour.
+  // This is a direct normalization target for organization_type=league_or_tour.
+  if (
+    (descLc.includes("professional") && descLc.includes("padel") && descLc.includes("tour")) ||
+    (labelLc.includes("professional") && labelLc.includes("padel") && labelLc.includes("tour"))
+  ) {
+    out.push({
+      classification_kind: "organization_type",
+      classification_value: "league_or_tour",
+      source_label: desc || label,
+      confidence: "high"
+    });
+    return out;
+  }
+
+  // Otherwise, if title or meta description contains "tour", map to league_or_tour (medium).
+  if (labelLc.includes("tour") || descLc.includes("tour")) {
     out.push({
       classification_kind: "organization_type",
       classification_value: "league_or_tour",
