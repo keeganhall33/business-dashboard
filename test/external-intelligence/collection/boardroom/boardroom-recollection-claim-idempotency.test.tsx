@@ -17,7 +17,8 @@ test("Boardroom recollection: downstream qualification uses persisted evidence p
     version_id: null,
     content_hash: "h".repeat(64),
     schema_version: "evidence_reference_v1",
-    policy_version: "boardroom.rss.v1",
+    // Evidence VersionRef policy_version is pinned to the evidence legal policy version.
+    policy_version: "boardroom.rss.link_only.v1",
     created_at: earlier_iso
   };
 
