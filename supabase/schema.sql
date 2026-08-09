@@ -4497,3 +4497,84 @@ revoke all on function public.disable_external_intelligence_internal_orchestrati
 grant execute on function public.disable_external_intelligence_internal_orchestration_v1(
   text,text,text,text,text,timestamptz,text,text,text
 ) to service_role;
+
+-- =========================================================
+-- External Events V1 (schema mirror stub)
+-- =========================================================
+
+-- NOTE: authoritative definitions live in forward migrations.
+-- This mirror includes identifiers only to keep schema inventory complete.
+
+create table if not exists public.external_events_v1 (
+  event_id text primary key,
+  current_content_hash text not null,
+  event_type text not null,
+  lifecycle_status text,
+  correction_status text not null default 'none',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.external_event_versions_v1 (
+  event_id text not null,
+  content_hash text not null,
+  schema_version text not null,
+  event_fingerprint text not null,
+  policy_version text not null,
+  event_type text not null,
+  payload_json jsonb,
+  payload_available boolean not null default true,
+  announcement_time timestamptz,
+  event_time timestamptz,
+  effective_from timestamptz,
+  effective_until timestamptz,
+  verification_state text,
+  created_at timestamptz not null default now(),
+  primary key (event_id, content_hash)
+);
+
+create table if not exists public.external_event_claim_links_v1 (
+  link_id text primary key,
+  event_id text not null,
+  event_content_hash text not null,
+  claim_id text not null,
+  claim_content_hash text not null,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.persist_external_event_v1(
+  in_event_id text,
+  in_content_hash text,
+  in_schema_version text,
+  in_event_fingerprint text,
+  in_policy_version text,
+  in_event_type text,
+  in_payload_json jsonb,
+  in_payload_available boolean,
+  in_announcement_time timestamptz,
+  in_event_time timestamptz,
+  in_effective_from timestamptz,
+  in_effective_until timestamptz,
+  in_verification_state text,
+  in_lifecycle_status text,
+  in_correction_status text,
+  in_claim_id text,
+  in_claim_content_hash text,
+  in_link_id text
+)
+returns table(
+  event_id text,
+  content_hash text,
+  created_new_event boolean,
+  created_new_version boolean,
+  idempotent_replay boolean,
+  support_link_created boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'schema_mirror_only';
+end;
+$$;

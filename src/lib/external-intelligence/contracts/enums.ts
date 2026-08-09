@@ -8,6 +8,7 @@
 export type ObjectType =
   | "evidence_reference"
   | "claim"
+  | "event"
   | "signal"
   | "policy"
   | "internal_fact"
@@ -25,6 +26,7 @@ export type ObjectType =
 export const OBJECT_TYPE_VALUES: ObjectType[] = [
   "evidence_reference",
   "claim",
+  "event",
   "signal",
   "policy",
   "internal_fact",

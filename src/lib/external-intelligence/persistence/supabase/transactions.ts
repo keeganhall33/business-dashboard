@@ -19,6 +19,7 @@ import {
 export const EXTERNAL_INTELLIGENCE_RPCS = {
   persistEvidence: "persist_external_evidence_reference_v1",
   persistClaim: "persist_external_claim_v1",
+  persistEvent: "persist_external_event_v1",
   persistSignalWriteSet: "persist_external_signal_write_set_v1",
   completeRun: "complete_external_processing_run_v1",
   redactEvidence: "redact_external_evidence_payload_v1",
