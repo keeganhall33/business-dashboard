@@ -35,6 +35,21 @@ import {
 const BOARDROOM_SCHEDULE_ID = "sports_business.boardroom:production" as const;
 const MAX_ITEMS_PER_RUN = 5;
 
+// One-shot-only: when an explicit non-empty Boardroom filter is supplied, we allow a
+// bounded lookahead discovery window so targets outside the first 5 sorted items can be
+// selected without changing scheduler/unfiltered semantics.
+export const BOARDROOM_FILTERED_ONE_SHOT_DISCOVERY_LIMIT_V1 = 20;
+
+export function __test__getBoardroomDiscoveryMaxItemsV1(input: {
+  mode: "scheduler" | "one_shot";
+  has_explicit_non_empty_one_shot_filter: boolean;
+}) {
+  if (input.mode === "one_shot" && input.has_explicit_non_empty_one_shot_filter) {
+    return BOARDROOM_FILTERED_ONE_SHOT_DISCOVERY_LIMIT_V1;
+  }
+  return MAX_ITEMS_PER_RUN;
+}
+
 type BoardroomLaneDeps = {
   computeEvidenceReferenceId: typeof computeBoardroomEvidenceReferenceId;
   computeSourceItemId: typeof computeBoardroomSourceItemId;
@@ -281,6 +296,10 @@ export async function runBoardroomCollectionLaneV1(input: {
   const mode = input.mode ?? "scheduler";
 
   const oneShotFilter = mode === "one_shot" ? normalizeBoardroomOneShotFilter(input.one_shot_filter ?? null) : null;
+  const discoveryMaxItems = __test__getBoardroomDiscoveryMaxItemsV1({
+    mode,
+    has_explicit_non_empty_one_shot_filter: oneShotFilter !== null
+  });
 
   if (schedule.environment !== "production") return { status: "skipped", reason: "wrong_environment" } as const;
   if (schedule.source_id !== BOARDROOM_SOURCE_ID) return { status: "blocked", reason: "source_id_mismatch" } as const;
@@ -371,7 +390,7 @@ export async function runBoardroomCollectionLaneV1(input: {
   if (runningError) throw runningError;
 
   try {
-    const out = await collectBoardroomRssV1({ now_iso: input.now_iso, max_items: MAX_ITEMS_PER_RUN });
+    const out = await collectBoardroomRssV1({ now_iso: input.now_iso, max_items: discoveryMaxItems });
     if (!out.ok) throw new Error(out.error);
 
     const processed = await __test__processBoardroomCollectedItemsV1({
