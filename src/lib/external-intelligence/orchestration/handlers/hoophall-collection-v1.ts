@@ -11,6 +11,11 @@ import { EvidenceReferenceRepository } from "@/lib/external-intelligence/persist
 import { ClaimRepository } from "@/lib/external-intelligence/persistence/supabase/claim.repository";
 import { SportsMilestoneRepository } from "@/lib/external-intelligence/milestones/persistence/milestone.repository";
 import { qualifyEvidenceReferenceDownstreamV1 } from "@/lib/external-intelligence/qualification/downstream-qualification-v1";
+import {
+  bumpReasonCodes,
+  emptyExternalCollectionObservabilityV1,
+  type ExternalCollectionObservabilityV1
+} from "@/lib/external-intelligence/orchestration/observability-v1";
 
 const HOOPHALL_SCHEDULE_ID = "sports.basketball.hoophall.official:production" as const;
 
@@ -160,6 +165,11 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
     // Deterministic selection: take first observed item only for B6 proof to keep writes bounded.
     const first = out.listing.items[0];
     if (!first) {
+      const observability_v1: ExternalCollectionObservabilityV1 = emptyExternalCollectionObservabilityV1({
+        fetched_items: 0,
+        selected_items: 0,
+        skipped_items: 0
+      });
       const completedAt = new Date().toISOString();
       await supabase
         .from("external_collection_jobs_v1")
@@ -167,7 +177,13 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
         .eq("job_id", leased.job_id)
         .eq("lease_owner", leaseOwner);
       await releaseExternalCollectionJobLeaseV1({ client: leaseClient, job_id: leased.job_id, lease_owner: leaseOwner, new_status: "succeeded" });
-      return { status: "succeeded", enqueued, job_id: leased.job_id, wrote: { evidence: 0, claims: 0, milestones: 0 } } as const;
+      return {
+        status: "succeeded",
+        enqueued,
+        job_id: leased.job_id,
+        wrote: { evidence: 0, claims: 0, milestones: 0 },
+        observability_v1
+      } as const;
     }
 
     const detail = out.details.find((d) => d.url === first.url) ?? null;
@@ -185,6 +201,22 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
       evidence,
       policy_refs_json: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }],
       policy_version: "b6.hoophall.deterministic.v1"
+    });
+
+    let observability_v1: ExternalCollectionObservabilityV1 = emptyExternalCollectionObservabilityV1({
+      fetched_items: out.listing.items.length,
+      selected_items: 1,
+      skipped_items: Math.max(0, out.listing.items.length - 1)
+    });
+
+    observability_v1 = Object.freeze({
+      ...observability_v1,
+      evidence: {
+        ...observability_v1.evidence,
+        processed: 1,
+        new_versions: evRes.created_new_version ? 1 : 0,
+        idempotent_replays: evRes.idempotent_replay ? 1 : 0
+      }
     });
 
     let wroteClaims = 0;
@@ -209,27 +241,89 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
       dq = { status: "error", reason_codes: [e instanceof Error ? e.message : String(e)], claims: [], sports_milestones: [] };
     }
 
+    observability_v1 = Object.freeze({
+      ...observability_v1,
+      qualification: {
+        ...observability_v1.qualification,
+        processed: 1,
+        qualified: dq.status === "qualified" ? 1 : 0,
+        not_qualified: dq.status === "not_qualified" ? 1 : 0,
+        unsupported: dq.status === "unsupported" ? 1 : 0,
+        errors: dq.status === "error" ? 1 : 0,
+        reason_codes: bumpReasonCodes(observability_v1.qualification.reason_codes, dq.reason_codes)
+      },
+      claims: {
+        ...observability_v1.claims,
+        proposed: dq.status === "qualified" ? dq.claims.length : 0
+      },
+      sports_milestones: {
+        ...observability_v1.sports_milestones,
+        proposed: dq.status === "qualified" ? dq.sports_milestones.length : 0
+      }
+    });
+
     if (dq.status === "qualified") {
       const claim = dq.claims[0] ?? null;
       const milestone = dq.sports_milestones[0] ?? null;
 
       if (claim) {
         const claimRepo = new ClaimRepository();
-        await claimRepo.persistClaim({
-          claim,
-          evidence_version_ref: evRes.ref,
-          policy_refs_json: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }],
-          interpretation_policy_hash: "ph",
-          edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+        let claimRes: Awaited<ReturnType<ClaimRepository["persistClaim"]>>;
+        try {
+          observability_v1 = Object.freeze({
+            ...observability_v1,
+            claims: { ...observability_v1.claims, persistence_attempts: observability_v1.claims.persistence_attempts + 1 }
+          });
+          claimRes = await claimRepo.persistClaim({
+            claim,
+            evidence_version_ref: evRes.ref,
+            policy_refs_json: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }],
+            interpretation_policy_hash: "ph",
+            edge: { relation: "supported_by", policy_version: "provenance/v1", policy_hash: "ph" }
+          });
+        } catch (e) {
+          observability_v1 = Object.freeze({
+            ...observability_v1,
+            claims: { ...observability_v1.claims, errors: observability_v1.claims.errors + 1 }
+          });
+          throw e;
+        }
+
+        observability_v1 = Object.freeze({
+          ...observability_v1,
+          claims: {
+            ...observability_v1.claims,
+            new_versions: observability_v1.claims.new_versions + (claimRes.created_new_version ? 1 : 0),
+            idempotent_replays: observability_v1.claims.idempotent_replays + (claimRes.idempotent_replay ? 1 : 0)
+          }
         });
         wroteClaims = 1;
       }
 
       if (milestone) {
         const milestoneRepo = new SportsMilestoneRepository();
-        await milestoneRepo.persistMilestone({
-          milestone,
-          policy_refs: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }]
+        try {
+          observability_v1 = Object.freeze({
+            ...observability_v1,
+            sports_milestones: {
+              ...observability_v1.sports_milestones,
+              persistence_attempts: observability_v1.sports_milestones.persistence_attempts + 1
+            }
+          });
+          await milestoneRepo.persistMilestone({
+            milestone,
+            policy_refs: [{ policy_name: "b6.hoophall", semantic_version: "v1", content_hash: "ph" }]
+          });
+        } catch (e) {
+          observability_v1 = Object.freeze({
+            ...observability_v1,
+            sports_milestones: { ...observability_v1.sports_milestones, errors: observability_v1.sports_milestones.errors + 1 }
+          });
+          throw e;
+        }
+        observability_v1 = Object.freeze({
+          ...observability_v1,
+          sports_milestones: { ...observability_v1.sports_milestones, persisted: observability_v1.sports_milestones.persisted + 1 }
         });
         wroteMilestones = 1;
       }
@@ -256,7 +350,9 @@ export async function runHoophallCollectionLaneV1(input: { now_iso: string; mode
       mode,
       enqueued,
       job_id: leased.job_id,
+      // Back-compat: "wrote" means persistence operations completed, not that new versions were created.
       wrote: { evidence: 1, claims: wroteClaims, milestones: wroteMilestones },
+      observability_v1,
       next_run_at: mode === "scheduler" ? nextRunAt : null
     } as const;
   } catch (error) {
