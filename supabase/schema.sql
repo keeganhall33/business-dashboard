@@ -2119,7 +2119,7 @@ begin
         and semantic.claim_fingerprint is not distinct from in_claim_fingerprint
         and semantic.interpretation_policy_version is not distinct from in_interpretation_policy_version
         and semantic.interpretation_policy_hash is not distinct from in_interpretation_policy_hash
-        and semantic.evidence_reference_version_ref_json is not distinct from in_evidence_version_ref_json
+        and (coalesce(semantic.evidence_reference_version_ref_json, '{}'::jsonb) - 'created_at') is not distinct from (coalesce(in_evidence_version_ref_json, '{}'::jsonb) - 'created_at')
         and semantic.policy_refs_json is not distinct from in_policy_refs_json
         and semantic.effective_at is not distinct from in_effective_at
         and semantic.valid_from is not distinct from in_valid_from
