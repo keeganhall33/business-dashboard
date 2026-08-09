@@ -37,10 +37,16 @@ test("source classification is conservative (does not promote unknown domains to
   assert.notEqual(c.official_domain_confidence, "high");
 });
 
-test("executor rejects unsupported question types", async () => {
+test("executor blocks AGENCY_SCOPE when bounded excerpt source is not eligible", async () => {
   const res = await executeTargetedExternalResearchPreviewV1({
-    // @ts-expect-error deliberate unsupported type
-    research_question: { question_type: "AGENCY_SCOPE", source_domain: "EXTERNAL", research_question_id: "rq", question_text: "", subject_entity_refs: [], source_missing_intelligence_category: "agency_scope" },
+    research_question: {
+      question_type: "AGENCY_SCOPE",
+      source_domain: "EXTERNAL",
+      research_question_id: "rq",
+      question_text: "",
+      subject_entity_refs: [],
+      source_missing_intelligence_category: "agency_scope"
+    },
     candidate_id: "c",
     subject: ({ entity_id: "provisional:organization:x", entity_type: "organization", canonical_name: "Premier Padel" } as unknown) as EntityRef,
     now_iso: new Date().toISOString(),
@@ -58,5 +64,5 @@ test("executor rejects unsupported question types", async () => {
     }
   });
 
-  assert.equal(res.status, "unsupported");
+  assert.equal(res.status, "blocked");
 });

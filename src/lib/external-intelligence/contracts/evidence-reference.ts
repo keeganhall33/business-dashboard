@@ -5,6 +5,8 @@ import type {
   RetentionPolicy,
   RetractionStatus
 } from "@/lib/external-intelligence/contracts/enums";
+import type { SupportExcerptV1 } from "@/lib/external-intelligence/contracts/support-excerpt-v1";
+import { SupportExcerptV1Schema } from "@/lib/external-intelligence/contracts/support-excerpt-v1";
 import { z } from "zod";
 
 export type EvidenceCredibility = {
@@ -43,6 +45,12 @@ export type EvidenceReference = {
 
   // Pointer to stored excerpt/summary (not full text)
   excerpt_or_summary_reference: string | null;
+
+  /**
+   * Optional bounded support excerpts retained solely to audit/reproduce extracted factual Claims.
+   * This is NOT full-article retention.
+   */
+  support_excerpts: SupportExcerptV1[];
 
   // Registry prior (may be summarized downstream)
   source_credibility_prior: "high" | "medium" | "low";
@@ -97,6 +105,8 @@ export const EvidenceReferenceSchema = z
     legal_policy_version: z.string().min(1),
     retention_policy: z.enum(["link_only", "quote_only", "summary_only", "licensed_fulltext"]) as z.ZodType<RetentionPolicy>,
     excerpt_or_summary_reference: z.string().min(1).nullable(),
+
+    support_excerpts: z.array(SupportExcerptV1Schema),
     source_credibility_prior: z.enum(["high", "medium", "low"]),
     correction_status: z.enum(["none", "corrected"]) as z.ZodType<CorrectionStatus>,
     retraction_status: z.enum(["none", "retracted"]) as z.ZodType<RetractionStatus>,

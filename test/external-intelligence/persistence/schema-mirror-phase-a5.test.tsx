@@ -37,7 +37,9 @@ const CRITICAL_SNIPPETS: Array<{ name: string; pattern: RegExp }> = [
   },
   {
     name: "retention policy enum values",
-    pattern: /retention_policy\s+text\s+not\s+null\s+default\s+'retain'\s+check\s*\(retention_policy\s+in\s*\('retain','link_only','tombstone'\)\)/i
+    // NOTE: expanded after A5 for bounded excerpts; schema.sql may include the extended set.
+    pattern:
+      /retention_policy\s+text\s+not\s+null\s+default\s+'retain'\s+check\s*\(retention_policy\s+in\s*\('retain','link_only'(?:,'quote_only','summary_only','licensed_fulltext')?,'tombstone'\)\)/i
   },
   {
     name: "processing run status enum values",

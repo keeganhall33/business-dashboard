@@ -101,8 +101,9 @@ export function buildHoophallEvidenceReference(input: {
     legal_policy_version: "b6.hoophall.link_only.v1",
     retention_policy: "link_only",
 
-    excerpt_or_summary_reference: null,
-    source_credibility_prior: "high",
+      excerpt_or_summary_reference: null,
+      support_excerpts: [],
+      source_credibility_prior: "high",
     correction_status: "none",
     retraction_status: "none",
     supersedes_evidence_reference_id: null,

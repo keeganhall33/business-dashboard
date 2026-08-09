@@ -2,10 +2,23 @@ import crypto from "node:crypto";
 
 import type { EntityRef } from "@/lib/external-intelligence/contracts/entity-ref";
 import type { VersionRef } from "@/lib/external-intelligence/contracts/version-ref";
+import { buildProvisionalEntityRefV1 } from "@/lib/external-intelligence/contracts/entity-ref-provisional";
+import type { ServiceScopeV1 } from "@/lib/external-intelligence/contextual-claims/contextual-claims-policy-v1";
 
 import type { ResearchQuestionV1 } from "@/lib/external-intelligence/opportunities/context-research-questions-v1";
 
-import { buildClassifiedAsClaimV1 } from "@/lib/external-intelligence/contextual-claims/contextual-claims-builders-v1";
+import * as contextualClaimBuildersMod from "@/lib/external-intelligence/contextual-claims/contextual-claims-builders-v1";
+import type {
+  buildClassifiedAsClaimV1 as BuildClassifiedAsClaimV1,
+  buildProvidesServiceToClaimV1 as BuildProvidesServiceToClaimV1
+} from "@/lib/external-intelligence/contextual-claims/contextual-claims-builders-v1";
+
+import { buildSupportExcerptsV1 } from "@/lib/external-intelligence/targeted-research/support-excerpts-v1";
+import { extractAgencyScopeSupportExcerptsFromHtmlV1 } from "@/lib/external-intelligence/targeted-research/agency-scope-support-extractor-v1";
+import {
+  TARGETED_WEB_BOUNDED_EXCERPT_POLICY_V1,
+  isEligibleForTargetedWebBoundedExcerptV1
+} from "@/lib/external-intelligence/targeted-research/targeted-web-bounded-excerpt-policy-v1";
 
 import type { ResearchDiscoveryProviderV1 } from "@/lib/external-intelligence/targeted-research/discovery-provider-v1";
 import { planOrganizationContextDiscoveryQueriesV1 } from "@/lib/external-intelligence/targeted-research/discovery-templates-v1";
@@ -17,6 +30,7 @@ import {
   computeTargetedWebSourceIdV1
 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
 import type {
+  ExternalQuestionTypeV1,
   ResearchSourceCandidateV1,
   TargetedExternalResearchExecutorResultV1,
   TargetedExternalResearchPreviewV1
@@ -50,12 +64,14 @@ export type TargetedExternalResearchInputV1 = {
 };
 
 export function supportsQuestionV1(q: ResearchQuestionV1): boolean {
-  return q.question_type === "ORGANIZATION_CONTEXT" && q.source_domain === "EXTERNAL";
+  return (q.question_type === "ORGANIZATION_CONTEXT" || q.question_type === "AGENCY_SCOPE") && q.source_domain === "EXTERNAL";
 }
 
 function assertQuestionScopeV1(input: TargetedExternalResearchInputV1) {
   const q = input.research_question;
-  if (q.question_type !== "ORGANIZATION_CONTEXT") throw new Error("unsupported_question_type");
+  if (q.question_type !== "ORGANIZATION_CONTEXT" && q.question_type !== "AGENCY_SCOPE") {
+    throw new Error("unsupported_question_type");
+  }
   if (q.source_domain !== "EXTERNAL") throw new Error("question_not_external");
   if (input.subject.entity_type !== "organization") throw new Error("subject_must_be_organization");
 }
@@ -257,6 +273,7 @@ export async function executeTargetedExternalResearchPreviewV1(
     og_site_name: string | null;
     og_title: string | null;
     jsonld_types: string[];
+    raw_html: string | null;
   }> = [];
   for (const s of selected) {
     const f = await fetchPagePreviewV1({
@@ -276,30 +293,78 @@ export async function executeTargetedExternalResearchPreviewV1(
         meta_description: null,
         og_site_name: null,
         og_title: null,
-        jsonld_types: []
+        jsonld_types: [],
+        raw_html: null
       });
       continue;
     }
 
-    fetched.push(f.preview);
+    fetched.push({ ...f.preview, raw_html: f.raw_html ?? null });
   }
 
-  // Build contextual claim previews (in memory only).
-  const proposed: TargetedExternalResearchPreviewV1["proposed_contextual_claims"] = [];
+  type ContextualBuilders = {
+    buildClassifiedAsClaimV1: typeof BuildClassifiedAsClaimV1;
+    buildProvidesServiceToClaimV1: typeof BuildProvidesServiceToClaimV1;
+  };
 
-  // Create a deterministic pseudo content hash for the prospective evidence version based on retained metadata only.
-  const retainedSemantic = {
+  const typedBuilders: ContextualBuilders =
+    ((contextualClaimBuildersMod as unknown as { default?: unknown }).default ?? contextualClaimBuildersMod) as unknown as ContextualBuilders;
+  const buildClassifiedAsClaimV1 = typedBuilders.buildClassifiedAsClaimV1;
+  const buildProvidesServiceToClaimV1 = typedBuilders.buildProvidesServiceToClaimV1;
+
+  // Build claim previews (in memory only).
+  const proposed: TargetedExternalResearchPreviewV1["proposed_contextual_claims"] = [];
+  const proposed_service_scope_claims: TargetedExternalResearchPreviewV1["proposed_service_scope_claims"] = [];
+
+  // Evidence content identity varies by question type.
+  const baseRetained = {
     canonical_url: selected[0].canonical_url,
     title: fetched[0]?.title ?? null,
     og_title: fetched[0]?.og_title ?? null,
     jsonld_types: fetched[0]?.jsonld_types ?? []
   };
-  const evidence_content_hash = sha256Hex(JSON.stringify({ v: "targeted_web_preview_v1", retainedSemantic }));
+
+  let evidence_legal_policy_version = "targeted_web.preview_only.v1";
+  let supportExcerpts: { text: string; text_hash: string; char_count: number }[] = [];
+
+  if (input.research_question.question_type === "AGENCY_SCOPE") {
+    const domain = selected[0].domain;
+    if (!isEligibleForTargetedWebBoundedExcerptV1({ domain })) {
+      return { status: "blocked", reason: "bounded_excerpt_source_not_eligible" };
+    }
+
+    const html = fetched[0]?.raw_html ?? null;
+    if (typeof html !== "string" || !html) {
+      return { status: "blocked", reason: "bounded_excerpt_requires_raw_html" };
+    }
+
+    const ex = extractAgencyScopeSupportExcerptsFromHtmlV1({ html });
+    const texts = [ex.content_and_channel, ex.campaign_delivery, ex.campaign_planning_execution].filter(
+      (s): s is string => typeof s === "string" && s.length > 0
+    );
+    const built = buildSupportExcerptsV1({ locator_type: "text_excerpt", texts, locator_hint: selected[0].canonical_url });
+    if (!built.ok) return { status: "blocked", reason: `bounded_excerpt_invalid:${built.error}` };
+
+    evidence_legal_policy_version = TARGETED_WEB_BOUNDED_EXCERPT_POLICY_V1.legal_policy_version;
+    supportExcerpts = built.excerpts.map((e) => ({ text: e.text, text_hash: e.text_hash, char_count: e.char_count }));
+  }
+
+  const retainedSemantic =
+    input.research_question.question_type === "AGENCY_SCOPE"
+      ? { ...baseRetained, support_excerpt_hashes: supportExcerpts.map((e) => e.text_hash) }
+      : baseRetained;
+
+  const evidence_content_hash = sha256Hex(
+    JSON.stringify({
+      v: input.research_question.question_type === "AGENCY_SCOPE" ? "targeted_web_bounded_excerpt_v1" : "targeted_web_preview_v1",
+      retainedSemantic
+    })
+  );
 
   const evidence_version_ref: VersionRef = computeProspectiveEvidenceVersionRef({
     evidence_reference_id,
     content_hash: evidence_content_hash,
-    legal_policy_version: "targeted_web.preview_only.v1"
+    legal_policy_version: evidence_legal_policy_version
   });
 
   const extracted =
@@ -346,10 +411,67 @@ export async function executeTargetedExternalResearchPreviewV1(
     }
   }
 
+  if (input.research_question.question_type === "AGENCY_SCOPE") {
+    // Minimal V1 scope extraction from bounded excerpts. No inference from appointment labels.
+    const joined = supportExcerpts.map((e) => e.text).join("\n");
+
+    const hasContent = /content\s+and\s+channel\s+strategy/i.test(joined);
+    const hasCampaign = /campaign\s+delivery/i.test(joined) || /campaign\s+planning\s+and\s+execution/i.test(joined);
+
+    // Subject is expected to be focal org; for AGENCY_SCOPE we want provider=focal and client=context.
+    const provider: EntityRef = input.subject;
+    const other = (input.research_question.subject_entity_refs ?? []).find((s) => s.entity_id !== provider.entity_id) ?? null;
+    const client: EntityRef | null = other
+      ? buildProvisionalEntityRefV1({
+          entity_id: other.entity_id,
+          entity_type: other.entity_type,
+          canonical_name: other.canonical_name
+        })
+      : null;
+
+    if (client) {
+      const normalization_policy_version = "contextual_claims_v1.normalization.agency_scope_targeted_web_bounded_excerpt_v1";
+
+      const push = (service_scope: ServiceScopeV1, label: string) => {
+        const claim = buildProvidesServiceToClaimV1({
+          evidence_version_ref,
+          retrieved_at_iso: input.now_iso,
+          provider,
+          client,
+          service_scope,
+          service_scope_label: label,
+          normalization_policy_version,
+          normalization_confidence: "high"
+        });
+
+        const content_hash = sha256Hex(JSON.stringify(claim));
+        proposed_service_scope_claims.push({
+          predicate: "provides_service_to",
+          provider_entity_id: provider.entity_id,
+          provider_canonical_name: provider.canonical_name,
+          client_entity_id: client.entity_id,
+          client_canonical_name: client.canonical_name,
+          service_scope,
+          service_scope_label: label,
+          normalization_policy_version,
+          normalization_confidence: "high",
+          claim_id: claim.claim_id,
+          claim_fingerprint: claim.claim_fingerprint,
+          content_hash,
+          clearly_supported: true,
+          support_rationale: "bounded_support_excerpts"
+        });
+      };
+
+      if (hasContent) push("content", "content and channel strategy");
+      if (hasCampaign) push("campaign_strategy", "campaign delivery; campaign planning and execution");
+    }
+  }
+
   const preview: TargetedExternalResearchPreviewV1 = {
     research_question_id: input.research_question.research_question_id,
     candidate_id: input.candidate_id,
-    question_type: "ORGANIZATION_CONTEXT",
+    question_type: input.research_question.question_type as ExternalQuestionTypeV1,
     subject_entity_id: input.subject.entity_id,
     subject_canonical_name: input.subject.canonical_name,
 
@@ -367,7 +489,8 @@ export async function executeTargetedExternalResearchPreviewV1(
     prospective_source_id: source_id,
     prospective_evidence_reference_id: evidence_reference_id,
 
-    proposed_contextual_claims: proposed
+    proposed_contextual_claims: proposed,
+    proposed_service_scope_claims
   };
 
   return { status: "preview", preview };
