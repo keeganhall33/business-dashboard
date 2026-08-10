@@ -1,9 +1,18 @@
 import { sha256CanonicalJson } from "@/lib/external-intelligence/hashing/content-hash";
 import { canonicalizeUrlV1 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
+import { decode as decodeHtmlEntities } from "he";
 
 function normalizeTextV1(s: string | null): string | null {
   if (s === null) return null;
-  const t = String(s).replace(/\s+/g, " ").trim();
+  // Canonical order:
+  // 1) HTML character reference decode exactly once
+  // 2) NBSP -> ordinary space
+  // 3) semantic whitespace normalization
+  // 4) trim
+  // 5) empty -> null
+  const decodedOnce = decodeHtmlEntities(String(s), { isAttributeValue: false, strict: false });
+  const nbspNormalized = decodedOnce.replace(/\u00A0/g, " ");
+  const t = nbspNormalized.replace(/\s+/g, " ").trim();
   return t.length ? t : null;
 }
 
@@ -60,4 +69,3 @@ export function createTargetedWebStructuredMetadataRetainedPayloadHashV1(input: 
   const projection = projectTargetedWebStructuredMetadataRetainedPayloadV1(input);
   return sha256CanonicalJson(projection);
 }
-

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { canonicalizeUrlV1, computeTargetedWebEvidenceReferenceIdV1, computeTargetedWebSourceIdV1 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
 import { createTargetedWebStructuredMetadataRetainedPayloadHashV1 } from "@/lib/external-intelligence/targeted-research/targeted-web-structured-metadata-retained-payload-hash-v1";
+import { projectTargetedWebStructuredMetadataRetainedPayloadV1 } from "@/lib/external-intelligence/targeted-research/targeted-web-structured-metadata-retained-payload-hash-v1";
 import { buildProvidesServiceToClaimV1 } from "@/lib/external-intelligence/contextual-claims/contextual-claims-builders-v1";
 
 test("TARGETED RESEARCH PREVIEW IDENTITY: targeted-web EvidenceReference ID is derived from canonical domain+url", () => {
@@ -140,4 +141,124 @@ test("TARGETED_WEB structured_metadata retained payload hash: identity_url canon
     identity_url: "https://premierpadel.com/en?utm_source=x#fragment"
   });
   assert.equal(h1, h2);
+});
+
+test("TARGETED_WEB structured_metadata text normalization: HTML entity decode-once + nbsp + ampersands are canonical", () => {
+  const base = {
+    identity_url: "https://example.com/",
+    og_site_name: null as string | null,
+    jsonld_types: [] as string[]
+  };
+
+  // 1–3: ampersand equivalence
+  const a = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "A & B",
+    meta_description: null,
+    og_title: null
+  });
+  const b = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "A &amp; B",
+    meta_description: null,
+    og_title: null
+  });
+  const c = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "A &#38; B",
+    meta_description: null,
+    og_title: null
+  });
+  const d = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "A &#x26; B",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(a, b);
+  assert.equal(a, c);
+  assert.equal(a, d);
+
+  // 4: quotes decode deterministically
+  const q1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "\"Hello\"",
+    meta_description: null,
+    og_title: null
+  });
+  const q2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "&quot;Hello&quot;",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(q1, q2);
+
+  // 5: nbsp treated as semantic whitespace
+  const n1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "Foo Bar",
+    meta_description: null,
+    og_title: null
+  });
+  const n2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "Foo&nbsp;Bar",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(n1, n2);
+
+  // 6: literal ampersands are preserved (no naive substitutions)
+  const at1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "AT&T",
+    meta_description: null,
+    og_title: null
+  });
+  const at2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "AT&T",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(at1, at2);
+
+  // 7: decode once only
+  const projOnce = projectTargetedWebStructuredMetadataRetainedPayloadV1({
+    ...base,
+    title: "&amp;amp;",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(projOnce.title, "&amp;", "decode-once: &amp;amp; -> &amp; (not &)");
+
+  const hOnce = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "&amp;amp;",
+    meta_description: null,
+    og_title: null
+  });
+  const hAmp = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "&",
+    meta_description: null,
+    og_title: null
+  });
+  assert.notEqual(hOnce, hAmp, "decode-once must not fully decode &amp;amp; into &");
+
+  // 8–9: null and whitespace-only normalize to null
+  const z1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: null,
+    meta_description: null,
+    og_title: null
+  });
+  const z2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    title: "   ",
+    meta_description: null,
+    og_title: null
+  });
+  assert.equal(z1, z2);
 });
