@@ -232,7 +232,6 @@ function buildClaimPayloadV2(input: { now_iso: string; evidence_reference_id: st
 
     event_time: claim.event_time,
     announcement_time: claim.announcement_time,
-    retrieved_at: claim.retrieved_at,
 
     observed_vs_inferred: claim.observed_vs_inferred,
     verification_state: claim.verification_state,

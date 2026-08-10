@@ -238,7 +238,6 @@ export type ClaimVersionSemanticV2 = {
 
   event_time: string | null;
   announcement_time: string | null;
-  retrieved_at: string;
 
   observed_vs_inferred: string;
   verification_state: string;
@@ -277,7 +276,6 @@ export function createClaimVersionContentHashV2(input: ClaimVersionSemanticV2): 
 
     input.event_time === null ? { kind: "null" } : { kind: "string", value: input.event_time },
     input.announcement_time === null ? { kind: "null" } : { kind: "string", value: input.announcement_time },
-    { kind: "string", value: input.retrieved_at },
 
     { kind: "string", value: input.observed_vs_inferred },
     { kind: "string", value: input.verification_state },
