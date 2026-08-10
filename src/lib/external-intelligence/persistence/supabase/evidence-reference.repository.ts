@@ -13,6 +13,7 @@ import { getExternalIntelligenceSupabaseClient } from "@/lib/external-intelligen
 import { mapEvidenceStableRow, mapEvidenceVersionRow } from "@/lib/external-intelligence/persistence/supabase/row-mappers";
 import { EXTERNAL_INTELLIGENCE_RPCS, runRpc } from "@/lib/external-intelligence/persistence/supabase/transactions";
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
+import { normalizeEvidencePayloadForReplayEquivalenceV1 } from "@/lib/external-intelligence/persistence/evidence-replay-equivalence-v1";
 
 /**
  * Evidence VersionRef policy_version semantics:
@@ -126,6 +127,66 @@ export class EvidenceReferenceRepository {
     }
 
     const supabase = getExternalIntelligenceSupabaseClient({ client: input.opts?.client });
+
+    // Historical Contract-Y idempotency guard.
+    //
+    // Two known historical rows were persisted via direct RPC with:
+    //   stored EvidenceVersion.content_hash == payload_json.content_hash
+    // (outer version hash == inner retained payload hash)
+    // instead of the canonical Contract-X semantic fingerprint.
+    //
+    // These rows are immutable. When revisiting the same semantic evidence, do NOT create a spurious new version.
+    //
+    // IMPORTANT:
+    // - This does NOT authorize Contract-Y for new writes.
+    // - We only recognize it when an already-persisted version exists and is replay-equivalent.
+    try {
+      const existingVersions = await this.listVersions(parsed.evidence_reference_id, { client: supabase });
+      const normalizeForContractY = (payload: unknown) => {
+        const base = normalizeEvidencePayloadForReplayEquivalenceV1(payload);
+        // Contract-Y historical exceptions used a different meaning for payload_json.content_hash.
+        // For idempotency recognition only, we compare payloads with content_hash removed.
+        if (base && typeof base === "object" && !Array.isArray(base)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { content_hash, ...rest } = base as Record<string, unknown>;
+          return rest;
+        }
+        return base;
+      };
+
+      const normalizedIncoming = computeContentHash(normalizeForContractY(parsed));
+
+      const contractYMatch = existingVersions.find((v) => {
+        if (!v.payload_available) return false;
+        const payload = v.payload_json as unknown as Record<string, unknown>;
+
+        // Structural Contract-Y shape: outer content_hash equals payload_json.content_hash.
+        const inner = payload["content_hash"];
+        if (typeof inner !== "string" || inner.length !== 64) return false;
+        if (v.content_hash !== inner) return false;
+
+        // Replay-equivalent payload (allowlisted volatile drift only).
+        const normalizedExisting = computeContentHash(normalizeForContractY(payload));
+        return normalizedExisting === normalizedIncoming;
+      });
+
+      if (contractYMatch && contractYMatch.content_hash !== version_content_hash) {
+        const ref: VersionRef = __test__createEvidenceReferenceVersionRef({
+          evidence_reference_id: parsed.evidence_reference_id,
+          content_hash: contractYMatch.content_hash,
+          schema_version: parsed.schema_version,
+          legal_policy_version: parsed.legal_policy_version
+        });
+
+        return Object.freeze({
+          ref: Object.freeze(ref),
+          created_new_version: false,
+          idempotent_replay: true
+        });
+      }
+    } catch {
+      // Non-fatal: if read fails, fall back to canonical persistence RPC (which still fail-closes on conflicts).
+    }
 
     const res = await runRpc<
       Array<{
