@@ -271,3 +271,42 @@ test("guard: executor never returns raw_html in preview", async () => {
   const s = JSON.stringify(out.preview);
   assert.ok(!s.includes("<html"));
 });
+
+test("status semantics: discovery unavailable != NOT_FOUND_WITHIN_BOUNDED_RESEARCH", async () => {
+  const deps = {
+    ...mkDeps({ htmlByUrl: { "https://example.com/tour": "<html></html>" } }),
+    discovery: {
+      search: async () => {
+        throw new Error("discovery_adapter_missing");
+      }
+    }
+  };
+
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: mkQuestion("RQ_EVENT_FOOTPRINT"),
+    now_iso: new Date().toISOString(),
+    deps
+  });
+
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.answer_status, "DISCOVERY_UNAVAILABLE");
+});
+
+test("status semantics: zero discovery results => NO_DISCOVERY_RESULTS (not NOT_FOUND)", async () => {
+  const deps = {
+    ...mkDeps({ htmlByUrl: { "https://example.com/tour": "<html></html>" } }),
+    discovery: {
+      search: async () => []
+    }
+  };
+
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: mkQuestion("RQ_EVENT_FOOTPRINT"),
+    now_iso: new Date().toISOString(),
+    deps
+  });
+
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.urls_considered, 0);
+  assert.equal(out.preview.answer_status, "NO_DISCOVERY_RESULTS");
+});
