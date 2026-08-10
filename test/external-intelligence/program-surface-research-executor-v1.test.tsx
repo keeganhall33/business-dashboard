@@ -41,6 +41,7 @@ function mkQuestion(question_type: unknown) {
     candidate_id: "cand_1",
     question_type,
     subject: ORG,
+    discovery_hints: undefined as undefined | { canonical_domain?: string },
     question_policy_version: PROGRAM_SURFACE_RESEARCH_POLICY_VERSION_V1,
     question_text: "fixture",
     source_domain: "EXTERNAL",
@@ -48,11 +49,17 @@ function mkQuestion(question_type: unknown) {
   };
 }
 
-function mkDeps(input: { htmlByUrl: Record<string, string>; sourceClassByUrl?: Record<string, string> }) {
+function mkDeps(input: {
+  htmlByUrl: Record<string, string>;
+  sourceClassByUrl?: Record<string, string>;
+  fetchFailByUrl?: Record<string, { http_status: number; error: string }>;
+  onSearch?: () => void;
+}) {
   return {
     discovery: {
       search: async ({ query, max_results }: { query: string; max_results: number }) => {
         void query;
+        input.onSearch?.();
         const urls = Object.keys(input.htmlByUrl);
         return urls.slice(0, max_results).map((url, i) => ({ url, title: "t", snippet: null, rank: i + 1 }));
       }
@@ -62,6 +69,10 @@ function mkDeps(input: { htmlByUrl: Record<string, string>; sourceClassByUrl?: R
     fetchPage: async ({ canonical_url, timeout_ms, max_bytes }: { canonical_url: string; timeout_ms: number; max_bytes: number }) => {
       void timeout_ms;
       void max_bytes;
+      const fail = input.fetchFailByUrl?.[canonical_url];
+      if (fail) {
+        return { ok: false as const, http_status: fail.http_status, error: fail.error, final_url: canonical_url };
+      }
       const html = input.htmlByUrl[canonical_url];
       assert.ok(html, `missing fixture html for ${canonical_url}`);
       // Reuse production fetcher preview shape (but bypass network).
@@ -101,6 +112,53 @@ function mkDeps(input: { htmlByUrl: Record<string, string>; sourceClassByUrl?: R
       computeTargetedWebEvidenceReferenceIdV1({ source_id, canonical_url })
   };
 }
+
+test("M. canonical domain seed produces homepage candidate and avoids search when answered", async () => {
+  const seedUrl = "https://example.com/";
+  const html = `<html><body><p>Example Org is a global tour with a calendar of tournaments.</p></body></html>`;
+  let searches = 0;
+  const deps = mkDeps({ htmlByUrl: { [seedUrl]: html }, onSearch: () => (searches += 1) });
+
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "example.com" };
+
+  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  assert.equal(out.status, "preview");
+  assert.equal(searches, 0, "search adapter should not run when canonical domain seed answers the question");
+  assert.equal(out.preview.urls_considered >= 1, true);
+  assert.equal(out.preview.selected_sources[0]?.canonical_url, seedUrl);
+  assert.equal(out.preview.selected_sources[0]?.discovery_origin, "official_domain_seed");
+  assert.equal(out.preview.selected_sources[0]?.discovered_via_query_id, null);
+});
+
+test("N. invalid canonical domain hint fails closed", async () => {
+  const deps = mkDeps({ htmlByUrl: { "https://example.com/": "<html></html>" } });
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "https://example.com/path" };
+  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.answer_status, "DISCOVERY_UNAVAILABLE");
+  assert.ok(String(out.preview.answer_reason).includes("invalid_canonical_domain_hint"));
+});
+
+test("O. seed fetch failure falls back to search adapter", async () => {
+  const seedUrl = "https://example.com/";
+  const searchUrl = "https://example.org/tour";
+  const html = `<html><body><p>Example Org is a tour with a season calendar of tournaments.</p></body></html>`;
+  let searches = 0;
+  const deps = mkDeps({
+    htmlByUrl: { [searchUrl]: html },
+    fetchFailByUrl: { [seedUrl]: { http_status: 503, error: "unavailable" } },
+    onSearch: () => (searches += 1)
+  });
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "example.com" };
+  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  assert.equal(out.status, "preview");
+  assert.ok(searches > 0, "search adapter should run after seed fetch failure");
+  assert.equal(out.preview.selected_sources[0]?.canonical_url, searchUrl);
+  assert.equal(out.preview.selected_sources[0]?.discovery_origin, "search_query");
+});
 
 test("A. partner roster only => NO runs_partner_activations claim preview", async () => {
   const url = "https://example.com/partners";
