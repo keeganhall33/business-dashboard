@@ -207,18 +207,11 @@ revoke all on function persist_external_evidence_reference_v1(
   text,text,text,text,text,text,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text
 ) from public;
 revoke all on function persist_external_evidence_reference_v1(
-  text,text,text,text,text,text,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean
-) from public;
-revoke all on function persist_external_evidence_reference_v1(
   text,text,text,text,text,text,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text
 ) from anon, authenticated;
 
 grant execute on function persist_external_evidence_reference_v1(
   text,text,text,text,text,text,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text
-) to anon, authenticated, service_role;
-
-grant execute on function persist_external_evidence_reference_v1(
-  text,text,text,text,text,text,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean
 ) to anon, authenticated, service_role;
 
 -- 3) Claim persistence RPC: gate via auth.jwt role.
@@ -448,17 +441,7 @@ $fn$;
 revoke all on function persist_external_claim_v1(
   text,text,text,text,text,text,text,text,jsonb,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text,text,text,text
 ) from public;
-revoke all on function persist_external_claim_v1(
-  text,text,text,text,text,text,text,text,jsonb,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text,text,text
-) from public;
-revoke all on function persist_external_claim_v1(
-  text,text,text,text,text,text,text,text,jsonb,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text,text,text
-) from anon, authenticated;
 
 grant execute on function persist_external_claim_v1(
   text,text,text,text,text,text,text,text,jsonb,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text,text,text,text
-) to anon, authenticated, service_role;
-
-grant execute on function persist_external_claim_v1(
-  text,text,text,text,text,text,text,text,jsonb,jsonb,timestamptz,timestamptz,timestamptz,jsonb,jsonb,text,timestamptz,boolean,timestamptz,timestamptz,text,boolean,text,text,text
 ) to anon, authenticated, service_role;
