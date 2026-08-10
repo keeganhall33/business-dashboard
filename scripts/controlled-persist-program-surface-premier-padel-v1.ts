@@ -26,6 +26,12 @@ function parseFlag(argv: string[], name: string): boolean {
   return argv.includes(name);
 }
 
+function parseArg(argv: string[], name: string): string | null {
+  const idx = argv.indexOf(name);
+  if (idx === -1) return null;
+  return argv[idx + 1] ?? null;
+}
+
 function redactedHost(url: string) {
   try {
     const u = new URL(url);
@@ -247,11 +253,19 @@ function buildClaimPayloadV2(input: { now_iso: string; evidence_reference_id: st
 }
 
 async function main() {
-  const confirmWrite = parseFlag(process.argv.slice(2), "--confirm-write");
-  const validateOnly = parseFlag(process.argv.slice(2), "--validate-only");
+  const argv = process.argv.slice(2);
+  const confirmWrite = parseFlag(argv, "--confirm-write");
+  const validateOnly = parseFlag(argv, "--validate-only");
+  const forcedNowIso = parseArg(argv, "--now-iso");
 
   // Local V2 manifest validation (no Supabase required).
-  const now_iso = new Date().toISOString();
+  // IMPORTANT: Claim V2 hash includes retrieved_at, so the manifest is time-sensitive.
+  // For deterministic validation, pass --now-iso or use the built-in pinned timestamp.
+  const now_iso =
+    forcedNowIso ??
+    (validateOnly
+      ? "2026-08-10T19:09:00.000Z" // pinned to make validate-only deterministic
+      : new Date().toISOString());
   const evidence = buildEvidencePayloadV2({ now_iso });
   const claim = buildClaimPayloadV2({
     now_iso,
