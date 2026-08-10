@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { executeProgramSurfaceResearchPreviewV1 } from "@/lib/external-intelligence/program-surfaces/program-surface-research-executor-v1";
+import type {
+  ProgramSurfaceResearchDepsV1,
+  ProgramSurfaceResearchQuestionV1
+} from "@/lib/external-intelligence/program-surfaces/program-surface-research-contracts-v1";
 import { DEFAULT_PROGRAM_SURFACE_QUESTION_BOUNDS_V1, PROGRAM_SURFACE_RESEARCH_POLICY_VERSION_V1 } from "@/lib/external-intelligence/program-surfaces/program-surface-research-policy-v1";
 import {
   canonicalizeUrlV1,
@@ -53,13 +57,16 @@ function mkDeps(input: {
   htmlByUrl: Record<string, string>;
   sourceClassByUrl?: Record<string, string>;
   fetchFailByUrl?: Record<string, { http_status: number; error: string }>;
+  transientNullByUrl?: Record<string, true>;
   onSearch?: () => void;
+  searchThrows?: string;
 }) {
   return {
     discovery: {
       search: async ({ query, max_results }: { query: string; max_results: number }) => {
         void query;
         input.onSearch?.();
+        if (input.searchThrows) throw new Error(input.searchThrows);
         const urls = Object.keys(input.htmlByUrl);
         return urls.slice(0, max_results).map((url, i) => ({ url, title: "t", snippet: null, rank: i + 1 }));
       }
@@ -88,7 +95,8 @@ function mkDeps(input: {
         og_title: null,
         jsonld_types: []
       };
-      return { ok: true as const, preview, transient: { raw_html: html }, retention_mode: "structured_metadata" as const };
+      const transient = input.transientNullByUrl?.[canonical_url] ? null : { raw_html: html };
+      return { ok: true as const, preview, transient, retention_mode: "structured_metadata" as const };
     },
     classifySource: ({ canonical_url, title, snippet }: { canonical_url: string; title: string | null; snippet: string | null }) => {
       void title;
@@ -122,7 +130,11 @@ test("M. canonical domain seed produces homepage candidate and avoids search whe
   const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
   q.discovery_hints = { canonical_domain: "example.com" };
 
-  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
   assert.equal(out.status, "preview");
   assert.equal(searches, 0, "search adapter should not run when canonical domain seed answers the question");
   assert.equal(out.preview.urls_considered >= 1, true);
@@ -135,7 +147,11 @@ test("N. invalid canonical domain hint fails closed", async () => {
   const deps = mkDeps({ htmlByUrl: { "https://example.com/": "<html></html>" } });
   const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
   q.discovery_hints = { canonical_domain: "https://example.com/path" };
-  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
   assert.equal(out.status, "preview");
   assert.equal(out.preview.answer_status, "DISCOVERY_UNAVAILABLE");
   assert.ok(String(out.preview.answer_reason).includes("invalid_canonical_domain_hint"));
@@ -153,11 +169,71 @@ test("O. seed fetch failure falls back to search adapter", async () => {
   });
   const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
   q.discovery_hints = { canonical_domain: "example.com" };
-  const out = await executeProgramSurfaceResearchPreviewV1({ question: q as any, now_iso: new Date().toISOString(), deps });
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
   assert.equal(out.status, "preview");
   assert.ok(searches > 0, "search adapter should run after seed fetch failure");
   assert.equal(out.preview.selected_sources[0]?.canonical_url, searchUrl);
   assert.equal(out.preview.selected_sources[0]?.discovery_origin, "search_query");
+});
+
+test("P. no canonical domain + discovery throws => DISCOVERY_UNAVAILABLE (not NO_DISCOVERY_RESULTS)", async () => {
+  const deps = mkDeps({ htmlByUrl: { "https://example.com/": "<html></html>" }, searchThrows: "search_request_failed:provider=duckduckgo_html_v1 http_status=429" });
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  // No discovery_hints
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.answer_status, "DISCOVERY_UNAVAILABLE");
+  assert.ok(String(out.preview.answer_reason).includes("search_request_failed"));
+});
+
+test("Q. no canonical domain + discovery returns [] => NO_DISCOVERY_RESULTS", async () => {
+  const deps = {
+    ...mkDeps({ htmlByUrl: {} }),
+    discovery: {
+      search: async () => []
+    }
+  };
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps: deps as unknown as ProgramSurfaceResearchDepsV1
+  });
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.answer_status, "NO_DISCOVERY_RESULTS");
+});
+
+test("R. official homepage fetched (no support) + discovery fallback throws => preserves official research (not DISCOVERY_UNAVAILABLE)", async () => {
+  const seedUrl = "https://example.com/";
+  // No tour/schedule language so it should not answer.
+  const html = `<html><body><h1>Example Org</h1><p>Welcome.</p></body></html>`;
+  let searches = 0;
+  const deps = mkDeps({
+    htmlByUrl: { [seedUrl]: html },
+    transientNullByUrl: { [seedUrl]: true },
+    onSearch: () => (searches += 1),
+    searchThrows: "search_request_failed:provider=duckduckgo_html_v1 http_status=403"
+  });
+
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "example.com" };
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
+  assert.equal(out.status, "preview");
+  assert.equal(searches > 0, true);
+  assert.notEqual(out.preview.answer_status, "DISCOVERY_UNAVAILABLE");
+  assert.ok(String(out.preview.answer_reason).includes("search_fallback_failed"));
 });
 
 test("A. partner roster only => NO runs_partner_activations claim preview", async () => {

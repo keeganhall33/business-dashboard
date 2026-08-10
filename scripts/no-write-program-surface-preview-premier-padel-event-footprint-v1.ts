@@ -56,7 +56,11 @@ const DuckDuckGoDiscoveryProvider: ResearchDiscoveryProviderV1 = {
     const q = encodeURIComponent(input.query);
     const url = `https://duckduckgo.com/html/?q=${q}`;
     const res = await fetch(url, { headers: { "user-agent": "keegan-dashboard-targeted-research/1.0" } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      // Important: a failed search request (403/429/5xx) is NOT the same as a successful search with zero results.
+      // Do not include response body.
+      throw new Error(`search_request_failed:provider=duckduckgo_html_v1 http_status=${res.status}`);
+    }
     const html = await res.text();
     return parseDuckDuckGoHtmlResults(html).slice(0, input.max_results);
   }
