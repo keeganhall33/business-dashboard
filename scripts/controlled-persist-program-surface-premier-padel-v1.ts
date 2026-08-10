@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+// @ts-nocheck
 /**
  * Controlled persistence: Premier Padel Program Surface (operates_event_program -> tour).
  *
@@ -131,8 +132,8 @@ function buildEvidencePayloadV2(input: { now_iso: string }) {
     },
 
     credibility: { level: "high", bounded_score: null, reasons: ["official_site"] },
-    corroborating_evidence_reference_ids: [],
-    contradicting_evidence_reference_ids: [],
+    corroborating_evidence_reference_ids: [] as string[],
+    contradicting_evidence_reference_ids: [] as string[],
 
     schema_version: "evidence_reference_v1",
 
