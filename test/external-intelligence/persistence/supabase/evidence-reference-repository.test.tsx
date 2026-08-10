@@ -10,6 +10,8 @@ import {
   PersistenceIdempotencyConflictError
 } from "@/lib/external-intelligence/persistence/errors";
 import { MockSupabaseClient } from "./_mock-supabase";
+import { normalizeEvidencePayloadForReplayEquivalenceV1 } from "@/lib/external-intelligence/persistence/evidence-replay-equivalence-v1";
+import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
 
 function sampleEvidence() {
   return {
@@ -137,4 +139,75 @@ test("EvidenceReference: integrity conflict mapped", async () => {
       }),
     (err: any) => err instanceof PersistenceIdempotencyConflictError
   );
+});
+
+test("EvidenceReference: historical Contract-Y replay is recognized without new version write", async () => {
+  const mock = new MockSupabaseClient();
+
+  const incoming = sampleEvidence() as any;
+
+  // Simulate a historical Contract-Y persisted version where outer==inner.
+  // Stored version hash equals payload_json.content_hash.
+  const historicalInner = computeContentHash({ v: "targeted_web_preview_v1", retainedSemantic: { url: "https://example.com" } });
+  const historicalPayload = {
+    ...incoming,
+    // Inner retained payload hash.
+    content_hash: historicalInner,
+    // Volatile drift allowed.
+    retrieved_at: "2026-08-01T00:00:00.000Z",
+    provenance_metadata: { collected_at: "2026-08-01T00:00:00.000Z", rss_position: 3 }
+  };
+
+  // Ensure replay equivalence holds after normalization.
+  const dropContentHash = (p: any) => {
+    const base = normalizeEvidencePayloadForReplayEquivalenceV1(p) as any;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { content_hash, ...rest } = base;
+    return rest;
+  };
+  const normIncoming = computeContentHash(dropContentHash(incoming));
+  const normExisting = computeContentHash(dropContentHash(historicalPayload));
+  assert.equal(normIncoming, normExisting);
+
+  mock.seedTable("external_evidence_reference_versions_v1", [
+    {
+      evidence_reference_id: "ev1",
+      content_hash: historicalInner,
+      created_at: "2026-08-01T00:00:00.000Z",
+      payload_available: true,
+      payload_json: historicalPayload,
+      schema_version: incoming.schema_version,
+      source_id: incoming.source_id,
+      source_config_version: incoming.source_config_version,
+      legal_policy_version: incoming.legal_policy_version,
+      retention_policy: incoming.retention_policy
+    }
+  ]);
+
+  // If the idempotency guard works, we should not hit the RPC at all.
+  mock.onRpc(EXTERNAL_INTELLIGENCE_RPCS.persistEvidence, () => ({
+    error: null,
+    data: [
+      {
+        evidence_reference_id: "ev1",
+        content_hash: "should_not_be_called",
+        created_new_version: true,
+        idempotent_replay: false
+      }
+    ]
+  }));
+
+  const repo = new EvidenceReferenceRepository();
+  const res = await repo.persistEvidenceReference({
+    evidence: incoming,
+    policy_refs_json: [],
+    policy_version: "policy/v1",
+    opts: { client: mock as any }
+  });
+
+  assert.equal(mock.rpcCalls.length, 0);
+  assert.equal(res.created_new_version, false);
+  assert.equal(res.idempotent_replay, true);
+  assert.equal(res.ref.object_id, "ev1");
+  assert.equal(res.ref.content_hash, historicalInner);
 });

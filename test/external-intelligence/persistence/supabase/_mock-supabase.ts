@@ -38,7 +38,18 @@ export class MockSupabaseClient {
       filters: []
     };
 
-    const builder = {
+    type BuilderResult = { data: Array<Record<string, unknown>>; error: null };
+
+    const builder: {
+      select: () => typeof builder;
+      eq: (col: string, val: unknown) => typeof builder;
+      limit: () => typeof builder;
+      order: (col: string, opts: { ascending: boolean }) => typeof builder;
+      then: (resolve: (v: BuilderResult) => unknown, reject: (e: unknown) => unknown) => Promise<unknown>;
+      maybeSingle: () => Promise<{ data: Record<string, unknown> | null; error: null }>;
+      upsert: () => Promise<{ error: null }>;
+      insert: () => Promise<{ error: null }>;
+    } = {
       select() {
         return builder;
       },
@@ -52,6 +63,25 @@ export class MockSupabaseClient {
       order(col: string, opts: { ascending: boolean }) {
         state.order = { col, asc: opts.ascending };
         return builder;
+      },
+      // Supabase/PostgREST builders are thenable; repository code awaits select/eq/order directly.
+      then(resolve: (v: BuilderResult) => unknown, reject: (e: unknown) => unknown) {
+        try {
+          const rows = (tableData.get(state.table) ?? []) as Array<Record<string, unknown>>;
+          let filtered = rows.filter((r) => state.filters.every((f) => r[f.col] === f.val));
+          if (state.order) {
+            const { col, asc } = state.order;
+            filtered = filtered.slice().sort((a, b) => {
+              const av = a[col];
+              const bv = b[col];
+              if (av === bv) return 0;
+              return av > bv ? (asc ? 1 : -1) : asc ? -1 : 1;
+            });
+          }
+          return Promise.resolve(resolve({ data: filtered, error: null }));
+        } catch (e) {
+          return Promise.resolve(reject(e));
+        }
       },
       async maybeSingle() {
         const rows = (tableData.get(state.table) ?? []) as Array<Record<string, unknown>>;
