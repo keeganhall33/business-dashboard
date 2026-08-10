@@ -7,7 +7,9 @@
 --
 -- IMPORTANT: Do NOT apply to production from this repo.
 
-create extension if not exists pgcrypto;
+-- Supabase convention: pgcrypto lives under the extensions schema in production.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- =========================================================
 -- 1) Forward schema support (no backfill)
@@ -86,7 +88,7 @@ returns text
 language sql
 immutable
 as $$
-  select encode(digest(b, 'sha256'), 'hex');
+  select encode(extensions.digest(b, 'sha256'), 'hex');
 $$;
 
 -- =========================================================
@@ -695,7 +697,7 @@ begin
     );
 
     -- Persist required claim->evidence provenance edge (idempotent).
-    edge_id := encode(digest(jsonb_build_object(
+    edge_id := encode(extensions.digest(jsonb_build_object(
       'from_object_type','claim',
       'from_object_id',in_claim_id,
       'from_content_hash',in_content_hash,
