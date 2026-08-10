@@ -198,6 +198,10 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 
   const predicate = mapQuestionTypeToPredicateV1(q.question_type);
 
+  // Optional, safe diagnostic suffix for non-blocking discovery/fallback failures.
+  // This must never include response bodies.
+  let discoveryDiagnostic: string | null = null;
+
   const domainHintRaw = q.discovery_hints?.canonical_domain;
   const domainHint =
     typeof domainHintRaw === "string" && domainHintRaw.trim().length > 0
@@ -394,7 +398,34 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     return { status: "preview", preview };
   }
 
-  const sel = selected2[0]!;
+  const selectedCanon = selected2[0]!.canonical_url;
+  const sel = candidates.find((c) => c.canonical_url === selectedCanon) ?? null;
+  if (!sel) {
+    const preview: ProgramSurfaceResearchPreviewV1 = {
+      research_question_id: q.research_question_id,
+      candidate_id: q.candidate_id,
+      question_type: q.question_type,
+      subject_entity_id: q.subject.entity_id,
+      subject_canonical_name: q.subject.canonical_name,
+      discovery_queries,
+      urls_considered: candidates.length,
+      selected_sources: [],
+      fetched: [],
+      prospective_source_id: "",
+      prospective_evidence_reference_id: "",
+      evidence_reuse: "NO",
+      source_eligibility: "FAIL",
+      retention_policy: "blocked",
+      raw_html_transient: "NO",
+      raw_html_retained: "NO",
+      retained_support: "neither",
+      normalized_candidates: [],
+      claim_previews: [],
+      answer_status: "DISCOVERY_UNAVAILABLE",
+      answer_reason: "selected_source_missing_from_candidates"
+    };
+    return { status: "preview", preview };
+  }
 
   const { domain } = input.deps.canonicalizeUrl(sel.canonical_url);
   const source_id = input.deps.computeSourceId({ domain });
@@ -553,6 +584,12 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
               ? "PARTIAL"
               : "NOT_FOUND_WITHIN_BOUNDED_RESEARCH";
 
+          const fullFallback = candidates.find((c) => c.canonical_url === fallbackSel.canonical_url) ?? null;
+          const fallbackOrigin = {
+            discovery_origin: fullFallback?.discovery_origin ?? ("search_query" as const),
+            discovered_via_query_id: fullFallback?.discovered_via_query_id ?? (null as string | null)
+          };
+
           const preview2: ProgramSurfaceResearchPreviewV1 = {
             research_question_id: q.research_question_id,
             candidate_id: q.candidate_id,
@@ -565,8 +602,8 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
               {
                 canonical_url: fallbackSel.canonical_url,
                 source_class: fallbackSel.source_class,
-                discovery_origin: fallbackSel.discovery_origin,
-                discovered_via_query_id: fallbackSel.discovered_via_query_id
+                discovery_origin: fallbackOrigin.discovery_origin,
+                discovered_via_query_id: fallbackOrigin.discovered_via_query_id
               }
             ],
             fetched: previewFetched2,
@@ -806,6 +843,139 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     }
   }
 
+  // If still unanswered and we only used the homepage fetch (no same-domain follow possible),
+  // we may use the search adapter as a fallback *only* to source the second fetch candidate.
+  // Importantly: a fallback search failure must not erase completed official-domain research.
+  if (claim_previews.length === 0 && q.question_type === "RQ_EVENT_FOOTPRINT" && previewFetched.length === 1) {
+    const discovered: Array<{ query_id: string; results: Array<{ url: string; title: string | null; snippet: string | null; rank: number }> }> = [];
+    try {
+      for (const dq of discovery_queries) {
+        const res = await input.deps.discovery.search({ query: dq.query, max_results: q.bounds.max_results_per_query });
+        discovered.push({ query_id: dq.query_id, results: res.slice(0, q.bounds.max_results_per_query) });
+      }
+    } catch (e) {
+      discoveryDiagnostic = `search_fallback_failed:${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    if (!discoveryDiagnostic) {
+      // Take the best-ranked eligible URL and spend the one remaining fetch budget.
+      for (const d of discovered) {
+        for (const r of d.results) {
+          if (candidates.length >= q.bounds.max_unique_urls) break;
+          let canon: { canonical_url: string; domain: string };
+          try {
+            canon = input.deps.canonicalizeUrl(r.url);
+          } catch {
+            continue;
+          }
+          if (seen.has(canon.canonical_url)) continue;
+          seen.add(canon.canonical_url);
+          const c = input.deps.classifySource({ canonical_url: canon.canonical_url, title: r.title, snippet: r.snippet });
+          candidates.push({
+            canonical_url: c.canonical_url,
+            source_class: c.source_class,
+            official_domain_confidence: c.official_domain_confidence,
+            search_rank: c.search_rank,
+            title: c.title,
+            snippet: c.snippet,
+            discovery_origin: "search_query",
+            discovered_via_query_id: d.query_id
+          });
+        }
+      }
+
+      const fallbackSel =
+        selectMinimalSourcesV1(candidates.filter((c) => c.canonical_url !== sel.canonical_url))
+          .slice(0, q.bounds.max_selected_sources)[0] ?? null;
+
+      if (fallbackSel) {
+        const secondFetch = await input.deps.fetchPage({
+          canonical_url: fallbackSel.canonical_url,
+          timeout_ms: q.bounds.fetch_timeout_ms,
+          max_bytes: q.bounds.fetch_max_bytes
+        });
+
+        if (secondFetch.ok) {
+          previewFetched.push(secondFetch.preview);
+
+          const secondText = [
+            secondFetch.preview.title ?? "",
+            secondFetch.preview.meta_description ?? "",
+            secondFetch.preview.og_title ?? "",
+            secondFetch.transient?.raw_html ? secondFetch.transient.raw_html.replace(/<[^>]+>/g, " ") : ""
+          ].join("\n");
+
+          const normalized2 = normalizeProgramSurfaceFromTextV1({ predicate, text: secondText });
+          const candidates2 = dedupeNormalizedCandidatesV1(normalizeToCandidatePreviewV1({ predicate, normalized: normalized2 }));
+
+          for (const c of candidates2) {
+            const { domain: d2 } = input.deps.canonicalizeUrl(secondFetch.preview.canonical_url);
+            const source_id2 = input.deps.computeSourceId({ domain: d2 });
+            const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
+              source_id: source_id2,
+              canonical_url: secondFetch.preview.canonical_url
+            });
+
+            const evidence_version_ref2 = {
+              object_type: "evidence_reference",
+              object_id: evidence_reference_id2,
+              version_id: null,
+              content_hash: computeContentHash({
+                canonical_url: secondFetch.preview.canonical_url,
+                final_url: secondFetch.preview.final_url,
+                http_status: secondFetch.preview.http_status,
+                title: secondFetch.preview.title,
+                meta_description: secondFetch.preview.meta_description,
+                og_site_name: secondFetch.preview.og_site_name,
+                og_title: secondFetch.preview.og_title,
+                jsonld_types: secondFetch.preview.jsonld_types,
+                retention_mode: secondFetch.preview.retention_mode
+              }),
+              schema_version: "evidence_reference_v1",
+              policy_version: "legal_policy.unknown",
+              created_at: input.now_iso
+            } as const;
+
+            let builderOut2:
+              | ReturnType<typeof buildProgramSurfaceClaimV1>
+              | { status: "rejected"; reason: string };
+
+            try {
+              builderOut2 = buildProgramSurfaceClaimV1({
+                evidence_version_ref: evidence_version_ref2,
+                retrieved_at_iso: input.now_iso,
+                subject: q.subject,
+                predicate: c.predicate,
+                object_value: c.object_value as unknown as ProgramSurfaceObjectValueV1,
+                normalization_confidence: c.normalization_confidence,
+                evidence_domain: "EXTERNAL",
+                external_source_class: fallbackSel.source_class,
+                qualifiers: c.qualifiers
+              });
+            } catch (e) {
+              builderOut2 = { status: "rejected", reason: e instanceof Error ? e.message : String(e) };
+            }
+
+            if (builderOut2.status !== "eligible") continue;
+            const claim = builderOut2.claim as Claim;
+            claim_previews.push({
+              predicate: c.predicate,
+              object_value: c.object_value,
+              qualifiers: c.qualifiers,
+              confidence: "high",
+              prospective_evidence_reference_id: evidence_reference_id2,
+              prospective_evidence_content_hash: evidence_version_ref2.content_hash,
+              prospective_claim_id: claim.claim_id,
+              prospective_claim_fingerprint: claim.claim_fingerprint,
+              prospective_claim_content_hash: computeContentHash(claim),
+              semantic_fact_already_present_elsewhere: existing.claim_count > 0
+            });
+          }
+        }
+      }
+    }
+  }
+
   const answer_status: ProgramSurfaceResearchPreviewV1["answer_status"] = claim_previews.length
     ? "ANSWERED"
     : candidates.length === 0
@@ -815,6 +985,10 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
         : normalized_candidates.length
           ? "PARTIAL"
           : "NOT_FOUND_WITHIN_BOUNDED_RESEARCH";
+
+  const baseReason = claim_previews.length ? null : normalized_candidates.length ? "no_high_confidence_claims" : "no_supported_candidates";
+  const answer_reason =
+    baseReason && discoveryDiagnostic ? `${baseReason};${discoveryDiagnostic}` : baseReason ?? discoveryDiagnostic;
 
   const preview: ProgramSurfaceResearchPreviewV1 = {
     research_question_id: q.research_question_id,
@@ -844,7 +1018,7 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     normalized_candidates,
     claim_previews,
     answer_status,
-    answer_reason: claim_previews.length ? null : normalized_candidates.length ? "no_high_confidence_claims" : "no_supported_candidates"
+    answer_reason
   };
 
   return { status: "preview", preview };
