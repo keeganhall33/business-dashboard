@@ -211,3 +211,146 @@ test("EvidenceReference: historical Contract-Y replay is recognized without new 
   assert.equal(res.ref.object_id, "ev1");
   assert.equal(res.ref.content_hash, historicalInner);
 });
+
+test("EvidenceReference: Contract-Y historical row + retained payload change => new Contract-X version (RPC invoked)", async () => {
+  const mock = new MockSupabaseClient();
+  const incoming = sampleEvidence() as any;
+
+  const historicalInner = computeContentHash({ v: "targeted_web_preview_v1", retainedSemantic: { url: "https://example.com" } });
+  const historicalPayload = {
+    ...incoming,
+    content_hash: historicalInner,
+    // Claim-supporting retained evidence (treated as non-volatile): title.
+    provenance_metadata: { title: "Old Title" }
+  };
+
+  mock.seedTable("external_evidence_reference_versions_v1", [
+    {
+      evidence_reference_id: "ev1",
+      content_hash: historicalInner,
+      created_at: "2026-08-01T00:00:00.000Z",
+      payload_available: true,
+      payload_json: historicalPayload,
+      schema_version: incoming.schema_version,
+      source_id: incoming.source_id,
+      source_config_version: incoming.source_config_version,
+      legal_policy_version: incoming.legal_policy_version,
+      retention_policy: incoming.retention_policy
+    }
+  ]);
+
+  // Now change retained evidence: title.
+  incoming.provenance_metadata = { title: "New Title" };
+
+  mock.onRpc(EXTERNAL_INTELLIGENCE_RPCS.persistEvidence, (args) => ({
+    error: null,
+    data: [
+      {
+        evidence_reference_id: String(args.in_evidence_reference_id),
+        content_hash: String(args.in_content_hash),
+        created_new_version: true,
+        idempotent_replay: false
+      }
+    ]
+  }));
+
+  const repo = new EvidenceReferenceRepository();
+  const res = await repo.persistEvidenceReference({
+    evidence: incoming,
+    policy_refs_json: [],
+    policy_version: "policy/v1",
+    opts: { client: mock as any }
+  });
+
+  assert.equal(mock.rpcCalls.length, 1);
+  assert.equal(res.created_new_version, true);
+  assert.equal(res.idempotent_replay, false);
+  // Must not return historical outer hash when evidence changed.
+  assert.notEqual(res.ref.content_hash, historicalInner);
+});
+
+test("EvidenceReference: Contract-Y historical row + governance field change => new Contract-X version (RPC invoked)", async () => {
+  const mock = new MockSupabaseClient();
+  const incoming = sampleEvidence() as any;
+
+  const historicalInner = computeContentHash({ v: "targeted_web_preview_v1", retainedSemantic: { url: "https://example.com" } });
+  const historicalPayload = {
+    ...incoming,
+    content_hash: historicalInner
+  };
+
+  mock.seedTable("external_evidence_reference_versions_v1", [
+    {
+      evidence_reference_id: "ev1",
+      content_hash: historicalInner,
+      created_at: "2026-08-01T00:00:00.000Z",
+      payload_available: true,
+      payload_json: historicalPayload,
+      schema_version: incoming.schema_version,
+      source_id: incoming.source_id,
+      source_config_version: incoming.source_config_version,
+      legal_policy_version: incoming.legal_policy_version,
+      retention_policy: incoming.retention_policy
+    }
+  ]);
+
+  // Governance/semantic change: legal_policy_version changes.
+  incoming.legal_policy_version = "legal/v2";
+
+  mock.onRpc(EXTERNAL_INTELLIGENCE_RPCS.persistEvidence, (args) => ({
+    error: null,
+    data: [
+      {
+        evidence_reference_id: String(args.in_evidence_reference_id),
+        content_hash: String(args.in_content_hash),
+        created_new_version: true,
+        idempotent_replay: false
+      }
+    ]
+  }));
+
+  const repo = new EvidenceReferenceRepository();
+  const res = await repo.persistEvidenceReference({
+    evidence: incoming,
+    policy_refs_json: [],
+    policy_version: "policy/v1",
+    opts: { client: mock as any }
+  });
+
+  assert.equal(mock.rpcCalls.length, 1);
+  assert.equal(res.created_new_version, true);
+  assert.equal(res.idempotent_replay, false);
+  assert.notEqual(res.ref.content_hash, historicalInner);
+});
+
+test("EvidenceReference: does not authorize Contract-Y for new writes when no historical version exists", async () => {
+  const mock = new MockSupabaseClient();
+  const incoming = sampleEvidence() as any;
+
+  // Mimic a would-be Contract-Y attempt: set inner content_hash to a 64-hex value.
+  incoming.content_hash = "b".repeat(64);
+
+  mock.onRpc(EXTERNAL_INTELLIGENCE_RPCS.persistEvidence, (args) => ({
+    error: null,
+    data: [
+      {
+        evidence_reference_id: String(args.in_evidence_reference_id),
+        content_hash: String(args.in_content_hash),
+        created_new_version: true,
+        idempotent_replay: false
+      }
+    ]
+  }));
+
+  const repo = new EvidenceReferenceRepository();
+  const res = await repo.persistEvidenceReference({
+    evidence: incoming,
+    policy_refs_json: [],
+    policy_version: "policy/v1",
+    opts: { client: mock as any }
+  });
+
+  assert.equal(mock.rpcCalls.length, 1);
+  // New writes must use Contract-X computed fingerprint, not outer==inner shortcut.
+  assert.notEqual(res.ref.content_hash, incoming.content_hash);
+});
