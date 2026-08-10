@@ -28,6 +28,14 @@ export type ProgramSurfaceResearchQuestionV1 = {
 
   subject: EntityRef;
 
+  // Optional explicit discovery hints.
+  // NOTE: the executor must never invent or guess these values.
+  discovery_hints?: {
+    // Canonical organization domain/host only, e.g. "example.com".
+    // Must not include scheme, path, query, fragment, userinfo, or port.
+    canonical_domain?: string;
+  };
+
   // Execution must be policy-driven, not free-form.
   question_policy_version: string;
   // Human-readable wording is allowed but non-authoritative.
@@ -98,7 +106,12 @@ export type ProgramSurfaceResearchPreviewV1 = {
 
   discovery_queries: Array<{ query_id: string; query: string }>;
   urls_considered: number;
-  selected_sources: Array<{ canonical_url: string; source_class: ExternalSourceClassV1 }>;
+  selected_sources: Array<{
+    canonical_url: string;
+    source_class: ExternalSourceClassV1;
+    discovery_origin: "official_domain_seed" | "search_query";
+    discovered_via_query_id: string | null;
+  }>;
   fetched: FetchedPagePreviewV1[];
 
   prospective_source_id: string;

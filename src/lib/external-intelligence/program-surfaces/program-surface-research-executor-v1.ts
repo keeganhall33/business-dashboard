@@ -76,6 +76,39 @@ function planDiscoveryQueriesV1(input: { question_type: string; organization_nam
   return [{ query_id: "q1", query: `${org} ${input.question_type.replace(/^RQ_/, "").toLowerCase()}` }];
 }
 
+function validateCanonicalDomainHintV1(raw: string): { ok: true; domain: string } | { ok: false; reason: string } {
+  const s = String(raw ?? "").trim();
+  if (!s) return { ok: false, reason: "canonical_domain_empty" };
+
+  // Must be host/domain only.
+  // Reject obvious scheme-bearing, path, query, fragment, userinfo, or port forms.
+  if (s.includes("://")) return { ok: false, reason: "canonical_domain_must_not_include_scheme" };
+  if (/[\/?#]/.test(s)) return { ok: false, reason: "canonical_domain_must_not_include_path_query_or_fragment" };
+  if (s.includes("@")) return { ok: false, reason: "canonical_domain_must_not_include_userinfo" };
+  if (s.includes(":")) return { ok: false, reason: "canonical_domain_must_not_include_port_or_ipv6" };
+
+  // Normalize via URL parsing (without allowing path/etc).
+  let u: URL;
+  try {
+    u = new URL(`https://${s}`);
+  } catch {
+    return { ok: false, reason: "canonical_domain_invalid" };
+  }
+
+  const host = u.hostname.toLowerCase();
+  if (!host) return { ok: false, reason: "canonical_domain_invalid" };
+
+  // Fail closed on localhost / local-network-ish hostnames.
+  if (host === "localhost" || host.endsWith(".local")) return { ok: false, reason: "canonical_domain_localhost_not_allowed" };
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return { ok: false, reason: "canonical_domain_ip_literal_not_allowed" };
+
+  return { ok: true, domain: host };
+}
+
+function buildOfficialHomepageSeedV1(domain: string): string {
+  return `https://${domain}/`;
+}
+
 function extractSameDomainLinksV1(input: { base_canonical_url: string; raw_html: string; max: number }): string[] {
   const { canonical_url: base } = { canonical_url: input.base_canonical_url };
   let baseUrl: URL;
@@ -165,26 +198,23 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 
   const predicate = mapQuestionTypeToPredicateV1(q.question_type);
 
-  // Discovery.
-  const discovery_queries = planDiscoveryQueriesV1({ question_type: q.question_type, organization_name: q.subject.canonical_name }).slice(
-    0,
-    q.bounds.max_queries
-  );
+  const domainHintRaw = q.discovery_hints?.canonical_domain;
+  const domainHint =
+    typeof domainHintRaw === "string" && domainHintRaw.trim().length > 0
+      ? validateCanonicalDomainHintV1(domainHintRaw)
+      : null;
 
-  const discovered: Array<{ query_id: string; results: Array<{ url: string; title: string | null; snippet: string | null; rank: number }> }> = [];
-  try {
-    for (const dq of discovery_queries) {
-      const res = await input.deps.discovery.search({ query: dq.query, max_results: q.bounds.max_results_per_query });
-      discovered.push({ query_id: dq.query_id, results: res.slice(0, q.bounds.max_results_per_query) });
-    }
-  } catch (e) {
+  if (domainHint && !domainHint.ok) {
     const preview: ProgramSurfaceResearchPreviewV1 = {
       research_question_id: q.research_question_id,
       candidate_id: q.candidate_id,
       question_type: q.question_type,
       subject_entity_id: q.subject.entity_id,
       subject_canonical_name: q.subject.canonical_name,
-      discovery_queries,
+      discovery_queries: planDiscoveryQueriesV1({ question_type: q.question_type, organization_name: q.subject.canonical_name }).slice(
+        0,
+        q.bounds.max_queries
+      ),
       urls_considered: 0,
       selected_sources: [],
       fetched: [],
@@ -199,10 +229,16 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
       normalized_candidates: [],
       claim_previews: [],
       answer_status: "DISCOVERY_UNAVAILABLE",
-      answer_reason: e instanceof Error ? e.message : String(e)
+      answer_reason: `invalid_canonical_domain_hint:${domainHint.reason}`
     };
     return { status: "preview", preview };
   }
+
+  // Discovery planning (queries are kept for audit even when we seed official first).
+  const discovery_queries = planDiscoveryQueriesV1({ question_type: q.question_type, organization_name: q.subject.canonical_name }).slice(
+    0,
+    q.bounds.max_queries
+  );
 
   const candidates: Array<{
     canonical_url: string;
@@ -211,34 +247,127 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     search_rank: number;
     title: string | null;
     snippet: string | null;
+    discovery_origin: "official_domain_seed" | "search_query";
+    discovered_via_query_id: string | null;
   }> = [];
   const seen = new Set<string>();
-  for (const d of discovered) {
-    for (const r of d.results) {
-      if (candidates.length >= q.bounds.max_unique_urls) break;
-      let canon: { canonical_url: string; domain: string };
-      try {
-        canon = input.deps.canonicalizeUrl(r.url);
-      } catch {
-        continue;
-      }
-      if (seen.has(canon.canonical_url)) continue;
+
+  // OFFICIAL DOMAIN SEED FIRST (if provided).
+  if (domainHint && domainHint.ok) {
+    const seeded_url = buildOfficialHomepageSeedV1(domainHint.domain);
+    let canon: { canonical_url: string; domain: string };
+    try {
+      canon = input.deps.canonicalizeUrl(seeded_url);
+    } catch {
+      // Should never happen; treat as discovery unavailable rather than guessing.
+      const preview: ProgramSurfaceResearchPreviewV1 = {
+        research_question_id: q.research_question_id,
+        candidate_id: q.candidate_id,
+        question_type: q.question_type,
+        subject_entity_id: q.subject.entity_id,
+        subject_canonical_name: q.subject.canonical_name,
+        discovery_queries,
+        urls_considered: 0,
+        selected_sources: [],
+        fetched: [],
+        prospective_source_id: "",
+        prospective_evidence_reference_id: "",
+        evidence_reuse: "NO",
+        source_eligibility: "FAIL",
+        retention_policy: "blocked",
+        raw_html_transient: "NO",
+        raw_html_retained: "NO",
+        retained_support: "neither",
+        normalized_candidates: [],
+        claim_previews: [],
+        answer_status: "DISCOVERY_UNAVAILABLE",
+        answer_reason: "canonical_domain_seed_canonicalization_failed"
+      };
+      return { status: "preview", preview };
+    }
+
+    if (!seen.has(canon.canonical_url)) {
       seen.add(canon.canonical_url);
-      const c = input.deps.classifySource({ canonical_url: canon.canonical_url, title: r.title, snippet: r.snippet });
+      const c = input.deps.classifySource({ canonical_url: canon.canonical_url, title: null, snippet: null });
       candidates.push({
         canonical_url: c.canonical_url,
         source_class: c.source_class,
         official_domain_confidence: c.official_domain_confidence,
-        search_rank: c.search_rank,
-        title: c.title,
-        snippet: c.snippet
+        search_rank: 0,
+        title: null,
+        snippet: null,
+        discovery_origin: "official_domain_seed",
+        discovered_via_query_id: null
       });
     }
   }
 
   const selected = selectMinimalSourcesV1(candidates).slice(0, q.bounds.max_selected_sources);
 
+  // If we have no seed selection, use configured search adapter.
   if (selected.length === 0) {
+    const discovered: Array<{ query_id: string; results: Array<{ url: string; title: string | null; snippet: string | null; rank: number }> }> = [];
+    try {
+      for (const dq of discovery_queries) {
+        const res = await input.deps.discovery.search({ query: dq.query, max_results: q.bounds.max_results_per_query });
+        discovered.push({ query_id: dq.query_id, results: res.slice(0, q.bounds.max_results_per_query) });
+      }
+    } catch (e) {
+      const preview: ProgramSurfaceResearchPreviewV1 = {
+        research_question_id: q.research_question_id,
+        candidate_id: q.candidate_id,
+        question_type: q.question_type,
+        subject_entity_id: q.subject.entity_id,
+        subject_canonical_name: q.subject.canonical_name,
+        discovery_queries,
+        urls_considered: 0,
+        selected_sources: [],
+        fetched: [],
+        prospective_source_id: "",
+        prospective_evidence_reference_id: "",
+        evidence_reuse: "NO",
+        source_eligibility: "FAIL",
+        retention_policy: "blocked",
+        raw_html_transient: "NO",
+        raw_html_retained: "NO",
+        retained_support: "neither",
+        normalized_candidates: [],
+        claim_previews: [],
+        answer_status: "DISCOVERY_UNAVAILABLE",
+        answer_reason: e instanceof Error ? e.message : String(e)
+      };
+      return { status: "preview", preview };
+    }
+
+    for (const d of discovered) {
+      for (const r of d.results) {
+        if (candidates.length >= q.bounds.max_unique_urls) break;
+        let canon: { canonical_url: string; domain: string };
+        try {
+          canon = input.deps.canonicalizeUrl(r.url);
+        } catch {
+          continue;
+        }
+        if (seen.has(canon.canonical_url)) continue;
+        seen.add(canon.canonical_url);
+        const c = input.deps.classifySource({ canonical_url: canon.canonical_url, title: r.title, snippet: r.snippet });
+        candidates.push({
+          canonical_url: c.canonical_url,
+          source_class: c.source_class,
+          official_domain_confidence: c.official_domain_confidence,
+          search_rank: c.search_rank,
+          title: c.title,
+          snippet: c.snippet,
+          discovery_origin: "search_query",
+          discovered_via_query_id: d.query_id
+        });
+      }
+    }
+  }
+
+  const selected2 = selectMinimalSourcesV1(candidates).slice(0, q.bounds.max_selected_sources);
+
+  if (selected2.length === 0) {
     const preview: ProgramSurfaceResearchPreviewV1 = {
       research_question_id: q.research_question_id,
       candidate_id: q.candidate_id,
@@ -265,7 +394,7 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     return { status: "preview", preview };
   }
 
-  const sel = selected[0]!;
+  const sel = selected2[0]!;
 
   const { domain } = input.deps.canonicalizeUrl(sel.canonical_url);
   const source_id = input.deps.computeSourceId({ domain });
@@ -281,6 +410,189 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
   });
 
   if (!fetchRes.ok) {
+    // If we started with a canonical-domain seed and the seed fetch failed,
+    // fall back to search adapter discovery (within the same bounded budget)
+    // to ensure we still have a real first-hop candidate URL.
+    if (domainHint && domainHint.ok) {
+      // Populate search candidates (excluding the already-tried seed).
+      const discovered: Array<{ query_id: string; results: Array<{ url: string; title: string | null; snippet: string | null; rank: number }> }> = [];
+      try {
+        for (const dq of discovery_queries) {
+          const res = await input.deps.discovery.search({ query: dq.query, max_results: q.bounds.max_results_per_query });
+          discovered.push({ query_id: dq.query_id, results: res.slice(0, q.bounds.max_results_per_query) });
+        }
+      } catch {
+        // If fallback discovery itself is unavailable, keep the original fetch failure.
+      }
+
+      for (const d of discovered) {
+        for (const r of d.results) {
+          if (candidates.length >= q.bounds.max_unique_urls) break;
+          let canon: { canonical_url: string; domain: string };
+          try {
+            canon = input.deps.canonicalizeUrl(r.url);
+          } catch {
+            continue;
+          }
+          if (seen.has(canon.canonical_url)) continue;
+          seen.add(canon.canonical_url);
+          const c = input.deps.classifySource({ canonical_url: canon.canonical_url, title: r.title, snippet: r.snippet });
+          candidates.push({
+            canonical_url: c.canonical_url,
+            source_class: c.source_class,
+            official_domain_confidence: c.official_domain_confidence,
+            search_rank: c.search_rank,
+            title: c.title,
+            snippet: c.snippet,
+            discovery_origin: "search_query",
+            discovered_via_query_id: d.query_id
+          });
+        }
+      }
+
+      const fallbackSel =
+        selectMinimalSourcesV1(candidates.filter((c) => c.canonical_url !== sel.canonical_url))
+          .slice(0, q.bounds.max_selected_sources)[0] ?? null;
+      if (fallbackSel && fallbackSel.canonical_url !== sel.canonical_url) {
+        const fetch2 = await input.deps.fetchPage({
+          canonical_url: fallbackSel.canonical_url,
+          timeout_ms: q.bounds.fetch_timeout_ms,
+          max_bytes: q.bounds.fetch_max_bytes
+        });
+        if (fetch2.ok) {
+          // Replace the failed fetch with the fallback fetch and continue normal processing.
+          // NOTE: still bounded to <=2 total fetch attempts; this path uses seed fetch (failed) + fallback fetch (ok).
+          // We intentionally do NOT attempt same-domain follow in this branch.
+          const fetched2 = fetch2.preview;
+          const transient2 = fetch2.transient;
+
+          const previewFetched2 = [fetched2];
+          const retention_policy2: ProgramSurfaceResearchPreviewV1["retention_policy"] = "structured_metadata";
+          const raw_html_transient2: ProgramSurfaceResearchPreviewV1["raw_html_transient"] = transient2?.raw_html ? "YES" : "NO";
+
+          const supportText2 = [
+            fetched2.title ?? "",
+            fetched2.meta_description ?? "",
+            fetched2.og_title ?? "",
+            transient2?.raw_html ? transient2.raw_html.replace(/<[^>]+>/g, " ") : ""
+          ].join("\n");
+
+          const normalized2 = normalizeProgramSurfaceFromTextV1({ predicate, text: supportText2 });
+          const normalized_candidates_all2 = normalizeToCandidatePreviewV1({ predicate, normalized: normalized2 });
+          const normalized_candidates2 = dedupeNormalizedCandidatesV1(normalized_candidates_all2);
+
+          const claim_previews2: ProgramSurfaceResearchPreviewV1["claim_previews"] = [];
+          const existing2 = await input.deps.claimLookupByPredicate({ predicate });
+
+          const { domain: d2 } = input.deps.canonicalizeUrl(fetched2.canonical_url);
+          const source_id2 = input.deps.computeSourceId({ domain: d2 });
+          const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
+            source_id: source_id2,
+            canonical_url: fetched2.canonical_url
+          });
+          const reuse2 = await input.deps.evidenceReuseLookup({ source_id: source_id2, canonical_url: fetched2.canonical_url });
+
+          for (const c of normalized_candidates2) {
+            const evidence_version_ref2 = {
+              object_type: "evidence_reference",
+              object_id: evidence_reference_id2,
+              version_id: null,
+              content_hash: computeContentHash({
+                canonical_url: fetched2.canonical_url,
+                final_url: fetched2.final_url,
+                http_status: fetched2.http_status,
+                title: fetched2.title,
+                meta_description: fetched2.meta_description,
+                og_site_name: fetched2.og_site_name,
+                og_title: fetched2.og_title,
+                jsonld_types: fetched2.jsonld_types,
+                retention_mode: fetched2.retention_mode
+              }),
+              schema_version: "evidence_reference_v1",
+              policy_version: "legal_policy.unknown",
+              created_at: input.now_iso
+            } as const;
+
+            let builderOut2:
+              | ReturnType<typeof buildProgramSurfaceClaimV1>
+              | { status: "rejected"; reason: string };
+            try {
+              builderOut2 = buildProgramSurfaceClaimV1({
+                evidence_version_ref: evidence_version_ref2,
+                retrieved_at_iso: input.now_iso,
+                subject: q.subject,
+                predicate: c.predicate,
+                object_value: c.object_value as unknown as ProgramSurfaceObjectValueV1,
+                normalization_confidence: c.normalization_confidence,
+                evidence_domain: "EXTERNAL",
+                external_source_class: fallbackSel.source_class,
+                qualifiers: c.qualifiers
+              });
+            } catch (e) {
+              builderOut2 = { status: "rejected", reason: e instanceof Error ? e.message : String(e) };
+            }
+            if (builderOut2.status !== "eligible") continue;
+            const claim = builderOut2.claim as Claim;
+            claim_previews2.push({
+              predicate: c.predicate,
+              object_value: c.object_value,
+              qualifiers: c.qualifiers,
+              confidence: "high",
+              prospective_evidence_reference_id: evidence_reference_id2,
+              prospective_evidence_content_hash: evidence_version_ref2.content_hash,
+              prospective_claim_id: claim.claim_id,
+              prospective_claim_fingerprint: claim.claim_fingerprint,
+              prospective_claim_content_hash: computeContentHash(claim),
+              semantic_fact_already_present_elsewhere: existing2.claim_count > 0
+            });
+          }
+
+          const answer_status2: ProgramSurfaceResearchPreviewV1["answer_status"] = claim_previews2.length
+            ? "ANSWERED"
+            : normalized_candidates2.length
+              ? "PARTIAL"
+              : "NOT_FOUND_WITHIN_BOUNDED_RESEARCH";
+
+          const preview2: ProgramSurfaceResearchPreviewV1 = {
+            research_question_id: q.research_question_id,
+            candidate_id: q.candidate_id,
+            question_type: q.question_type,
+            subject_entity_id: q.subject.entity_id,
+            subject_canonical_name: q.subject.canonical_name,
+            discovery_queries,
+            urls_considered: candidates.length,
+            selected_sources: [
+              {
+                canonical_url: fallbackSel.canonical_url,
+                source_class: fallbackSel.source_class,
+                discovery_origin: fallbackSel.discovery_origin,
+                discovered_via_query_id: fallbackSel.discovered_via_query_id
+              }
+            ],
+            fetched: previewFetched2,
+            prospective_source_id: source_id2,
+            prospective_evidence_reference_id: evidence_reference_id2,
+            evidence_reuse: reuse2.exists ? "YES" : "NO",
+            source_eligibility: "PASS",
+            retention_policy: retention_policy2,
+            raw_html_transient: raw_html_transient2,
+            raw_html_retained: "NO",
+            retained_support: transient2?.raw_html ? "structured_metadata" : "neither",
+            normalized_candidates: normalized_candidates2,
+            claim_previews: claim_previews2,
+            answer_status: answer_status2,
+            answer_reason: claim_previews2.length
+              ? null
+              : normalized_candidates2.length
+                ? "no_high_confidence_claims"
+                : "no_supported_candidates"
+          };
+
+          return { status: "preview", preview: preview2 };
+        }
+      }
+    }
+
     const preview: ProgramSurfaceResearchPreviewV1 = {
       research_question_id: q.research_question_id,
       candidate_id: q.candidate_id,
@@ -289,7 +601,14 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
       subject_canonical_name: q.subject.canonical_name,
       discovery_queries,
       urls_considered: candidates.length,
-      selected_sources: [{ canonical_url: sel.canonical_url, source_class: sel.source_class }],
+      selected_sources: [
+        {
+          canonical_url: sel.canonical_url,
+          source_class: sel.source_class,
+          discovery_origin: sel.discovery_origin,
+          discovered_via_query_id: sel.discovered_via_query_id
+        }
+      ],
       fetched: [],
       prospective_source_id: source_id,
       prospective_evidence_reference_id: evidence_reference_id,
@@ -505,7 +824,14 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     subject_canonical_name: q.subject.canonical_name,
     discovery_queries,
     urls_considered: candidates.length,
-    selected_sources: [{ canonical_url: sel.canonical_url, source_class: sel.source_class }],
+    selected_sources: [
+      {
+        canonical_url: sel.canonical_url,
+        source_class: sel.source_class,
+        discovery_origin: sel.discovery_origin,
+        discovered_via_query_id: sel.discovered_via_query_id
+      }
+    ],
     fetched: previewFetched,
     prospective_source_id: source_id,
     prospective_evidence_reference_id: evidence_reference_id,

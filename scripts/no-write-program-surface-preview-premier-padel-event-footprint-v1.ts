@@ -103,6 +103,10 @@ async function main() {
     candidate_id: "oppcand:agency_relationship_signal:cfed0d74d8f4d4848f660437",
     question_type: "RQ_EVENT_FOOTPRINT",
     subject,
+    discovery_hints: {
+      // Discovery hint only. Must NOT be treated as evidence.
+      canonical_domain: "premierpadel.com"
+    },
     question_policy_version: PROGRAM_SURFACE_RESEARCH_POLICY_VERSION_V1,
     question_text: "Does Premier Padel operate a structured recurring/ongoing event/tour/tournament program?",
     source_domain: "EXTERNAL",
