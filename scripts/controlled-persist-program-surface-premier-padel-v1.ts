@@ -18,6 +18,7 @@ import assert from "node:assert";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { EI_FINGERPRINT_CONTRACT_V2, createEvidenceRetainedPayloadHashV2, createEvidenceVersionFingerprintV2, createClaimVersionContentHashV2 } from "@/lib/external-intelligence/hashing/fingerprint-v2";
 import { buildProvisionalEntityRefV1 } from "@/lib/external-intelligence/contracts/entity-ref-provisional";
 import { buildProgramSurfaceClaimV1 } from "@/lib/external-intelligence/program-surfaces/program-surface-builders-v1";
@@ -39,6 +40,22 @@ function redactedHost(url: string) {
     return u.host;
   } catch {
     return "<unknown>";
+  }
+}
+
+function decodeJwtRoleUnsafe(jwt: string): string | null {
+  // service_role keys are JWTs; we only read the role claim (no verification).
+  // This is used only for operator preflight and emits no secrets.
+  try {
+    const parts = jwt.split(".");
+    if (parts.length < 2) return null;
+    const payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadB64 + "===".slice((payloadB64.length + 3) % 4);
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const payload = JSON.parse(json);
+    return typeof payload?.role === "string" ? payload.role : null;
+  } catch {
+    return null;
   }
 }
 
@@ -256,6 +273,7 @@ async function main() {
   const argv = process.argv.slice(2);
   const confirmWrite = parseFlag(argv, "--confirm-write");
   const validateOnly = parseFlag(argv, "--validate-only");
+  const validateAuth = parseFlag(argv, "--validate-auth");
   const forcedNowIso = parseArg(argv, "--now-iso");
 
   // Local V2 manifest validation (no Supabase required).
@@ -293,7 +311,6 @@ async function main() {
   }
 
   assert(process.env.OPERATOR_ENVIRONMENT === "production", "precondition_failed:OPERATOR_ENVIRONMENT must be 'production'");
-  assert(confirmWrite, "missing_argument: --confirm-write");
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -302,7 +319,32 @@ async function main() {
   // Guard against wrong target.
   assert(url.includes("ibjsjosplgbqevmnvvpf.supabase.co"), "precondition_failed:unexpected_supabase_project_ref (expected ibjsjosplgbqevmnvvpf)");
 
-  const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const decodedRole = decodeJwtRoleUnsafe(key);
+
+  if (validateAuth) {
+    const ok = decodedRole === "service_role";
+    console.log(
+      JSON.stringify(
+        {
+          mode: "validate_auth",
+          supabase_host: redactedHost(url),
+          expected_role: "service_role",
+          actual_role: decodedRole ?? "<missing_or_unparseable>",
+          auth_ready: ok ? "READY" : "FAIL"
+        },
+        null,
+        2
+      )
+    );
+    process.exitCode = ok ? 0 : 2;
+    return;
+  }
+
+  assert(confirmWrite, "missing_argument: --confirm-write");
+  assert(decodedRole === "service_role", "precondition_failed:SUPABASE_SERVICE_ROLE_KEY is not a service_role JWT");
+
+  // Use the canonical server client factory (service_role JWT).
+  const supabase = getSupabaseServerClient();
 
   // ------------------------------
   // PRE-WRITE COUNTS + GATE
