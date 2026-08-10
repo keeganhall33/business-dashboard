@@ -12,8 +12,8 @@ import {
 
 import { createDisposableDb } from "./_rpc-disposable-db";
 
-const A5 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a5.sql");
-const A61 = path.join(process.cwd(), "supabase/migrations/20260804_external_intelligence_phase_a6_transaction_rpcs.sql");
+const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
+const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
 const V2 = path.join(process.cwd(), "supabase/migrations/20260810_external_intelligence_fingerprint_v2.sql");
 
 function jsonLiteral(obj: unknown): string {
