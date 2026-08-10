@@ -58,6 +58,8 @@ function mkDeps(input: {
   sourceClassByUrl?: Record<string, string>;
   fetchFailByUrl?: Record<string, { http_status: number; error: string }>;
   transientNullByUrl?: Record<string, true>;
+  finalUrlByUrl?: Record<string, string>;
+  metaDescriptionByUrl?: Record<string, string | null>;
   onSearch?: () => void;
   searchThrows?: string;
 }) {
@@ -83,14 +85,19 @@ function mkDeps(input: {
       const html = input.htmlByUrl[canonical_url];
       assert.ok(html, `missing fixture html for ${canonical_url}`);
       // Reuse production fetcher preview shape (but bypass network).
+      const final_url = input.finalUrlByUrl?.[canonical_url] ?? canonical_url;
+      const meta_description =
+        Object.prototype.hasOwnProperty.call(input.metaDescriptionByUrl ?? {}, canonical_url)
+          ? (input.metaDescriptionByUrl ?? {})[canonical_url] ?? null
+          : null;
       const preview = {
         canonical_url,
         http_status: 200,
-        final_url: canonical_url,
+        final_url,
         content_type: "text/html",
         retention_mode: "structured_metadata" as const,
         title: "title",
-        meta_description: null,
+        meta_description,
         og_site_name: null,
         og_title: null,
         jsonld_types: []
@@ -125,7 +132,11 @@ test("M. canonical domain seed produces homepage candidate and avoids search whe
   const seedUrl = "https://example.com/";
   const html = `<html><body><p>Example Org is a global tour with a calendar of tournaments.</p></body></html>`;
   let searches = 0;
-  const deps = mkDeps({ htmlByUrl: { [seedUrl]: html }, onSearch: () => (searches += 1) });
+  const deps = mkDeps({
+    htmlByUrl: { [seedUrl]: html },
+    metaDescriptionByUrl: { [seedUrl]: "Follow Example Org, a professional tour. Explore tournament schedules and rankings." },
+    onSearch: () => (searches += 1)
+  });
 
   const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
   q.discovery_hints = { canonical_domain: "example.com" };
@@ -236,6 +247,81 @@ test("R. official homepage fetched (no support) + discovery fallback throws => p
   assert.ok(String(out.preview.answer_reason).includes("search_fallback_failed"));
 });
 
+test("S. retained structured metadata alone can answer (transient html not required)", async () => {
+  const seedUrl = "https://example.com/";
+  let searches = 0;
+  const deps = mkDeps({
+    htmlByUrl: { [seedUrl]: "<html><body>body does not matter</body></html>" },
+    transientNullByUrl: { [seedUrl]: true },
+    metaDescriptionByUrl: {
+      [seedUrl]: "Follow Example Org, a professional tour. Explore rankings and tournament schedules."
+    },
+    onSearch: () => (searches += 1)
+  });
+
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "example.com" };
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.answer_status, "ANSWERED");
+  assert.equal(out.preview.raw_html_transient, "NO");
+  assert.equal(searches, 0, "search must not run when retained metadata answers");
+});
+
+test("T. evidence identity uses final_url (canonical redirect) to avoid duplicates", async () => {
+  const seedUrl = "https://example.com/";
+  const finalUrl = "https://example.com/en";
+  const deps = mkDeps({
+    htmlByUrl: { [seedUrl]: "<html></html>" },
+    transientNullByUrl: { [seedUrl]: true },
+    finalUrlByUrl: { [seedUrl]: finalUrl },
+    metaDescriptionByUrl: { [seedUrl]: "Professional tour with tournament schedules." }
+  });
+
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.discovery_hints = { canonical_domain: "example.com" };
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
+  assert.equal(out.status, "preview");
+
+  const identityCanon = canonicalizeUrlV1(finalUrl).canonical_url;
+  const sourceId = computeTargetedWebSourceIdV1("example.com");
+  const expectedEv = computeTargetedWebEvidenceReferenceIdV1({ source_id: sourceId, canonical_url: identityCanon });
+  assert.equal(out.preview.prospective_evidence_reference_id, expectedEv);
+});
+
+test("U. executor preserves subject_entity_id (no name-derived replacement)", async () => {
+  const seedUrl = "https://example.com/";
+  const deps = mkDeps({
+    htmlByUrl: { [seedUrl]: "<html></html>" },
+    transientNullByUrl: { [seedUrl]: true },
+    metaDescriptionByUrl: { [seedUrl]: "Professional tour with tournament schedules." }
+  });
+
+  const q = mkQuestion("RQ_EVENT_FOOTPRINT") as ReturnType<typeof mkQuestion>;
+  q.subject = {
+    ...q.subject,
+    entity_id: "provisional:organization:855052d8c715418165b6cb72",
+    canonical_name: "Premier Padel"
+  };
+  q.discovery_hints = { canonical_domain: "example.com" };
+
+  const out = await executeProgramSurfaceResearchPreviewV1({
+    question: q as unknown as ProgramSurfaceResearchQuestionV1,
+    now_iso: new Date().toISOString(),
+    deps
+  });
+  assert.equal(out.status, "preview");
+  assert.equal(out.preview.subject_entity_id, "provisional:organization:855052d8c715418165b6cb72");
+});
+
 test("A. partner roster only => NO runs_partner_activations claim preview", async () => {
   const url = "https://example.com/partners";
   const html = `<html><body><h1>Partners</h1><p>Our official partners are A, B and C.</p></body></html>`;
@@ -252,7 +338,11 @@ test("A. partner roster only => NO runs_partner_activations claim preview", asyn
 test("B. explicit partner activation => runs_partner_activations preview", async () => {
   const url = "https://example.com/activation";
   const html = `<html><body><p>We deliver sponsor activation through campaign integration and branded experiences.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_PARTNER_PAGE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "We deliver sponsor activation through campaign integration and branded experiences." },
+    sourceClassByUrl: { [url]: "OFFICIAL_PARTNER_PAGE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_PARTNERSHIP_ACTIVATION"),
     now_iso: new Date().toISOString(),
@@ -278,7 +368,11 @@ test("C. one-off event => NO operates_event_program", async () => {
 test("D. structured tour language => operates_event_program/tour preview", async () => {
   const url = "https://example.com/tour";
   const html = `<html><body><p>Example Org is a global tour with a calendar of tournaments across the season.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_EVENT_PAGE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "Example Org is a global tour. View the tournament calendar and schedule." },
+    sourceClassByUrl: { [url]: "OFFICIAL_EVENT_PAGE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_EVENT_FOOTPRINT"),
     now_iso: new Date().toISOString(),
@@ -304,7 +398,11 @@ test("E. VIP attendee only => NO offers_vip_hospitality", async () => {
 test("F. VIP offering => offers_vip_hospitality preview", async () => {
   const url = "https://example.com/vip";
   const html = `<html><body><p>VIP packages and hospitality packages are available.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_EVENT_PAGE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "VIP packages and hospitality packages are available." },
+    sourceClassByUrl: { [url]: "OFFICIAL_EVENT_PAGE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_VIP_HOSPITALITY"),
     now_iso: new Date().toISOString(),
@@ -330,7 +428,11 @@ test("G. one-off fundraiser => NO runs_philanthropy_program", async () => {
 test("H. standing foundation => runs_philanthropy_program/foundation preview", async () => {
   const url = "https://example.com/foundation";
   const html = `<html><body><p>The Example Org Foundation supports social impact programs.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "The Example Org Foundation supports social impact programs." },
+    sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_PHILANTHROPY_FUNDRAISING"),
     now_iso: new Date().toISOString(),
@@ -356,7 +458,11 @@ test("I. hosted at third-party venue => NO operates_physical_environment", async
 test("J. owned property => operates_physical_environment/hotel + owned preview", async () => {
   const url = "https://example.com/hotel";
   const html = `<html><body><p>We own and operate a hotel.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "We own and operate a hotel." },
+    sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_PHYSICAL_ENVIRONMENT"),
     now_iso: new Date().toISOString(),
@@ -382,7 +488,11 @@ test("K. one anniversary => NO runs_commemoration_program", async () => {
 test("L. annual induction => runs_commemoration_program + recurrence preview", async () => {
   const url = "https://example.com/induction";
   const html = `<html><body><p>Each year we run an induction program to honor members.</p></body></html>`;
-  const deps = mkDeps({ htmlByUrl: { [url]: html }, sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" } });
+  const deps = mkDeps({
+    htmlByUrl: { [url]: html },
+    metaDescriptionByUrl: { [url]: "Each year we run an induction program to honor members." },
+    sourceClassByUrl: { [url]: "OFFICIAL_WEBSITE" }
+  });
   const out = await executeProgramSurfaceResearchPreviewV1({
     question: mkQuestion("RQ_COMMEMORATION_PROGRAM"),
     now_iso: new Date().toISOString(),
