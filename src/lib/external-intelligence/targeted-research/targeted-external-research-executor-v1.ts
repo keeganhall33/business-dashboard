@@ -29,6 +29,9 @@ import {
   computeTargetedWebEvidenceReferenceIdV1,
   computeTargetedWebSourceIdV1
 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
+import {
+  createTargetedWebStructuredMetadataRetainedPayloadHashV1
+} from "@/lib/external-intelligence/targeted-research/targeted-web-structured-metadata-retained-payload-hash-v1";
 import type {
   ExternalQuestionTypeV1,
   FetchedPagePreviewV1,
@@ -311,9 +314,21 @@ export async function executeTargetedExternalResearchPreviewV1(
   const proposed_service_scope_claims: TargetedExternalResearchPreviewV1["proposed_service_scope_claims"] = [];
 
   // Evidence content identity varies by question type.
+  // For structured_metadata retention, we cryptographically commit to claim-supporting fields.
+  const identity_url = (() => {
+    const candidate = fetched[0]?.final_url ?? selected[0]!.canonical_url;
+    try {
+      return canonicalizeUrlV1(candidate).canonical_url;
+    } catch {
+      // Defensive: some test shims may not populate Response.url.
+      return selected[0]!.canonical_url;
+    }
+  })();
   const baseRetained = {
-    canonical_url: selected[0].canonical_url,
+    identity_url,
     title: fetched[0]?.title ?? null,
+    meta_description: fetched[0]?.meta_description ?? null,
+    og_site_name: fetched[0]?.og_site_name ?? null,
     og_title: fetched[0]?.og_title ?? null,
     jsonld_types: fetched[0]?.jsonld_types ?? []
   };
@@ -343,17 +358,19 @@ export async function executeTargetedExternalResearchPreviewV1(
     supportExcerpts = built.excerpts.map((e) => ({ text: e.text, text_hash: e.text_hash, char_count: e.char_count }));
   }
 
-  const retainedSemantic =
-    input.research_question.question_type === "AGENCY_SCOPE"
-      ? { ...baseRetained, support_excerpt_hashes: supportExcerpts.map((e) => e.text_hash) }
-      : baseRetained;
-
-  const evidence_content_hash = sha256Hex(
-    JSON.stringify({
-      v: input.research_question.question_type === "AGENCY_SCOPE" ? "targeted_web_bounded_excerpt_v1" : "targeted_web_preview_v1",
-      retainedSemantic
-    })
-  );
+  let evidence_content_hash: string;
+  if (input.research_question.question_type === "AGENCY_SCOPE") {
+    const retainedSemantic = {
+      canonical_url: selected[0]!.canonical_url,
+      title: fetched[0]?.title ?? null,
+      og_title: fetched[0]?.og_title ?? null,
+      jsonld_types: fetched[0]?.jsonld_types ?? [],
+      support_excerpt_hashes: supportExcerpts.map((e) => e.text_hash)
+    };
+    evidence_content_hash = sha256Hex(JSON.stringify({ v: "targeted_web_bounded_excerpt_v1", retainedSemantic }));
+  } else {
+    evidence_content_hash = createTargetedWebStructuredMetadataRetainedPayloadHashV1(baseRetained);
+  }
 
   const evidence_version_ref: VersionRef = computeProspectiveEvidenceVersionRef({
     evidence_reference_id,

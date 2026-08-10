@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { canonicalizeUrlV1, computeTargetedWebEvidenceReferenceIdV1, computeTargetedWebSourceIdV1 } from "@/lib/external-intelligence/targeted-research/url-canonicalization-v1";
+import { createTargetedWebStructuredMetadataRetainedPayloadHashV1 } from "@/lib/external-intelligence/targeted-research/targeted-web-structured-metadata-retained-payload-hash-v1";
 import { buildProvidesServiceToClaimV1 } from "@/lib/external-intelligence/contextual-claims/contextual-claims-builders-v1";
 
 test("TARGETED RESEARCH PREVIEW IDENTITY: targeted-web EvidenceReference ID is derived from canonical domain+url", () => {
@@ -81,3 +82,21 @@ test("TARGETED RESEARCH PREVIEW IDENTITY: provides_service_to claim_id changes w
   assert.notEqual(c1.claim_id, c2.claim_id);
 });
 
+test("TARGETED_WEB structured_metadata retained payload hash: includes meta_description and is deterministic", () => {
+  const base = {
+    identity_url: "https://premierpadel.com/en",
+    title: "Premier Padel | News, Calendar, Scores & Results",
+    meta_description:
+      "Follow Premier Padel, the world’s leading professional Padel tour. Explore rankings, tournament schedules, highlights, news and exclusive player content.",
+    og_site_name: null,
+    og_title: "Premier Padel | News, Calendar, Scores & Results",
+    jsonld_types: [] as string[]
+  };
+
+  const h1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1(base);
+  const h2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base });
+  assert.equal(h1, h2);
+
+  const h3 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, meta_description: base.meta_description + "!" });
+  assert.notEqual(h1, h3);
+});

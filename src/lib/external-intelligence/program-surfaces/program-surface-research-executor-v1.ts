@@ -13,6 +13,8 @@ import type {
 } from "@/lib/external-intelligence/program-surfaces/program-surface-research-contracts-v1";
 import { normalizeProgramSurfaceFromTextV1 } from "@/lib/external-intelligence/program-surfaces/program-surface-research-normalizer-v1";
 import { computeContentHash } from "@/lib/external-intelligence/contracts/version-ref";
+import { createEvidenceReferenceFingerprint } from "@/lib/external-intelligence/hashing/fingerprints";
+import { createTargetedWebStructuredMetadataRetainedPayloadHashV1 } from "@/lib/external-intelligence/targeted-research/targeted-web-structured-metadata-retained-payload-hash-v1";
 import type { ExternalSourceClassV1 } from "@/lib/external-intelligence/targeted-research/targeted-research-contracts-v1";
 
 function dedupeNormalizedCandidatesV1(cands: ProgramSurfaceNormalizedCandidateV1[]): ProgramSurfaceNormalizedCandidateV1[] {
@@ -223,6 +225,63 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
       .filter(Boolean)
       .join("\n")
       .trim();
+  }
+
+  function computeRetainedPayloadHashFromFetchedStructuredMetadata(preview: {
+    identity_url: string;
+    title: string | null;
+    meta_description: string | null;
+    og_site_name: string | null;
+    og_title: string | null;
+    jsonld_types: string[];
+  }): string {
+    return createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+      identity_url: preview.identity_url,
+      title: preview.title,
+      meta_description: preview.meta_description,
+      og_site_name: preview.og_site_name,
+      og_title: preview.og_title,
+      jsonld_types: preview.jsonld_types
+    });
+  }
+
+  function computeProspectiveEvidenceVersionFingerprintV1(input: {
+    source_id: string;
+    identity_url: string;
+    retained_payload_hash: string;
+    now_iso: string;
+    // governance/policy
+    source_config_version: string;
+    legal_policy_version: string;
+    retention_policy: string;
+    evidence_type: string;
+    access_classification: string;
+    source_credibility_prior: string;
+    correction_status: string;
+    retraction_status: string;
+    schema_version: string;
+  }): string {
+    return createEvidenceReferenceFingerprint({
+      source_id: input.source_id,
+      source_config_version: input.source_config_version,
+      source_set_id: null,
+      source_artifact_identifier: null,
+      source_url_or_reference: input.identity_url,
+      content_hash: input.retained_payload_hash,
+      retrieved_at: input.now_iso,
+      published_at: null,
+      event_time: null,
+      evidence_type: input.evidence_type,
+      access_classification: input.access_classification,
+      legal_policy_version: input.legal_policy_version,
+      retention_policy: input.retention_policy,
+      excerpt_or_summary_reference: null,
+      source_credibility_prior: input.source_credibility_prior,
+      correction_status: input.correction_status,
+      retraction_status: input.retraction_status,
+      supersedes_evidence_reference_id: null,
+      schema_version: input.schema_version
+    });
   }
 
   const domainHintRaw = q.discovery_hints?.canonical_domain;
@@ -560,26 +619,41 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 	          });
 	          const reuse2 = await input.deps.evidenceReuseLookup({ source_id: source_id2, canonical_url: identityCanon2 });
 
-          for (const c of normalized_candidates2) {
-            const evidence_version_ref2 = {
-              object_type: "evidence_reference",
-              object_id: evidence_reference_id2,
-              version_id: null,
-	              content_hash: computeContentHash({
-	                canonical_url: identityCanon2,
-	                final_url: fetched2.final_url,
-	                http_status: fetched2.http_status,
-	                title: fetched2.title,
-	                meta_description: fetched2.meta_description,
-	                og_site_name: fetched2.og_site_name,
-	                og_title: fetched2.og_title,
-	                jsonld_types: fetched2.jsonld_types,
-	                retention_mode: fetched2.retention_mode
-	              }),
-              schema_version: "evidence_reference_v1",
-              policy_version: "legal_policy.unknown",
-              created_at: input.now_iso
-            } as const;
+	          for (const c of normalized_candidates2) {
+	            const retained_payload_hash2 = computeRetainedPayloadHashFromFetchedStructuredMetadata({
+	              identity_url: identityCanon2,
+	              title: fetched2.title,
+	              meta_description: fetched2.meta_description,
+	              og_site_name: fetched2.og_site_name,
+	              og_title: fetched2.og_title,
+	              jsonld_types: fetched2.jsonld_types
+	            });
+
+	            const prospective_evidence_version_fingerprint2 = computeProspectiveEvidenceVersionFingerprintV1({
+	              source_id: source_id2,
+	              identity_url: identityCanon2,
+	              retained_payload_hash: retained_payload_hash2,
+	              now_iso: input.now_iso,
+	              source_config_version: "targeted_web.preview_v1",
+	              legal_policy_version: "targeted_web.preview_only.v1",
+	              retention_policy: "link_only",
+	              evidence_type: "other",
+	              access_classification: "public",
+	              source_credibility_prior: "high",
+	              correction_status: "none",
+	              retraction_status: "none",
+	              schema_version: "evidence_reference_v1"
+	            });
+
+	            const evidence_version_ref2 = {
+	              object_type: "evidence_reference",
+	              object_id: evidence_reference_id2,
+	              version_id: null,
+	              content_hash: prospective_evidence_version_fingerprint2,
+	              schema_version: "evidence_reference_v1",
+	              policy_version: "legal_policy.unknown",
+	              created_at: input.now_iso
+	            } as const;
 
             let builderOut2:
               | ReturnType<typeof buildProgramSurfaceClaimV1>
@@ -601,18 +675,19 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
             }
             if (builderOut2.status !== "eligible") continue;
             const claim = builderOut2.claim as Claim;
-            claim_previews2.push({
-              predicate: c.predicate,
-              object_value: c.object_value,
-              qualifiers: c.qualifiers,
-              confidence: "high",
-              prospective_evidence_reference_id: evidence_reference_id2,
-              prospective_evidence_content_hash: evidence_version_ref2.content_hash,
-              prospective_claim_id: claim.claim_id,
-              prospective_claim_fingerprint: claim.claim_fingerprint,
-              prospective_claim_content_hash: computeContentHash(claim),
-              semantic_fact_already_present_elsewhere: existing2.claim_count > 0
-            });
+	            claim_previews2.push({
+	              predicate: c.predicate,
+	              object_value: c.object_value,
+	              qualifiers: c.qualifiers,
+	              confidence: "high",
+	              prospective_evidence_reference_id: evidence_reference_id2,
+	              retained_payload_hash: retained_payload_hash2,
+	              prospective_evidence_version_fingerprint: prospective_evidence_version_fingerprint2,
+	              prospective_claim_id: claim.claim_id,
+	              prospective_claim_fingerprint: claim.claim_fingerprint,
+	              prospective_claim_content_hash: computeContentHash(claim),
+	              semantic_fact_already_present_elsewhere: existing2.claim_count > 0
+	            });
           }
 
           const answer_status2: ProgramSurfaceResearchPreviewV1["answer_status"] = claim_previews2.length
@@ -722,26 +797,40 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 
   for (const c of normalized_candidates) {
     // Build claim preview via deterministic builder.
-    const evidence_version_ref = {
-      object_type: "evidence_reference",
-      object_id: evidence_reference_id,
-      version_id: null,
-      // Derived from fetched preview (structured only). This is a no-write prospective identity.
-	      content_hash: computeContentHash({
-	        canonical_url: identityCanon,
-	        final_url: fetched.final_url,
-	        http_status: fetched.http_status,
-	        title: fetched.title,
-	        meta_description: fetched.meta_description,
-	        og_site_name: fetched.og_site_name,
-	        og_title: fetched.og_title,
-	        jsonld_types: fetched.jsonld_types,
-	        retention_mode: fetched.retention_mode
-	      }),
-      schema_version: "evidence_reference_v1",
-      policy_version: "legal_policy.unknown",
-      created_at: input.now_iso
-    } as const;
+	    const retained_payload_hash = computeRetainedPayloadHashFromFetchedStructuredMetadata({
+	      identity_url: identityCanon,
+	      title: fetched.title,
+	      meta_description: fetched.meta_description,
+	      og_site_name: fetched.og_site_name,
+	      og_title: fetched.og_title,
+	      jsonld_types: fetched.jsonld_types
+	    });
+
+	    const prospective_evidence_version_fingerprint = computeProspectiveEvidenceVersionFingerprintV1({
+	      source_id,
+	      identity_url: identityCanon,
+	      retained_payload_hash,
+	      now_iso: input.now_iso,
+	      source_config_version: "targeted_web.preview_v1",
+	      legal_policy_version: "targeted_web.preview_only.v1",
+	      retention_policy: "link_only",
+	      evidence_type: "other",
+	      access_classification: "public",
+	      source_credibility_prior: "high",
+	      correction_status: "none",
+	      retraction_status: "none",
+	      schema_version: "evidence_reference_v1"
+	    });
+
+	    const evidence_version_ref = {
+	      object_type: "evidence_reference",
+	      object_id: evidence_reference_id,
+	      version_id: null,
+	      content_hash: prospective_evidence_version_fingerprint,
+	      schema_version: "evidence_reference_v1",
+	      policy_version: "legal_policy.unknown",
+	      created_at: input.now_iso
+	    } as const;
 
     let builderOut:
       | ReturnType<typeof buildProgramSurfaceClaimV1>
@@ -766,18 +855,19 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     if (builderOut.status !== "eligible") continue;
 
     const claim = builderOut.claim as Claim;
-    claim_previews.push({
-      predicate: c.predicate,
-      object_value: c.object_value,
-      qualifiers: c.qualifiers,
-      confidence: "high",
-      prospective_evidence_reference_id: evidence_reference_id,
-      prospective_evidence_content_hash: evidence_version_ref.content_hash,
-      prospective_claim_id: claim.claim_id,
-      prospective_claim_fingerprint: claim.claim_fingerprint,
-      prospective_claim_content_hash: computeContentHash(claim),
-      semantic_fact_already_present_elsewhere: existing.claim_count > 0
-    });
+	    claim_previews.push({
+	      predicate: c.predicate,
+	      object_value: c.object_value,
+	      qualifiers: c.qualifiers,
+	      confidence: "high",
+	      prospective_evidence_reference_id: evidence_reference_id,
+	      retained_payload_hash,
+	      prospective_evidence_version_fingerprint: prospective_evidence_version_fingerprint,
+	      prospective_claim_id: claim.claim_id,
+	      prospective_claim_fingerprint: claim.claim_fingerprint,
+	      prospective_claim_content_hash: computeContentHash(claim),
+	      semantic_fact_already_present_elsewhere: existing.claim_count > 0
+	    });
   }
 
   // If unanswered and we have official HTML, attempt one same-domain link-follow (bounded) for RQ_EVENT_FOOTPRINT only.
@@ -818,25 +908,40 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 	            canonical_url: identityCanon2
 	          });
 
-          const evidence_version_ref2 = {
-            object_type: "evidence_reference",
-            object_id: evidence_reference_id2,
-            version_id: null,
-	            content_hash: computeContentHash({
-	              canonical_url: identityCanon2,
-	              final_url: secondFetch.preview.final_url,
-	              http_status: secondFetch.preview.http_status,
-	              title: secondFetch.preview.title,
-	              meta_description: secondFetch.preview.meta_description,
-	              og_site_name: secondFetch.preview.og_site_name,
-	              og_title: secondFetch.preview.og_title,
-	              jsonld_types: secondFetch.preview.jsonld_types,
-	              retention_mode: secondFetch.preview.retention_mode
-	            }),
-            schema_version: "evidence_reference_v1",
-            policy_version: "legal_policy.unknown",
-            created_at: input.now_iso
-          } as const;
+	          const retained_payload_hash2 = computeRetainedPayloadHashFromFetchedStructuredMetadata({
+	            identity_url: identityCanon2,
+	            title: secondFetch.preview.title,
+	            meta_description: secondFetch.preview.meta_description,
+	            og_site_name: secondFetch.preview.og_site_name,
+	            og_title: secondFetch.preview.og_title,
+	            jsonld_types: secondFetch.preview.jsonld_types
+	          });
+
+	          const prospective_evidence_version_fingerprint2 = computeProspectiveEvidenceVersionFingerprintV1({
+	            source_id: source_id2,
+	            identity_url: identityCanon2,
+	            retained_payload_hash: retained_payload_hash2,
+	            now_iso: input.now_iso,
+	            source_config_version: "targeted_web.preview_v1",
+	            legal_policy_version: "targeted_web.preview_only.v1",
+	            retention_policy: "link_only",
+	            evidence_type: "other",
+	            access_classification: "public",
+	            source_credibility_prior: "high",
+	            correction_status: "none",
+	            retraction_status: "none",
+	            schema_version: "evidence_reference_v1"
+	          });
+
+	          const evidence_version_ref2 = {
+	            object_type: "evidence_reference",
+	            object_id: evidence_reference_id2,
+	            version_id: null,
+	            content_hash: prospective_evidence_version_fingerprint2,
+	            schema_version: "evidence_reference_v1",
+	            policy_version: "legal_policy.unknown",
+	            created_at: input.now_iso
+	          } as const;
 
           let builderOut2:
             | ReturnType<typeof buildProgramSurfaceClaimV1>
@@ -860,18 +965,19 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 
           if (builderOut2.status !== "eligible") continue;
           const claim = builderOut2.claim as Claim;
-          claim_previews.push({
-            predicate: c.predicate,
-            object_value: c.object_value,
-            qualifiers: c.qualifiers,
-            confidence: "high",
-            prospective_evidence_reference_id: evidence_reference_id2,
-            prospective_evidence_content_hash: evidence_version_ref2.content_hash,
-            prospective_claim_id: claim.claim_id,
-            prospective_claim_fingerprint: claim.claim_fingerprint,
-            prospective_claim_content_hash: computeContentHash(claim),
-            semantic_fact_already_present_elsewhere: existing.claim_count > 0
-          });
+	          claim_previews.push({
+	            predicate: c.predicate,
+	            object_value: c.object_value,
+	            qualifiers: c.qualifiers,
+	            confidence: "high",
+	            prospective_evidence_reference_id: evidence_reference_id2,
+	            retained_payload_hash: retained_payload_hash2,
+	            prospective_evidence_version_fingerprint: prospective_evidence_version_fingerprint2,
+	            prospective_claim_id: claim.claim_id,
+	            prospective_claim_fingerprint: claim.claim_fingerprint,
+	            prospective_claim_content_hash: computeContentHash(claim),
+	            semantic_fact_already_present_elsewhere: existing.claim_count > 0
+	          });
         }
       }
     }
@@ -953,25 +1059,40 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 	              canonical_url: identityCanon2
 	            });
 
-            const evidence_version_ref2 = {
-              object_type: "evidence_reference",
-              object_id: evidence_reference_id2,
-              version_id: null,
-	              content_hash: computeContentHash({
-	                canonical_url: identityCanon2,
-	                final_url: secondFetch.preview.final_url,
-	                http_status: secondFetch.preview.http_status,
-	                title: secondFetch.preview.title,
-                meta_description: secondFetch.preview.meta_description,
-                og_site_name: secondFetch.preview.og_site_name,
-                og_title: secondFetch.preview.og_title,
-                jsonld_types: secondFetch.preview.jsonld_types,
-                retention_mode: secondFetch.preview.retention_mode
-              }),
-              schema_version: "evidence_reference_v1",
-              policy_version: "legal_policy.unknown",
-              created_at: input.now_iso
-            } as const;
+	            const retained_payload_hash2 = computeRetainedPayloadHashFromFetchedStructuredMetadata({
+	              identity_url: identityCanon2,
+	              title: secondFetch.preview.title,
+	              meta_description: secondFetch.preview.meta_description,
+	              og_site_name: secondFetch.preview.og_site_name,
+	              og_title: secondFetch.preview.og_title,
+	              jsonld_types: secondFetch.preview.jsonld_types
+	            });
+
+	            const prospective_evidence_version_fingerprint2 = computeProspectiveEvidenceVersionFingerprintV1({
+	              source_id: source_id2,
+	              identity_url: identityCanon2,
+	              retained_payload_hash: retained_payload_hash2,
+	              now_iso: input.now_iso,
+	              source_config_version: "targeted_web.preview_v1",
+	              legal_policy_version: "targeted_web.preview_only.v1",
+	              retention_policy: "link_only",
+	              evidence_type: "other",
+	              access_classification: "public",
+	              source_credibility_prior: "high",
+	              correction_status: "none",
+	              retraction_status: "none",
+	              schema_version: "evidence_reference_v1"
+	            });
+
+	            const evidence_version_ref2 = {
+	              object_type: "evidence_reference",
+	              object_id: evidence_reference_id2,
+	              version_id: null,
+	              content_hash: prospective_evidence_version_fingerprint2,
+	              schema_version: "evidence_reference_v1",
+	              policy_version: "legal_policy.unknown",
+	              created_at: input.now_iso
+	            } as const;
 
             let builderOut2:
               | ReturnType<typeof buildProgramSurfaceClaimV1>
@@ -995,18 +1116,19 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
 
             if (builderOut2.status !== "eligible") continue;
             const claim = builderOut2.claim as Claim;
-            claim_previews.push({
-              predicate: c.predicate,
-              object_value: c.object_value,
-              qualifiers: c.qualifiers,
-              confidence: "high",
-              prospective_evidence_reference_id: evidence_reference_id2,
-              prospective_evidence_content_hash: evidence_version_ref2.content_hash,
-              prospective_claim_id: claim.claim_id,
-              prospective_claim_fingerprint: claim.claim_fingerprint,
-              prospective_claim_content_hash: computeContentHash(claim),
-              semantic_fact_already_present_elsewhere: existing.claim_count > 0
-            });
+	            claim_previews.push({
+	              predicate: c.predicate,
+	              object_value: c.object_value,
+	              qualifiers: c.qualifiers,
+	              confidence: "high",
+	              prospective_evidence_reference_id: evidence_reference_id2,
+	              retained_payload_hash: retained_payload_hash2,
+	              prospective_evidence_version_fingerprint: prospective_evidence_version_fingerprint2,
+	              prospective_claim_id: claim.claim_id,
+	              prospective_claim_fingerprint: claim.claim_fingerprint,
+	              prospective_claim_content_hash: computeContentHash(claim),
+	              semantic_fact_already_present_elsewhere: existing.claim_count > 0
+	            });
           }
         }
       }
