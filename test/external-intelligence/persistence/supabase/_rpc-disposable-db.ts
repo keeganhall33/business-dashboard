@@ -124,6 +124,28 @@ export function createDisposableDb(): DisposableDb {
     { encoding: "utf8", env: baseEnv }
   );
 
+  // Supabase provides auth.jwt() in production. For disposable DB tests, we emulate it using request.jwt.claims.
+  execFileSync(
+    "psql",
+    [
+      "-h",
+      "127.0.0.1",
+      "-p",
+      String(c.port),
+      "-d",
+      dbname,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-X",
+      "-q",
+      "-t",
+      "-A",
+      "-c",
+      "create schema if not exists auth; create or replace function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}' )::jsonb $$;"
+    ],
+    { encoding: "utf8", env: baseEnv }
+  );
+
   const psql = (sql: string) => {
     return execFileSync(
       "psql",
@@ -153,10 +175,11 @@ export function createDisposableDb(): DisposableDb {
     const shouldInjectJwtRoleClaim =
       user === "service_role" &&
       !sql.includes("/*no_jwt*/") &&
-      !sql.includes("request.jwt.claim.role");
+      !sql.includes("request.jwt.claim.role") &&
+      !sql.includes("request.jwt.claims");
 
     const effectiveSql = shouldInjectJwtRoleClaim
-      ? `select set_config('request.jwt.claim.role','service_role', true); ${sql}`
+      ? `select set_config('request.jwt.claim.role','service_role', true); select set_config('request.jwt.claims','{"role":"service_role","ref":"ibjsjosplgbqevmnvvpf"}', true); ${sql}`
       : sql;
     return execFileSync(
       "psql",
