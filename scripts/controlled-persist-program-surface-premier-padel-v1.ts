@@ -274,6 +274,7 @@ async function main() {
   const confirmWrite = parseFlag(argv, "--confirm-write");
   const validateOnly = parseFlag(argv, "--validate-only");
   const validateAuth = parseFlag(argv, "--validate-auth");
+  const validateRequestAuth = parseFlag(argv, "--validate-request-auth");
   const forcedNowIso = parseArg(argv, "--now-iso");
 
   // Local V2 manifest validation (no Supabase required).
@@ -340,11 +341,86 @@ async function main() {
     return;
   }
 
+  // Request-level auth preflight: prove what Authorization/apikey headers are actually sent.
+  // This performs a READ-ONLY query.
+  if (validateRequestAuth) {
+    const observed: {
+      authorization_role: string | null;
+      apikey_role: string | null;
+      has_authorization: boolean;
+      has_apikey: boolean;
+    } = {
+      authorization_role: null,
+      apikey_role: null,
+      has_authorization: false,
+      has_apikey: false
+    };
+
+    const instrumentedFetch: typeof fetch = async (input, init) => {
+      const headers = new Headers((init as any)?.headers ?? undefined);
+      const auth = headers.get("authorization") ?? headers.get("Authorization");
+      const apikey = headers.get("apikey") ?? headers.get("x-api-key");
+
+      if (auth) {
+        observed.has_authorization = true;
+        const m = auth.match(/^Bearer\s+(.+)$/i);
+        observed.authorization_role = m ? decodeJwtRoleUnsafe(m[1]) : null;
+      }
+      if (apikey) {
+        observed.has_apikey = true;
+        observed.apikey_role = decodeJwtRoleUnsafe(apikey);
+      }
+
+      return fetch(input as any, init as any);
+    };
+
+    const supabase = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: {
+        fetch: instrumentedFetch,
+        headers: {
+          Authorization: `Bearer ${key}`,
+          apikey: key
+        }
+      }
+    });
+
+    await countTable(supabase, "external_evidence_references_v1");
+
+    const ok = observed.authorization_role === "service_role";
+    console.log(
+      JSON.stringify(
+        {
+          mode: "validate_request_auth",
+          supabase_host: redactedHost(url),
+          expected_role: "service_role",
+          observed_authorization_role: observed.authorization_role ?? "<missing_or_unparseable>",
+          observed_apikey_role: observed.apikey_role ?? "<missing_or_unparseable>",
+          has_authorization: observed.has_authorization,
+          has_apikey: observed.has_apikey,
+          auth_ready: ok ? "READY" : "FAIL"
+        },
+        null,
+        2
+      )
+    );
+    process.exitCode = ok ? 0 : 2;
+    return;
+  }
+
   assert(confirmWrite, "missing_argument: --confirm-write");
   assert(decodedRole === "service_role", "precondition_failed:SUPABASE_SERVICE_ROLE_KEY is not a service_role JWT");
 
-  // Use the canonical server client factory (service_role JWT).
-  const supabase = getSupabaseServerClient();
+  // Use an explicit service-role client that cannot be overridden by session tokens.
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        apikey: key
+      }
+    }
+  });
 
   // ------------------------------
   // PRE-WRITE COUNTS + GATE
