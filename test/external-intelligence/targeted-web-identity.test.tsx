@@ -100,3 +100,44 @@ test("TARGETED_WEB structured_metadata retained payload hash: includes meta_desc
   const h3 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, meta_description: base.meta_description + "!" });
   assert.notEqual(h1, h3);
 });
+
+test("TARGETED_WEB structured_metadata retained payload hash: title/og fields/types changes alter hash; type ordering does not", () => {
+  const base = {
+    identity_url: "https://premierpadel.com/en",
+    title: "Premier Padel | News, Calendar, Scores & Results",
+    meta_description: "Follow Premier Padel, the world’s leading professional Padel tour.",
+    og_site_name: null as string | null,
+    og_title: "Premier Padel | News, Calendar, Scores & Results",
+    jsonld_types: [] as string[]
+  };
+
+  const h0 = createTargetedWebStructuredMetadataRetainedPayloadHashV1(base);
+  assert.notEqual(h0, createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, title: base.title + "!" }));
+  assert.notEqual(
+    h0,
+    createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, og_title: (base.og_title ?? "") + "!" })
+  );
+  assert.notEqual(h0, createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, og_site_name: "Premier Padel" }));
+  assert.notEqual(h0, createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, jsonld_types: ["SportsOrganization"] }));
+
+  const ha = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, jsonld_types: ["A", "B", "A"] });
+  const hb = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, jsonld_types: ["B", "A"] });
+  assert.equal(ha, hb, "jsonld_types order and duplicates should not affect hash");
+});
+
+test("TARGETED_WEB structured_metadata retained payload hash: identity_url canonicalization avoids redirect/utm churn", () => {
+  const base = {
+    title: "T",
+    meta_description: "D",
+    og_site_name: null as string | null,
+    og_title: null as string | null,
+    jsonld_types: [] as string[]
+  };
+
+  const h1 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({ ...base, identity_url: "https://premierpadel.com/en" });
+  const h2 = createTargetedWebStructuredMetadataRetainedPayloadHashV1({
+    ...base,
+    identity_url: "https://premierpadel.com/en?utm_source=x#fragment"
+  });
+  assert.equal(h1, h2);
+});
