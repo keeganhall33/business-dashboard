@@ -89,7 +89,11 @@ export type ProgramSurfaceClaimPreviewV1 = {
 
   // Prospective no-write ids/hashes.
   prospective_evidence_reference_id: string;
-  prospective_evidence_content_hash: string;
+  // Hash of the retained payload projection (for structured_metadata retention).
+  // This is NOT the EvidenceVersion fingerprint.
+  retained_payload_hash: string;
+  // Canonical EvidenceVersion fingerprint (outer version identity) under the canonical persistence contract.
+  prospective_evidence_version_fingerprint: string;
   prospective_claim_id: string;
   prospective_claim_fingerprint: string;
   prospective_claim_content_hash: string;
