@@ -15,7 +15,7 @@ import { createDisposableDb } from "./_rpc-disposable-db";
 const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
 const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
 const V2 = path.join(process.cwd(), "supabase/migrations/20260810_external_intelligence_fingerprint_v2.sql");
-const V2_CLAIM_SEMANTIC = path.join(process.cwd(), "supabase/migrations/20260810195500_external_intelligence_claim_hash_v2_semantic.sql");
+const V2_CLAIM_SEMANTIC = path.join(process.cwd(), "supabase/migrations/20260811195500_external_intelligence_claim_hash_v2_semantic.sql");
 
 function jsonLiteral(obj: unknown): string {
   // Safe for fixtures: no embedded newlines, deterministic key order not required (DB reads by keys).
