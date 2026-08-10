@@ -202,6 +202,29 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
   // This must never include response bodies.
   let discoveryDiagnostic: string | null = null;
 
+  function supportTextFromRetainedMetadata(preview: {
+    title: string | null;
+    meta_description: string | null;
+    og_title: string | null;
+    og_site_name: string | null;
+    jsonld_types: string[];
+  }): string {
+    // IMPORTANT:
+    // - Retention mode is structured_metadata.
+    // - Claim support must be reproducible from retained metadata alone.
+    // Transient HTML may be used for link discovery, but must not be required for claim support.
+    return [
+      preview.title ?? "",
+      preview.meta_description ?? "",
+      preview.og_site_name ?? "",
+      preview.og_title ?? "",
+      (preview.jsonld_types ?? []).length ? `jsonld_types:${(preview.jsonld_types ?? []).join(",")}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
   const domainHintRaw = q.discovery_hints?.canonical_domain;
   const domainHint =
     typeof domainHintRaw === "string" && domainHintRaw.trim().length > 0
@@ -427,11 +450,6 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     return { status: "preview", preview };
   }
 
-  const { domain } = input.deps.canonicalizeUrl(sel.canonical_url);
-  const source_id = input.deps.computeSourceId({ domain });
-  const evidence_reference_id = input.deps.computeEvidenceReferenceId({ source_id, canonical_url: sel.canonical_url });
-  const reuse = await input.deps.evidenceReuseLookup({ source_id, canonical_url: sel.canonical_url });
-
   // Source eligibility is enforced by the program surface predicate policy inside the builder.
   // Here we only ensure we can represent the class.
   const fetchRes = await input.deps.fetchPage({
@@ -439,6 +457,22 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
     timeout_ms: q.bounds.fetch_timeout_ms,
     max_bytes: q.bounds.fetch_max_bytes
   });
+
+  // Evidence identity must be deterministic and should not create duplicate EvidenceReferences for canonical redirects.
+  // Use canonicalized final URL when available; otherwise fall back to the requested URL.
+  const identityUrlRaw = fetchRes.ok ? fetchRes.preview.final_url : fetchRes.final_url;
+  const identityCanon = (() => {
+    try {
+      return input.deps.canonicalizeUrl(identityUrlRaw).canonical_url;
+    } catch {
+      return sel.canonical_url;
+    }
+  })();
+
+  const { domain } = input.deps.canonicalizeUrl(identityCanon);
+  const source_id = input.deps.computeSourceId({ domain });
+  const evidence_reference_id = input.deps.computeEvidenceReferenceId({ source_id, canonical_url: identityCanon });
+  const reuse = await input.deps.evidenceReuseLookup({ source_id, canonical_url: identityCanon });
 
   if (!fetchRes.ok) {
     // If we started with a canonical-domain seed and the seed fetch failed,
@@ -501,12 +535,7 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
           const retention_policy2: ProgramSurfaceResearchPreviewV1["retention_policy"] = "structured_metadata";
           const raw_html_transient2: ProgramSurfaceResearchPreviewV1["raw_html_transient"] = transient2?.raw_html ? "YES" : "NO";
 
-          const supportText2 = [
-            fetched2.title ?? "",
-            fetched2.meta_description ?? "",
-            fetched2.og_title ?? "",
-            transient2?.raw_html ? transient2.raw_html.replace(/<[^>]+>/g, " ") : ""
-          ].join("\n");
+	          const supportText2 = supportTextFromRetainedMetadata(fetched2);
 
           const normalized2 = normalizeProgramSurfaceFromTextV1({ predicate, text: supportText2 });
           const normalized_candidates_all2 = normalizeToCandidatePreviewV1({ predicate, normalized: normalized2 });
@@ -515,30 +544,38 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
           const claim_previews2: ProgramSurfaceResearchPreviewV1["claim_previews"] = [];
           const existing2 = await input.deps.claimLookupByPredicate({ predicate });
 
-          const { domain: d2 } = input.deps.canonicalizeUrl(fetched2.canonical_url);
-          const source_id2 = input.deps.computeSourceId({ domain: d2 });
-          const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
-            source_id: source_id2,
-            canonical_url: fetched2.canonical_url
-          });
-          const reuse2 = await input.deps.evidenceReuseLookup({ source_id: source_id2, canonical_url: fetched2.canonical_url });
+	          const identityUrlRaw2 = fetched2.final_url;
+	          const identityCanon2 = (() => {
+	            try {
+	              return input.deps.canonicalizeUrl(identityUrlRaw2).canonical_url;
+	            } catch {
+	              return fetched2.canonical_url;
+	            }
+	          })();
+	          const { domain: d2 } = input.deps.canonicalizeUrl(identityCanon2);
+	          const source_id2 = input.deps.computeSourceId({ domain: d2 });
+	          const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
+	            source_id: source_id2,
+	            canonical_url: identityCanon2
+	          });
+	          const reuse2 = await input.deps.evidenceReuseLookup({ source_id: source_id2, canonical_url: identityCanon2 });
 
           for (const c of normalized_candidates2) {
             const evidence_version_ref2 = {
               object_type: "evidence_reference",
               object_id: evidence_reference_id2,
               version_id: null,
-              content_hash: computeContentHash({
-                canonical_url: fetched2.canonical_url,
-                final_url: fetched2.final_url,
-                http_status: fetched2.http_status,
-                title: fetched2.title,
-                meta_description: fetched2.meta_description,
-                og_site_name: fetched2.og_site_name,
-                og_title: fetched2.og_title,
-                jsonld_types: fetched2.jsonld_types,
-                retention_mode: fetched2.retention_mode
-              }),
+	              content_hash: computeContentHash({
+	                canonical_url: identityCanon2,
+	                final_url: fetched2.final_url,
+	                http_status: fetched2.http_status,
+	                title: fetched2.title,
+	                meta_description: fetched2.meta_description,
+	                og_site_name: fetched2.og_site_name,
+	                og_title: fetched2.og_title,
+	                jsonld_types: fetched2.jsonld_types,
+	                retention_mode: fetched2.retention_mode
+	              }),
               schema_version: "evidence_reference_v1",
               policy_version: "legal_policy.unknown",
               created_at: input.now_iso
@@ -672,13 +709,7 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
   const retention_policy: ProgramSurfaceResearchPreviewV1["retention_policy"] = "structured_metadata";
   const raw_html_transient: ProgramSurfaceResearchPreviewV1["raw_html_transient"] = transient?.raw_html ? "YES" : "NO";
 
-  const supportText = [
-    fetched.title ?? "",
-    fetched.meta_description ?? "",
-    fetched.og_title ?? "",
-    // raw_html is execution-only; if present, we can inspect it in-memory but must not return it.
-    transient?.raw_html ? transient.raw_html.replace(/<[^>]+>/g, " ") : ""
-  ].join("\n");
+  const supportText = supportTextFromRetainedMetadata(fetched);
 
   const normalized = normalizeProgramSurfaceFromTextV1({ predicate, text: supportText });
   const normalized_candidates_all = normalizeToCandidatePreviewV1({ predicate, normalized });
@@ -696,17 +727,17 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
       object_id: evidence_reference_id,
       version_id: null,
       // Derived from fetched preview (structured only). This is a no-write prospective identity.
-      content_hash: computeContentHash({
-        canonical_url: fetched.canonical_url,
-        final_url: fetched.final_url,
-        http_status: fetched.http_status,
-        title: fetched.title,
-        meta_description: fetched.meta_description,
-        og_site_name: fetched.og_site_name,
-        og_title: fetched.og_title,
-        jsonld_types: fetched.jsonld_types,
-        retention_mode: fetched.retention_mode
-      }),
+	      content_hash: computeContentHash({
+	        canonical_url: identityCanon,
+	        final_url: fetched.final_url,
+	        http_status: fetched.http_status,
+	        title: fetched.title,
+	        meta_description: fetched.meta_description,
+	        og_site_name: fetched.og_site_name,
+	        og_title: fetched.og_title,
+	        jsonld_types: fetched.jsonld_types,
+	        retention_mode: fetched.retention_mode
+	      }),
       schema_version: "evidence_reference_v1",
       policy_version: "legal_policy.unknown",
       created_at: input.now_iso
@@ -766,39 +797,42 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
       if (secondFetch.ok) {
         // Extend preview fetched list (no raw html).
         previewFetched.push(secondFetch.preview);
-        const secondText = [
-          secondFetch.preview.title ?? "",
-          secondFetch.preview.meta_description ?? "",
-          secondFetch.preview.og_title ?? "",
-          secondFetch.transient?.raw_html ? secondFetch.transient.raw_html.replace(/<[^>]+>/g, " ") : ""
-        ].join("\n");
+	        const secondText = supportTextFromRetainedMetadata(secondFetch.preview);
 
         const normalized2 = normalizeProgramSurfaceFromTextV1({ predicate, text: secondText });
         const candidates2 = dedupeNormalizedCandidatesV1(normalizeToCandidatePreviewV1({ predicate, normalized: normalized2 }));
 
         for (const c of candidates2) {
-          const { domain: d2 } = input.deps.canonicalizeUrl(secondFetch.preview.canonical_url);
-          const source_id2 = input.deps.computeSourceId({ domain: d2 });
-          const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
-            source_id: source_id2,
-            canonical_url: secondFetch.preview.canonical_url
-          });
+	          const identityUrlRaw2 = secondFetch.preview.final_url;
+	          const identityCanon2 = (() => {
+	            try {
+	              return input.deps.canonicalizeUrl(identityUrlRaw2).canonical_url;
+	            } catch {
+	              return secondFetch.preview.canonical_url;
+	            }
+	          })();
+	          const { domain: d2 } = input.deps.canonicalizeUrl(identityCanon2);
+	          const source_id2 = input.deps.computeSourceId({ domain: d2 });
+	          const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
+	            source_id: source_id2,
+	            canonical_url: identityCanon2
+	          });
 
           const evidence_version_ref2 = {
             object_type: "evidence_reference",
             object_id: evidence_reference_id2,
             version_id: null,
-            content_hash: computeContentHash({
-              canonical_url: secondFetch.preview.canonical_url,
-              final_url: secondFetch.preview.final_url,
-              http_status: secondFetch.preview.http_status,
-              title: secondFetch.preview.title,
-              meta_description: secondFetch.preview.meta_description,
-              og_site_name: secondFetch.preview.og_site_name,
-              og_title: secondFetch.preview.og_title,
-              jsonld_types: secondFetch.preview.jsonld_types,
-              retention_mode: secondFetch.preview.retention_mode
-            }),
+	            content_hash: computeContentHash({
+	              canonical_url: identityCanon2,
+	              final_url: secondFetch.preview.final_url,
+	              http_status: secondFetch.preview.http_status,
+	              title: secondFetch.preview.title,
+	              meta_description: secondFetch.preview.meta_description,
+	              og_site_name: secondFetch.preview.og_site_name,
+	              og_title: secondFetch.preview.og_title,
+	              jsonld_types: secondFetch.preview.jsonld_types,
+	              retention_mode: secondFetch.preview.retention_mode
+	            }),
             schema_version: "evidence_reference_v1",
             policy_version: "legal_policy.unknown",
             created_at: input.now_iso
@@ -898,33 +932,36 @@ export async function executeProgramSurfaceResearchPreviewV1(input: {
         if (secondFetch.ok) {
           previewFetched.push(secondFetch.preview);
 
-          const secondText = [
-            secondFetch.preview.title ?? "",
-            secondFetch.preview.meta_description ?? "",
-            secondFetch.preview.og_title ?? "",
-            secondFetch.transient?.raw_html ? secondFetch.transient.raw_html.replace(/<[^>]+>/g, " ") : ""
-          ].join("\n");
+	          const secondText = supportTextFromRetainedMetadata(secondFetch.preview);
 
           const normalized2 = normalizeProgramSurfaceFromTextV1({ predicate, text: secondText });
           const candidates2 = dedupeNormalizedCandidatesV1(normalizeToCandidatePreviewV1({ predicate, normalized: normalized2 }));
 
           for (const c of candidates2) {
-            const { domain: d2 } = input.deps.canonicalizeUrl(secondFetch.preview.canonical_url);
-            const source_id2 = input.deps.computeSourceId({ domain: d2 });
-            const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
-              source_id: source_id2,
-              canonical_url: secondFetch.preview.canonical_url
-            });
+	            const identityUrlRaw2 = secondFetch.preview.final_url;
+	            const identityCanon2 = (() => {
+	              try {
+	                return input.deps.canonicalizeUrl(identityUrlRaw2).canonical_url;
+	              } catch {
+	                return secondFetch.preview.canonical_url;
+	              }
+	            })();
+	            const { domain: d2 } = input.deps.canonicalizeUrl(identityCanon2);
+	            const source_id2 = input.deps.computeSourceId({ domain: d2 });
+	            const evidence_reference_id2 = input.deps.computeEvidenceReferenceId({
+	              source_id: source_id2,
+	              canonical_url: identityCanon2
+	            });
 
             const evidence_version_ref2 = {
               object_type: "evidence_reference",
               object_id: evidence_reference_id2,
               version_id: null,
-              content_hash: computeContentHash({
-                canonical_url: secondFetch.preview.canonical_url,
-                final_url: secondFetch.preview.final_url,
-                http_status: secondFetch.preview.http_status,
-                title: secondFetch.preview.title,
+	              content_hash: computeContentHash({
+	                canonical_url: identityCanon2,
+	                final_url: secondFetch.preview.final_url,
+	                http_status: secondFetch.preview.http_status,
+	                title: secondFetch.preview.title,
                 meta_description: secondFetch.preview.meta_description,
                 og_site_name: secondFetch.preview.og_site_name,
                 og_title: secondFetch.preview.og_title,

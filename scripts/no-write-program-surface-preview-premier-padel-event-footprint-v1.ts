@@ -97,7 +97,9 @@ async function main() {
   }
 
   const subject = buildProvisionalEntityRefV1({
-    entity_id: "provisional:organization:premier_padel",
+    // IMPORTANT: must match the established Premier Padel provisional identity already used by production intelligence.
+    // Never invent a name-derived parallel entity id.
+    entity_id: "provisional:organization:855052d8c715418165b6cb72",
     entity_type: "organization",
     canonical_name: "Premier Padel"
   });
