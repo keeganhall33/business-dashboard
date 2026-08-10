@@ -86,7 +86,7 @@ function buildEvidencePayloadV2(input: { now_iso: string }) {
       "Follow Premier Padel, the world’s leading professional Padel tour. Explore rankings, tournament schedules, highlights, news and exclusive player content.",
     og_site_name: null,
     og_title: "Premier Padel | News, Calendar, Scores & Results",
-    jsonld_types: []
+    jsonld_types: [] as string[]
   } as const;
 
   const retained_payload_hash_v2 = createEvidenceRetainedPayloadHashV2(retained_payload);
