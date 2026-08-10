@@ -15,6 +15,7 @@ import { createDisposableDb } from "./_rpc-disposable-db";
 const A5 = path.join(process.cwd(), "supabase/migrations/20260804010200_external_intelligence_phase_a5.sql");
 const A61 = path.join(process.cwd(), "supabase/migrations/20260804010300_external_intelligence_phase_a6_transaction_rpcs.sql");
 const V2 = path.join(process.cwd(), "supabase/migrations/20260810_external_intelligence_fingerprint_v2.sql");
+const V2_CLAIM_SEMANTIC = path.join(process.cwd(), "supabase/migrations/20260810_external_intelligence_claim_hash_v2_semantic.sql");
 
 function jsonLiteral(obj: unknown): string {
   // Safe for fixtures: no embedded newlines, deterministic key order not required (DB reads by keys).
@@ -29,6 +30,7 @@ test("fingerprint v2: TS framing == DB framing (retained payload + evidence + cl
   );
   db.file(A61);
   db.file(V2);
+  db.file(V2_CLAIM_SEMANTIC);
 
   const premierRetained: EvidenceRetainedPayloadV2 = {
     lane: "structured_metadata",
@@ -252,7 +254,6 @@ test("fingerprint v2: TS framing == DB framing (retained payload + evidence + cl
     object_literal_language: null,
     event_time: null,
     announcement_time: null,
-    retrieved_at: claimPayload.retrieved_at,
     observed_vs_inferred: claimPayload.observed_vs_inferred,
     verification_state: claimPayload.verification_state,
     extraction_confidence_level: claimPayload.extraction_confidence.level,
@@ -277,6 +278,7 @@ test("rpc hardening: evidence + claim V2 accept/reject + historical replays", ()
   );
   db.file(A61);
   db.file(V2);
+  db.file(V2_CLAIM_SEMANTIC);
 
   const retained: EvidenceRetainedPayloadV2 = {
     lane: "structured_metadata",
@@ -510,7 +512,6 @@ test("rpc hardening: evidence + claim V2 accept/reject + historical replays", ()
     object_literal_language: null,
     event_time: null,
     announcement_time: null,
-    retrieved_at: claimPayload.retrieved_at,
     observed_vs_inferred: claimPayload.observed_vs_inferred,
     verification_state: claimPayload.verification_state,
     extraction_confidence_level: claimPayload.extraction_confidence.level,
