@@ -7,6 +7,16 @@ export type DiscoverySourceLayer =
   | "external_candidates"
   | "external_claim_signal";
 
+export type ExternalClaimSignal = {
+  claimId: string;
+  contentHash: string;
+  predicate: string;
+  subjectLabel: string;
+  objectLabel: string;
+  createdAtIso?: string | null;
+  evidenceUrls?: string[];
+};
+
 export type OpportunityArchetype =
   | "SPORTS_EVENT_ACTIVATION"
   | "VIP_RELATIONSHIP_GIFTING"
@@ -146,4 +156,3 @@ export type OpportunityCandidateV2 = {
   holdTriggers: HoldTrigger[];
   nextResearchQuestions: ResearchQuestion[];
 };
-

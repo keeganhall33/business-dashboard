@@ -88,10 +88,67 @@ async function main() {
   const pipelineRows = pipelineRowsRaw ?? [];
   const relationships = relationshipsRaw ?? [];
 
+  // Persisted intelligence graph signals (Evidence→Claims→…): optional.
+  // We only *consume* them here as candidate seeds; no deep research.
+  const claimSignals = [];
+  try {
+    const { data: claimRows, error: claimError } = await supabase
+      .from("external_claim_versions_v1")
+      .select("claim_id,content_hash,payload_json,created_at")
+      .order("created_at", { ascending: false })
+      .limit(75);
+    if (claimError) throw claimError;
+    for (const row of claimRows ?? []) {
+      const payload = row.payload_json ?? null;
+      if (!payload || typeof payload !== "object") continue;
+
+      const predicate = payload.predicate ?? payload.p ?? null;
+      if (typeof predicate !== "string" || !predicate) continue;
+
+      // Keep only program-surface + event-program style predicates in v2 discovery.
+      if (!["operates_event_program", "has_program_surface", "has_program_surface_v1"].includes(predicate)) continue;
+
+      const subject = payload.subject ?? payload.s ?? null;
+      const object = payload.object ?? payload.o ?? null;
+      const subjectLabel =
+        (subject && typeof subject === "object" && typeof subject.canonical_name === "string" && subject.canonical_name) ||
+        (typeof subject === "string" ? subject : null) ||
+        "Unknown";
+      const objectLabel =
+        (object && typeof object === "object" && typeof object.kind === "string" && object.kind) ||
+        (typeof object === "string" ? object : null) ||
+        "Unknown";
+
+      claimSignals.push({
+        id: `${row.claim_id}@${row.content_hash}`,
+        organizationHint: subjectLabel,
+        signal: {
+          claimId: row.claim_id,
+          contentHash: row.content_hash,
+          predicate,
+          subjectLabel,
+          objectLabel,
+          createdAtIso: row.created_at ?? null,
+          evidenceUrls: []
+        }
+      });
+    }
+  } catch {
+    // Table may not exist on some deployments; ignore.
+  }
+
   const candidates = buildOpportunityCandidatesV2({
     pipelineRows,
     externalCandidates,
-    relationships
+    claimSignals,
+    relationships,
+    holdExclusions: {
+      dedupeKeys: [
+        // Explicit HOLD constraints from the milestone brief.
+        "premier padel / ten toes|premier padel",
+        "a24 / google deepmind|a24"
+      ]
+    }
   });
 
   const top = candidates.slice(0, 10);

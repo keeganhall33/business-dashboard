@@ -1,6 +1,7 @@
 import type {
   CollectorRelationshipRow,
   EvidenceRef,
+  ExternalClaimSignal,
   OpportunityCandidateV2,
   OpportunityPipelineRow,
   OpportunitySeed
@@ -22,6 +23,12 @@ export type ExternalCandidate = {
   sourceUrl?: string | null;
   organizationHint?: string | null;
   day?: string | null;
+};
+
+export type GraphClaimCandidate = {
+  id: string;
+  signal: ExternalClaimSignal;
+  organizationHint?: string | null;
 };
 
 function seedEvidenceUrl(url: string | null | undefined): EvidenceRef[] {
@@ -93,6 +100,42 @@ export function buildSeedsFromExternalCandidates(candidates: ExternalCandidate[]
     });
 }
 
+export function buildSeedsFromClaimSignals(claims: GraphClaimCandidate[]): OpportunitySeed[] {
+  return claims.map((c) => {
+    const evidence: EvidenceRef[] = [
+      { kind: "db_row", ref: `external_claim_versions_v1:${c.signal.claimId}@${c.signal.contentHash}`, label: "Claim version" }
+    ];
+    for (const url of c.signal.evidenceUrls ?? []) {
+      evidence.push({ kind: "url", ref: url, label: "Evidence" });
+    }
+
+    const org = c.organizationHint?.trim() || c.signal.subjectLabel;
+    const name = `${c.signal.subjectLabel}: ${c.signal.predicate} → ${c.signal.objectLabel}`;
+    const summary = `Claim signal (${c.signal.predicate})`;
+
+    return {
+      layer: "external_claim_signal",
+      seedId: `claim:${c.signal.claimId}@${c.signal.contentHash}`,
+      name,
+      organization: org,
+      sourceSummary: summary,
+      evidence,
+      claims: [
+        {
+          id: `claim:${c.signal.claimId}`,
+          text: name,
+          evidence
+        }
+      ],
+      artifacts: [
+        { kind: "organization", label: org, refs: evidence },
+        { kind: "program_surface", label: c.signal.predicate, refs: evidence }
+      ],
+      linkedPipelineOpportunityId: null
+    };
+  });
+}
+
 function matchRelationship(relationships: CollectorRelationshipRow[], candidateName: string, org: string | null): CollectorRelationshipRow | null {
   const hay = `${candidateName} ${org ?? ""}`.toLowerCase();
   // Simple deterministic match: substring against collector_name.
@@ -119,15 +162,17 @@ export function dedupeSeeds(seeds: OpportunitySeed[]) {
 export function buildOpportunityCandidatesV2(params: {
   pipelineRows: OpportunityPipelineRow[];
   externalCandidates: ExternalCandidate[];
+  claimSignals?: GraphClaimCandidate[];
   relationships: CollectorRelationshipRow[];
   // Explicit exclusions (do not reactivate without a stored trigger).
   holdExclusions?: { dedupeKeys: string[] };
 }): OpportunityCandidateV2[] {
   const pipelineSeeds = buildSeedsFromPipeline(params.pipelineRows);
   const externalSeeds = buildSeedsFromExternalCandidates(params.externalCandidates);
+  const claimSeeds = buildSeedsFromClaimSignals(params.claimSignals ?? []);
 
   // Input order is meaningful (A..E). Pipeline first so it wins dedupe.
-  const seeds = dedupeSeeds([...pipelineSeeds, ...externalSeeds]);
+  const seeds = dedupeSeeds([...pipelineSeeds, ...externalSeeds, ...claimSeeds]);
 
   const excluded = new Set(params.holdExclusions?.dedupeKeys ?? []);
 
@@ -197,4 +242,3 @@ export function buildOpportunityCandidatesV2(params: {
 
   return candidates;
 }
-
