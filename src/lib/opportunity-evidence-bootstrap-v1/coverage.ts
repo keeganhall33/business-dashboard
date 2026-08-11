@@ -1,6 +1,7 @@
 import type { OpportunitySeed, OpportunityPipelineRow } from "@/lib/opportunity-discovery-v2/types";
 import { inferArchetypes } from "@/lib/opportunity-discovery-v2/archetypes";
 import type { OpportunityCoverageProfile, CoverageVariable, CoverageState, ArtifactRef } from "./types";
+import { resolveOpportunitySubject } from "./subject";
 
 export type OpportunityGraphRollupRow = {
   opportunity_id: string;
@@ -47,6 +48,7 @@ export function buildCoverageProfile(params: {
   rollup?: OpportunityGraphRollupRow | null;
 }): OpportunityCoverageProfile {
   const pipeline = params.pipeline;
+  const subject = resolveOpportunitySubject(pipeline);
 
   // For archetype conditioning, reuse the same inference used by discovery.
   const seed: OpportunitySeed = {
@@ -67,10 +69,8 @@ export function buildCoverageProfile(params: {
 
   const identity: CoverageVariable = {
     key: "IDENTITY_COVERAGE",
-    state: pipeline.organization ? "PARTIAL" : "UNKNOWN",
-    notes: pipeline.organization
-      ? ["Organization name present on opportunity, but no canonical entity id is stored on opportunity."]
-      : ["No organization provided on opportunity."] ,
+    state: subject.target_organization.state === "PARTIAL" ? "PARTIAL" : "UNKNOWN",
+    notes: [subject.target_organization.rationale],
     supportingArtifacts: []
   };
 
@@ -83,8 +83,8 @@ export function buildCoverageProfile(params: {
 
   const trigger: CoverageVariable = {
     key: "TRIGGER_CONTEXT",
-    state: pipeline.source || (pipeline.notes_md && pipeline.notes_md.trim()) ? "PARTIAL" : "UNKNOWN",
-    notes: pipeline.source ? [`Source hint present: ${pipeline.source}`] : ["No explicit trigger/campaign/event recorded on opportunity."],
+    state: subject.trigger_state === "PARTIAL" ? "PARTIAL" : "UNKNOWN",
+    notes: subject.trigger_summary ? [`First-party trigger hint: ${subject.trigger_summary}`] : ["No explicit trigger/campaign/event recorded on opportunity."],
     supportingArtifacts: artifacts.filter((a) => a.role === "TRIGGERED_BY" || a.role === "TIMING_SIGNAL")
   };
 
@@ -98,7 +98,9 @@ export function buildCoverageProfile(params: {
   const access: CoverageVariable = {
     key: "ACCESS_CONTEXT",
     state: pipeline.next_step ? "PARTIAL" : "UNKNOWN",
-    notes: pipeline.next_step ? ["Next step indicates some access path exists, but contact identity is not structured."] : ["No access path recorded."],
+    notes: pipeline.next_step
+      ? ["Next step indicates some access path exists, but target org/buyer identity is not yet resolved and contacts are not structured."]
+      : ["No access path recorded."],
     supportingArtifacts: artifacts.filter((a) => a.role === "ACCESS_PATH")
   };
 
@@ -175,4 +177,3 @@ export function buildCoverageProfile(params: {
     summaryCounts: countStates(variables)
   };
 }
-

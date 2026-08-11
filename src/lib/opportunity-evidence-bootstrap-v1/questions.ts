@@ -8,6 +8,7 @@ import type {
   ResearchQuestion
 } from "./types";
 import { ARCHETYPE_REQUIREMENTS_V1 } from "./archetype-requirements";
+import { resolveOpportunitySubject } from "./subject";
 
 type PriorityInputs = {
   decisionImpact: number;
@@ -89,9 +90,9 @@ function questionTemplate(key: CoverageVariableKey, profile: OpportunityCoverage
   switch (key) {
     case "IDENTITY_COVERAGE":
       return {
-        q: `What is the canonical organization identity behind "${org}" (official domain + exact legal/brand entity), and what aliases does it operate under?`,
-        why: "Identity resolution gates safe linking, dedupe, and avoids researching the wrong entity.",
-        stop: "Stop when an official domain + stable entity identity can be pinned with evidence-backed claims.",
+        q: `Which real-world organization (or rights-holder/department) is the target behind the opportunity "${name}"?`,
+        why: "A concept label cannot commission work; we must resolve the target organization before procurement/buyer-intent research.",
+        stop: "Stop when the target organization is unambiguously identified (name + official domain or stable entity id) with evidence.",
         effort: "low"
       };
     case "TRIGGER_CONTEXT":
@@ -110,7 +111,7 @@ function questionTemplate(key: CoverageVariableKey, profile: OpportunityCoverage
       };
     case "BUYER_INTENT":
       return {
-        q: `Is there evidence that ${org} commissions or procures comparable premium creative work (commissions, activations, licensing drops, or institutional acquisitions)?`,
+        q: `Is there evidence that ${org} (or the resolved buyer for "${name}") commissions/procures comparable premium creative work?`,
         why: "Buyer intent is the single largest conversion predictor; avoids wasting cycles on non-buyers.",
         stop: "Stop when at least 1–3 comparable procurement examples are evidenced or the absence is strongly supported.",
         effort: "medium"
@@ -160,8 +161,108 @@ function questionTemplate(key: CoverageVariableKey, profile: OpportunityCoverage
   }
 }
 
+function isOrgDependentVariable(key: CoverageVariableKey) {
+  return (
+    key === "BUYER_INTENT" ||
+    key === "COMMERCIAL_CONTEXT" ||
+    key === "ACCESS_CONTEXT" ||
+    key === "CONTACT_COVERAGE" ||
+    key === "PROGRAM_SURFACES"
+  );
+}
+
+function isBuyerDependentVariable(key: CoverageVariableKey) {
+  return key === "BUYER_INTENT" || key === "COMMERCIAL_CONTEXT" || key === "CONTACT_COVERAGE";
+}
+
 export function buildResearchQuestionsV1(profile: OpportunityCoverageProfile): ResearchQuestion[] {
+  const identityVar = findVar(profile, "IDENTITY_COVERAGE");
+
+  // Hard dependency override: if identity is unresolved, ONLY generate an identity-resolution question.
+  if (identityVar.state === "UNKNOWN") {
+    const template = questionTemplate("IDENTITY_COVERAGE", profile);
+    const question_id = canonicalJsonSha256Hex({
+      version: "opportunity_evidence_bootstrap_v1",
+      opportunity_id: profile.opportunity_id,
+      key: "IDENTITY_COVERAGE"
+    }).slice(0, 16);
+
+    return [
+      {
+        question_id,
+        opportunity_id: profile.opportunity_id,
+        variable: "IDENTITY_COVERAGE",
+        research_subject_type: "OPPORTUNITY",
+        research_subject_id: null,
+        research_subject_name: profile.opportunity_name,
+        research_subject_confidence: 0.3,
+        question: template.q,
+        why_it_matters: template.why,
+        current_state: identityVar.state,
+        expected_decision_impact: 95,
+        expected_valuation_impact: 55,
+        source_priority: sourcePriorityForVariable("IDENTITY_COVERAGE"),
+        stopping_condition: template.stop,
+        dependencies: [],
+        effort_class: template.effort,
+        priority_score: 100,
+        priority_explanation: "dependency gate: identity unresolved => must resolve identity first"
+      }
+    ];
+  }
+
+  const subject = resolveOpportunitySubject({
+    id: profile.opportunity_id,
+    name: profile.opportunity_name,
+    organization: profile.organization,
+    opportunity_type: "brand_partnership",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "unknown",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null
+  } as any);
+
   const vars = requiredVariables(profile.plausible_archetypes);
+
+  // Hard dependency override: if a buyer-capable entity is required but POTENTIAL_BUYER is unresolved,
+  // ask a buyer-resolution question before any buyer-intent/commercial/contact work.
+  const buyerResolved = subject.potential_buyer.state === "KNOWN" || subject.potential_buyer.state === "PARTIAL";
+  const buyerRequired = vars.some((k) => isBuyerDependentVariable(k));
+  if (buyerRequired && !buyerResolved) {
+    const template = questionTemplate("IDENTITY_COVERAGE", profile);
+    const question_id = canonicalJsonSha256Hex({
+      version: "opportunity_evidence_bootstrap_v1",
+      opportunity_id: profile.opportunity_id,
+      key: "POTENTIAL_BUYER_RESOLUTION"
+    }).slice(0, 16);
+    return [
+      {
+        question_id,
+        opportunity_id: profile.opportunity_id,
+        variable: "IDENTITY_COVERAGE",
+        research_subject_type: "OPPORTUNITY",
+        research_subject_id: null,
+        research_subject_name: profile.opportunity_name,
+        research_subject_confidence: 0.4,
+        question: `Which organization would actually commission/pay for the opportunity "${profile.opportunity_name}" (buyer vs target vs rights-holder)?`,
+        why_it_matters: "Buyer-intent and commercial research must target an entity capable of procurement; concept labels cannot buy.",
+        current_state: "UNKNOWN",
+        expected_decision_impact: 95,
+        expected_valuation_impact: 70,
+        source_priority: sourcePriorityForVariable("IDENTITY_COVERAGE"),
+        stopping_condition: "Stop when the buyer entity is named and can be pinned (official domain or stable entity id).",
+        dependencies: [],
+        effort_class: "low",
+        priority_score: 99,
+        priority_explanation: "dependency gate: buyer unresolved => resolve buyer before BUYER_INTENT/COMMERCIAL/CONTACT"
+      }
+    ];
+  }
   const questions: ResearchQuestion[] = [];
 
   for (const key of vars) {
@@ -170,6 +271,14 @@ export function buildResearchQuestionsV1(profile: OpportunityCoverageProfile): R
 
     const template = questionTemplate(key, profile);
     const uncertainty = stateUncertainty(v.state);
+
+    // Dependency gating (hard override):
+    // If target organization is unresolved, org-dependent variables cannot be asked.
+    // If buyer is unresolved, buyer-dependent variables cannot be asked.
+    const targetResolved = subject.target_organization.state === "KNOWN" || subject.target_organization.state === "PARTIAL";
+    const buyerResolved = subject.potential_buyer.state === "KNOWN" || subject.potential_buyer.state === "PARTIAL";
+    if (isOrgDependentVariable(key) && !targetResolved) continue;
+    if (isBuyerDependentVariable(key) && !buyerResolved) continue;
 
     // Simple deterministic impact priors by variable.
     const decisionImpact = key === "TRIGGER_CONTEXT" || key === "BUYER_INTENT" ? 95 : key === "ACCESS_CONTEXT" ? 85 : 70;
@@ -188,6 +297,12 @@ export function buildResearchQuestionsV1(profile: OpportunityCoverageProfile): R
       question_id,
       opportunity_id: profile.opportunity_id,
       variable: key,
+
+      research_subject_type: "TARGET_ORGANIZATION",
+      research_subject_id: subject.target_organization.entity_id,
+      research_subject_name: subject.target_organization.name,
+      research_subject_confidence: subject.target_organization.confidence,
+
       question: template.q,
       why_it_matters: template.why,
       current_state: v.state,
@@ -205,4 +320,3 @@ export function buildResearchQuestionsV1(profile: OpportunityCoverageProfile): R
   questions.sort((a, b) => b.priority_score - a.priority_score || a.question_id.localeCompare(b.question_id));
   return questions;
 }
-
