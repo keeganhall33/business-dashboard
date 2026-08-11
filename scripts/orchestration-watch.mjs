@@ -265,17 +265,24 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
     if (execBlock) {
       const lines = execBlock.split("\n").map((line) => line.trim()).filter(Boolean);
       for (const line of lines) runCommand(line, commandTimeoutMs);
+    } else {
+      // Natural-language adapter path (no EXECUTE block).
+      // Runs one bounded OpenClaw agent turn and posts a structured result.
+      runCommand(
+        `node scripts/orchestration-run-issue-openclaw.mjs --repo ${repo} --issue ${issueNumber} --agent main --timeout 420`,
+        Math.max(commandTimeoutMs, 420_000)
+      );
     }
 
     setAwaitingReview(repo, issueNumber);
-    postResult(repo, issueNumber, {
-      ...resultBase(taskId),
-      STATUS: "AWAITING_REVIEW",
-      SUMMARY: execBlock
-        ? "Claimed issue and executed bounded EXECUTE block; awaiting review."
-        : "Claimed issue. No EXECUTE block present; awaiting review for agent execution.",
-      BLOCKERS: execBlock ? [] : ["No executable block supplied; natural-language agent adapter required."]
-    });
+    if (execBlock) {
+      postResult(repo, issueNumber, {
+        ...resultBase(taskId),
+        STATUS: "AWAITING_REVIEW",
+        SUMMARY: "Claimed issue and executed bounded EXECUTE block; awaiting review.",
+        BLOCKERS: []
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // Critical reliability rule: task failure must never kill the watcher or leave

@@ -22,6 +22,8 @@ export type OrchestrationTaskStatus =
 
 export type ReviewDecision = "APPROVE" | "REQUEST_CHANGES" | "NEXT_TASK" | "ESCALATE_TO_KEEGAN";
 
+export type ExecutionClass = "AUTO_CONTINUE" | "ARCHITECT_REVIEW_REQUIRED" | "KEEGAN_APPROVAL_REQUIRED";
+
 export type HumanApprovalRequired = {
   required: boolean;
   reason: string | null;
@@ -79,3 +81,13 @@ export type OrchestrationResultContractV1 = {
   SESSION_CONTEXT: "UNKNOWN" | string;
 };
 
+export type ArchitectCheckpointV1 = {
+  TASK_ID: string;
+  CHECKPOINT_ID: string;
+  QUESTION_OR_DECISION: string;
+  PROPOSED_INTERPRETATION: string;
+  FILES_SURFACES_TO_CHANGE: string[];
+  WHY_REVIEW_REQUIRED: string;
+  ALTERNATIVES_CONSIDERED: string[];
+  RECOMMENDATION: string;
+};
