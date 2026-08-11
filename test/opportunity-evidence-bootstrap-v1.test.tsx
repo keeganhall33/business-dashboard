@@ -207,3 +207,130 @@ test("research memory gate prevents answered questions from regenerating", () =>
 
   assert.ok(!gated.some((q) => q.question_id === first.question_id));
 });
+
+test("coverage semantics: merchandising program surface does NOT imply buyer intent", () => {
+  const pipeline: any = {
+    id: "opp-ud",
+    name: "Upper Deck Hall of Fame capsule",
+    organization: "Upper Deck",
+    opportunity_type: "licensing",
+    status: "researching",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null
+  };
+
+  const rollup = {
+    opportunity_id: "opp-ud",
+    links: [
+      {
+        target_type: "claim_version",
+        target_id: "cl_x",
+        target_content_hash: "h",
+        role: "SUPPORTS",
+        match_method: "exact_org_name",
+        confidence: 0.75,
+        explanation: ""
+      }
+    ],
+    link_count: 1,
+    supported_claim_count: 1,
+    supported_event_count: 0,
+    trigger_signal_count: 0
+  };
+
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const buyer = profile.variables.find((v) => v.key === "BUYER_INTENT");
+  assert.equal(buyer?.state, "UNKNOWN");
+});
+
+test("coverage semantics: explicit trigger signals CAN improve buyer intent to PARTIAL", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "brand_partnership",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null
+  };
+
+  const rollup = {
+    opportunity_id: "opp-1",
+    links: [],
+    link_count: 0,
+    supported_claim_count: 0,
+    supported_event_count: 0,
+    trigger_signal_count: 1
+  };
+
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const buyer = profile.variables.find((v) => v.key === "BUYER_INTENT");
+  assert.equal(buyer?.state, "PARTIAL");
+});
+
+test("Upper Deck regression: program surfaces partial, buyer intent unknown, and totals reconcile", () => {
+  const pipeline: any = {
+    id: "opp-ud",
+    name: "Upper Deck Hall of Fame capsule",
+    organization: "Upper Deck",
+    opportunity_type: "licensing",
+    status: "researching",
+    value_estimate: 55000,
+    prestige_score: 9.1,
+    probability_score: 0.32,
+    owner_agent: "noah",
+    next_step: "Map the right creative director + licensing contact and prep a prestige pitch",
+    next_step_due_at: "2026-06-25T13:03:58.652Z",
+    notes_md: "Collectible pedigree pairs well. Need to emphasize scarcity + prestige.",
+    source: "research"
+  };
+
+  const rollup = {
+    opportunity_id: "opp-ud",
+    links: [
+      {
+        target_type: "claim_version",
+        target_id: "cl_a",
+        target_content_hash: "h1",
+        role: "SUPPORTS",
+        match_method: "exact_org_name",
+        confidence: 0.75,
+        explanation: ""
+      },
+      {
+        target_type: "claim_version",
+        target_id: "cl_b",
+        target_content_hash: "h2",
+        role: "SUPPORTS",
+        match_method: "exact_org_name",
+        confidence: 0.75,
+        explanation: ""
+      }
+    ],
+    link_count: 2,
+    supported_claim_count: 2,
+    supported_event_count: 0,
+    trigger_signal_count: 0
+  };
+
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const byKey = new Map(profile.variables.map((v) => [v.key, v.state]));
+
+  assert.equal(byKey.get("PROGRAM_SURFACES"), "PARTIAL");
+  assert.equal(byKey.get("BUYER_INTENT"), "UNKNOWN");
+
+  const total = Object.values(profile.summaryCounts).reduce((a, b) => a + b, 0);
+  assert.equal(total, 11);
+});
