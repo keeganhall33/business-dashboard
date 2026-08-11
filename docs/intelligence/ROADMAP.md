@@ -103,6 +103,28 @@ Traversal both ways:
 - Company → Events
 - Event → Companies
 
+## First-party email intelligence (planned)
+
+### FIRST_PARTY_BUSINESS_MEMORY
+- Extract first-party relationship + commercial facts from trusted sources (email, notes, internal docs)
+- Preserve message/thread provenance
+- Keep first-party facts distinct from external claims
+
+### EMAIL_INTELLIGENCE
+- Read-only mailbox ingestion (metadata-first triage)
+- Business relevance classification + selective deep extraction
+- Entity/person/company resolution + relationship graph augmentation
+
+### DORMANT_OPPORTUNITY_RECOVERY
+- Detect stalled follow-ups, "circle back" windows elapsed, proposal dormancy, and reactivation candidates
+- Output: REACTIVATE | MONITOR | CLOSED | UNKNOWN (no outreach)
+
+### RELATIONSHIP_REACTIVATION
+- Combine first-party warm history with new external triggers to produce high-leverage reactivation tasks
+
+### INSTITUTIONAL_MEMORY_SEARCH
+- Answer: "Have I ever interacted with X?" and "What happened with Y?" across email + internal notes + opportunities
+
 ## Outcome Goal
 Optimize for:
 > “What actions taken today maximize Keegan's probability of securing the highest-value future projects?”
