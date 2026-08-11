@@ -125,6 +125,22 @@ Traversal both ways:
 ### INSTITUTIONAL_MEMORY_SEARCH
 - Answer: "Have I ever interacted with X?" and "What happened with Y?" across email + internal notes + opportunities
 
+## AGENT_ORCHESTRATION (planned)
+
+Goal: eliminate Keegan as manual copy/paste relay between architect/reviewer and Jeeves.
+
+Target flow:
+Keegan (sets goals/approves consequences)
+→ Architect/Reviewer (creates bounded task + review)
+→ Jeeves (executes)
+→ Architect/Reviewer (approve/request changes)
+
+Design constraints:
+- durable task state + audit history
+- bounded autonomous review iterations
+- human-approval gates for credentials/outreach/production writes
+- structured machine-readable result contract
+
 ## VISUAL_INTELLIGENCE_UX (Hard Product Requirement)
 
 The dashboard must be:
