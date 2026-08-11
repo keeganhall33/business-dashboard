@@ -1,0 +1,1 @@
+Bootstrap marker for natural-language adapter activation. Safe to remove after Issue #207 is merged and the persistent watcher is confirmed on the new adapter path.
