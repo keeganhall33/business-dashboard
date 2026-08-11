@@ -110,3 +110,33 @@ Optimize for:
 Not merely:
 > “What can Keegan pitch today?”
 
+## Principles (Recorded)
+
+### Whitespace rule
+Absence of prior art/artist precedent is **not negative evidence by itself**.
+
+Future assessment must distinguish:
+- `CREATIVE_PRECEDENT`: recurring | multiple | isolated | none_found | unknown
+- `ART_WHITESPACE_POTENTIAL`: high | medium | low | unknown
+- `ADOPTION_FRICTION`: high | medium | low | unknown
+
+### Commercial framing & value translation
+Buyer unfamiliarity with premium art pricing must **not** automatically reduce estimated project value.
+
+Instead determine the best buyer budget/value frame:
+- sponsorship activation
+- experiential
+- VIP hospitality
+- corporate gifting
+- licensing
+- content
+- client entertainment
+- donor relations
+- design/property
+- other evidenced budget context
+
+Track:
+- `VALUE_EDUCATION_BURDEN`
+- `BUDGET_FRAME_COMPATIBILITY`
+- `VALUE_TRANSLATION_STRENGTH`
+- `PRICE_SHOCK_RISK`
