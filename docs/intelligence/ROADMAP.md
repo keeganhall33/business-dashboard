@@ -1,88 +1,112 @@
-# AI Chief Strategy Officer — Roadmap (North Star)
+# Intelligence Roadmap (Locked Direction)
 
-This roadmap is the governing plan for building an autonomous AI business decision engine.
+This file records planned capabilities and non-overlapping parallel development streams.
 
-**Core constraint:** The framework exists only to enable the AI to discover valuable opportunities you would likely never notice by reviewing individual sources.
+## Parallel Streams
 
-**Non‑negotiable architecture chain:**
+### STREAM A — CORE_INTELLIGENCE
+Owns shared persistence + semantics:
+- Evidence/Claim/Event/Signal semantics
+- Intelligence graph + provenance
+- Coverage model + research orchestration + research memory
+- Opportunity qualification + buyer/function resolution + buyer intent
+- Valuation + recommendation logic
 
-Facts → Findings → Hypotheses → Opportunities → Recommendations → Actions → Outcomes → Lessons → Updated Priors
+Only Stream A may change shared graph schema/coverage semantics until stable interfaces are published.
 
-## Permanent pillars (must not be dropped)
+### STREAM B — DISCOVERY_INTELLIGENCE
+Owns discovery models + adapters/contracts/fixtures (no shared schema changes initially):
+- Company Intelligence Search (discovery contracts, deterministic fixtures/tests)
+- Event Intelligence + Global Recurring Event Intelligence
+- Sponsor/activation ecosystems + company↔event traversal models
+- Location+time discovery + planning-cycle intelligence models
+- Source universe taxonomy + adapter interface contracts
 
-### A) Internal Business Intelligence Foundation
-- Unified Business Fact Model (UBFM)
-- Metric Dictionary (versioned definitions)
-- Findings (anomalies + relationships)
-- Hypotheses (competing, falsifiable)
-- Opportunities (cross‑channel)
-- Recommendations (one primary action; measurable)
-- Confidence + Evidence Graph (supporting + contradicting evidence; missing evidence)
+### STREAM C — INTELLIGENCE_UX
+Owns UI contracts + mock-driven prototypes (no binding to unstable backend):
+- Intelligence Home
+- Universal search
+- Company Intelligence page
+- Event Intelligence page
+- Opportunity page
+- Annual event pipeline/calendar
+- Evidence/explainability UX
 
-### B) External Intelligence Foundation
-Internal data alone is not the final system.
+## Roadmap Capabilities
 
-- External Intelligence Layer
-- External Signal Fact Model
-- Entity + Relationship Graph
-- Strategic Opportunity Fusion Engine (internal evidence + external context)
-- Competitive Intelligence Engine (see `docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`)
+### COMPANY_INTELLIGENCE_SEARCH
+- input any company/organization
+- discover programs, partnerships, events, agencies, opportunities
+- generate project concepts
+- qualify/value
+- identify buyer/functions/contacts
 
-- External evidence rules:
-  - source, source type, source reference, retrieved_at
-  - event time + relevance window + expiration
-  - credibility scoring + corroboration + contradiction tracking
-  - classification: verified_event | market_observation | trend_signal | forecast | opinion | rumor | hypothesis
-  - mechanism-linked to business relevance
-  - rumor/opinion may generate questions/hypotheses, **not** operating recommendations
-- Canonical categories (see `docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`):
-  - sports, music, entertainment/culture, art/collector markets, search/social, commercial/competitive,
-    economic/consumer, platform/regulatory
-  - additions: licensing/IP, collector liquidity, shipping/fulfillment disruptions
+### EVENT_INTELLIGENCE
+- input event
+- sponsors, activations, hospitality, agencies
+- VIP/HNW ecosystem
+- opportunity generation
 
-### C) Outcome and Learning Foundation
-Recommendation output alone is not the final system.
+### LOCATION_TIME_INTELLIGENCE
+- city/region + date window
+- discover relevant event ecosystems
 
-Every recommendation must ultimately produce measurable learning.
+### GLOBAL_RECURRING_EVENT_INTELLIGENCE
+- automatically discover/rank annual global events
+- sports, entertainment, luxury, art/culture, business/corporate, philanthropy, hospitality
+- US + international
 
-- Recommendation execution tracking (executed/ignored/dismissed)
-- Outcome measurement (success/failure/inconclusive)
-- Lessons (what worked and why)
-- Confidence calibration
-- Detector usefulness (which patterns matter)
-- Action effectiveness priors (what works under which conditions)
-- Recommendation-policy versioning
-- Regime detection (downweight outdated lessons)
-- Learning constraints:
-  - versioned, auditable, reversible
-  - statistically conservative (no small-sample overfitting)
-  - must not learn only from wins
-  - may update explicit priors/weights/ranking/calibration
-  - must never silently rewrite deterministic guardrails or production code
+### EVENT_OPPORTUNITY_SCORING
+Include:
+- prestige, commercial spend, sponsor density, VIP/HNW density
+- creative activation density, Keegan project fit
+- hospitality opportunity, partnership opportunity
+- repeatability, accessibility
+- timing/lead-time fit, strategic upside
 
-### D) Predictive and Strategic Intelligence
-- Lag-aware influence detection
-- Emerging risk detection
-- Pattern memory ("this resembles…")
-- Scenario reasoning
-- Customer cohort intelligence
-- Product/subject strategy intelligence
-- "What not to do" recommendations
-- Assumption-challenge behavior
+### PLANNING_CYCLE_INTELLIGENCE
+Track/infer with evidence+confidence:
+- event date
+- relationship-building window
+- budget cycle
+- agency appointment timing
+- creative planning window
+- procurement window
+- production deadline
+- ideal pitch window
+- late/too-late state
 
-## Phases (12–18 months)
+Timing states:
+- TOO_EARLY
+- RELATIONSHIP_WINDOW
+- IDEAL_PITCH_WINDOW
+- ACTIVE_PROCUREMENT_WINDOW
+- LATE_WINDOW
+- TOO_LATE
+- EVERGREEN
 
-### Phase 1 — Immediate intelligence
-Minimum viable UBFM + one cross-channel detector vertical slice with persisted chain and auditability.
+Forward horizons:
+- 0–3 months
+- 3–9 months
+- 9–18 months
+- 18–36 months
 
-### Phase 2 — Cross-channel intelligence
-Expand dimensions + lag-aware relationships; improve hypothesis competition and missing-evidence targeting.
+### MULTI_YEAR_EVENT_MEMORY
+For recurring events retain:
+- sponsors by year, agencies by year, activations
+- contacts, outreach, outcomes
+- timing, planning-cycle evidence
+- previous concepts, reactivation triggers
 
-### Phase 3 — Learning intelligence
-Outcome evaluation + conservative learning priors; recommendation effectiveness and confidence calibration.
+### COMPANY_EVENT_GRAPH
+Traversal both ways:
+- Company → Events
+- Event → Companies
 
-### Phase 4 — Predictive intelligence
-Emerging risks/opportunities; regime shift detection; conservative scenario forecasts.
+## Outcome Goal
+Optimize for:
+> “What actions taken today maximize Keegan's probability of securing the highest-value future projects?”
 
-### Phase 5 — Strategic intelligence
-Entity/relationship graph mature; product/subject strategy; partnerships/licensing opportunities; assumption-challenge.
+Not merely:
+> “What can Keegan pitch today?”
+
