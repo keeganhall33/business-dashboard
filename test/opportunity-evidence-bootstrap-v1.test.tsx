@@ -30,6 +30,78 @@ test("coverage audit is deterministic and produces explicit UNKNOWN/PARTIAL stat
   assert.equal(program?.state, "UNKNOWN");
 });
 
+test("coverage semantics: merchandising program surface does NOT imply buyer intent", () => {
+  const pipeline: any = {
+    id: "opp-ud",
+    name: "Upper Deck Hall of Fame capsule",
+    organization: "Upper Deck",
+    opportunity_type: "licensing",
+    status: "researching",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null
+  };
+
+  const rollup = {
+    opportunity_id: "opp-ud",
+    links: [
+      {
+        target_type: "claim_version",
+        target_id: "cl_x",
+        target_content_hash: "h",
+        role: "SUPPORTS",
+        match_method: "exact_org_name",
+        confidence: 0.75,
+        explanation: ""
+      }
+    ],
+    link_count: 1,
+    supported_claim_count: 1,
+    supported_event_count: 0,
+    trigger_signal_count: 0
+  };
+
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const buyer = profile.variables.find((v) => v.key === "BUYER_INTENT");
+  assert.equal(buyer?.state, "UNKNOWN");
+});
+
+test("coverage semantics: explicit trigger signals CAN improve buyer intent to PARTIAL", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "brand_partnership",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null
+  };
+
+  const rollup = {
+    opportunity_id: "opp-1",
+    links: [],
+    link_count: 0,
+    supported_claim_count: 0,
+    supported_event_count: 0,
+    trigger_signal_count: 1
+  };
+
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const buyer = profile.variables.find((v) => v.key === "BUYER_INTENT");
+  assert.equal(buyer?.state, "PARTIAL");
+});
+
 test("question generation selects a high-impact first question deterministically", () => {
   const profile = buildCoverageProfile({
     pipeline: {
