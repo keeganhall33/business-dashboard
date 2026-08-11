@@ -125,6 +125,56 @@ Traversal both ways:
 ### INSTITUTIONAL_MEMORY_SEARCH
 - Answer: "Have I ever interacted with X?" and "What happened with Y?" across email + internal notes + opportunities
 
+## VISUAL_INTELLIGENCE_UX (Hard Product Requirement)
+
+The dashboard must be:
+- visual-first
+- clean
+- premium
+- modern
+- easy to scan
+- low cognitive load
+- decision-first
+- progressive disclosure
+- evidence-backed
+- responsive
+
+Avoid text-wall dashboards and meaningless chart density.
+
+### Information hierarchy
+- Level 1: Decision / recommendation / alert
+- Level 2: Visual explanation
+- Level 3: Detailed reasoning
+- Level 4: Source evidence / raw records
+
+### Planned visual components
+- OPPORTUNITY_MATRIX (fit/probability vs value; timing/actionability state)
+- PLANNING_TIMELINE (relationship window → pitch → procurement → production → event)
+- RELATIONSHIP_GRAPH (Keegan → intermediary → company/person)
+- COMPANY_EVENT_ECOSYSTEM_GRAPH (company ↔ event ↔ sponsor ↔ agency ↔ activation)
+- EXECUTIVE_ACTION_BOARD (DO NOW / MONITOR / WAIT / DEPRIORITIZE)
+- GLOBAL_EVENT_CALENDAR (multi-year planning windows)
+- BUSINESS_HEALTH_VISUALS (revenue, conversion, traffic, ads, product momentum, collector momentum)
+- PRODUCT_PORTFOLIO_MAP
+- COLLECTOR_FUNNEL
+- GEOGRAPHIC_OPPORTUNITY_MAP
+- VALUE_RANGE / CONFIDENCE visualization
+- EVIDENCE_STRENGTH visualization
+
+### Visualization principle
+Every visualization must answer a decision question.
+
+Examples:
+- line chart: what changed over time?
+- funnel: where is value leaking?
+- scatter/bubble: what deserves priority?
+- timeline: when should Keegan act?
+- relationship graph: how can Keegan reach the buyer?
+- map: where is opportunity concentrated?
+- calendar: what planning windows are approaching?
+
+No chart without a decision purpose.
+
 ## Outcome Goal
 Optimize for:
 > “What actions taken today maximize Keegan's probability of securing the highest-value future projects?”
