@@ -1,17 +1,36 @@
 /*
-  Orchestration Watcher (V1)
+  Orchestration Watcher (V1.1)
 
   - Polls GitHub issues labeled `agent-orchestration` + `orch:ready`
   - Claims issues assigned to JEEVES
-  - If human_approval_required=true -> marks awaiting human approval (no execution)
-  - If executable instructions are present (EXECUTE codeblock), runs them under a strict allowlist.
-  - Posts OrchestrationResultContractV1 back to the issue.
+  - Human-gated tasks stop safely
+  - Explicit EXECUTE blocks run only through a strict command allowlist
+  - Every command has a timeout
+  - Per-task failures are converted into structured BLOCKED results
+  - One failed/hung task cannot terminate the watcher loop
 
-  This is a safe foundation to remove Telegram relay; it does NOT create DB state.
+  This is intentionally conservative. Natural-language agent execution belongs in
+  a separate, reviewed OpenClaw adapter rather than arbitrary shell execution.
 */
 
 import fs from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
+
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const ALLOWED_EXECUTABLES = new Set([
+  "npm",
+  "node",
+  "pnpm",
+  "git",
+  "gh",
+  "rg",
+  "tsx",
+  "openclaw",
+  "launchctl",
+  "ps",
+  "tail",
+  "head"
+]);
 
 function parseArgs(argv) {
   const out = {
@@ -19,8 +38,10 @@ function parseArgs(argv) {
     agent: "JEEVES",
     once: false,
     intervalSeconds: 60,
-    maxIssues: 5
+    maxIssues: 5,
+    commandTimeoutMs: Number(process.env.ORCH_COMMAND_TIMEOUT_MS ?? DEFAULT_COMMAND_TIMEOUT_MS)
   };
+
   for (let i = 2; i < argv.length; i += 1) {
     const k = argv[i];
     const v = argv[i + 1];
@@ -29,16 +50,21 @@ function parseArgs(argv) {
     if (k === "--once") out.once = true;
     if (k === "--interval") out.intervalSeconds = Number(v);
     if (k === "--max") out.maxIssues = Number(v);
+    if (k === "--command-timeout-ms") out.commandTimeoutMs = Number(v);
   }
+
   if (!out.repo) throw new Error("Missing --repo owner/repo");
   if (!Number.isFinite(out.intervalSeconds) || out.intervalSeconds < 20) {
     throw new Error("--interval must be >= 20 seconds (avoid busy loops)");
+  }
+  if (!Number.isFinite(out.commandTimeoutMs) || out.commandTimeoutMs < 1_000) {
+    throw new Error("--command-timeout-ms must be >= 1000");
   }
   return out;
 }
 
 function gh(args) {
-  return execFileSync("gh", args, { encoding: "utf8" }).trim();
+  return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
 }
 
 function listReadyIssues(repo, maxIssues) {
@@ -83,9 +109,9 @@ function ensureLabels(repo) {
   ];
   const existing = JSON.parse(gh(["label", "list", "--repo", repo, "--json", "name"]))
     .map((l) => l.name);
+
   for (const label of needed) {
     if (existing.includes(label.name)) continue;
-    // best-effort create
     spawnSync("gh", [
       "label",
       "create",
@@ -96,60 +122,122 @@ function ensureLabels(repo) {
       label.color,
       "--description",
       label.description
-    ], { stdio: "ignore" });
+    ], { stdio: "ignore", timeout: 30_000 });
   }
 }
 
 function extractField(body, label) {
-  const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\n]+)`, "i");
+  const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\\n]+)`, "i");
   const m = body.match(re);
   return m ? m[1].trim() : null;
 }
 
 function extractExecuteBlock(body) {
-  // Strict: require a fenced block starting with ```sh or ```bash and preceded by a line containing "EXECUTE".
   const re = /EXECUTE[\s\S]*?```(?:bash|sh)\n([\s\S]*?)```/i;
   const m = body.match(re);
   return m ? m[1].trim() : null;
 }
 
 function postResult(repo, issueNumber, result) {
-  const tmp = "/tmp/orchestration-result.json";
+  const tmp = `/tmp/orchestration-result-${issueNumber}.json`;
   fs.writeFileSync(tmp, JSON.stringify(result, null, 2));
   execFileSync(
-    "node",
+    process.execPath,
     ["scripts/post-orchestration-result.mjs", "--repo", repo, "--issue", String(issueNumber), "--result", tmp],
-    { stdio: "inherit" }
+    { stdio: "inherit", timeout: 30_000 }
   );
 }
 
+function editLabel(repo, issueNumber, removeLabel, addLabel) {
+  if (removeLabel) {
+    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", removeLabel], {
+      stdio: "ignore",
+      timeout: 30_000
+    });
+  }
+  if (addLabel) {
+    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", addLabel], {
+      stdio: "ignore",
+      timeout: 30_000
+    });
+  }
+}
+
 function claimIssue(repo, issueNumber) {
-  // Move labels: ready -> running
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", "orch:ready"], { stdio: "ignore" });
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", "orch:running"], { stdio: "ignore" });
+  editLabel(repo, issueNumber, "orch:ready", "orch:running");
 }
 
 function setAwaitingReview(repo, issueNumber) {
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", "orch:running"], { stdio: "ignore" });
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", "orch:awaiting_review"], { stdio: "ignore" });
+  editLabel(repo, issueNumber, "orch:running", "orch:awaiting_review");
 }
 
 function setAwaitingHuman(repo, issueNumber) {
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", "orch:ready"], { stdio: "ignore" });
-  spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", "orch:awaiting_human_approval"], { stdio: "ignore" });
+  editLabel(repo, issueNumber, "orch:ready", "orch:awaiting_human_approval");
 }
 
-function runShell(command) {
-  // Extremely conservative allowlist: no pipes, no redirects, no env exports.
-  if (/[|&;<>]/.test(command)) throw new Error("Unsafe shell metacharacters in EXECUTE block");
-  const allowed = ["npm", "node", "pnpm", "git", "gh", "rg", "tsx"];
-  const first = command.trim().split(/\s+/)[0];
-  if (!allowed.includes(first)) throw new Error(`Command not allowlisted: ${first}`);
-  const res = spawnSync(command, { shell: true, stdio: "inherit" });
-  if (res.status !== 0) throw new Error(`Command failed: ${command}`);
+function parseSimpleCommand(line) {
+  const command = line.trim();
+  if (!command || command.startsWith("#")) return null;
+
+  // Shell-control syntax is deliberately forbidden. The watcher executes bounded
+  // commands, not arbitrary scripts. This includes pipes, redirects, chaining,
+  // command substitution, variable expansion, and shell builtins such as `set`.
+  if (/[|&;<>`$()]/.test(command)) {
+    throw new Error(`Unsafe shell syntax in EXECUTE line: ${command}`);
+  }
+
+  const parts = command.split(/\s+/).filter(Boolean);
+  const executable = parts.shift();
+  if (!executable || !ALLOWED_EXECUTABLES.has(executable)) {
+    throw new Error(`Command not allowlisted: ${executable ?? "<empty>"}`);
+  }
+  return { executable, args: parts, display: command };
 }
 
-async function handleOne(repo, agent, issueNumber) {
+function runCommand(line, timeoutMs) {
+  const parsed = parseSimpleCommand(line);
+  if (!parsed) return;
+
+  const res = spawnSync(parsed.executable, parsed.args, {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    maxBuffer: 2 * 1024 * 1024
+  });
+
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
+
+  if (res.error) {
+    if (res.error.code === "ETIMEDOUT") {
+      throw new Error(`Command timed out after ${timeoutMs}ms: ${parsed.display}`);
+    }
+    throw new Error(`Command execution error (${res.error.code ?? "unknown"}): ${parsed.display}`);
+  }
+  if (res.status !== 0) {
+    throw new Error(`Command failed with exit ${res.status}: ${parsed.display}`);
+  }
+}
+
+function resultBase(taskId) {
+  return {
+    TASK_ID: taskId,
+    CHANGES: [],
+    FILES_CHANGED: [],
+    DB_CHANGES: "NO",
+    MIGRATION: null,
+    TESTS: "N/A",
+    PR: null,
+    MERGE_STATUS: "N/A",
+    PRODUCTION_CHANGE: "NO",
+    UNEXPECTED_RESULTS: [],
+    DECISIONS_REQUIRED: [],
+    NEXT_RECOMMENDED_TASK: null,
+    SESSION_HEALTH: "GOOD",
+    SESSION_CONTEXT: "UNKNOWN"
+  };
+}
+
+async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
   const issue = viewIssue(repo, issueNumber);
   const body = issue.body ?? "";
   const taskId = extractField(body, "task_id") ?? `issue-${issueNumber}`;
@@ -161,77 +249,77 @@ async function handleOne(repo, agent, issueNumber) {
   if (humanRequired && humanRequired.toLowerCase() === "true") {
     setAwaitingHuman(repo, issueNumber);
     postResult(repo, issueNumber, {
-      TASK_ID: taskId,
+      ...resultBase(taskId),
       STATUS: "AWAITING_HUMAN_APPROVAL",
       SUMMARY: "Task requires human approval; watcher will not execute.",
-      CHANGES: [],
-      FILES_CHANGED: [],
-      DB_CHANGES: "NO",
-      MIGRATION: null,
-      TESTS: "N/A",
-      PR: null,
-      MERGE_STATUS: "N/A",
-      PRODUCTION_CHANGE: "NO",
-      UNEXPECTED_RESULTS: [],
       DECISIONS_REQUIRED: ["Provide human approval or revise task to remove approval-gated actions."],
-      BLOCKERS: [],
-      NEXT_RECOMMENDED_TASK: null,
-      SESSION_HEALTH: "GOOD",
-      SESSION_CONTEXT: "UNKNOWN"
+      BLOCKERS: []
     });
     return;
   }
 
   claimIssue(repo, issueNumber);
-
   const execBlock = extractExecuteBlock(body);
-  if (execBlock) {
-    for (const line of execBlock.split("\n").map((l) => l.trim()).filter(Boolean)) {
-      runShell(line);
-    }
-  }
 
-  // V1: watcher does not infer follow-up tasks.
-  setAwaitingReview(repo, issueNumber);
-  postResult(repo, issueNumber, {
-    TASK_ID: taskId,
-    STATUS: "AWAITING_REVIEW",
-    SUMMARY: execBlock
-      ? "Claimed issue and executed bounded EXECUTE block; awaiting review."
-      : "Claimed issue. No EXECUTE block present; awaiting review for manual execution by Jeeves.",
-    CHANGES: [],
-    FILES_CHANGED: [],
-    DB_CHANGES: "NO",
-    MIGRATION: null,
-    TESTS: "N/A",
-    PR: null,
-    MERGE_STATUS: "N/A",
-    PRODUCTION_CHANGE: "NO",
-    UNEXPECTED_RESULTS: [],
-    DECISIONS_REQUIRED: [],
-    BLOCKERS: execBlock ? [] : ["No executable block supplied; add an EXECUTE codeblock or let Jeeves run manually."],
-    NEXT_RECOMMENDED_TASK: null,
-    SESSION_HEALTH: "GOOD",
-    SESSION_CONTEXT: "UNKNOWN"
-  });
+  try {
+    if (execBlock) {
+      const lines = execBlock.split("\n").map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) runCommand(line, commandTimeoutMs);
+    }
+
+    setAwaitingReview(repo, issueNumber);
+    postResult(repo, issueNumber, {
+      ...resultBase(taskId),
+      STATUS: "AWAITING_REVIEW",
+      SUMMARY: execBlock
+        ? "Claimed issue and executed bounded EXECUTE block; awaiting review."
+        : "Claimed issue. No EXECUTE block present; awaiting review for agent execution.",
+      BLOCKERS: execBlock ? [] : ["No executable block supplied; natural-language agent adapter required."]
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Critical reliability rule: task failure must never kill the watcher or leave
+    // the issue silently RUNNING.
+    setAwaitingReview(repo, issueNumber);
+    postResult(repo, issueNumber, {
+      ...resultBase(taskId),
+      STATUS: "BLOCKED",
+      SUMMARY: "Bounded task execution stopped safely and requires review.",
+      BLOCKERS: [message]
+    });
+  }
 }
 
 async function loop() {
   const args = parseArgs(process.argv);
   ensureLabels(args.repo);
+
   do {
-    const issues = listReadyIssues(args.repo, args.maxIssues);
-    for (const it of issues) {
-      await handleOne(args.repo, args.agent, it.number);
+    let issues = [];
+    try {
+      issues = listReadyIssues(args.repo, args.maxIssues);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Watcher poll failed: ${message}`);
     }
+
+    for (const it of issues) {
+      try {
+        await handleOne(args.repo, args.agent, it.number, args.commandTimeoutMs);
+      } catch (err) {
+        // Last-resort isolation. A single issue must never terminate the service.
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Issue #${it.number} handler failed: ${message}`);
+      }
+    }
+
     if (args.once) break;
-    await new Promise((r) => setTimeout(r, args.intervalSeconds * 1000));
+    await new Promise((resolve) => setTimeout(resolve, args.intervalSeconds * 1000));
   } while (true);
 }
 
 loop().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error(msg);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`Fatal watcher startup error: ${message}`);
   process.exitCode = 1;
 });
-
