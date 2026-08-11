@@ -43,6 +43,12 @@ export type ResearchQuestion = {
   question_id: string;
   opportunity_id: string;
   variable: CoverageVariableKey;
+
+  research_subject_type: "OPPORTUNITY" | "TARGET_ORGANIZATION" | "POTENTIAL_BUYER";
+  research_subject_id: string | null;
+  research_subject_name: string;
+  research_subject_confidence: number; // 0..1
+
   question: string;
   why_it_matters: string;
   current_state: CoverageState;
@@ -55,4 +61,3 @@ export type ResearchQuestion = {
   priority_score: number; // 0..100
   priority_explanation: string;
 };
-
