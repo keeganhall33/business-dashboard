@@ -106,14 +106,28 @@ export function buildCoverageProfile(params: {
 
   const buyerIntent: CoverageVariable = {
     key: "BUYER_INTENT",
-    state: hasAnyGraph && artifacts.some((a) => a.role === "VALUE_SIGNAL" || a.role === "SUPPORTS") ? "PARTIAL" : "UNKNOWN",
-    notes: hasAnyGraph ? ["Graph contains some support/value artifacts; buyer intent may be derivable."] : ["No persisted buyer intent/procurement artifacts."],
-    supportingArtifacts: artifacts
+    // Semantic firewall:
+    // Program-surface / capability claims (e.g., operates_merchandising) do NOT imply willingness to procure/commission.
+    // In V1, we only treat explicit TRIGGER signals (signal_version links) or VALUE_SIGNAL links as buyer-intent evidence.
+    state:
+      (params.rollup?.trigger_signal_count ?? 0) > 0 || artifacts.some((a) => a.role === "VALUE_SIGNAL")
+        ? "PARTIAL"
+        : "UNKNOWN",
+    notes:
+      (params.rollup?.trigger_signal_count ?? 0) > 0 || artifacts.some((a) => a.role === "VALUE_SIGNAL")
+        ? ["Has explicit trigger/value signals; buyer intent may be derivable from those artifacts."]
+        : ["No persisted buyer-intent/procurement signals (program surfaces/capabilities are not buyer intent)."],
+    supportingArtifacts: artifacts.filter((a) => a.role === "VALUE_SIGNAL" || a.target_type === "signal_version")
   };
 
   const commercial: CoverageVariable = {
     key: "COMMERCIAL_CONTEXT",
-    state: typeof pipeline.value_estimate === "number" ? "PARTIAL" : hasAnyGraph && artifacts.some((a) => a.role === "VALUE_SIGNAL") ? "PARTIAL" : "UNKNOWN",
+    state:
+      typeof pipeline.value_estimate === "number"
+        ? "PARTIAL"
+        : artifacts.some((a) => a.role === "VALUE_SIGNAL")
+          ? "PARTIAL"
+          : "UNKNOWN",
     notes:
       typeof pipeline.value_estimate === "number"
         ? ["value_estimate present on opportunity (signal only)."]
