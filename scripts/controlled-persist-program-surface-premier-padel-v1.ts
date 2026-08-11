@@ -619,14 +619,17 @@ async function main() {
 
   const cvRow = await supabase
     .from("external_claim_versions_v1")
-    .select("claim_id,content_hash,fingerprint_contract_version,evidence_content_hash")
+    .select("claim_id,content_hash,fingerprint_contract_version,evidence_reference_version_ref_json")
     .eq("claim_id", claim.claim.claim_id)
     .eq("content_hash", claim.claim_version_content_hash_v2)
     .limit(1)
     .maybeSingle();
   if (cvRow.error) throw cvRow.error;
   assert(cvRow.data?.fingerprint_contract_version === EI_FINGERPRINT_CONTRACT_V2, "postcondition_failed:claim_contract_pin");
-  assert(cvRow.data?.evidence_content_hash === evidence.evidence_version_fingerprint_v2, "postcondition_failed:claim_evidence_ref_mismatch");
+  assert(
+    (cvRow.data as any)?.evidence_reference_version_ref_json?.content_hash === evidence.evidence_version_fingerprint_v2,
+    "postcondition_failed:claim_evidence_ref_mismatch"
+  );
 
   // Provenance edge (best-effort lookup).
   const edgeRow = await supabase
