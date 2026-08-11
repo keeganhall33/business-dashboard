@@ -334,3 +334,131 @@ test("Upper Deck regression: program surfaces partial, buyer intent unknown, and
   const total = Object.values(profile.summaryCounts).reduce((a, b) => a + b, 0);
   assert.equal(total, 11);
 });
+
+test("coverage semantics: next_step alone does NOT upgrade access_context", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "licensing",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: "Map the right person",
+    next_step_due_at: null,
+    notes_md: null,
+    source: null,
+    contact_name: null
+  };
+  const profile = buildCoverageProfile({ pipeline, rollup: null });
+  const access = profile.variables.find((v) => v.key === "ACCESS_CONTEXT");
+  assert.equal(access?.state, "UNKNOWN");
+});
+
+test("coverage semantics: next_step_due_at alone does NOT upgrade timing_context", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "licensing",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: "2026-06-25T00:00:00.000Z",
+    notes_md: null,
+    source: null,
+    contact_name: null
+  };
+  const profile = buildCoverageProfile({ pipeline, rollup: null });
+  const timing = profile.variables.find((v) => v.key === "TIMING_CONTEXT");
+  assert.equal(timing?.state, "UNKNOWN");
+});
+
+test("coverage semantics: intro hint can upgrade access_context to PARTIAL", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "licensing",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: "Intro: Someone",
+    source: null,
+    contact_name: null
+  };
+  const profile = buildCoverageProfile({ pipeline, rollup: null });
+  const access = profile.variables.find((v) => v.key === "ACCESS_CONTEXT");
+  assert.equal(access?.state, "PARTIAL");
+});
+
+test("coverage semantics: timing artifacts can upgrade timing_context to PARTIAL", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "licensing",
+    status: "identified",
+    value_estimate: null,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null,
+    contact_name: null
+  };
+  const rollup: any = {
+    opportunity_id: "opp-1",
+    links: [
+      {
+        target_type: "event_version",
+        target_id: "ev",
+        target_content_hash: "h",
+        role: "TIMING_SIGNAL",
+        match_method: "explicit_id",
+        confidence: 1,
+        explanation: ""
+      }
+    ],
+    link_count: 1,
+    supported_claim_count: 0,
+    supported_event_count: 1,
+    trigger_signal_count: 0
+  };
+  const profile = buildCoverageProfile({ pipeline, rollup });
+  const timing = profile.variables.find((v) => v.key === "TIMING_CONTEXT");
+  assert.equal(timing?.state, "PARTIAL");
+});
+
+test("coverage semantics: unvalidated value_estimate alone does NOT upgrade commercial_context or valuation_inputs", () => {
+  const pipeline: any = {
+    id: "opp-1",
+    name: "Test",
+    organization: "Org",
+    opportunity_type: "licensing",
+    status: "identified",
+    value_estimate: 55000,
+    prestige_score: null,
+    probability_score: null,
+    owner_agent: "avery",
+    next_step: null,
+    next_step_due_at: null,
+    notes_md: null,
+    source: null,
+    contact_name: null
+  };
+  const profile = buildCoverageProfile({ pipeline, rollup: null });
+  assert.equal(profile.variables.find((v) => v.key === "COMMERCIAL_CONTEXT")?.state, "UNKNOWN");
+  assert.equal(profile.variables.find((v) => v.key === "VALUATION_INPUTS")?.state, "UNKNOWN");
+});

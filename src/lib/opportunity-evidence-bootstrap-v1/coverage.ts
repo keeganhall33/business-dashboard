@@ -90,17 +90,32 @@ export function buildCoverageProfile(params: {
 
   const timing: CoverageVariable = {
     key: "TIMING_CONTEXT",
-    state: pipeline.next_step_due_at ? "PARTIAL" : hasAnyGraph && artifacts.some((a) => a.role === "TIMING_SIGNAL") ? "PARTIAL" : "UNKNOWN",
-    notes: pipeline.next_step_due_at ? ["next_step_due_at present (operational timing)."] : ["No event/campaign window linked."],
+    // Semantic firewall: internal task deadlines do NOT establish external opportunity timing.
+    state: artifacts.some((a) => a.role === "TIMING_SIGNAL") ? "PARTIAL" : "UNKNOWN",
+    notes: artifacts.some((a) => a.role === "TIMING_SIGNAL")
+      ? ["Has linked timing artifacts (event/campaign/planning window)."]
+      : ["No external event/campaign/planning timing artifacts linked (internal due dates are not timing context)."],
     supportingArtifacts: artifacts.filter((a) => a.role === "TIMING_SIGNAL")
   };
 
   const access: CoverageVariable = {
     key: "ACCESS_CONTEXT",
-    state: pipeline.next_step ? "PARTIAL" : "UNKNOWN",
-    notes: pipeline.next_step
-      ? ["Next step indicates some access path exists, but target org/buyer identity is not yet resolved and contacts are not structured."]
-      : ["No access path recorded."],
+    // Semantic firewall: a planned next_step is NOT evidence of access.
+    // Access requires a named contact/intro/relationship artifact or an explicit ACCESS_PATH graph link.
+    state:
+      Boolean(pipeline.contact_name) ||
+      /\bintro\b\s*:/i.test(pipeline.notes_md ?? "") ||
+      artifacts.some((a) => a.role === "ACCESS_PATH")
+        ? "PARTIAL"
+        : "UNKNOWN",
+    notes:
+      Boolean(pipeline.contact_name)
+        ? ["Named contact present on opportunity."]
+        : /\bintro\b\s*:/i.test(pipeline.notes_md ?? "")
+          ? ["Notes include an intro hint (first-party assertion)."]
+          : artifacts.some((a) => a.role === "ACCESS_PATH")
+            ? ["Has linked access-path artifacts."]
+            : ["No access-path evidence (planned next steps do not count)."],
     supportingArtifacts: artifacts.filter((a) => a.role === "ACCESS_PATH")
   };
 
@@ -122,16 +137,13 @@ export function buildCoverageProfile(params: {
 
   const commercial: CoverageVariable = {
     key: "COMMERCIAL_CONTEXT",
-    state:
-      typeof pipeline.value_estimate === "number"
-        ? "PARTIAL"
-        : artifacts.some((a) => a.role === "VALUE_SIGNAL")
-          ? "PARTIAL"
-          : "UNKNOWN",
+    // Semantic firewall: legacy/unvalidated value_estimate does NOT establish commercial context.
+    // Commercial context requires budget/procurement/rights/revenue-scale artifacts (VALUE_SIGNAL links).
+    state: artifacts.some((a) => a.role === "VALUE_SIGNAL") ? "PARTIAL" : "UNKNOWN",
     notes:
-      typeof pipeline.value_estimate === "number"
-        ? ["value_estimate present on opportunity (signal only)."]
-        : ["No budget/procurement/licensing evidence linked."] ,
+      artifacts.some((a) => a.role === "VALUE_SIGNAL")
+        ? ["Has linked commercial/value-signal artifacts."]
+        : ["No commercial evidence linked (legacy value_estimate alone is not commercial context)."],
     supportingArtifacts: artifacts.filter((a) => a.role === "VALUE_SIGNAL")
   };
 
@@ -153,12 +165,13 @@ export function buildCoverageProfile(params: {
 
   const valuationInputs: CoverageVariable = {
     key: "VALUATION_INPUTS",
-    state: typeof pipeline.value_estimate === "number" ? "PARTIAL" : "UNKNOWN",
-    notes:
-      typeof pipeline.value_estimate === "number"
-        ? ["Existing value_estimate provides a starting signal, but rights/scope assumptions are unknown."]
-        : ["No persisted scope/rights inputs."],
-    supportingArtifacts: artifacts
+    // Semantic firewall: valuation inputs require scope/rights/economic drivers (VALUE_SIGNAL links, events, etc.).
+    // A legacy value_estimate alone is not an input.
+    state: artifacts.some((a) => a.role === "VALUE_SIGNAL") ? "PARTIAL" : "UNKNOWN",
+    notes: artifacts.some((a) => a.role === "VALUE_SIGNAL")
+      ? ["Has linked valuation driver artifacts (scope/rights/economics)."]
+      : ["No valuation driver artifacts linked (legacy value_estimate alone is not a valuation input)."],
+    supportingArtifacts: artifacts.filter((a) => a.role === "VALUE_SIGNAL" || a.role === "TIMING_SIGNAL")
   };
 
   const contactCoverage: CoverageVariable = {
