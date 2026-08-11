@@ -1,0 +1,136 @@
+name: "[Agent Orchestration] Task"
+description: "Architect↔Jeeves orchestration task using OrchestrationTaskV1"
+title: "[Agent Orchestration] <short task title>"
+labels:
+  - agent-orchestration
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is the canonical architect→Jeeves task surface.
+
+        - Use durable references (e.g. `docs/intelligence/ROADMAP.md`) and specify a small delta.
+        - Keep it bounded. No credentials. No outreach.
+
+  - type: input
+    id: task_id
+    attributes:
+      label: task_id
+      description: Unique task id (stable across edits)
+      placeholder: orch-YYYYMMDD-001
+    validations:
+      required: true
+
+  - type: input
+    id: milestone
+    attributes:
+      label: milestone
+      placeholder: AGENT_ORCHESTRATION_V1_TASK_SURFACE
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stream
+    attributes:
+      label: stream
+      options:
+        - CORE_INTELLIGENCE
+        - DISCOVERY_INTELLIGENCE
+        - INTELLIGENCE_UX
+        - AGENT_ORCHESTRATION
+        - OTHER
+    validations:
+      required: true
+
+  - type: dropdown
+    id: requested_by
+    attributes:
+      label: requested_by
+      options:
+        - KEEGAN
+        - ARCHITECT
+        - JEEVES
+        - SYSTEM
+    validations:
+      required: true
+
+  - type: input
+    id: assigned_agent
+    attributes:
+      label: assigned_agent
+      placeholder: JEEVES
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: human_approval_required
+    attributes:
+      label: human_approval_required
+      options:
+        - "false"
+        - "true"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference
+      description: Durable references (paths, PRs) that define the baseline.
+      placeholder: |
+        - docs/intelligence/ROADMAP.md
+        - PR #192
+    validations:
+      required: true
+
+  - type: textarea
+    id: delta
+    attributes:
+      label: Delta
+      description: What this task changes vs the reference baseline.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Explicit files/modules/surfaces in-scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Hard constraints (allowed/forbidden actions, boundaries).
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+
+  - type: textarea
+    id: forbidden
+    attributes:
+      label: Forbidden
+      description: Explicitly forbidden actions.
+    validations:
+      required: true
+
