@@ -275,6 +275,7 @@ async function main() {
   const validateOnly = parseFlag(argv, "--validate-only");
   const validateAuth = parseFlag(argv, "--validate-auth");
   const validateRequestAuth = parseFlag(argv, "--validate-request-auth");
+  const resumeAfterEvidence = parseFlag(argv, "--resume-after-evidence");
   const forcedNowIso = parseArg(argv, "--now-iso");
 
   // Local V2 manifest validation (no Supabase required).
@@ -437,8 +438,13 @@ async function main() {
     EventClaimLinks: await countTable(supabase, "external_event_claim_links_v1")
   } as const;
 
-  assert(preCounts.EvidenceReferences === 23, "precondition_failed:EvidenceReferences_count_mismatch");
-  assert(preCounts.EvidenceVersions === 23, "precondition_failed:EvidenceVersions_count_mismatch");
+  if (resumeAfterEvidence) {
+    assert(preCounts.EvidenceReferences === 24, "precondition_failed:EvidenceReferences_count_mismatch");
+    assert(preCounts.EvidenceVersions === 24, "precondition_failed:EvidenceVersions_count_mismatch");
+  } else {
+    assert(preCounts.EvidenceReferences === 23, "precondition_failed:EvidenceReferences_count_mismatch");
+    assert(preCounts.EvidenceVersions === 23, "precondition_failed:EvidenceVersions_count_mismatch");
+  }
   assert(preCounts.Claims === 6, "precondition_failed:Claims_count_mismatch");
   assert(preCounts.ClaimVersions === 6, "precondition_failed:ClaimVersions_count_mismatch");
   assert(preCounts.ProvenanceEdges === 6, "precondition_failed:ProvenanceEdges_count_mismatch");
@@ -461,37 +467,63 @@ async function main() {
   // PERSIST EVIDENCE (V2 contract pinned)
   // ------------------------------
 
-  const persistedEvidence = await runRpc<
-    Array<{ evidence_reference_id: string; content_hash: string; created_new_version: boolean; idempotent_replay: boolean }>
-  >({
-    client: supabase as any,
-    fn: EXTERNAL_INTELLIGENCE_RPCS.persistEvidence,
-    args: {
-      in_evidence_reference_id: evidence.evidence_reference_id,
-      in_content_hash: evidence.evidence_version_fingerprint_v2,
-      in_schema_version: evidence.evidence_payload_json.schema_version,
-      in_source_id: evidence.evidence_payload_json.source_id,
-      in_source_config_version: evidence.evidence_payload_json.source_config_version,
-      in_legal_policy_version: evidence.evidence_payload_json.legal_policy_version,
-      in_policy_refs_json: [{ policy_name: "program_surface_v1", semantic_version: "v1", content_hash: "ph" }],
-      in_effective_at: null,
-      in_valid_from: null,
-      in_valid_until: null,
-      in_supersedes_content_hashes: [],
-      in_payload_json: evidence.evidence_payload_json,
-      in_retention_policy: evidence.evidence_payload_json.retention_policy,
-      in_retention_expires_at: null,
-      in_legal_hold: false,
-      in_access_revoked_at: null,
-      in_content_redacted_at: null,
-      in_redaction_reason: null,
-      in_payload_available: true,
-      in_fingerprint_contract_version: EI_FINGERPRINT_CONTRACT_V2
-    }
-  });
+  if (!resumeAfterEvidence) {
+    const persistedEvidence = await runRpc<
+      Array<{ evidence_reference_id: string; content_hash: string; created_new_version: boolean; idempotent_replay: boolean }>
+    >({
+      client: supabase as any,
+      fn: EXTERNAL_INTELLIGENCE_RPCS.persistEvidence,
+      args: {
+        in_evidence_reference_id: evidence.evidence_reference_id,
+        in_content_hash: evidence.evidence_version_fingerprint_v2,
+        in_schema_version: evidence.evidence_payload_json.schema_version,
+        in_source_id: evidence.evidence_payload_json.source_id,
+        in_source_config_version: evidence.evidence_payload_json.source_config_version,
+        in_legal_policy_version: evidence.evidence_payload_json.legal_policy_version,
+        in_policy_refs_json: [{ policy_name: "program_surface_v1", semantic_version: "v1", content_hash: "ph" }],
+        in_effective_at: null,
+        in_valid_from: null,
+        in_valid_until: null,
+        in_supersedes_content_hashes: [],
+        in_payload_json: evidence.evidence_payload_json,
+        in_retention_policy: evidence.evidence_payload_json.retention_policy,
+        in_retention_expires_at: null,
+        in_legal_hold: false,
+        in_access_revoked_at: null,
+        in_content_redacted_at: null,
+        in_redaction_reason: null,
+        in_payload_available: true,
+        in_fingerprint_contract_version: EI_FINGERPRINT_CONTRACT_V2
+      }
+    });
 
-  assert(persistedEvidence[0]?.evidence_reference_id === evidence.evidence_reference_id, "postcondition_failed:evidence_reference_id");
-  assert(persistedEvidence[0]?.content_hash === evidence.evidence_version_fingerprint_v2, "postcondition_failed:evidence_content_hash");
+    assert(persistedEvidence[0]?.evidence_reference_id === evidence.evidence_reference_id, "postcondition_failed:evidence_reference_id");
+    assert(persistedEvidence[0]?.content_hash === evidence.evidence_version_fingerprint_v2, "postcondition_failed:evidence_content_hash");
+  } else {
+    // Resume mode: prove the evidence version we expect already exists (no writes).
+    const evRow = await supabase
+      .from("external_evidence_reference_versions_v1")
+      .select("evidence_reference_id,content_hash,fingerprint_contract_version,payload_json")
+      .eq("evidence_reference_id", evidence.evidence_reference_id)
+      .eq("content_hash", evidence.evidence_version_fingerprint_v2)
+      .limit(1)
+      .maybeSingle();
+    if (evRow.error) throw evRow.error;
+    assert(evRow.data?.fingerprint_contract_version === EI_FINGERPRINT_CONTRACT_V2, "postcondition_failed:resume_evidence_contract_pin");
+    assert(evRow.data?.payload_json?.content_hash === evidence.retained_payload_hash_v2, "postcondition_failed:resume_retained_payload_hash");
+
+    const parentRow = await supabase
+      .from("external_evidence_references_v1")
+      .select("evidence_reference_id,current_content_hash,source_id,source_config_version,legal_policy_version")
+      .eq("evidence_reference_id", evidence.evidence_reference_id)
+      .limit(1)
+      .maybeSingle();
+    if (parentRow.error) throw parentRow.error;
+    assert(parentRow.data?.current_content_hash === evidence.evidence_version_fingerprint_v2, "postcondition_failed:resume_parent_current_content_hash");
+    assert(parentRow.data?.source_id === evidence.source_id, "postcondition_failed:resume_parent_source_id");
+    assert(parentRow.data?.source_config_version === evidence.evidence_payload_json.source_config_version, "postcondition_failed:resume_parent_source_config_version");
+    assert(parentRow.data?.legal_policy_version === evidence.evidence_payload_json.legal_policy_version, "postcondition_failed:resume_parent_legal_policy_version");
+  }
 
   // ------------------------------
   // PERSIST CLAIM (V2 contract pinned)
