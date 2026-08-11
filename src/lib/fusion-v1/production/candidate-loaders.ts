@@ -1,4 +1,4 @@
-import { getDashboardSnapshots, getActiveOpportunities } from "@/lib/supabase/queries";
+import { getDashboardSnapshots, getActiveOpportunitiesVw, type ActiveOpportunityViewRow } from "@/lib/supabase/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { snapshotToFusionCandidates } from "@/lib/fusion-v1/production/adapters/dashboard-snapshots";
 import { opportunityToFusionCandidate, type OpportunityRow } from "@/lib/fusion-v1/production/adapters/opportunities";
@@ -55,22 +55,22 @@ export async function loadProductionFusionCandidates(input: {
     }
   }
 
-  // 2) Opportunity pipeline (long-horizon)
-  sources_inspected.push("opportunity_pipeline");
-  const opps = (await getActiveOpportunities(25)) as unknown as OpportunityRow[];
-  if (!opps.length) sources_empty.push("opportunity_pipeline");
+  // 2) Active opportunities (first-party) — primary discovery input.
+  sources_inspected.push("vw_active_opportunities");
+  const opps = (await getActiveOpportunitiesVw(25)) as unknown as ActiveOpportunityViewRow[];
+  if (!opps.length) sources_empty.push("vw_active_opportunities");
   for (const row of opps) {
-    const res = opportunityToFusionCandidate({ nowIso: input.nowIso, row });
-    freshness_notes.push({ source: "opportunity_pipeline", opportunity_id: row.id, freshness: res.freshness, skipped: res.skipped_reason });
+    const res = opportunityToFusionCandidate({ nowIso: input.nowIso, row: row as unknown as OpportunityRow });
+    freshness_notes.push({ source: "vw_active_opportunities", opportunity_id: row.id, freshness: res.freshness, skipped: res.skipped_reason });
     if (res.skipped_reason && !res.candidate) {
-      sources_skipped.push({ source: `opportunity_pipeline:${row.id}`, reason: res.skipped_reason });
-      if (res.freshness.classification === "stale") sources_stale.push(`opportunity_pipeline:${row.id}`);
+      sources_skipped.push({ source: `vw_active_opportunities:${row.id}`, reason: res.skipped_reason });
+      if (res.freshness.classification === "stale") sources_stale.push(`vw_active_opportunities:${row.id}`);
       continue;
     }
     if (res.candidate) candidates.push(res.candidate);
     if (res.candidate) {
       candidate_meta_by_id[res.candidate.candidate_id] = {
-        source: `opportunity_pipeline:${row.id}`,
+        source: `vw_active_opportunities:${row.id}`,
         freshness: res.freshness.classification === "fresh" ? "fresh" : "monitor_only"
       };
     }
