@@ -125,6 +125,93 @@ Traversal both ways:
 ### INSTITUTIONAL_MEMORY_SEARCH
 - Answer: "Have I ever interacted with X?" and "What happened with Y?" across email + internal notes + opportunities
 
+## SHARED_MULTI_INTERFACE_INTELLIGENCE (planned)
+
+Goal: multiple compatible user interfaces over one authoritative intelligence + memory layer, so business context is not trapped in the interface where it was created.
+
+### Interfaces
+- ChatGPT: owner strategy, exploration, business judgment, new context, nuanced planning
+- Dashboard (`mission.keeganhall.com`): live operational intelligence, recommendations, analytics, alerts, evidence, "what should I do next?" queries
+- Jeeves/OpenClaw: execution, ingestion, research, automation, development, local operations
+
+### Shared-memory principle
+All interfaces should read from and, where policy allows, contribute structured deltas to the same durable business-memory/intelligence layer with source provenance.
+
+Do not treat every conversational statement as authoritative truth. Classify captured deltas at minimum as:
+- FACT
+- IDEA
+- HYPOTHESIS
+- PREFERENCE
+- DECISION
+- ACTION
+- OUTCOME
+
+Preserve source, observed time, confidence, whether user-stated vs assistant-suggested vs system-inferred, and supersession/current-state relationships.
+
+### CHATGPT_STRATEGIC_MEMORY
+- One-time controlled historical backfill of business-relevant ChatGPT history as a seed, not the permanent runtime model
+- Extract decisions, relationship history, experiments, pricing history, strategies, outcomes, lessons, preferences, and superseded thinking
+- Preserve raw-source provenance where available
+- Incremental delta capture for new relevant conversations so memory evolves continuously
+- Do not repeatedly reprocess the entire conversation archive
+- Separate historical consideration from current belief/current strategy
+
+### DASHBOARD_CONVERSATIONAL_INTELLIGENCE
+- Allow natural-language questions directly in the dashboard against the same intelligence graph
+- Support evidence-backed questions such as "What should I do today?", "Why are print sales down?", "Which opportunities deserve attention?", and "Have I interacted with this company before?"
+- Dashboard conversation should not become a separate isolated memory silo
+
+### CROSS_INTERFACE_COMPATIBILITY
+A business fact, decision, action, or outcome captured through one interface should be retrievable from the others once ingested and authorized. Interface-specific presentation may differ, but underlying evidence and current business state should remain shared.
+
+## RECOMMENDATION_OUTCOME_LEARNING_LOOP (planned)
+
+Goal: automatically determine whether intelligence recommendations produce meaningful business outcomes and use those results to improve future recommendations.
+
+For each recommendation persist where applicable:
+- recommendation + rationale + evidence snapshot
+- confidence
+- predicted outcome/range
+- target metrics
+- evaluation window(s)
+- whether/when action was actually taken
+- pre-action baseline
+- post-action measurements
+- observed outcome
+- prediction accuracy
+- attribution confidence
+- lesson / calibration update
+
+Evaluation windows should be recommendation-specific (for example 7/14/30 days for ads; longer windows for relationship and partnership opportunities).
+
+Outcome families include:
+- financial: revenue, margin, AOV, LTV, original/print/project revenue
+- marketing: ROAS, CAC, conversion, funnel performance
+- audience: followers, reach, engagement, list growth, audience quality
+- relationships: responses, meetings, introductions, reactivation, stage advancement
+- creative: subject/product performance, time-to-create, revenue per creation hour
+- strategic: press, collector quality, brand partnerships, institutional access, prestige
+
+Never infer causation solely from temporal correlation. Keep observed outcome, action effectiveness, and attribution confidence distinct.
+
+## COST_AND_EFFICIENCY_OBSERVABILITY (planned)
+
+Track development and operating economics so the system can be optimized for cost per correct/useful milestone and business value, not minimum token count.
+
+Capture when available:
+- model/provider
+- input/output token usage
+- estimated model cost
+- external data/API cost
+- task duration
+- retries/rework
+- review outcome
+- infrastructure cost
+- data-source cost
+- downstream business value/outcome when measurable
+
+Use this to improve model routing, identify low-value data providers, reduce repeated processing, and keep parallel-agent development within explicit cost/concurrency caps.
+
 ## AGENT_ORCHESTRATION (planned)
 
 Goal: eliminate Keegan as manual copy/paste relay between architect/reviewer and Jeeves.
