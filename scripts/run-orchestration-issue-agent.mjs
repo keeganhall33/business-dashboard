@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 function arg(name) {
@@ -31,14 +28,11 @@ const prompt = [
   `TASK BODY:\n${task.body}`
 ].join("\n\n");
 
-const promptPath = path.join(os.tmpdir(), `orchestration-bootstrap-prompt-${issue}-${process.pid}.md`);
-fs.writeFileSync(promptPath, prompt, { encoding: "utf8", mode: 0o600 });
-
 try {
   const out = execFileSync("openclaw", [
     "agent",
     "exec",
-    "--message-file", promptPath,
+    "--message", prompt,
     "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
@@ -60,6 +54,4 @@ try {
     execFileSync("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body], { timeout: 15000, stdio: "inherit" });
   } catch {}
   process.exitCode = 1;
-} finally {
-  try { fs.unlinkSync(promptPath); } catch {}
 }
