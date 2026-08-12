@@ -91,22 +91,36 @@ function extractReferenceDelta(body) {
   };
 }
 
+function commentCheckpointId(body) {
+  const text = String(body ?? "");
+  const m = text.match(/["']?CHECKPOINT_ID["']?\s*:\s*["']?([A-Za-z0-9._:-]+)/i);
+  return m ? m[1] : null;
+}
+
 function latestApprovedArchitectDecision(comments) {
   const list = Array.isArray(comments) ? comments : [];
-  let latestCheckpointIndex = -1;
-  let latestApprovalIndex = -1;
-  let latestApprovalBody = "";
+  let latestCheckpointId = null;
+  let latestApprovalBody = null;
 
-  for (let i = 0; i < list.length; i += 1) {
-    const body = String(list[i]?.body ?? "");
-    if (/##\s+ArchitectCheckpointV1/i.test(body)) latestCheckpointIndex = i;
-    if (/##\s+ArchitectDecisionV1/i.test(body) && /DECISION:\s*(?:APPROVE|APPROVE_AND_PROCEED)\b/i.test(body)) {
-      latestApprovalIndex = i;
+  for (const comment of list) {
+    const body = String(comment?.body ?? "");
+    if (/##\s+ArchitectCheckpointV1/i.test(body)) {
+      latestCheckpointId = commentCheckpointId(body);
+      latestApprovalBody = null;
+      continue;
+    }
+
+    if (
+      latestCheckpointId &&
+      /##\s+ArchitectDecisionV1/i.test(body) &&
+      /DECISION:\s*(?:APPROVE_AND_PROCEED|APPROVE)\b/i.test(body) &&
+      commentCheckpointId(body) === latestCheckpointId
+    ) {
       latestApprovalBody = body;
     }
   }
 
-  return latestApprovalIndex > latestCheckpointIndex ? latestApprovalBody : null;
+  return latestApprovalBody;
 }
 
 function reviewIntentText(body) {
@@ -124,7 +138,7 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
 
   const approvedDecision = latestApprovedArchitectDecision(comments);
   if (approvedDecision) {
-    return { executionClass: "AUTO_CONTINUE", reason: "latest architect checkpoint has a subsequent approval" };
+    return { executionClass: "AUTO_CONTINUE", reason: "latest architect checkpoint has a matching subsequent approval" };
   }
 
   if (["CORE_INTELLIGENCE", "DISCOVERY_INTELLIGENCE", "INTELLIGENCE_UX"].includes(stream)) {
@@ -135,23 +149,23 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
   // "No credentials" or "Do not perform production writes" must not turn
   // a read-only AUTO_CONTINUE task into an architect checkpoint.
   const text = reviewIntentText(body);
-  const reviewKeywords = [
-    "migration",
-    "schema",
-    "rls",
-    "security",
-    "auth",
-    "credentials",
-    "smtp",
-    "production write",
-    "valuation",
-    "ranking",
-    "recommendation",
-    "coverage semantics",
-    "claim semantics",
-    "evidence semantics"
+  const reviewPatterns = [
+    /\bmigration\b/,
+    /\bschema\b/,
+    /\brls\b/,
+    /\bsecurity\b/,
+    /\bauth(?:entication|orization)?\b/,
+    /\bcredentials?\b/,
+    /\bsmtp\b/,
+    /\bproduction\s+writes?\b/,
+    /\bvaluation\b/,
+    /\branking\b/,
+    /\brecommendation(?:\s+logic)?\b/,
+    /\bcoverage\s+semantics\b/,
+    /\bclaim\s+semantics\b/,
+    /\bevidence\s+semantics\b/
   ];
-  if (reviewKeywords.some((k) => text.includes(k))) {
+  if (reviewPatterns.some((re) => re.test(text))) {
     return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: "affirmative review-sensitive action intent present" };
   }
   return { executionClass: "AUTO_CONTINUE", reason: "default" };
