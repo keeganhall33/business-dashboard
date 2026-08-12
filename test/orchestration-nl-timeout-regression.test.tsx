@@ -7,7 +7,8 @@ test("NL adapter regression: uses openclaw agent (not agent exec) and has bounde
   assert.ok(text.includes("\"agent\""), "expected openclaw agent usage");
   assert.ok(text.includes("\"--agent\""), "expected --agent flag");
   assert.equal(text.includes("agent\",\n      \"exec\""), false, "must not use deprecated agent exec path");
-  assert.ok(text.includes("Number(arg(\"--timeout\") ?? \"120\")"), "expected default timeout=120");
+  assert.ok(text.includes("Number(arg(\"--timeout\") ?? \"90\")"), "expected default timeout=90");
+  assert.ok(text.includes("runOpenclaw(\"coding\")"), "expected fallback to coding agent on main timeout");
 });
 
 test("Watcher regression: NL detached launcher uses bounded timeout (<= 180s)", () => {
@@ -15,4 +16,3 @@ test("Watcher regression: NL detached launcher uses bounded timeout (<= 180s)", 
   assert.ok(text.includes("launch-orchestration-nl-detached"));
   assert.ok(text.includes("--timeout 180"));
 });
-

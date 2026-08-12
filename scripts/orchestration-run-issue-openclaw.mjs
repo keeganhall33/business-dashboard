@@ -250,13 +250,16 @@ const prompt = buildCompactAgentPrompt({
 const thinking = "minimal";
 
 let out;
-try {
-  out = execFileSync(
+const attemptedAgents = [];
+
+function runOpenclaw(agentId) {
+  attemptedAgents.push(agentId);
+  return execFileSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
       "--agent",
-      agent,
+      agentId,
       "--message",
       prompt,
       "--json",
@@ -272,32 +275,81 @@ try {
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
-} catch (err) {
+}
+
+function looksLikeTimeout(err) {
   const msg = err instanceof Error ? err.message : String(err);
-  const stdout = typeof err?.stdout === "string" ? err.stdout : "";
-  const stderr = typeof err?.stderr === "string" ? err.stderr : "";
+  return msg.includes("ETIMEDOUT") || msg.toLowerCase().includes("gateway timeout");
+}
 
-  postComment([
-    "## OrchestrationResultContractV1",
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        ...resultBase(taskId),
-        STATUS: "FAILED",
-        SUMMARY: "openclaw agent execution failed",
-        BLOCKERS: [safeTrunc(msg, 400)],
-        UNEXPECTED_RESULTS: [safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)],
-        NEXT_RECOMMENDED_TASK: "Retry after verifying Gateway health and that the main agent session is not locked/busy."
-      },
-      null,
-      2
-    ),
-    "```"
-  ].join("\n"));
+try {
+  out = runOpenclaw(agent);
+} catch (err) {
+  // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
+  // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
+  if (agent === "main" && looksLikeTimeout(err)) {
+    try {
+      out = runOpenclaw("coding");
+    } catch (err2) {
+      const msg = err2 instanceof Error ? err2.message : String(err2);
+      const stdout = typeof err2?.stdout === "string" ? err2.stdout : "";
+      const stderr = typeof err2?.stderr === "string" ? err2.stderr : "";
 
-  finishAwaitingReview();
-  process.exit(1);
+      postComment([
+        "## OrchestrationResultContractV1",
+        "",
+        "```json",
+        JSON.stringify(
+          {
+            ...resultBase(taskId),
+            STATUS: "FAILED",
+            SUMMARY: "openclaw agent execution failed",
+            BLOCKERS: [safeTrunc(msg, 400)],
+            UNEXPECTED_RESULTS: [
+              `attemptedAgents=${attemptedAgents.join(",")}`,
+              safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)
+            ],
+            NEXT_RECOMMENDED_TASK: "Verify OpenClaw gateway health and provider availability; main timed out and fallback agent also failed."
+          },
+          null,
+          2
+        ),
+        "```"
+      ].join("\n"));
+
+      finishAwaitingReview();
+      process.exit(1);
+    }
+  } else {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stdout = typeof err?.stdout === "string" ? err.stdout : "";
+    const stderr = typeof err?.stderr === "string" ? err.stderr : "";
+
+    postComment([
+      "## OrchestrationResultContractV1",
+      "",
+      "```json",
+      JSON.stringify(
+        {
+          ...resultBase(taskId),
+          STATUS: "FAILED",
+          SUMMARY: "openclaw agent execution failed",
+          BLOCKERS: [safeTrunc(msg, 400)],
+          UNEXPECTED_RESULTS: [
+            `attemptedAgents=${attemptedAgents.join(",")}`,
+            safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)
+          ],
+          NEXT_RECOMMENDED_TASK: "Retry after verifying Gateway health and provider availability."
+        },
+        null,
+        2
+      ),
+      "```"
+    ].join("\n"));
+
+    finishAwaitingReview();
+    process.exit(1);
+  }
 }
 
 let envelope;
