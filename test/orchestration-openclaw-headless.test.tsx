@@ -12,7 +12,8 @@ test("NL adapter uses isolated headless agent exec instead of live main session"
   assert.doesNotMatch(adapter, /"--agent",\s*\n\s*agent/);
   assert.match(adapter, /"--message", prompt/);
   assert.doesNotMatch(adapter, /"--message-file"/);
-  assert.match(adapter, /"--cwd", process\.cwd\(\)/);
+  assert.doesNotMatch(adapter, /"--cwd"/);
+  assert.match(adapter, /cwd: process\.cwd\(\)/);
   assert.match(adapter, /SESSION_CONTEXT: "ISOLATED_HEADLESS"/);
 });
 
