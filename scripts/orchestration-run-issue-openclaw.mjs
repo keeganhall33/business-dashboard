@@ -27,7 +27,7 @@ function arg(name) {
 const repo = arg("--repo");
 const issue = arg("--issue");
 const agent = arg("--agent") ?? "main";
-const timeoutSeconds = Number(arg("--timeout") ?? "120");
+const timeoutSeconds = Number(arg("--timeout") ?? "90");
 
 if (!repo || !issue) {
   console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
@@ -123,41 +123,37 @@ function classifyExecution({ stream, humanApprovalRequired, body }) {
 function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClass }) {
   const s = extractReferenceDelta(body);
 
+  // Hard token discipline: do not replay full issue bodies.
+  // Provide only REFERENCE + DELTA (truncated) plus the output contract.
+  const maxRefChars = 1200;
+  const maxDeltaChars = 1200;
+
   const header = [
     `You are Jeeves executing GitHub orchestration task #${issueNumber} in ${repo}.`,
     `Work from the local business-dashboard repository/worktree.`,
-    `Do NOT use Telegram for routine progress; all routine results go to GitHub issue comments.`,
     `TASK TITLE: ${title}`
   ].join("\n");
 
-  const safety = [
-    `Safety gates (hard):`,
-    `- Never execute human-gated actions (credentials, outreach, purchases, destructive actions, material production writes).`,
-    `- No DB schema/migrations unless explicitly allowed (default: forbidden).`,
-    `- No SMTP/email sending.`,
-    `- No external publishing beyond GitHub issue/PR comments.`
-  ].join("\n");
-
-  const reference = s.reference ? `REFERENCE:\n${s.reference}` : `REFERENCE: (missing)`;
-  const delta = s.delta ? `DELTA:\n${s.delta}` : `DELTA: (missing)`;
-  const goal = s.goal ? `GOAL:\n${s.goal}` : "";
-  const constraints = s.constraints ? `CONSTRAINTS:\n${s.constraints}` : "";
-  const acceptance = s.acceptance ? `ACCEPTANCE CRITERIA:\n${s.acceptance}` : "";
+  const reference = s.reference
+    ? `REFERENCE (truncated):\n${safeTrunc(s.reference, maxRefChars)}`
+    : `REFERENCE: (missing)`;
+  const delta = s.delta
+    ? `DELTA (truncated):\n${safeTrunc(s.delta, maxDeltaChars)}`
+    : `DELTA: (missing)`;
 
   const outputContract =
     executionClass === "ARCHITECT_REVIEW_REQUIRED"
       ? [
           `Return ONLY ArchitectCheckpointV1 as strict JSON (no prose).`,
-          `Do NOT implement code changes until architect approval is explicitly recorded.`
+          `Do NOT implement code changes until architect approval is explicitly recorded.`,
+          `Keep it short: decision + smallest next validation step.`
         ].join("\n")
       : [
           `Return ONLY OrchestrationResultContractV1 as strict JSON (no prose).`,
-          `If blocked, set STATUS=BLOCKED and explain blockers.`
+          `Do not run tools unless explicitly required; prefer a concise result.`
         ].join("\n");
 
-  return [header, "", safety, reference, "", delta, "", goal, "", constraints, "", acceptance, "", outputContract]
-    .filter((p) => typeof p === "string" && p.trim().length > 0)
-    .join("\n\n");
+  return [header, "", reference, "", delta, "", outputContract].join("\n\n");
 }
 
 function safeTrunc(text, max) {
