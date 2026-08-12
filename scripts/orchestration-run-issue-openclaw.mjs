@@ -200,12 +200,15 @@ function parseOrchestrationResult(text) {
   return { kind: "invalid", error: "JSON parsed but did not match known contracts" };
 }
 
-function extractAgentFinalText(envelope) {
-  const agentMeta = envelope?.meta?.agentMeta ?? null;
+function extractTextFromProjection(projection) {
+  if (typeof projection === "string" && projection.trim().length > 0) return projection;
+  if (!projection || typeof projection !== "object") return "";
+
+  const agentMeta = projection?.meta?.agentMeta ?? projection?.agentMeta ?? null;
   const directCandidates = [
-    envelope?.final,
-    envelope?.text,
-    envelope?.reply,
+    projection?.final,
+    projection?.text,
+    projection?.reply,
     agentMeta?.final,
     agentMeta?.text,
     agentMeta?.reply
@@ -215,7 +218,7 @@ function extractAgentFinalText(envelope) {
     if (typeof candidate === "string" && candidate.trim().length > 0) return candidate;
   }
 
-  for (const payloads of [envelope?.payloads, agentMeta?.payloads]) {
+  for (const payloads of [projection?.payloads, agentMeta?.payloads]) {
     if (!Array.isArray(payloads)) continue;
     const text = payloads
       .map((payload) => (typeof payload?.text === "string" ? payload.text : ""))
@@ -227,13 +230,26 @@ function extractAgentFinalText(envelope) {
   return "";
 }
 
+function extractAgentFinalText(envelope) {
+  for (const projection of [envelope, envelope?.result, envelope?.meta?.agentMeta, envelope?.result?.meta?.agentMeta]) {
+    const text = extractTextFromProjection(projection);
+    if (text) return text;
+  }
+  return "";
+}
+
 function envelopeShape(envelope) {
   const rootKeys = envelope && typeof envelope === "object" ? Object.keys(envelope).sort() : [];
+  const result = envelope?.result;
+  const resultType = Array.isArray(result) ? "array" : result === null ? "null" : typeof result;
+  const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
   const meta = envelope?.meta;
   const metaKeys = meta && typeof meta === "object" ? Object.keys(meta).sort() : [];
   const agentMeta = meta?.agentMeta;
   const agentMetaKeys = agentMeta && typeof agentMeta === "object" ? Object.keys(agentMeta).sort() : [];
-  return `envelopeKeys=${rootKeys.join(",")};metaKeys=${metaKeys.join(",")};agentMetaKeys=${agentMetaKeys.join(",")};attemptedAgents=${attemptedAgents.join(",")}`;
+  const resultMeta = result?.meta?.agentMeta ?? result?.agentMeta;
+  const resultMetaKeys = resultMeta && typeof resultMeta === "object" ? Object.keys(resultMeta).sort() : [];
+  return `envelopeKeys=${rootKeys.join(",")};resultType=${resultType};resultKeys=${resultKeys.join(",")};metaKeys=${metaKeys.join(",")};agentMetaKeys=${agentMetaKeys.join(",")};resultAgentMetaKeys=${resultMetaKeys.join(",")};attemptedAgents=${attemptedAgents.join(",")}`;
 }
 
 function finishAwaitingReview() {
@@ -470,7 +486,7 @@ if (parsed.kind === "invalid") {
   process.exit(1);
 }
 
-const meta = envelope?.meta?.agentMeta ?? null;
+const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
 const metaLine = meta
   ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
   : "agentMeta: unavailable";
