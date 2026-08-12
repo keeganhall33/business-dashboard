@@ -200,6 +200,42 @@ function parseOrchestrationResult(text) {
   return { kind: "invalid", error: "JSON parsed but did not match known contracts" };
 }
 
+function extractAgentFinalText(envelope) {
+  const agentMeta = envelope?.meta?.agentMeta ?? null;
+  const directCandidates = [
+    envelope?.final,
+    envelope?.text,
+    envelope?.reply,
+    agentMeta?.final,
+    agentMeta?.text,
+    agentMeta?.reply
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate;
+  }
+
+  for (const payloads of [envelope?.payloads, agentMeta?.payloads]) {
+    if (!Array.isArray(payloads)) continue;
+    const text = payloads
+      .map((payload) => (typeof payload?.text === "string" ? payload.text : ""))
+      .filter((value) => value.trim().length > 0)
+      .join("\n\n");
+    if (text.trim().length > 0) return text;
+  }
+
+  return "";
+}
+
+function envelopeShape(envelope) {
+  const rootKeys = envelope && typeof envelope === "object" ? Object.keys(envelope).sort() : [];
+  const meta = envelope?.meta;
+  const metaKeys = meta && typeof meta === "object" ? Object.keys(meta).sort() : [];
+  const agentMeta = meta?.agentMeta;
+  const agentMetaKeys = agentMeta && typeof agentMeta === "object" ? Object.keys(agentMeta).sort() : [];
+  return `envelopeKeys=${rootKeys.join(",")};metaKeys=${metaKeys.join(",")};agentMetaKeys=${agentMetaKeys.join(",")};attemptedAgents=${attemptedAgents.join(",")}`;
+}
+
 function finishAwaitingReview() {
   try {
     transitionLabel("orch:running", "orch:awaiting_review");
@@ -377,15 +413,11 @@ try {
   process.exit(1);
 }
 
-const finalText =
-  envelope?.final ??
-  envelope?.text ??
-  envelope?.reply ??
-  (Array.isArray(envelope?.payloads) ? envelope.payloads.map((p) => p.text).filter(Boolean).join("\n\n") : "");
+const finalText = extractAgentFinalText(envelope);
 
 let parsed;
 try {
-  parsed = parseOrchestrationResult(String(finalText ?? ""));
+  parsed = parseOrchestrationResult(finalText);
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   postComment([
@@ -398,8 +430,11 @@ try {
         STATUS: "BLOCKED",
         SUMMARY: "Agent returned output that did not match required structured contracts",
         BLOCKERS: [safeTrunc(msg, 400)],
-        UNEXPECTED_RESULTS: [safeTrunc(String(finalText ?? ""), 4000)],
-        NEXT_RECOMMENDED_TASK: "Re-run with stricter prompt to return strict JSON only."
+        UNEXPECTED_RESULTS: [
+          safeTrunc(finalText, 4000),
+          envelopeShape(envelope)
+        ],
+        NEXT_RECOMMENDED_TASK: "Inspect the reported envelope shape or re-run with strict JSON output."
       },
       null,
       2
@@ -421,7 +456,10 @@ if (parsed.kind === "invalid") {
         STATUS: "BLOCKED",
         SUMMARY: "Agent returned output that did not match required structured contracts",
         BLOCKERS: [parsed.error],
-        UNEXPECTED_RESULTS: [safeTrunc(String(finalText ?? ""), 4000)]
+        UNEXPECTED_RESULTS: [
+          safeTrunc(finalText, 4000),
+          envelopeShape(envelope)
+        ]
       },
       null,
       2
