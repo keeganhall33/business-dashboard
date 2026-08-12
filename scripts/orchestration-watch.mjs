@@ -1,16 +1,14 @@
 /*
-  Orchestration Watcher (V1.1)
+  Orchestration Watcher (V1.2)
 
   - Polls GitHub issues labeled `agent-orchestration` + `orch:ready`
   - Claims issues assigned to JEEVES
   - Human-gated tasks stop safely
   - Explicit EXECUTE blocks run only through a strict command allowlist
-  - Every command has a timeout
+  - Natural-language tasks launch as detached isolated OpenClaw agent-exec turns
+  - Every bounded launcher/command has a timeout
   - Per-task failures are converted into structured BLOCKED results
-  - One failed/hung task cannot terminate the watcher loop
-
-  This is intentionally conservative. Natural-language agent execution belongs in
-  a separate, reviewed OpenClaw adapter rather than arbitrary shell execution.
+  - One failed/hung task cannot terminate or monopolize the watcher loop
 */
 
 import fs from "node:fs";
@@ -69,34 +67,15 @@ function gh(args) {
 
 function listReadyIssues(repo, maxIssues) {
   const json = gh([
-    "issue",
-    "list",
-    "--repo",
-    repo,
-    "--state",
-    "open",
-    "--label",
-    "agent-orchestration",
-    "--label",
-    "orch:ready",
-    "--limit",
-    String(maxIssues),
-    "--json",
-    "number,title,url"
+    "issue", "list", "--repo", repo, "--state", "open",
+    "--label", "agent-orchestration", "--label", "orch:ready",
+    "--limit", String(maxIssues), "--json", "number,title,url"
   ]);
   return JSON.parse(json);
 }
 
 function viewIssue(repo, number) {
-  const json = gh([
-    "issue",
-    "view",
-    String(number),
-    "--repo",
-    repo,
-    "--json",
-    "number,title,body,labels,url"
-  ]);
+  const json = gh(["issue", "view", String(number), "--repo", repo, "--json", "number,title,body,labels,url"]);
   return JSON.parse(json);
 }
 
@@ -107,22 +86,12 @@ function ensureLabels(repo) {
     { name: "orch:awaiting_review", color: "ededed", description: "Orchestration task awaiting review" },
     { name: "orch:awaiting_human_approval", color: "ededed", description: "Human approval required" }
   ];
-  const existing = JSON.parse(gh(["label", "list", "--repo", repo, "--json", "name"]))
-    .map((l) => l.name);
-
+  const existing = JSON.parse(gh(["label", "list", "--repo", repo, "--json", "name"])).map((l) => l.name);
   for (const label of needed) {
     if (existing.includes(label.name)) continue;
-    spawnSync("gh", [
-      "label",
-      "create",
-      label.name,
-      "--repo",
-      repo,
-      "--color",
-      label.color,
-      "--description",
-      label.description
-    ], { stdio: "ignore", timeout: 30_000 });
+    spawnSync("gh", ["label", "create", label.name, "--repo", repo, "--color", label.color, "--description", label.description], {
+      stdio: "ignore", timeout: 30_000
+    });
   }
 }
 
@@ -141,36 +110,26 @@ function extractExecuteBlock(body) {
 function postResult(repo, issueNumber, result) {
   const tmp = `/tmp/orchestration-result-${issueNumber}.json`;
   fs.writeFileSync(tmp, JSON.stringify(result, null, 2));
-  execFileSync(
-    process.execPath,
-    ["scripts/post-orchestration-result.mjs", "--repo", repo, "--issue", String(issueNumber), "--result", tmp],
-    { stdio: "inherit", timeout: 30_000 }
-  );
+  execFileSync(process.execPath, ["scripts/post-orchestration-result.mjs", "--repo", repo, "--issue", String(issueNumber), "--result", tmp], {
+    stdio: "inherit", timeout: 30_000
+  });
 }
 
 function editLabel(repo, issueNumber, removeLabel, addLabel) {
   if (removeLabel) {
-    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", removeLabel], {
-      stdio: "ignore",
-      timeout: 30_000
-    });
+    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", removeLabel], { stdio: "ignore", timeout: 30_000 });
   }
   if (addLabel) {
-    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", addLabel], {
-      stdio: "ignore",
-      timeout: 30_000
-    });
+    spawnSync("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", addLabel], { stdio: "ignore", timeout: 30_000 });
   }
 }
 
 function claimIssue(repo, issueNumber) {
   editLabel(repo, issueNumber, "orch:ready", "orch:running");
 }
-
 function setAwaitingReview(repo, issueNumber) {
   editLabel(repo, issueNumber, "orch:running", "orch:awaiting_review");
 }
-
 function setAwaitingHuman(repo, issueNumber) {
   editLabel(repo, issueNumber, "orch:ready", "orch:awaiting_human_approval");
 }
@@ -178,14 +137,9 @@ function setAwaitingHuman(repo, issueNumber) {
 function parseSimpleCommand(line) {
   const command = line.trim();
   if (!command || command.startsWith("#")) return null;
-
-  // Shell-control syntax is deliberately forbidden. The watcher executes bounded
-  // commands, not arbitrary scripts. This includes pipes, redirects, chaining,
-  // command substitution, variable expansion, and shell builtins such as `set`.
   if (/[|&;<>`$()]/.test(command)) {
     throw new Error(`Unsafe shell syntax in EXECUTE line: ${command}`);
   }
-
   const parts = command.split(/\s+/).filter(Boolean);
   const executable = parts.shift();
   if (!executable || !ALLOWED_EXECUTABLES.has(executable)) {
@@ -197,25 +151,16 @@ function parseSimpleCommand(line) {
 function runCommand(line, timeoutMs) {
   const parsed = parseSimpleCommand(line);
   if (!parsed) return;
-
   const res = spawnSync(parsed.executable, parsed.args, {
-    encoding: "utf8",
-    timeout: timeoutMs,
-    maxBuffer: 2 * 1024 * 1024
+    encoding: "utf8", timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024
   });
-
   if (res.stdout) process.stdout.write(res.stdout);
   if (res.stderr) process.stderr.write(res.stderr);
-
   if (res.error) {
-    if (res.error.code === "ETIMEDOUT") {
-      throw new Error(`Command timed out after ${timeoutMs}ms: ${parsed.display}`);
-    }
+    if (res.error.code === "ETIMEDOUT") throw new Error(`Command timed out after ${timeoutMs}ms: ${parsed.display}`);
     throw new Error(`Command execution error (${res.error.code ?? "unknown"}): ${parsed.display}`);
   }
-  if (res.status !== 0) {
-    throw new Error(`Command failed with exit ${res.status}: ${parsed.display}`);
-  }
+  if (res.status !== 0) throw new Error(`Command failed with exit ${res.status}: ${parsed.display}`);
 }
 
 function resultBase(taskId) {
@@ -265,28 +210,24 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
     if (execBlock) {
       const lines = execBlock.split("\n").map((line) => line.trim()).filter(Boolean);
       for (const line of lines) runCommand(line, commandTimeoutMs);
-    } else {
-      // Natural-language adapter path (no EXECUTE block).
-      // Runs one bounded OpenClaw agent turn and posts a structured result.
-      runCommand(
-        `node scripts/orchestration-run-issue-openclaw.mjs --repo ${repo} --issue ${issueNumber} --agent main --timeout 420`,
-        Math.max(commandTimeoutMs, 420_000)
-      );
-    }
-
-    setAwaitingReview(repo, issueNumber);
-    if (execBlock) {
+      setAwaitingReview(repo, issueNumber);
       postResult(repo, issueNumber, {
         ...resultBase(taskId),
         STATUS: "AWAITING_REVIEW",
         SUMMARY: "Claimed issue and executed bounded EXECUTE block; awaiting review.",
         BLOCKERS: []
       });
+      return;
     }
+
+    // Natural-language tasks are launched detached. The adapter owns its isolated
+    // OpenClaw execution, result posting, timeout/cleanup, and final label transition.
+    runCommand(
+      `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 600`,
+      Math.max(commandTimeoutMs, 30_000)
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // Critical reliability rule: task failure must never kill the watcher or leave
-    // the issue silently RUNNING.
     setAwaitingReview(repo, issueNumber);
     postResult(repo, issueNumber, {
       ...resultBase(taskId),
@@ -300,33 +241,26 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
 async function loop() {
   const args = parseArgs(process.argv);
   ensureLabels(args.repo);
-
   do {
     let issues = [];
     try {
       issues = listReadyIssues(args.repo, args.maxIssues);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`Watcher poll failed: ${message}`);
+      console.error(`Watcher poll failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-
     for (const it of issues) {
       try {
         await handleOne(args.repo, args.agent, it.number, args.commandTimeoutMs);
       } catch (err) {
-        // Last-resort isolation. A single issue must never terminate the service.
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`Issue #${it.number} handler failed: ${message}`);
+        console.error(`Issue #${it.number} handler failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-
     if (args.once) break;
     await new Promise((resolve) => setTimeout(resolve, args.intervalSeconds * 1000));
   } while (true);
 }
 
 loop().catch((err) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`Fatal watcher startup error: ${message}`);
+  console.error(`Fatal watcher startup error: ${err instanceof Error ? err.message : String(err)}`);
   process.exitCode = 1;
 });
