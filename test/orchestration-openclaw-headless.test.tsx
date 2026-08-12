@@ -10,7 +10,8 @@ const launcher = fs.readFileSync("scripts/launch-orchestration-nl-detached.mjs",
 test("NL adapter uses isolated headless agent exec instead of live main session", () => {
   assert.match(adapter, /"agent",\s*\n\s*"exec"/);
   assert.doesNotMatch(adapter, /"--agent",\s*\n\s*agent/);
-  assert.match(adapter, /"--message-file"/);
+  assert.match(adapter, /"--message", prompt/);
+  assert.doesNotMatch(adapter, /"--message-file"/);
   assert.match(adapter, /"--cwd", process\.cwd\(\)/);
   assert.match(adapter, /SESSION_CONTEXT: "ISOLATED_HEADLESS"/);
 });
@@ -22,10 +23,11 @@ test("watcher launches NL tasks detached and leaves result transition to adapter
   assert.match(launcher, /orchestration-run-issue-openclaw\.mjs/);
 });
 
-test("legacy detached bootstrap no longer attaches to live main session", () => {
+test("legacy detached bootstrap uses installed isolated agent exec message contract", () => {
   assert.match(bootstrap, /"agent",\s*\n\s*"exec"/);
   assert.doesNotMatch(bootstrap, /"--agent", "main"/);
-  assert.match(bootstrap, /"--message-file"/);
+  assert.match(bootstrap, /"--message", prompt/);
+  assert.doesNotMatch(bootstrap, /"--message-file"/);
 });
 
 test("agent timeout has cleanup margin outside OpenClaw deadline", () => {
