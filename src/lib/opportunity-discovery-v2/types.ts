@@ -71,10 +71,13 @@ export type OpportunityPipelineRow = {
   prestige_score: number | null;
   probability_score: number | null;
   owner_agent: AgentKey | string;
+  contact_name?: string | null;
+  contact_role?: string | null;
   next_step: string | null;
   next_step_due_at: string | null;
   notes_md?: string | null;
   source?: string | null;
+  natural_key?: string | null;
   created_at?: string;
   updated_at?: string;
 };
