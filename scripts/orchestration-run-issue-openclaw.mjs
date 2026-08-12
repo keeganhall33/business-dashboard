@@ -1,5 +1,5 @@
 /*
-  Natural-language orchestration adapter (V1.3)
+  Natural-language orchestration adapter (V1.4)
 
   Contract:
   - Uses VERIFIED OpenClaw CLI interface: `openclaw agent --agent main --message ... --json`
@@ -8,6 +8,7 @@
     - ARCHITECT_REVIEW_REQUIRED
     - KEEGAN_APPROVAL_REQUIRED (human_approval_required=true)
   - Posts OrchestrationResultContractV1 or ArchitectCheckpointV1 back to the originating GitHub issue.
+  - Consumes recorded ArchitectDecisionV1 approvals from issue comments.
 
   Usage:
     node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue 212 --agent main --timeout 120
@@ -90,14 +91,50 @@ function extractReferenceDelta(body) {
   };
 }
 
-function classifyExecution({ stream, humanApprovalRequired, body }) {
+function latestApprovedArchitectDecision(comments) {
+  const list = Array.isArray(comments) ? comments : [];
+  let latestCheckpointIndex = -1;
+  let latestApprovalIndex = -1;
+  let latestApprovalBody = "";
+
+  for (let i = 0; i < list.length; i += 1) {
+    const body = String(list[i]?.body ?? "");
+    if (/##\s+ArchitectCheckpointV1/i.test(body)) latestCheckpointIndex = i;
+    if (/##\s+ArchitectDecisionV1/i.test(body) && /DECISION:\s*(?:APPROVE|APPROVE_AND_PROCEED)\b/i.test(body)) {
+      latestApprovalIndex = i;
+      latestApprovalBody = body;
+    }
+  }
+
+  return latestApprovalIndex > latestCheckpointIndex ? latestApprovalBody : null;
+}
+
+function reviewIntentText(body) {
+  const s = extractReferenceDelta(body);
+  const actionText = [s.delta, s.goal].filter(Boolean).join("\n");
+  return actionText
+    .split("\n")
+    .filter((line) => !/^\s*(?:[-*]\s*)?(?:no\b|do not\b|don't\b|must not\b|never\b)/i.test(line))
+    .join("\n")
+    .toLowerCase();
+}
+
+function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
   if (humanApprovalRequired) return { executionClass: "KEEGAN_APPROVAL_REQUIRED", reason: "human_approval_required=true" };
+
+  const approvedDecision = latestApprovedArchitectDecision(comments);
+  if (approvedDecision) {
+    return { executionClass: "AUTO_CONTINUE", reason: "latest architect checkpoint has a subsequent approval" };
+  }
 
   if (["CORE_INTELLIGENCE", "DISCOVERY_INTELLIGENCE", "INTELLIGENCE_UX"].includes(stream)) {
     return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: `stream=${stream} is review-sensitive` };
   }
 
-  const text = String(body ?? "").toLowerCase();
+  // Review only affirmative action intent. Safety constraints such as
+  // "No credentials" or "Do not perform production writes" must not turn
+  // a read-only AUTO_CONTINUE task into an architect checkpoint.
+  const text = reviewIntentText(body);
   const reviewKeywords = [
     "migration",
     "schema",
@@ -115,18 +152,20 @@ function classifyExecution({ stream, humanApprovalRequired, body }) {
     "evidence semantics"
   ];
   if (reviewKeywords.some((k) => text.includes(k))) {
-    return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: "review keywords present" };
+    return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: "affirmative review-sensitive action intent present" };
   }
   return { executionClass: "AUTO_CONTINUE", reason: "default" };
 }
 
-function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClass }) {
+function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
   const s = extractReferenceDelta(body);
+  const approvedDecision = latestApprovedArchitectDecision(comments);
 
-  // Hard token discipline: do not replay full issue bodies.
-  // Provide only REFERENCE + DELTA (truncated) plus the output contract.
+  // Hard token discipline: do not replay full issue bodies or comment history.
+  // Provide only REFERENCE + DELTA + the latest applicable architect decision.
   const maxRefChars = 1200;
   const maxDeltaChars = 1200;
+  const maxDecisionChars = 1400;
 
   const header = [
     `You are Jeeves executing GitHub orchestration task #${issueNumber} in ${repo}.`,
@@ -140,6 +179,9 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClas
   const delta = s.delta
     ? `DELTA (truncated):\n${safeTrunc(s.delta, maxDeltaChars)}`
     : `DELTA: (missing)`;
+  const decision = approvedDecision
+    ? `RECORDED ARCHITECT DECISION (authoritative for this rerun):\n${safeTrunc(approvedDecision, maxDecisionChars)}`
+    : null;
 
   const outputContract =
     executionClass === "ARCHITECT_REVIEW_REQUIRED"
@@ -150,10 +192,12 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClas
         ].join("\n")
       : [
           `Return ONLY OrchestrationResultContractV1 as strict JSON (no prose).`,
-          `Do not run tools unless explicitly required; prefer a concise result.`
+          approvedDecision
+            ? `An architect approval is already recorded above. Proceed only within that approved scope; do not ask the same approval question again.`
+            : `Do not run tools unless explicitly required; prefer a concise result.`
         ].join("\n");
 
-  return [header, "", reference, "", delta, "", outputContract].join("\n\n");
+  return [header, "", reference, "", delta, decision ? `\n${decision}` : "", "", outputContract].join("\n\n");
 }
 
 function safeTrunc(text, max) {
@@ -258,14 +302,19 @@ function finishAwaitingReview() {
   } catch {}
 }
 
-const issueJson = gh(["issue", "view", String(issue), "--repo", repo, "--json", "number,title,body,url"]);
+const issueJson = gh(["issue", "view", String(issue), "--repo", repo, "--json", "number,title,body,url,comments"]);
 const task = JSON.parse(issueJson);
 
 const taskId = extractField(task.body ?? "", "task_id") ?? `issue-${task.number}`;
 const humanRequired = /\*\*human_approval_required:\*\*\s*true/i.test(task.body ?? "");
 const stream = extractField(task.body ?? "", "stream") ?? "OTHER";
 
-const classified = classifyExecution({ stream, humanApprovalRequired: humanRequired, body: task.body ?? "" });
+const classified = classifyExecution({
+  stream,
+  humanApprovalRequired: humanRequired,
+  body: task.body ?? "",
+  comments: task.comments ?? []
+});
 
 if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
   postComment([
@@ -295,6 +344,7 @@ const prompt = buildCompactAgentPrompt({
   issueNumber: task.number,
   title: task.title,
   body: task.body ?? "",
+  comments: task.comments ?? [],
   executionClass: classified.executionClass
 });
 
