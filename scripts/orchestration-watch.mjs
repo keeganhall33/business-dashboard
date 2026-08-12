@@ -223,7 +223,7 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
     // Natural-language tasks are launched detached. The adapter owns its isolated
     // OpenClaw execution, result posting, timeout/cleanup, and final label transition.
     runCommand(
-      `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 600`,
+      `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 180`,
       Math.max(commandTimeoutMs, 30_000)
     );
   } catch (err) {

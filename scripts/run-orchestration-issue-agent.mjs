@@ -33,12 +33,12 @@ try {
     "agent",
     "exec",
     "--message", prompt,
-    "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
     "--timeout", "900"
   ], {
     encoding: "utf8",
+    cwd: process.cwd(),
     timeout: 960000,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]

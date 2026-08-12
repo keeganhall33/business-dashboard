@@ -1,25 +1,80 @@
 /*
-  Natural-language orchestration adapter (V1.2)
+  Natural-language orchestration adapter (V1.3)
 
-  - Fetches a GitHub issue OrchestrationTaskV1 body
-  - Classifies execution class
-  - Builds compact prompt (REFERENCE + DELTA)
-  - Runs an isolated headless OpenClaw turn via `openclaw agent exec`
-  - Passes the prompt with the installed CLI's required `--message` option
-  - Parses OrchestrationResultContractV1 or ArchitectCheckpointV1 from agent output
-  - Posts structured comment back to the issue and moves it to awaiting review
+  Contract:
+  - Uses VERIFIED OpenClaw CLI interface: `openclaw agent --agent main --message ... --json`
+  - Preserves gates:
+    - AUTO_CONTINUE
+    - ARCHITECT_REVIEW_REQUIRED
+    - KEEGAN_APPROVAL_REQUIRED (human_approval_required=true)
+  - Posts OrchestrationResultContractV1 or ArchitectCheckpointV1 back to the originating GitHub issue.
 
-  `agent exec` intentionally avoids the long-lived interactive `main` session.
-  Prompt text is passed as a direct argv value via execFileSync, never through a shell.
+  Usage:
+    node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue 212 --agent main --timeout 120
+
+  Notes:
+  - This script is self-contained JS (launchd-safe; no TS loader required).
+  - It does not implement SMTP or any mailbox/network integrations.
 */
 
 import { execFileSync } from "node:child_process";
 
+function arg(name) {
+  const i = process.argv.indexOf(name);
+  return i >= 0 ? process.argv[i + 1] : null;
+}
+
+const repo = arg("--repo");
+const issue = arg("--issue");
+const agent = arg("--agent") ?? "main";
+const timeoutSeconds = Number(arg("--timeout") ?? "120");
+
+if (!repo || !issue) {
+  console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
+  process.exit(2);
+}
+if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 30) {
+  console.error("--timeout must be >= 30 seconds");
+  process.exit(2);
+}
+
+function gh(args) {
+  return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
+}
+
+function postComment(body) {
+  execFileSync("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body], {
+    stdio: "inherit",
+    timeout: 30_000
+  });
+}
+
+function transitionLabel(removeLabel, addLabel) {
+  if (removeLabel) {
+    execFileSync("gh", ["issue", "edit", String(issue), "--repo", repo, "--remove-label", removeLabel], {
+      stdio: "ignore",
+      timeout: 30_000
+    });
+  }
+  if (addLabel) {
+    execFileSync("gh", ["issue", "edit", String(issue), "--repo", repo, "--add-label", addLabel], {
+      stdio: "ignore",
+      timeout: 30_000
+    });
+  }
+}
+
+function extractField(body, label) {
+  const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\\n]+)`, "i");
+  const m = String(body ?? "").match(re);
+  return m ? m[1].trim() : null;
+}
+
 function section(body, heading) {
   const re = new RegExp(`^###\\s+${heading}\\s*$`, "im");
-  const start = body.search(re);
+  const start = String(body ?? "").search(re);
   if (start < 0) return null;
-  const afterHeading = body.slice(start).replace(re, "").trimStart();
+  const afterHeading = String(body ?? "").slice(start).replace(re, "").trimStart();
   const next = afterHeading.search(/^###\s+/m);
   const chunk = next < 0 ? afterHeading : afterHeading.slice(0, next);
   return chunk.trim();
@@ -36,12 +91,12 @@ function extractReferenceDelta(body) {
 }
 
 function classifyExecution({ stream, humanApprovalRequired, body }) {
-  if (humanApprovalRequired) {
-    return { executionClass: "KEEGAN_APPROVAL_REQUIRED", reason: "human_approval_required=true" };
-  }
+  if (humanApprovalRequired) return { executionClass: "KEEGAN_APPROVAL_REQUIRED", reason: "human_approval_required=true" };
+
   if (["CORE_INTELLIGENCE", "DISCOVERY_INTELLIGENCE", "INTELLIGENCE_UX"].includes(stream)) {
     return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: `stream=${stream} is review-sensitive` };
   }
+
   const text = String(body ?? "").toLowerCase();
   const reviewKeywords = [
     "migration",
@@ -67,6 +122,7 @@ function classifyExecution({ stream, humanApprovalRequired, body }) {
 
 function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClass }) {
   const s = extractReferenceDelta(body);
+
   const header = [
     `You are Jeeves executing GitHub orchestration task #${issueNumber} in ${repo}.`,
     `Work from the local business-dashboard repository/worktree.`,
@@ -104,78 +160,16 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, executionClas
     .join("\n\n");
 }
 
-function parseOrchestrationResult(text) {
-  function extractJsonObject(t) {
-    const fenced = t.match(/```json\n([\s\S]*?)```/i);
-    const candidate = fenced ? fenced[1] : t;
-    return JSON.parse(candidate.trim());
-  }
-  try {
-    const obj = extractJsonObject(text);
-    if (obj && typeof obj === "object") {
-      if (typeof obj.TASK_ID === "string" && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") {
-        return { kind: "result", value: obj };
-      }
-      if (typeof obj.TASK_ID === "string" && typeof obj.CHECKPOINT_ID === "string" && typeof obj.QUESTION_OR_DECISION === "string") {
-        return { kind: "checkpoint", value: obj };
-      }
-    }
-    return { kind: "invalid", error: "JSON parsed but did not match known contracts" };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: "invalid", error: message };
-  }
-}
-
-function arg(name) {
-  const i = process.argv.indexOf(name);
-  return i >= 0 ? process.argv[i + 1] : null;
-}
-
-const repo = arg("--repo");
-const issue = arg("--issue");
-const timeoutSeconds = Number(arg("--timeout") ?? "600");
-if (!repo || !issue) {
-  console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--timeout 600]");
-  process.exit(2);
-}
-if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 30) {
-  console.error("--timeout must be >= 30 seconds");
-  process.exit(2);
-}
-
-function gh(args) {
-  return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
-}
-
-function postComment(body) {
-  execFileSync("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body], { stdio: "inherit", timeout: 30_000 });
-}
-
-function transitionLabel(removeLabel, addLabel) {
-  if (removeLabel) {
-    execFileSync("gh", ["issue", "edit", String(issue), "--repo", repo, "--remove-label", removeLabel], {
-      stdio: "ignore",
-      timeout: 30_000
-    });
-  }
-  if (addLabel) {
-    execFileSync("gh", ["issue", "edit", String(issue), "--repo", repo, "--add-label", addLabel], {
-      stdio: "ignore",
-      timeout: 30_000
-    });
-  }
-}
-
-function extractField(body, label) {
-  const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\n]+)`, "i");
-  const m = body.match(re);
-  return m ? m[1].trim() : null;
+function safeTrunc(text, max) {
+  const t = String(text ?? "");
+  return t.length <= max ? t : `${t.slice(0, max)}\n…(truncated)`;
 }
 
 function resultBase(taskId) {
   return {
     TASK_ID: taskId,
+    STATUS: "FAILED",
+    SUMMARY: "",
     CHANGES: [],
     FILES_CHANGED: [],
     DB_CHANGES: "NO",
@@ -189,49 +183,57 @@ function resultBase(taskId) {
     BLOCKERS: [],
     NEXT_RECOMMENDED_TASK: null,
     SESSION_HEALTH: "GOOD",
-    SESSION_CONTEXT: "ISOLATED_HEADLESS"
+    SESSION_CONTEXT: "UNKNOWN"
   };
 }
 
-function safeTrunc(text, max) {
-  if (!text) return "";
-  return text.length <= max ? text : `${text.slice(0, max)}\n…(truncated)`;
+function parseOrchestrationResult(text) {
+  const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : String(text ?? "");
+  const obj = JSON.parse(candidate.trim());
+
+  if (obj && typeof obj === "object") {
+    if (typeof obj.TASK_ID === "string" && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") {
+      return { kind: "result", value: obj };
+    }
+    if (typeof obj.TASK_ID === "string" && typeof obj.CHECKPOINT_ID === "string" && typeof obj.QUESTION_OR_DECISION === "string") {
+      return { kind: "checkpoint", value: obj };
+    }
+  }
+
+  return { kind: "invalid", error: "JSON parsed but did not match known contracts" };
 }
 
 function finishAwaitingReview() {
   try {
     transitionLabel("orch:running", "orch:awaiting_review");
-  } catch (err) {
-    console.error(`Failed to transition issue #${issue} to awaiting review: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  } catch {}
 }
 
 const issueJson = gh(["issue", "view", String(issue), "--repo", repo, "--json", "number,title,body,url"]);
 const task = JSON.parse(issueJson);
+
 const taskId = extractField(task.body ?? "", "task_id") ?? `issue-${task.number}`;
 const humanRequired = /\*\*human_approval_required:\*\*\s*true/i.test(task.body ?? "");
-const streamMatch = (task.body ?? "").match(/\*\*stream:\*\*\s*([^\n]+)/i);
-const stream = streamMatch ? streamMatch[1].trim() : "OTHER";
+const stream = extractField(task.body ?? "", "stream") ?? "OTHER";
+
 const classified = classifyExecution({ stream, humanApprovalRequired: humanRequired, body: task.body ?? "" });
-const prompt = buildCompactAgentPrompt({
-  repo,
-  issueNumber: task.number,
-  title: task.title,
-  body: task.body ?? "",
-  executionClass: classified.executionClass
-});
 
 if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
   postComment([
     "## OrchestrationResultContractV1",
     "",
     "```json",
-    JSON.stringify({
-      ...resultBase(taskId),
-      STATUS: "AWAITING_HUMAN_APPROVAL",
-      SUMMARY: "Task requires human approval; adapter will not execute.",
-      DECISIONS_REQUIRED: [classified.reason]
-    }, null, 2),
+    JSON.stringify(
+      {
+        ...resultBase(taskId),
+        STATUS: "AWAITING_HUMAN_APPROVAL",
+        SUMMARY: "Task requires human approval; adapter will not execute.",
+        DECISIONS_REQUIRED: [classified.reason]
+      },
+      null,
+      2
+    ),
     "```"
   ].join("\n"));
   try {
@@ -240,119 +242,157 @@ if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
   process.exit(0);
 }
 
-const openclawPath = "/opt/homebrew/bin/openclaw";
-let out = "";
-let stderr = "";
+const prompt = buildCompactAgentPrompt({
+  repo,
+  issueNumber: task.number,
+  title: task.title,
+  body: task.body ?? "",
+  executionClass: classified.executionClass
+});
+
+// Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
+const thinking = "minimal";
+
+let out;
 try {
-  out = execFileSync(openclawPath, [
-    "agent",
-    "exec",
-    "--message", prompt,
-    "--cwd", process.cwd(),
-    "--json",
-    "--thinking", "high",
-    "--timeout", String(timeoutSeconds)
-  ], {
-    encoding: "utf8",
-    timeout: (timeoutSeconds + 60) * 1000,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
+  out = execFileSync(
+    "/opt/homebrew/bin/openclaw",
+    [
+      "agent",
+      "--agent",
+      agent,
+      "--message",
+      prompt,
+      "--json",
+      "--thinking",
+      thinking,
+      "--timeout",
+      String(timeoutSeconds)
+    ],
+    {
+      encoding: "utf8",
+      timeout: (timeoutSeconds + 30) * 1000,
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
 } catch (err) {
-  stderr = typeof err?.stderr === "string" ? err.stderr : "";
-  const stdout = typeof err?.stdout === "string" ? err.stdout : "";
   const msg = err instanceof Error ? err.message : String(err);
+  const stdout = typeof err?.stdout === "string" ? err.stdout : "";
+  const stderr = typeof err?.stderr === "string" ? err.stderr : "";
+
   postComment([
     "## OrchestrationResultContractV1",
     "",
     "```json",
-    JSON.stringify({
-      ...resultBase(taskId),
-      STATUS: "FAILED",
-      SUMMARY: "isolated openclaw agent exec failed",
-      BLOCKERS: [safeTrunc(msg, 400)],
-      UNEXPECTED_RESULTS: [safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)],
-      NEXT_RECOMMENDED_TASK: "Inspect the isolated agent-exec failure; do not retry through the live main session."
-    }, null, 2),
+    JSON.stringify(
+      {
+        ...resultBase(taskId),
+        STATUS: "FAILED",
+        SUMMARY: "openclaw agent execution failed",
+        BLOCKERS: [safeTrunc(msg, 400)],
+        UNEXPECTED_RESULTS: [safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)],
+        NEXT_RECOMMENDED_TASK: "Retry after verifying Gateway health and that the main agent session is not locked/busy."
+      },
+      null,
+      2
+    ),
     "```"
   ].join("\n"));
+
   finishAwaitingReview();
   process.exit(1);
 }
 
 let envelope;
 try {
-  envelope = JSON.parse(out);
+  envelope = JSON.parse(String(out ?? ""));
 } catch {
   postComment([
     "## OrchestrationResultContractV1",
     "",
     "```json",
-    JSON.stringify({
-      ...resultBase(taskId),
-      STATUS: "FAILED",
-      SUMMARY: "Could not parse openclaw agent exec --json output",
-      BLOCKERS: ["Invalid JSON envelope from openclaw agent exec"],
-      UNEXPECTED_RESULTS: [safeTrunc(out, 4000)]
-    }, null, 2),
+    JSON.stringify(
+      {
+        ...resultBase(taskId),
+        STATUS: "FAILED",
+        SUMMARY: "Could not parse openclaw agent --json output",
+        BLOCKERS: ["Invalid JSON envelope"],
+        UNEXPECTED_RESULTS: [safeTrunc(out, 4000)]
+      },
+      null,
+      2
+    ),
     "```"
   ].join("\n"));
   finishAwaitingReview();
   process.exit(1);
 }
 
-if (envelope?.ok === false || envelope?.status === "error" || envelope?.status === "timeout") {
+const finalText =
+  envelope?.final ??
+  envelope?.text ??
+  envelope?.reply ??
+  (Array.isArray(envelope?.payloads) ? envelope.payloads.map((p) => p.text).filter(Boolean).join("\n\n") : "");
+
+let parsed;
+try {
+  parsed = parseOrchestrationResult(String(finalText ?? ""));
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
   postComment([
     "## OrchestrationResultContractV1",
     "",
     "```json",
-    JSON.stringify({
-      ...resultBase(taskId),
-      STATUS: envelope?.status === "timeout" ? "BLOCKED" : "FAILED",
-      SUMMARY: `openclaw agent exec returned ${envelope?.status ?? "error"}`,
-      BLOCKERS: [safeTrunc(envelope?.error?.message ?? "agent exec failed", 1000)],
-      UNEXPECTED_RESULTS: [safeTrunc(JSON.stringify(envelope), 4000)]
-    }, null, 2),
+    JSON.stringify(
+      {
+        ...resultBase(taskId),
+        STATUS: "BLOCKED",
+        SUMMARY: "Agent returned output that did not match required structured contracts",
+        BLOCKERS: [safeTrunc(msg, 400)],
+        UNEXPECTED_RESULTS: [safeTrunc(String(finalText ?? ""), 4000)],
+        NEXT_RECOMMENDED_TASK: "Re-run with stricter prompt to return strict JSON only."
+      },
+      null,
+      2
+    ),
     "```"
   ].join("\n"));
   finishAwaitingReview();
   process.exit(1);
 }
-
-const finalText = envelope?.final ?? (Array.isArray(envelope?.payloads) ? envelope.payloads.map((p) => p.text).filter(Boolean).join("\n\n") : "");
-const parsed = parseOrchestrationResult(String(finalText ?? ""));
-const metaLine = `agentExecMeta: ${JSON.stringify({
-  model: envelope?.model ?? null,
-  provider: envelope?.provider ?? null,
-  usage: envelope?.usage ?? null,
-  costUsd: envelope?.costUsd ?? null,
-  sessionId: envelope?.sessionId ?? null
-})}`;
 
 if (parsed.kind === "invalid") {
   postComment([
     "## OrchestrationResultContractV1",
     "",
     "```json",
-    JSON.stringify({
-      ...resultBase(taskId),
-      STATUS: "BLOCKED",
-      SUMMARY: "Agent returned output that did not match required structured contracts",
-      BLOCKERS: [parsed.error],
-      UNEXPECTED_RESULTS: [safeTrunc(String(finalText ?? ""), 4000)],
-      NEXT_RECOMMENDED_TASK: "Request strict OrchestrationResultContractV1 or ArchitectCheckpointV1 JSON only."
-    }, null, 2),
-    "```",
-    "",
-    `<!-- ${metaLine} -->`
+    JSON.stringify(
+      {
+        ...resultBase(taskId),
+        STATUS: "BLOCKED",
+        SUMMARY: "Agent returned output that did not match required structured contracts",
+        BLOCKERS: [parsed.error],
+        UNEXPECTED_RESULTS: [safeTrunc(String(finalText ?? ""), 4000)]
+      },
+      null,
+      2
+    ),
+    "```"
   ].join("\n"));
   finishAwaitingReview();
   process.exit(1);
 }
 
-const contractBody = parsed.kind === "checkpoint"
-  ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
-  : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
+const meta = envelope?.meta?.agentMeta ?? null;
+const metaLine = meta
+  ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
+  : "agentMeta: unavailable";
+
+const contractBody =
+  parsed.kind === "checkpoint"
+    ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
+    : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
 
 postComment([contractBody, "", `<!-- ${metaLine} -->`].join("\n"));
 finishAwaitingReview();
