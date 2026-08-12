@@ -33,11 +33,11 @@ try {
     "agent",
     "exec",
     "--message", prompt,
-    "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
     "--timeout", "900"
   ], {
+    cwd: process.cwd(),
     encoding: "utf8",
     timeout: 960000,
     maxBuffer: 16 * 1024 * 1024,
