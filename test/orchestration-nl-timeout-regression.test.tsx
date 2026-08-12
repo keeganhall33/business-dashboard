@@ -11,10 +11,13 @@ test("NL adapter regression: uses openclaw agent (not agent exec) and has bounde
   assert.ok(text.includes("runOpenclaw(\"coding\")"), "expected fallback to coding agent on main timeout");
 });
 
-test("NL adapter parses response text from nested OpenClaw agentMeta envelopes", () => {
+test("NL adapter parses response text from nested and result-wrapped OpenClaw envelopes", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("function extractTextFromProjection(projection)"));
   assert.ok(text.includes("function extractAgentFinalText(envelope)"));
-  assert.ok(text.includes("envelope?.meta?.agentMeta"));
+  assert.ok(text.includes("envelope?.result"));
+  assert.ok(text.includes("envelope?.result?.meta?.agentMeta"));
+  assert.ok(text.includes("projection?.meta?.agentMeta"));
   assert.ok(text.includes("agentMeta?.final"));
   assert.ok(text.includes("agentMeta?.payloads"));
   assert.ok(text.includes("const finalText = extractAgentFinalText(envelope)"));
@@ -23,6 +26,8 @@ test("NL adapter parses response text from nested OpenClaw agentMeta envelopes",
 test("NL adapter preserves safe envelope-shape diagnostics when response text is empty", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.ok(text.includes("function envelopeShape(envelope)"));
+  assert.ok(text.includes("resultType="));
+  assert.ok(text.includes("resultKeys="));
   assert.ok(text.includes("envelopeShape(envelope)"));
   assert.ok(text.includes("attemptedAgents="));
 });
