@@ -39,6 +39,7 @@ try {
   ], {
     cwd: process.cwd(),
     encoding: "utf8",
+    cwd: process.cwd(),
     timeout: 960000,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
