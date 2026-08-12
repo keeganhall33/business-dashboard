@@ -248,12 +248,12 @@ try {
     "agent",
     "exec",
     "--message", prompt,
-    "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
     "--timeout", String(timeoutSeconds)
   ], {
     encoding: "utf8",
+    cwd: process.cwd(),
     timeout: (timeoutSeconds + 60) * 1000,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
