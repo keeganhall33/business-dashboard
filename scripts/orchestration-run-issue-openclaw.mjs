@@ -1,21 +1,18 @@
 /*
-  Natural-language orchestration adapter (V1.1)
+  Natural-language orchestration adapter (V1.2)
 
   - Fetches a GitHub issue OrchestrationTaskV1 body
   - Classifies execution class
   - Builds compact prompt (REFERENCE + DELTA)
   - Runs an isolated headless OpenClaw turn via `openclaw agent exec`
+  - Passes the prompt with the installed CLI's required `--message` option
   - Parses OrchestrationResultContractV1 or ArchitectCheckpointV1 from agent output
   - Posts structured comment back to the issue and moves it to awaiting review
 
-  `agent exec` intentionally avoids the long-lived interactive `main` session. This
-  prevents live-session model-switch/session-lock collisions and skips workspace
-  bootstrap injection for automation runs.
+  `agent exec` intentionally avoids the long-lived interactive `main` session.
+  Prompt text is passed as a direct argv value via execFileSync, never through a shell.
 */
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 function section(body, heading) {
@@ -244,16 +241,13 @@ if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
 }
 
 const openclawPath = "/opt/homebrew/bin/openclaw";
-const promptPath = path.join(os.tmpdir(), `orchestration-agent-prompt-${issue}-${process.pid}.md`);
-fs.writeFileSync(promptPath, prompt, { encoding: "utf8", mode: 0o600 });
-
 let out = "";
 let stderr = "";
 try {
   out = execFileSync(openclawPath, [
     "agent",
     "exec",
-    "--message-file", promptPath,
+    "--message", prompt,
     "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
@@ -283,10 +277,8 @@ try {
     "```"
   ].join("\n"));
   finishAwaitingReview();
-  try { fs.unlinkSync(promptPath); } catch {}
   process.exit(1);
 }
-try { fs.unlinkSync(promptPath); } catch {}
 
 let envelope;
 try {
