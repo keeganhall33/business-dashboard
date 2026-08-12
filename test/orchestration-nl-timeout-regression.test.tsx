@@ -38,14 +38,16 @@ test("NL adapter review classifier ignores prohibition-only safety language", ()
   assert.ok(text.includes("const text = reviewIntentText(body)"));
   assert.ok(text.includes("(?:no\\b|do not\\b|don't\\b|must not\\b|never\\b)"));
   assert.equal(text.includes("const text = String(body ?? \"\").toLowerCase();"), false, "must not scan the full task body for review keywords");
+  assert.ok(text.includes("/\\bauth(?:entication|orization)?\\b/"), "auth must use word boundaries rather than substring matching");
 });
 
-test("NL adapter consumes a subsequent ArchitectDecisionV1 approval from issue comments", () => {
+test("NL adapter consumes only a matching subsequent ArchitectDecisionV1 approval", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.ok(text.includes("number,title,body,url,comments"), "issue comments must be fetched");
+  assert.ok(text.includes("function commentCheckpointId(body)"));
   assert.ok(text.includes("function latestApprovedArchitectDecision(comments)"));
-  assert.ok(text.includes("latestApprovalIndex > latestCheckpointIndex"));
-  assert.ok(text.includes("latest architect checkpoint has a subsequent approval"));
+  assert.ok(text.includes("commentCheckpointId(body) === latestCheckpointId"), "approval must match the latest checkpoint id");
+  assert.ok(text.includes("latest architect checkpoint has a matching subsequent approval"));
   assert.ok(text.includes("RECORDED ARCHITECT DECISION (authoritative for this rerun)"));
   assert.ok(text.includes("do not ask the same approval question again"));
 });
