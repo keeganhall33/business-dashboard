@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 function arg(name) {
@@ -28,29 +31,35 @@ const prompt = [
   `TASK BODY:\n${task.body}`
 ].join("\n\n");
 
+const promptPath = path.join(os.tmpdir(), `orchestration-bootstrap-prompt-${issue}-${process.pid}.md`);
+fs.writeFileSync(promptPath, prompt, { encoding: "utf8", mode: 0o600 });
+
 try {
   const out = execFileSync("openclaw", [
     "agent",
-    "--agent", "main",
-    "--message", prompt,
+    "exec",
+    "--message-file", promptPath,
+    "--cwd", process.cwd(),
     "--json",
     "--thinking", "high",
     "--timeout", "900"
   ], {
     encoding: "utf8",
-    timeout: 930000,
+    timeout: 960000,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
   });
-  const body = `## Jeeves agent execution\n\n\`\`\`json\n${out.slice(0, 50000)}\n\`\`\``;
+  const body = `## Jeeves isolated agent execution\n\n\`\`\`json\n${out.slice(0, 50000)}\n\`\`\``;
   execFileSync("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body], { timeout: 15000, stdio: "inherit" });
 } catch (error) {
   const stderr = typeof error?.stderr === "string" ? error.stderr : "";
   const stdout = typeof error?.stdout === "string" ? error.stdout : "";
   const text = `${stdout}\n${stderr}`.slice(0, 30000);
-  const body = `## Jeeves agent execution\n\nSTATUS: FAILED\n\n\`\`\`text\n${text}\n\`\`\``;
+  const body = `## Jeeves isolated agent execution\n\nSTATUS: FAILED\n\n\`\`\`text\n${text}\n\`\`\``;
   try {
     execFileSync("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body], { timeout: 15000, stdio: "inherit" });
   } catch {}
-  process.exit(1);
+  process.exitCode = 1;
+} finally {
+  try { fs.unlinkSync(promptPath); } catch {}
 }
