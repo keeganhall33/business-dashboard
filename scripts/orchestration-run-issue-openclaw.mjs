@@ -508,47 +508,27 @@ try {
       localAttempted = true;
       out = runOpenclaw(ORCH_LOCAL_AGENT_ID);
 
-      // If the local model returned empty/non-JSON text, retry local exactly once with a stricter prompt.
+      // #326 hardening: Any local AUTO_CONTINUE output parse failure (envelope or structured-result)
+      // must be classified INVALID_STRUCTURED_OUTPUT and retried locally exactly once.
+      const retryPrompt = buildStrictJsonRetryPrompt(prompt);
       let localEnvelope;
       try {
         localEnvelope = JSON.parse(String(out ?? ""));
+      } catch {
+        localResult = "INVALID_STRUCTURED_OUTPUT";
+        out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
+        localEnvelope = JSON.parse(String(out ?? ""));
+      }
+
+      try {
         const attempt = tryParseStructured(localEnvelope);
         if (isInvalidStructured(attempt.parsed)) {
           localResult = "INVALID_STRUCTURED_OUTPUT";
-          const retryPrompt = buildStrictJsonRetryPrompt(prompt);
           out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
-          // After retry, re-check for a small "status/summary" JSON we can safely coerce
-          // ONLY when the issue delta explicitly demands PASS.
-          try {
-            const retryEnvelope = JSON.parse(String(out ?? ""));
-            const retryFinal = extractAgentFinalText(retryEnvelope);
-            const fenced = String(retryFinal ?? "").match(/```json\n([\s\S]*?)```/i);
-            const candidate = fenced ? fenced[1] : String(retryFinal ?? "");
-            const parsedObj = candidate.trim().startsWith("{") ? JSON.parse(candidate.trim()) : null;
-            if (deltaDemandsPass(task.body ?? "")) {
-              const coerced = coerceLooseJsonToResultContract(parsedObj, taskId);
-              if (coerced) {
-                // Post coerced PASS contract without any cloud escalation.
-                postComment([
-                  "## OrchestrationResultContractV1",
-                  "",
-                  "```json",
-                  JSON.stringify(coerced, null, 2),
-                  "```",
-                  "",
-                  `<!-- agentMeta: ${JSON.stringify({ model: retryEnvelope?.result?.meta?.agentMeta?.model ?? null, provider: retryEnvelope?.result?.meta?.agentMeta?.provider ?? null })} -->`,
-                  `<!-- routing: ${JSON.stringify(routingMeta())} -->`
-                ].join("\n"));
-                finishAwaitingReview();
-                process.exit(0);
-              }
-            }
-          } catch {
-            // ignore
-          }
         }
       } catch {
-        // If we cannot even parse the local JSON envelope, do not loop; fall through to bounded fallback.
+        localResult = "INVALID_STRUCTURED_OUTPUT";
+        out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
       }
     } catch {
       // Bounded: at most one fallback attempt to the cloud/default agent.
