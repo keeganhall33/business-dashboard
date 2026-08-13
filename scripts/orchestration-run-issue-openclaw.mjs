@@ -25,25 +25,26 @@ function arg(name) {
   return i >= 0 ? process.argv[i + 1] : null;
 }
 
-const repo = arg("--repo");
-const issue = arg("--issue");
-const agent = arg("--agent") ?? "main";
-const timeoutSeconds = Number(arg("--timeout") ?? "90");
+async function main() {
+  const repo = arg("--repo");
+  const issue = arg("--issue");
+  const agent = arg("--agent") ?? "main";
+  const timeoutSeconds = Number(arg("--timeout") ?? "90");
 
-// #294A local-first routing controls (repo-side only).
-// Default is fail-closed (disabled) to avoid breaking hosts that do not have a configured local agent.
-const ORCH_LOCAL_ROUTING_ENABLED = /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? ""));
-const ORCH_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "local");
-const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
+  // #294A local-first routing controls (repo-side only).
+  // Default is fail-closed (disabled) to avoid breaking hosts that do not have a configured local agent.
+  const ORCH_LOCAL_ROUTING_ENABLED = /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? ""));
+  const ORCH_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "local");
+  const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
 
-if (!repo || !issue) {
-  console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
-  process.exit(2);
-}
-if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 30) {
-  console.error("--timeout must be >= 30 seconds");
-  process.exit(2);
-}
+  if (!repo || !issue) {
+    console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
+    process.exit(2);
+  }
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 30) {
+    console.error("--timeout must be >= 30 seconds");
+    process.exit(2);
+  }
 
 function gh(args) {
   return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
@@ -328,21 +329,21 @@ function finishAwaitingReview() {
   } catch {}
 }
 
-const issueJson = gh(["issue", "view", String(issue), "--repo", repo, "--json", "number,title,body,url,comments"]);
-const task = JSON.parse(issueJson);
+  const issueJson = gh(["issue", "view", String(issue), "--repo", repo, "--json", "number,title,body,url,comments"]);
+  const task = JSON.parse(issueJson);
 
-const taskId = extractField(task.body ?? "", "task_id") ?? `issue-${task.number}`;
-const humanRequired = /\*\*human_approval_required:\*\*\s*true/i.test(task.body ?? "");
-const stream = extractField(task.body ?? "", "stream") ?? "OTHER";
+  const taskId = extractField(task.body ?? "", "task_id") ?? `issue-${task.number}`;
+  const humanRequired = /\*\*human_approval_required:\*\*\s*true/i.test(task.body ?? "");
+  const stream = extractField(task.body ?? "", "stream") ?? "OTHER";
 
-const classified = classifyExecution({
-  stream,
-  humanApprovalRequired: humanRequired,
-  body: task.body ?? "",
-  comments: task.comments ?? []
-});
+  const classified = classifyExecution({
+    stream,
+    humanApprovalRequired: humanRequired,
+    body: task.body ?? "",
+    comments: task.comments ?? []
+  });
 
-if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
+  if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
   postComment([
     "## OrchestrationResultContractV1",
     "",
@@ -362,10 +363,10 @@ if (classified.executionClass === "KEEGAN_APPROVAL_REQUIRED") {
   try {
     transitionLabel("orch:running", "orch:awaiting_human_approval");
   } catch {}
-  process.exit(0);
-}
+    process.exit(0);
+  }
 
-const prompt = buildCompactAgentPrompt({
+  const prompt = buildCompactAgentPrompt({
   repo,
   issueNumber: task.number,
   title: task.title,
@@ -375,15 +376,15 @@ const prompt = buildCompactAgentPrompt({
 });
 
 // Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
-const thinking = "minimal";
+  const thinking = "minimal";
 
-let out;
-const attemptedAgents = [];
+  let out;
+  const attemptedAgents = [];
 
-let localAttempted = false;
-let localResult = "NOT_ATTEMPTED"; // SUCCESS | INVALID_STRUCTURED_OUTPUT | EXECUTION_ERROR | OTHER
-let escalatedToCloud = false;
-let escalationReason = null;
+  let localAttempted = false;
+  let localResult = "NOT_ATTEMPTED"; // SUCCESS | INVALID_STRUCTURED_OUTPUT | EXECUTION_ERROR | OTHER
+  let escalatedToCloud = false;
+  let escalationReason = null;
 
 function buildStrictJsonRetryPrompt(basePrompt) {
   // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
@@ -421,7 +422,9 @@ function coerceLooseJsonToResultContract(obj, taskId) {
   };
 }
 
-function routingMeta() {
+import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
+
+  function routingMeta() {
   return {
     localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
     localAgentId: ORCH_LOCAL_AGENT_ID,
@@ -432,7 +435,7 @@ function routingMeta() {
     escalatedToCloud,
     escalationReason
   };
-}
+  }
 
 function runOpenclaw(agentId) {
   attemptedAgents.push(agentId);
@@ -499,48 +502,59 @@ function looksLikeTimeout(err) {
   return msg.includes("ETIMEDOUT") || msg.toLowerCase().includes("gateway timeout");
 }
 
-try {
+  try {
   // Local-first policy applies ONLY to AUTO_CONTINUE tasks.
   // Review and human gates must not be weakened.
-  if (classified.executionClass === "AUTO_CONTINUE" && ORCH_LOCAL_ROUTING_ENABLED) {
-    try {
-      // Attempt local once.
-      localAttempted = true;
-      out = runOpenclaw(ORCH_LOCAL_AGENT_ID);
+  if (classified.executionClass === "AUTO_CONTINUE") {
+    const routingState = {
+      attemptedAgents,
+      localAttempted,
+      localResult,
+      escalatedToCloud,
+      escalationReason
+    };
+    const exec = await executeAutoContinueWithLocalFirstV1({
+      taskId,
+      taskBody: task.body ?? "",
+      promptText: prompt,
+      strictRetryPrompt: buildStrictJsonRetryPrompt(prompt),
+      localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
+      localAgentId: ORCH_LOCAL_AGENT_ID,
+      cloudAgentId: ORCH_CLOUD_AGENT_ID,
+      routingState,
+      run: async (agentId, message) => runOpenclawWithPrompt(agentId, message),
+      extractFinalText: (env) => extractAgentFinalText(env),
+      parseStructured: (text) => parseOrchestrationResult(text),
+      deltaDemandsPass: (body) => deltaDemandsPass(body),
+      coerceLooseJsonToResultContract: (obj, id) => coerceLooseJsonToResultContract(obj, id)
+    });
 
-      // #326 hardening: Any local AUTO_CONTINUE output parse failure (envelope or structured-result)
-      // must be classified INVALID_STRUCTURED_OUTPUT and retried locally exactly once.
-      const retryPrompt = buildStrictJsonRetryPrompt(prompt);
-      let localEnvelope;
-      try {
-        localEnvelope = JSON.parse(String(out ?? ""));
-      } catch {
-        localResult = "INVALID_STRUCTURED_OUTPUT";
-        out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
-        localEnvelope = JSON.parse(String(out ?? ""));
-      }
+    // sync back routing state
+    localAttempted = routingState.localAttempted;
+    localResult = routingState.localResult;
+    escalatedToCloud = routingState.escalatedToCloud;
+    escalationReason = routingState.escalationReason;
 
-      try {
-        const attempt = tryParseStructured(localEnvelope);
-        if (isInvalidStructured(attempt.parsed)) {
-          localResult = "INVALID_STRUCTURED_OUTPUT";
-          out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
-        }
-      } catch {
-        localResult = "INVALID_STRUCTURED_OUTPUT";
-        out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
-      }
-    } catch {
-      // Bounded: at most one fallback attempt to the cloud/default agent.
-      localResult = localResult === "NOT_ATTEMPTED" ? "EXECUTION_ERROR" : localResult;
-      escalatedToCloud = true;
-      escalationReason = escalationReason ?? "LOCAL_EXECUTION_ERROR";
-      out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
+    if (exec.coerced) {
+      postComment([
+        "## OrchestrationResultContractV1",
+        "",
+        "```json",
+        JSON.stringify(exec.coerced, null, 2),
+        "```",
+        "",
+        `<!-- agentMeta: ${JSON.stringify({ model: exec.final.envelope?.result?.meta?.agentMeta?.model ?? null, provider: exec.final.envelope?.result?.meta?.agentMeta?.provider ?? null })} -->`,
+        `<!-- routing: ${JSON.stringify(routingMeta())} -->`
+      ].join("\n"));
+      finishAwaitingReview();
+      process.exit(0);
     }
+
+    out = exec.final.raw;
   } else {
     out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
   }
-} catch (err) {
+  } catch (err) {
   // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
   // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
   if (ORCH_CLOUD_AGENT_ID === "main" && looksLikeTimeout(err)) {
@@ -606,12 +620,12 @@ try {
     finishAwaitingReview();
     process.exit(1);
   }
-}
+  }
 
-let envelope;
-try {
-  envelope = JSON.parse(String(out ?? ""));
-} catch {
+  let envelope;
+  try {
+    envelope = JSON.parse(String(out ?? ""));
+  } catch {
   postComment([
     "## OrchestrationResultContractV1",
     "",
@@ -630,15 +644,15 @@ try {
     "```"
   ].join("\n"));
   finishAwaitingReview();
-  process.exit(1);
-}
+    process.exit(1);
+  }
 
-const finalText = extractAgentFinalText(envelope);
+  const finalText = extractAgentFinalText(envelope);
 
-let parsed;
-try {
-  parsed = parseOrchestrationResult(finalText);
-} catch (err) {
+  let parsed;
+  try {
+    parsed = parseOrchestrationResult(finalText);
+  } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   postComment([
     "## OrchestrationResultContractV1",
@@ -662,10 +676,10 @@ try {
     "```"
   ].join("\n"));
   finishAwaitingReview();
-  process.exit(1);
-}
+    process.exit(1);
+  }
 
-if (parsed.kind === "invalid") {
+  if (parsed.kind === "invalid") {
   // #319: if local routing is enabled and we have only attempted local so far,
   // do exactly one bounded cloud escalation with an explicit reason.
   if (
@@ -719,18 +733,27 @@ if (parsed.kind === "invalid") {
   finishAwaitingReview();
   process.exit(1);
   }
+  }
+
+  const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
+  const metaLine = meta
+    ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
+    : "agentMeta: unavailable";
+  const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
+
+  const contractBody =
+    parsed.kind === "checkpoint"
+      ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
+      : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
+
+  postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
+  finishAwaitingReview();
 }
 
-const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
-const metaLine = meta
-  ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
-  : "agentMeta: unavailable";
-const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
-
-const contractBody =
-  parsed.kind === "checkpoint"
-    ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
-    : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
-
-postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
-finishAwaitingReview();
+// Run only when invoked as a script, not when imported for tests.
+if (process.argv[1] && process.argv[1].includes("orchestration-run-issue-openclaw.mjs")) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.stack ?? err.message : String(err));
+    process.exitCode = 1;
+  });
+}
