@@ -63,3 +63,14 @@ test("Watcher regression: NL detached launcher uses bounded timeout (<= 180s)", 
   assert.ok(text.includes("launch-orchestration-nl-detached"));
   assert.ok(text.includes("--timeout 180"));
 });
+
+test("#294A routing: adapter supports optional local-agent attempt with bounded fallback", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("ORCH_LOCAL_ROUTING_ENABLED"));
+  assert.ok(text.includes("ORCH_LOCAL_AGENT_ID"));
+  assert.ok(text.includes("ORCH_CLOUD_AGENT_ID"));
+  assert.ok(text.includes("classified.executionClass === \"AUTO_CONTINUE\""));
+  assert.ok(text.includes("runOpenclaw(ORCH_LOCAL_AGENT_ID)"));
+  assert.ok(text.includes("runOpenclaw(ORCH_CLOUD_AGENT_ID)"));
+  assert.ok(text.includes("routingMeta()"));
+});
