@@ -9,7 +9,12 @@ export type DecisionInputV1 = {
   timeHorizon?: DecisionDecompositionV1["timeHorizon"];
   actionabilityThreshold?: DecisionDecompositionV1["actionabilityThreshold"];
   knowns?: Array<{ id: string; question: string; notes?: string | null }>;
-  unknowns?: Array<{ id: string; question: string; notes?: string | null; expectedInformationGain?: ValueOfInformationPlanV1["nextMissingFact"]["expectedInformationGain"] }>;
+  unknowns?: Array<{
+    id: string;
+    question: string;
+    notes?: string | null;
+    expectedInformationGain?: NonNullable<ValueOfInformationPlanV1["nextMissingFact"]>["expectedInformationGain"];
+  }>;
   hypotheses?: Array<{ id: string; hypothesis: string; disconfirmingEvidenceNeeded?: string[] }>;
   marginalValueLow?: boolean;
 };
@@ -86,4 +91,3 @@ export function buildValueOfInformationPlanV1(decomp: DecisionDecompositionV1, o
     stop: { shouldStop: false, reason: "unknown", note: null }
   };
 }
-
