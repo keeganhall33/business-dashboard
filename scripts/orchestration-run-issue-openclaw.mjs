@@ -455,7 +455,7 @@ function runOpenclaw(agentId) {
     ],
     {
       encoding: "utf8",
-      timeout: (timeoutSeconds + 30) * 1000,
+      timeout: (timeoutSeconds + 60) * 1000,
       maxBuffer: 16 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     }
@@ -482,7 +482,7 @@ function runOpenclawWithPrompt(agentId, message) {
     ],
     {
       encoding: "utf8",
-      timeout: (timeoutSeconds + 30) * 1000,
+      timeout: (timeoutSeconds + 60) * 1000,
       maxBuffer: 16 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     }

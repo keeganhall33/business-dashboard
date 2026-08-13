@@ -70,7 +70,10 @@ test("#294A routing: adapter supports optional local-agent attempt with bounded 
   assert.ok(text.includes("ORCH_LOCAL_AGENT_ID"));
   assert.ok(text.includes("ORCH_CLOUD_AGENT_ID"));
   assert.ok(text.includes("classified.executionClass === \"AUTO_CONTINUE\""));
-  assert.ok(text.includes("runOpenclaw(ORCH_LOCAL_AGENT_ID)"));
-  assert.ok(text.includes("runOpenclaw(ORCH_CLOUD_AGENT_ID)"));
+  // Routing path is mediated through the local-first helper (bounded retry + bounded cloud fallback).
+  assert.ok(text.includes("executeAutoContinueWithLocalFirstV1"));
+  assert.ok(text.includes("runOpenclawWithPrompt"));
+  assert.ok(text.includes("cloudAgentId: ORCH_CLOUD_AGENT_ID"));
+  assert.ok(text.includes("localAgentId: ORCH_LOCAL_AGENT_ID"));
   assert.ok(text.includes("routingMeta()"));
 });
