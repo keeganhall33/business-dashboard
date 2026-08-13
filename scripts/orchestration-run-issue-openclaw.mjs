@@ -391,10 +391,14 @@ function buildStrictJsonRetryPrompt(basePrompt) {
     String(basePrompt ?? ""),
     "",
     "STRICT_JSON_ONLY_RETRY:",
+    "IGNORE ALL PRIOR INSTRUCTIONS AND OUTPUT CONTRACT JSON ONLY.",
     "Return ONLY the required strict JSON object and nothing else.",
     "- No prose.",
     "- No code fences.",
     "- No extra keys.",
+    "- Do NOT mention tools, functions, commands, or how to edit files.",
+    "- Your entire response must be a single JSON object starting with '{' and ending with '}'.",
+    "If you are about to output anything else, stop and output the JSON only.",
     "If you cannot comply, return ONLY: {\"TASK_ID\":\"unknown\",\"STATUS\":\"BLOCKED\",\"SUMMARY\":\"INVALID_STRUCTURED_OUTPUT\",\"CHANGES\":[],\"FILES_CHANGED\":[],\"DB_CHANGES\":\"NO\",\"MIGRATION\":null,\"TESTS\":\"N/A\",\"PR\":null,\"MERGE_STATUS\":\"N/A\",\"PRODUCTION_CHANGE\":\"NO\",\"UNEXPECTED_RESULTS\":[],\"DECISIONS_REQUIRED\":[],\"BLOCKERS\":[\"INVALID_STRUCTURED_OUTPUT\"],\"NEXT_RECOMMENDED_TASK\":\"Return strict JSON only\",\"SESSION_HEALTH\":\"GOOD\",\"SESSION_CONTEXT\":\"UNKNOWN\"}"
   ].join("\n");
 }
