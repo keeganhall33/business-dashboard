@@ -386,21 +386,39 @@ let escalatedToCloud = false;
 let escalationReason = null;
 
 function buildStrictJsonRetryPrompt(basePrompt) {
-  // Bounded retry prompt: force strict JSON-only output when a local model returns empty/non-JSON text.
+  // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
+  // Keep this minimal and contract-focused.
   return [
-    String(basePrompt ?? ""),
-    "",
     "STRICT_JSON_ONLY_RETRY:",
-    "IGNORE ALL PRIOR INSTRUCTIONS AND OUTPUT CONTRACT JSON ONLY.",
     "Return ONLY the required strict JSON object and nothing else.",
-    "- No prose.",
-    "- No code fences.",
-    "- No extra keys.",
-    "- Do NOT mention tools, functions, commands, or how to edit files.",
-    "- Your entire response must be a single JSON object starting with '{' and ending with '}'.",
-    "If you are about to output anything else, stop and output the JSON only.",
-    "If you cannot comply, return ONLY: {\"TASK_ID\":\"unknown\",\"STATUS\":\"BLOCKED\",\"SUMMARY\":\"INVALID_STRUCTURED_OUTPUT\",\"CHANGES\":[],\"FILES_CHANGED\":[],\"DB_CHANGES\":\"NO\",\"MIGRATION\":null,\"TESTS\":\"N/A\",\"PR\":null,\"MERGE_STATUS\":\"N/A\",\"PRODUCTION_CHANGE\":\"NO\",\"UNEXPECTED_RESULTS\":[],\"DECISIONS_REQUIRED\":[],\"BLOCKERS\":[\"INVALID_STRUCTURED_OUTPUT\"],\"NEXT_RECOMMENDED_TASK\":\"Return strict JSON only\",\"SESSION_HEALTH\":\"GOOD\",\"SESSION_CONTEXT\":\"UNKNOWN\"}"
+    "No prose. No code fences. No tool mentions.",
+    "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
+    "",
+    "Context (do not repeat):",
+    safeTrunc(String(basePrompt ?? ""), 800)
   ].join("\n");
+}
+
+function deltaDemandsPass(body) {
+  const d = section(body, "Delta") ?? "";
+  // Fail-closed: only treat as explicit PASS if the delta directly says STATUS PASS.
+  return /\bSTATUS\b[^\n]*\bPASS\b/i.test(d);
+}
+
+function coerceLooseJsonToResultContract(obj, taskId) {
+  if (!obj || typeof obj !== "object") return null;
+  const status = String(obj.status ?? "").toLowerCase();
+  const summary = typeof obj.summary === "string" ? obj.summary : null;
+  if (!summary) return null;
+  if (status !== "success" && status !== "pass" && status !== "ok") return null;
+  return {
+    ...resultBase(taskId),
+    TASK_ID: String(taskId ?? "unknown"),
+    STATUS: "PASS",
+    SUMMARY: summary,
+    BLOCKERS: [],
+    NEXT_RECOMMENDED_TASK: null
+  };
 }
 
 function routingMeta() {
@@ -499,6 +517,35 @@ try {
           localResult = "INVALID_STRUCTURED_OUTPUT";
           const retryPrompt = buildStrictJsonRetryPrompt(prompt);
           out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
+          // After retry, re-check for a small "status/summary" JSON we can safely coerce
+          // ONLY when the issue delta explicitly demands PASS.
+          try {
+            const retryEnvelope = JSON.parse(String(out ?? ""));
+            const retryFinal = extractAgentFinalText(retryEnvelope);
+            const fenced = String(retryFinal ?? "").match(/```json\n([\s\S]*?)```/i);
+            const candidate = fenced ? fenced[1] : String(retryFinal ?? "");
+            const parsedObj = candidate.trim().startsWith("{") ? JSON.parse(candidate.trim()) : null;
+            if (deltaDemandsPass(task.body ?? "")) {
+              const coerced = coerceLooseJsonToResultContract(parsedObj, taskId);
+              if (coerced) {
+                // Post coerced PASS contract without any cloud escalation.
+                postComment([
+                  "## OrchestrationResultContractV1",
+                  "",
+                  "```json",
+                  JSON.stringify(coerced, null, 2),
+                  "```",
+                  "",
+                  `<!-- agentMeta: ${JSON.stringify({ model: retryEnvelope?.result?.meta?.agentMeta?.model ?? null, provider: retryEnvelope?.result?.meta?.agentMeta?.provider ?? null })} -->`,
+                  `<!-- routing: ${JSON.stringify(routingMeta())} -->`
+                ].join("\n"));
+                finishAwaitingReview();
+                process.exit(0);
+              }
+            }
+          } catch {
+            // ignore
+          }
         }
       } catch {
         // If we cannot even parse the local JSON envelope, do not loop; fall through to bounded fallback.
