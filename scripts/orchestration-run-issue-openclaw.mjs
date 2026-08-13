@@ -20,6 +20,7 @@
 
 import { execFileSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
+import fs from "node:fs";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -751,6 +752,22 @@ function looksLikeTimeout(err) {
 
 // Run only when invoked as a script, not when imported for tests.
 if (process.argv[1] && process.argv[1].includes("orchestration-run-issue-openclaw.mjs")) {
+  function releaseWorkerLock() {
+    const lockPath = process.env.ORCH_WORKER_LOCK_PATH;
+    if (!lockPath) return;
+    try {
+      const raw = fs.readFileSync(lockPath, "utf8");
+      const pid = JSON.parse(raw).pid;
+      if (pid === process.pid) fs.unlinkSync(lockPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  process.on("exit", releaseWorkerLock);
+  process.on("SIGINT", () => process.exit(130));
+  process.on("SIGTERM", () => process.exit(143));
+
   main().catch((err) => {
     console.error(err instanceof Error ? err.stack ?? err.message : String(err));
     process.exitCode = 1;
