@@ -3,6 +3,7 @@ description: "Architect↔Jeeves orchestration task using OrchestrationTaskV1"
 title: "[Agent Orchestration] <short task title>"
 labels:
   - agent-orchestration
+  - orch:ready
 body:
   - type: markdown
     attributes:
@@ -133,4 +134,3 @@ body:
       description: Explicitly forbidden actions.
     validations:
       required: true
-
