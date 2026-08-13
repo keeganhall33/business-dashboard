@@ -30,6 +30,12 @@ const issue = arg("--issue");
 const agent = arg("--agent") ?? "main";
 const timeoutSeconds = Number(arg("--timeout") ?? "90");
 
+// #294A local-first routing controls (repo-side only).
+// Default is fail-closed (disabled) to avoid breaking hosts that do not have a configured local agent.
+const ORCH_LOCAL_ROUTING_ENABLED = /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? ""));
+const ORCH_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "local");
+const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
+
 if (!repo || !issue) {
   console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
   process.exit(2);
@@ -374,6 +380,15 @@ const thinking = "minimal";
 let out;
 const attemptedAgents = [];
 
+function routingMeta() {
+  return {
+    localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
+    localAgentId: ORCH_LOCAL_AGENT_ID,
+    cloudAgentId: ORCH_CLOUD_AGENT_ID,
+    attemptedAgents: attemptedAgents.slice()
+  };
+}
+
 function runOpenclaw(agentId) {
   attemptedAgents.push(agentId);
   return execFileSync(
@@ -405,11 +420,22 @@ function looksLikeTimeout(err) {
 }
 
 try {
-  out = runOpenclaw(agent);
+  // Local-first policy applies ONLY to AUTO_CONTINUE tasks.
+  // Review and human gates must not be weakened.
+  if (classified.executionClass === "AUTO_CONTINUE" && ORCH_LOCAL_ROUTING_ENABLED) {
+    try {
+      out = runOpenclaw(ORCH_LOCAL_AGENT_ID);
+    } catch {
+      // Bounded: at most one fallback attempt to the cloud/default agent.
+      out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
+    }
+  } else {
+    out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
+  }
 } catch (err) {
   // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
   // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
-  if (agent === "main" && looksLikeTimeout(err)) {
+  if (ORCH_CLOUD_AGENT_ID === "main" && looksLikeTimeout(err)) {
     try {
       out = runOpenclaw("coding");
     } catch (err2) {
@@ -428,7 +454,7 @@ try {
             SUMMARY: "openclaw agent execution failed",
             BLOCKERS: [safeTrunc(msg, 400)],
             UNEXPECTED_RESULTS: [
-              `attemptedAgents=${attemptedAgents.join(",")}`,
+              safeTrunc(`routing=${JSON.stringify(routingMeta())}`, 1000),
               safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)
             ],
             NEXT_RECOMMENDED_TASK: "Verify OpenClaw gateway health and provider availability; main timed out and fallback agent also failed."
@@ -458,7 +484,7 @@ try {
           SUMMARY: "openclaw agent execution failed",
           BLOCKERS: [safeTrunc(msg, 400)],
           UNEXPECTED_RESULTS: [
-            `attemptedAgents=${attemptedAgents.join(",")}`,
+            safeTrunc(`routing=${JSON.stringify(routingMeta())}`, 1000),
             safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)
           ],
           NEXT_RECOMMENDED_TASK: "Retry after verifying Gateway health and provider availability."
@@ -560,11 +586,12 @@ const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? e
 const metaLine = meta
   ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
   : "agentMeta: unavailable";
+const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
 
 const contractBody =
   parsed.kind === "checkpoint"
     ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
     : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
 
-postComment([contractBody, "", `<!-- ${metaLine} -->`].join("\n"));
+postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
 finishAwaitingReview();
