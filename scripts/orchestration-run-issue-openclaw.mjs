@@ -35,7 +35,11 @@ async function main() {
 
   // #294A local-first routing controls (repo-side only).
   // Default is fail-closed (disabled) to avoid breaking hosts that do not have a configured local agent.
-  const ORCH_LOCAL_ROUTING_ENABLED = /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? ""));
+  // However, if the launcher provided an explicit ORCH_LOCAL_AGENT_ID, treat that as an intentional
+  // local-first request for this run and enable local routing.
+  const ORCH_LOCAL_ROUTING_ENABLED =
+    /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? "")) ||
+    String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim().length > 0;
   const ORCH_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "local");
   const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
 
@@ -424,7 +428,7 @@ function coerceLooseJsonToResultContract(obj, taskId) {
   };
 }
 
-  function routingMeta() {
+function routingMeta() {
   return {
     localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
     localAgentId: ORCH_LOCAL_AGENT_ID,
@@ -435,7 +439,22 @@ function coerceLooseJsonToResultContract(obj, taskId) {
     escalatedToCloud,
     escalationReason
   };
-  }
+}
+
+function routingContractFields() {
+  // Required first-class routing fields for #294.
+  // Note: MODEL_USED is derived from OpenClaw envelope when available.
+  return {
+    ROUTING_TIER: ORCH_LOCAL_ROUTING_ENABLED ? "LOCAL_FIRST" : "CLOUD_ONLY",
+    MODEL_USED: null,
+    LOCAL_ATTEMPTED: localAttempted,
+    LOCAL_RESULT: localResult,
+    ESCALATED_TO_CLOUD: escalatedToCloud,
+    ESCALATION_REASON: escalationReason,
+    CLOUD_USAGE: null,
+    CLOUD_COST: null
+  };
+}
 
 function runOpenclaw(agentId) {
   attemptedAgents.push(agentId);
@@ -559,7 +578,9 @@ function looksLikeTimeout(err) {
   } catch (err) {
   // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
   // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
-  if (ORCH_CLOUD_AGENT_ID === "main" && looksLikeTimeout(err)) {
+  // For AUTO_CONTINUE tasks, do not multi-hop into ad-hoc agents (e.g., "coding").
+  // This can bypass local-first policy and obscures routing proof. Fail closed.
+  if (classified.executionClass !== "AUTO_CONTINUE" && ORCH_CLOUD_AGENT_ID === "main" && looksLikeTimeout(err)) {
     try {
       out = runOpenclaw("coding");
     } catch (err2) {
@@ -574,6 +595,7 @@ function looksLikeTimeout(err) {
         JSON.stringify(
           {
             ...resultBase(taskId),
+            ...routingContractFields(),
             STATUS: "FAILED",
             SUMMARY: "openclaw agent execution failed",
             BLOCKERS: [safeTrunc(msg, 400)],
@@ -597,16 +619,17 @@ function looksLikeTimeout(err) {
     const stdout = typeof err?.stdout === "string" ? err.stdout : "";
     const stderr = typeof err?.stderr === "string" ? err.stderr : "";
 
-    postComment([
-      "## OrchestrationResultContractV1",
-      "",
-      "```json",
-      JSON.stringify(
-        {
-          ...resultBase(taskId),
-          STATUS: "FAILED",
-          SUMMARY: "openclaw agent execution failed",
-          BLOCKERS: [safeTrunc(msg, 400)],
+      postComment([
+        "## OrchestrationResultContractV1",
+        "",
+        "```json",
+        JSON.stringify(
+          {
+            ...resultBase(taskId),
+            ...routingContractFields(),
+            STATUS: "FAILED",
+            SUMMARY: "openclaw agent execution failed",
+            BLOCKERS: [safeTrunc(msg, 400)],
           UNEXPECTED_RESULTS: [
             safeTrunc(`routing=${JSON.stringify(routingMeta())}`, 1000),
             safeTrunc(`STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`, 4000)
@@ -635,6 +658,7 @@ function looksLikeTimeout(err) {
     JSON.stringify(
       {
         ...resultBase(taskId),
+        ...routingContractFields(),
         STATUS: "FAILED",
         SUMMARY: "Could not parse openclaw agent --json output",
         BLOCKERS: ["Invalid JSON envelope"],
@@ -663,6 +687,7 @@ function looksLikeTimeout(err) {
     JSON.stringify(
       {
         ...resultBase(taskId),
+        ...routingContractFields(),
         STATUS: "BLOCKED",
         SUMMARY: "Agent returned output that did not match required structured contracts",
         BLOCKERS: [safeTrunc(msg, 400)],
@@ -719,6 +744,7 @@ function looksLikeTimeout(err) {
     JSON.stringify(
       {
         ...resultBase(taskId),
+        ...routingContractFields(),
         STATUS: "BLOCKED",
         SUMMARY: "Agent returned output that did not match required structured contracts",
         BLOCKERS: [parsed.error],
@@ -738,15 +764,29 @@ function looksLikeTimeout(err) {
   }
 
   const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
+  const modelUsed = meta?.model ?? null;
+  const cloudUsage = meta?.usage ?? null;
+  const cloudCost = meta?.costUsd ?? null;
   const metaLine = meta
     ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
     : "agentMeta: unavailable";
   const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
 
+  const valueWithRouting =
+    parsed.kind === "result" && parsed.value && typeof parsed.value === "object"
+      ? {
+          ...parsed.value,
+          ...routingContractFields(),
+          MODEL_USED: modelUsed,
+          CLOUD_USAGE: cloudUsage,
+          CLOUD_COST: cloudCost
+        }
+      : parsed.value;
+
   const contractBody =
     parsed.kind === "checkpoint"
-      ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n")
-      : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(parsed.value, null, 2), "```"].join("\n");
+      ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n")
+      : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n");
 
   postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
   finishAwaitingReview();
