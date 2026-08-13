@@ -464,10 +464,12 @@ function runOpenclaw(agentId) {
 
 function runOpenclawWithPrompt(agentId, message) {
   attemptedAgents.push(agentId);
+  const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
+      ...(useEmbeddedLocal ? ["--local"] : []),
       "--agent",
       agentId,
       "--message",
