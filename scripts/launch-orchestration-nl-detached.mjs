@@ -21,10 +21,13 @@ fs.mkdirSync(logDir, { recursive: true });
 const logPath = path.join(logDir, `jeeves-orchestration-nl-${issue}.log`);
 const fd = fs.openSync(logPath, "a");
 
+const nlAgent = process.env.ORCH_NL_AGENT_ID ?? "local";
+
 const child = spawn(process.execPath, [
   "scripts/orchestration-run-issue-openclaw.mjs",
   "--repo", repo,
   "--issue", String(issue),
+  "--agent", String(nlAgent),
   "--timeout", String(timeout)
 ], {
   detached: true,
