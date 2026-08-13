@@ -19,6 +19,7 @@
 */
 
 import { execFileSync } from "node:child_process";
+import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -421,8 +422,6 @@ function coerceLooseJsonToResultContract(obj, taskId) {
     NEXT_RECOMMENDED_TASK: null
   };
 }
-
-import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 
   function routingMeta() {
   return {
