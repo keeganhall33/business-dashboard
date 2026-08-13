@@ -145,9 +145,6 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
     return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: `stream=${stream} is review-sensitive` };
   }
 
-  // Review only affirmative action intent. Safety constraints such as
-  // "No credentials" or "Do not perform production writes" must not turn
-  // a read-only AUTO_CONTINUE task into an architect checkpoint.
   const text = reviewIntentText(body);
   const reviewPatterns = [
     /\bmigration\b/,
@@ -174,9 +171,6 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
 function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
   const s = extractReferenceDelta(body);
   const approvedDecision = latestApprovedArchitectDecision(comments);
-
-  // Hard token discipline: do not replay full issue bodies or comment history.
-  // Provide only REFERENCE + DELTA + the latest applicable architect decision.
   const maxRefChars = 1200;
   const maxDeltaChars = 1200;
   const maxDecisionChars = 1400;
@@ -244,6 +238,12 @@ function resultBase(taskId) {
 function parseOrchestrationResult(text) {
   const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : String(text ?? "");
+  if (!candidate.trim()) {
+    return {
+      kind: "invalid",
+      error: "OpenClaw envelope contained no renderable final text; result.payloads was empty or contained no text payloads"
+    };
+  }
   const obj = JSON.parse(candidate.trim());
 
   if (obj && typeof obj === "object") {
@@ -362,7 +362,6 @@ const prompt = buildCompactAgentPrompt({
   executionClass: classified.executionClass
 });
 
-// Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
 const thinking = "minimal";
 
 let out;
@@ -401,8 +400,6 @@ function looksLikeTimeout(err) {
 try {
   out = runOpenclaw(agent);
 } catch (err) {
-  // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
-  // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
   if (agent === "main" && looksLikeTimeout(err)) {
     try {
       out = runOpenclaw("coding");
