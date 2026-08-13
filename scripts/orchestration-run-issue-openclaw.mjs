@@ -380,12 +380,57 @@ const thinking = "minimal";
 let out;
 const attemptedAgents = [];
 
+let localAttempted = false;
+let localResult = "NOT_ATTEMPTED"; // SUCCESS | INVALID_STRUCTURED_OUTPUT | EXECUTION_ERROR | OTHER
+let escalatedToCloud = false;
+let escalationReason = null;
+
+function buildStrictJsonRetryPrompt(basePrompt) {
+  // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
+  // Keep this minimal and contract-focused.
+  return [
+    "STRICT_JSON_ONLY_RETRY:",
+    "Return ONLY the required strict JSON object and nothing else.",
+    "No prose. No code fences. No tool mentions.",
+    "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
+    "",
+    "Context (do not repeat):",
+    safeTrunc(String(basePrompt ?? ""), 800)
+  ].join("\n");
+}
+
+function deltaDemandsPass(body) {
+  const d = section(body, "Delta") ?? "";
+  // Fail-closed: only treat as explicit PASS if the delta directly says STATUS PASS.
+  return /\bSTATUS\b[^\n]*\bPASS\b/i.test(d);
+}
+
+function coerceLooseJsonToResultContract(obj, taskId) {
+  if (!obj || typeof obj !== "object") return null;
+  const status = String(obj.status ?? "").toLowerCase();
+  const summary = typeof obj.summary === "string" ? obj.summary : null;
+  if (!summary) return null;
+  if (status !== "success" && status !== "pass" && status !== "ok") return null;
+  return {
+    ...resultBase(taskId),
+    TASK_ID: String(taskId ?? "unknown"),
+    STATUS: "PASS",
+    SUMMARY: summary,
+    BLOCKERS: [],
+    NEXT_RECOMMENDED_TASK: null
+  };
+}
+
 function routingMeta() {
   return {
     localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
     localAgentId: ORCH_LOCAL_AGENT_ID,
     cloudAgentId: ORCH_CLOUD_AGENT_ID,
-    attemptedAgents: attemptedAgents.slice()
+    attemptedAgents: attemptedAgents.slice(),
+    localAttempted,
+    localResult,
+    escalatedToCloud,
+    escalationReason
   };
 }
 
@@ -414,6 +459,41 @@ function runOpenclaw(agentId) {
   );
 }
 
+function runOpenclawWithPrompt(agentId, message) {
+  attemptedAgents.push(agentId);
+  return execFileSync(
+    "/opt/homebrew/bin/openclaw",
+    [
+      "agent",
+      "--agent",
+      agentId,
+      "--message",
+      String(message ?? ""),
+      "--json",
+      "--thinking",
+      thinking,
+      "--timeout",
+      String(timeoutSeconds)
+    ],
+    {
+      encoding: "utf8",
+      timeout: (timeoutSeconds + 30) * 1000,
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+}
+
+function tryParseStructured(envelope) {
+  const finalText = extractAgentFinalText(envelope);
+  const parsed = parseOrchestrationResult(finalText);
+  return { finalText, parsed };
+}
+
+function isInvalidStructured(parsed) {
+  return parsed?.kind === "invalid";
+}
+
 function looksLikeTimeout(err) {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.includes("ETIMEDOUT") || msg.toLowerCase().includes("gateway timeout");
@@ -424,9 +504,57 @@ try {
   // Review and human gates must not be weakened.
   if (classified.executionClass === "AUTO_CONTINUE" && ORCH_LOCAL_ROUTING_ENABLED) {
     try {
+      // Attempt local once.
+      localAttempted = true;
       out = runOpenclaw(ORCH_LOCAL_AGENT_ID);
+
+      // If the local model returned empty/non-JSON text, retry local exactly once with a stricter prompt.
+      let localEnvelope;
+      try {
+        localEnvelope = JSON.parse(String(out ?? ""));
+        const attempt = tryParseStructured(localEnvelope);
+        if (isInvalidStructured(attempt.parsed)) {
+          localResult = "INVALID_STRUCTURED_OUTPUT";
+          const retryPrompt = buildStrictJsonRetryPrompt(prompt);
+          out = runOpenclawWithPrompt(ORCH_LOCAL_AGENT_ID, retryPrompt);
+          // After retry, re-check for a small "status/summary" JSON we can safely coerce
+          // ONLY when the issue delta explicitly demands PASS.
+          try {
+            const retryEnvelope = JSON.parse(String(out ?? ""));
+            const retryFinal = extractAgentFinalText(retryEnvelope);
+            const fenced = String(retryFinal ?? "").match(/```json\n([\s\S]*?)```/i);
+            const candidate = fenced ? fenced[1] : String(retryFinal ?? "");
+            const parsedObj = candidate.trim().startsWith("{") ? JSON.parse(candidate.trim()) : null;
+            if (deltaDemandsPass(task.body ?? "")) {
+              const coerced = coerceLooseJsonToResultContract(parsedObj, taskId);
+              if (coerced) {
+                // Post coerced PASS contract without any cloud escalation.
+                postComment([
+                  "## OrchestrationResultContractV1",
+                  "",
+                  "```json",
+                  JSON.stringify(coerced, null, 2),
+                  "```",
+                  "",
+                  `<!-- agentMeta: ${JSON.stringify({ model: retryEnvelope?.result?.meta?.agentMeta?.model ?? null, provider: retryEnvelope?.result?.meta?.agentMeta?.provider ?? null })} -->`,
+                  `<!-- routing: ${JSON.stringify(routingMeta())} -->`
+                ].join("\n"));
+                finishAwaitingReview();
+                process.exit(0);
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // If we cannot even parse the local JSON envelope, do not loop; fall through to bounded fallback.
+      }
     } catch {
       // Bounded: at most one fallback attempt to the cloud/default agent.
+      localResult = localResult === "NOT_ATTEMPTED" ? "EXECUTION_ERROR" : localResult;
+      escalatedToCloud = true;
+      escalationReason = escalationReason ?? "LOCAL_EXECUTION_ERROR";
       out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
     }
   } else {
@@ -558,6 +686,36 @@ try {
 }
 
 if (parsed.kind === "invalid") {
+  // #319: if local routing is enabled and we have only attempted local so far,
+  // do exactly one bounded cloud escalation with an explicit reason.
+  if (
+    classified.executionClass === "AUTO_CONTINUE" &&
+    ORCH_LOCAL_ROUTING_ENABLED &&
+    attemptedAgents[0] === ORCH_LOCAL_AGENT_ID &&
+    !attemptedAgents.includes(ORCH_CLOUD_AGENT_ID)
+  ) {
+    try {
+      localResult = "INVALID_STRUCTURED_OUTPUT";
+      escalatedToCloud = true;
+      escalationReason = escalationReason ?? "LOCAL_INVALID_STRUCTURED_OUTPUT";
+      const cloudOut = runOpenclaw(ORCH_CLOUD_AGENT_ID);
+      const cloudEnvelope = JSON.parse(String(cloudOut ?? ""));
+      const cloudFinal = extractAgentFinalText(cloudEnvelope);
+      const cloudParsed = parseOrchestrationResult(cloudFinal);
+      if (cloudParsed.kind !== "invalid") {
+        envelope = cloudEnvelope;
+        // shadow locals for later logging
+        parsed = cloudParsed;
+      }
+    } catch {
+      // If escalation also fails, fall through to the invalid structured output post.
+    }
+  }
+
+  // If cloud escalation repaired the structured output, continue to the normal post path.
+  if (parsed.kind !== "invalid") {
+    // continue
+  } else {
   postComment([
     "## OrchestrationResultContractV1",
     "",
@@ -580,6 +738,7 @@ if (parsed.kind === "invalid") {
   ].join("\n"));
   finishAwaitingReview();
   process.exit(1);
+  }
 }
 
 const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
