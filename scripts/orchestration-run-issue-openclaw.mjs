@@ -244,6 +244,12 @@ function resultBase(taskId) {
 function parseOrchestrationResult(text) {
   const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : String(text ?? "");
+  if (!candidate.trim()) {
+    return {
+      kind: "invalid",
+      error: "OpenClaw envelope contained no renderable final text; result.payloads was empty or contained no text payloads"
+    };
+  }
   const obj = JSON.parse(candidate.trim());
 
   if (obj && typeof obj === "object") {
