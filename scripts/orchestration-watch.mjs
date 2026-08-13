@@ -74,6 +74,34 @@ function listReadyIssues(repo, maxIssues) {
   return JSON.parse(json);
 }
 
+function listHealCandidates(repo, maxIssues) {
+  // Self-heal: valid orchestration tasks must never be invisible due to missing orch:* state.
+  // Only heal issues already labeled agent-orchestration and missing ALL known orch state labels.
+  const search = [
+    'label:"agent-orchestration"',
+    '-label:"orch:ready"',
+    '-label:"orch:running"',
+    '-label:"orch:awaiting_review"',
+    '-label:"orch:awaiting_human_approval"'
+  ].join(" ");
+
+  const json = gh([
+    "issue",
+    "list",
+    "--repo",
+    repo,
+    "--state",
+    "open",
+    "--search",
+    search,
+    "--limit",
+    String(maxIssues),
+    "--json",
+    "number,title,url"
+  ]);
+  return JSON.parse(json);
+}
+
 function viewIssue(repo, number) {
   const json = gh(["issue", "view", String(number), "--repo", repo, "--json", "number,title,body,labels,url"]);
   return JSON.parse(json);
@@ -99,6 +127,50 @@ function extractField(body, label) {
   const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\\n]+)`, "i");
   const m = body.match(re);
   return m ? m[1].trim() : null;
+}
+
+function hasSection(body, heading) {
+  const re = new RegExp(`^###\\s+${heading}\\s*$`, "im");
+  return re.test(String(body ?? ""));
+}
+
+function looksLikeOrchestrationTaskBody(body) {
+  // Canonical task surface is the GitHub issue template.
+  // Keep validation deterministic + conservative (fail-closed) to avoid mutating non-task issues.
+  const requiredFields = [
+    "task_id",
+    "milestone",
+    "stream",
+    "requested_by",
+    "assigned_agent",
+    "priority",
+    "human_approval_required"
+  ];
+
+  for (const f of requiredFields) {
+    if (!extractField(body, f)) return false;
+  }
+
+  if (!hasSection(body, "Reference")) return false;
+  if (!hasSection(body, "Delta")) return false;
+  return true;
+}
+
+function selfHealMissingReady(repo, agent, maxIssues) {
+  const candidates = listHealCandidates(repo, maxIssues);
+  for (const c of candidates) {
+    const issue = viewIssue(repo, c.number);
+    const body = issue.body ?? "";
+    const assigned = extractField(body, "assigned_agent") ?? "";
+    if (assigned && assigned.toUpperCase() !== agent.toUpperCase()) continue;
+    if (!looksLikeOrchestrationTaskBody(body)) continue;
+
+    spawnSync(
+      "gh",
+      ["issue", "edit", String(c.number), "--repo", repo, "--add-label", "orch:ready"],
+      { stdio: "ignore", timeout: 30_000 }
+    );
+  }
 }
 
 function extractExecuteBlock(body) {
@@ -241,9 +313,13 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
 async function loop() {
   const args = parseArgs(process.argv);
   ensureLabels(args.repo);
+  // Heal first so we never miss tasks created without orch:ready.
+  selfHealMissingReady(args.repo, args.agent, Math.max(args.maxIssues, 20));
   do {
     let issues = [];
     try {
+      // Periodic heal to enforce template/watcher parity over time.
+      selfHealMissingReady(args.repo, args.agent, Math.max(args.maxIssues, 20));
       issues = listReadyIssues(args.repo, args.maxIssues);
     } catch (err) {
       console.error(`Watcher poll failed: ${err instanceof Error ? err.message : String(err)}`);
