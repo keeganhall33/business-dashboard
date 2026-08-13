@@ -12,6 +12,8 @@
 */
 
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -254,12 +256,37 @@ function resultBase(taskId) {
   };
 }
 
+function mapStreamToWorkerLocalAgentId(stream) {
+  const s = String(stream ?? "").toUpperCase();
+  if (s.includes("CORE_INTELLIGENCE")) return "local-a";
+  if (s.includes("DISCOVERY_INTELLIGENCE")) return "local-b";
+  if (s.includes("INTELLIGENCE_UX")) return "local-c";
+  if (s.includes("PRODUCTION_VALUE")) return "local-c";
+  if (s.includes("ORCHESTRATION")) return "local-d";
+  return "local-d";
+}
+
+function acquireWorkerLock(lockPath, issueNumber) {
+  // fail-closed: if lock can't be acquired, do not claim.
+  try {
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    const payload = JSON.stringify({ pid: process.pid, issueNumber, createdAt: new Date().toISOString() }) + "\n";
+    const fd = fs.openSync(lockPath, "wx");
+    fs.writeFileSync(fd, payload);
+    fs.closeSync(fd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
   const issue = viewIssue(repo, issueNumber);
   const body = issue.body ?? "";
   const taskId = extractField(body, "task_id") ?? `issue-${issueNumber}`;
   const assigned = extractField(body, "assigned_agent") ?? "";
   const humanRequired = extractField(body, "human_approval_required");
+  const stream = extractField(body, "stream") ?? "";
 
   if (assigned && assigned.toUpperCase() !== agent.toUpperCase()) return;
 
@@ -272,6 +299,15 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
       DECISIONS_REQUIRED: ["Provide human approval or revise task to remove approval-gated actions."],
       BLOCKERS: []
     });
+    return;
+  }
+
+  // Determine per-stream worker identity BEFORE claiming.
+  const localAgentId = mapStreamToWorkerLocalAgentId(stream);
+  const lockPath = path.join(os.homedir(), ".openclaw", "state", "orchestration-worker-locks", `${localAgentId}.lock`);
+
+  // Enforce: max 1 in-flight invocation per worker identity.
+  if (!acquireWorkerLock(lockPath, issueNumber)) {
     return;
   }
 
@@ -295,7 +331,7 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
     // Natural-language tasks are launched detached. The adapter owns its isolated
     // OpenClaw execution, result posting, timeout/cleanup, and final label transition.
     runCommand(
-      `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 180`,
+      `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 180 --cloud-agent-id main --local-agent-id ${localAgentId} --worker-lock-path ${lockPath}`,
       Math.max(commandTimeoutMs, 30_000)
     );
   } catch (err) {
