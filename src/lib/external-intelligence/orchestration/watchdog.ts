@@ -1,5 +1,11 @@
 import { deepFreeze } from "@/lib/external-intelligence/config/freeze";
 import { loadProductionSourceRegistryV1 } from "@/lib/external-intelligence/config/load-production-source-registry";
+import {
+  classifyAvailabilityV1,
+  classifySourceTierV1,
+  type SourceAvailabilityV1,
+  type SourceTierClassificationV1
+} from "@/lib/external-intelligence/source-tier/source-tier-registry";
 
 export type SourceHealthState =
   | "not_configured"
@@ -21,6 +27,11 @@ export type SourceHealthRecord = {
   blocker_codes: string[];
   warning_codes: string[];
   evaluated_at: string;
+
+  // Read-only enrichment (does not affect selection outcomes).
+  source_tier: SourceTierClassificationV1;
+  availability: SourceAvailabilityV1;
+  freshness: { expected_cadence: string; freshness_threshold: string } | null;
 };
 
 /**
@@ -61,7 +72,11 @@ export function evaluateDailyWatchdogV1(input: {
       health_state,
       blocker_codes: blockers.slice().sort((a, b) => a.localeCompare(b)),
       warning_codes: [],
-      evaluated_at: now
+      evaluated_at: now,
+
+      source_tier: classifySourceTierV1(s),
+      availability: classifyAvailabilityV1(s),
+      freshness: s.expected_cadence && s.freshness_threshold ? { expected_cadence: s.expected_cadence, freshness_threshold: s.freshness_threshold } : null
     });
   }
 
