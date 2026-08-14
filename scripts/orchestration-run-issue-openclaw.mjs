@@ -447,8 +447,9 @@ function buildStrictJsonRetryPrompt(basePrompt, opts) {
     "If implementation succeeded, report the actual files/tests/PR. If it failed, use BLOCKED or FAILED and state the blocker.",
     "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
     "",
-    "Task context (do not repeat):",
-    safeTrunc(String(basePrompt ?? ""), 1400)
+    // Intentional: omit large task context on retry; it reduces local instruction-following.
+    // The contract requirements above are sufficient for deterministic JSON return.
+    "Task context omitted for retry (intentional)."
   ].join("\n");
 }
 
