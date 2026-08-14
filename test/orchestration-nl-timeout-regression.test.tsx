@@ -102,3 +102,12 @@ test("Ollama prompts include explicit OrchestrationResultContractV1 schema", () 
   assert.ok(text.includes("\"FILES_CHANGED\":[]"));
   assert.ok(text.includes("safeTrunc(String(basePrompt ?? \"\"), 1400)"));
 });
+
+
+test("NL adapter normalizes missing TASK_ID from authoritative task context", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("function parseOrchestrationResult(text, fallbackTaskId = null)"));
+  assert.ok(text.includes("fallbackTaskId ? String(fallbackTaskId) : null"));
+  assert.ok(text.includes("value: { ...resultBase(resolvedTaskId), ...obj, TASK_ID: resolvedTaskId }"));
+  assert.ok(text.includes("parseStructured: (text) => parseOrchestrationResult(text, taskId)"));
+});
