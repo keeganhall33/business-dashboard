@@ -20,6 +20,7 @@
 
 import { execFileSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
+import { createInvocationTrackerV1 } from "./orchestration-invocation-metrics.mjs";
 import fs from "node:fs";
 
 function arg(name) {
@@ -386,6 +387,7 @@ function finishAwaitingReview() {
 
   let out;
   const attemptedAgents = [];
+  const invocationTracker = createInvocationTrackerV1();
 
   let localAttempted = false;
   let localResult = "NOT_ATTEMPTED"; // SUCCESS | INVALID_STRUCTURED_OUTPUT | EXECUTION_ERROR | OTHER
@@ -441,6 +443,16 @@ function routingMeta() {
   };
 }
 
+function invocationMeta() {
+  return {
+    ATTEMPT_ID: invocationTracker.attemptId,
+    ACTUAL_LOCAL_INVOCATIONS: invocationTracker.actualLocalInvocations(),
+    ACTUAL_CLOUD_INVOCATIONS: invocationTracker.actualCloudInvocations(),
+    ATTEMPTED_AGENTS_RECORDED: attemptedAgents.slice(),
+    INVOCATION_EVENTS: invocationTracker.events
+  };
+}
+
 function routingContractFields() {
   // Required first-class routing fields for #294.
   // Note: MODEL_USED is derived from OpenClaw envelope when available.
@@ -457,6 +469,7 @@ function routingContractFields() {
 }
 
 function runOpenclaw(agentId) {
+  invocationTracker.record(agentId, "cloud");
   attemptedAgents.push(agentId);
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
@@ -482,6 +495,8 @@ function runOpenclaw(agentId) {
 }
 
 function runOpenclawWithPrompt(agentId, message) {
+  const kind = String(agentId).startsWith("local-") || agentId === "local" ? "local" : "cloud";
+  invocationTracker.record(agentId, kind);
   const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
@@ -564,7 +579,8 @@ function looksLikeTimeout(err) {
         "```",
         "",
         `<!-- agentMeta: ${JSON.stringify({ model: exec.final.envelope?.result?.meta?.agentMeta?.model ?? null, provider: exec.final.envelope?.result?.meta?.agentMeta?.provider ?? null })} -->`,
-        `<!-- routing: ${JSON.stringify(routingMeta())} -->`
+        `<!-- routing: ${JSON.stringify(routingMeta())} -->`,
+        `<!-- invocation: ${JSON.stringify(invocationMeta())} -->`
       ].join("\n"));
       finishAwaitingReview();
       process.exit(0);
@@ -770,6 +786,7 @@ function looksLikeTimeout(err) {
     ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}`
     : "agentMeta: unavailable";
   const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
+  const invocationLine = `invocation: ${JSON.stringify(invocationMeta())}`;
 
   const valueWithRouting =
     parsed.kind === "result" && parsed.value && typeof parsed.value === "object"
@@ -787,7 +804,7 @@ function looksLikeTimeout(err) {
       ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n")
       : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n");
 
-  postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
+  postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`, `<!-- ${invocationLine} -->`].join("\n"));
   finishAwaitingReview();
 }
 
