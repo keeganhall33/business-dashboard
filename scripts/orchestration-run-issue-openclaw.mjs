@@ -175,7 +175,7 @@ function latestApprovedArchitectDecision(comments) {
 
     if (
       /##\s+ArchitectDecisionV1/i.test(body) &&
-      /DECISION:\s*(?:APPROVE_AND_PROCEED|APPROVE)\b/i.test(body)
+      /["']?DECISION["']?\s*:\s*["']?(?:APPROVE_AND_PROCEED|APPROVE)\b/i.test(body)
     ) {
       const checkpointId = commentCheckpointId(body);
       if (checkpointId) approvalsByCheckpoint.set(checkpointId, body);
