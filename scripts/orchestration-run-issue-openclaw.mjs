@@ -479,6 +479,12 @@ function routingContractFields() {
 }
 
 function runOpenclaw(agentId) {
+  // Safety invariant: if the caller requests a local-* agent id, always execute via embedded --local
+  // (session-isolated) even when we're not in the AUTO_CONTINUE routing wrapper.
+  // This prevents accidental gateway/cloud paths and avoids persisted session lock contention.
+  const isLocal = String(agentId).startsWith("local-") || agentId === "local";
+  if (isLocal) return runOpenclawWithPrompt(agentId, prompt);
+
   attemptedAgents.push(agentId);
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
