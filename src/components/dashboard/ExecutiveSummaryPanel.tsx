@@ -136,6 +136,12 @@ export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary 
             Captured: {formatPacificTimestamp(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.capturedAt)} · Broken links: {valueOrUnknown(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.brokenLinkCount)} · Missing alt: {valueOrUnknown(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.missingAltCount)}
           </div>
           <div className="mt-1 text-[11px] text-zinc-500">See: Website Intelligence summary section (fixtures). No crawling or edits implied.</div>
+          <a
+            className="mt-2 inline-block text-[11px] font-semibold uppercase tracking-[0.25em] text-sky-200"
+            href="#website-intelligence"
+          >
+            Jump to Website Intelligence
+          </a>
         </div>
       </div>
 

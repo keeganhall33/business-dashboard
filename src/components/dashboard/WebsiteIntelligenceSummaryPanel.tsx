@@ -30,7 +30,7 @@ function valueOrUnknown(n: number | null) {
 
 export function WebsiteIntelligenceSummaryPanel({ snapshot }: Props) {
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+    <section id="website-intelligence" className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="ui-status-dot" data-tone={snapshot.state === "OK" ? "emerald" : "amber"} />
@@ -91,4 +91,3 @@ function OpportunityRow({ opp }: { opp: WebsiteOpportunityFixtureV1 }) {
     </div>
   );
 }
-
