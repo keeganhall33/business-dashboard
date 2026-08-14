@@ -190,6 +190,9 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
   const s = extractReferenceDelta(body);
   const approvedDecision = latestApprovedArchitectDecision(comments);
 
+  // NOTE: proof nonce is generated exactly once per run immediately before invocation.
+  // buildCompactAgentPrompt must not generate any nonce.
+
   // Hard token discipline: do not replay full issue bodies or comment history.
   // Provide only REFERENCE + DELTA + the latest applicable architect decision.
   const maxRefChars = 1200;
@@ -382,7 +385,10 @@ function finishAwaitingReview() {
     process.exit(0);
   }
 
-  const prompt = buildCompactAgentPrompt({
+  const isProof337Run = Number(task.number) === 337;
+  const proofNonceRun = isProof337Run ? `proof-337-${Date.now()}` : null;
+
+  let prompt = buildCompactAgentPrompt({
   repo,
   issueNumber: task.number,
   title: task.title,
@@ -390,6 +396,18 @@ function finishAwaitingReview() {
   comments: task.comments ?? [],
   executionClass: classified.executionClass
 });
+
+  if (isProof337Run && proofNonceRun) {
+    prompt = [
+      prompt,
+      "",
+      "### PROOF_GUARD (AUTHORITATIVE)",
+      "CLOUD_FORBIDDEN=true",
+      `FRESHNESS_NONCE=${proofNonceRun} (MUST be included verbatim inside SESSION_CONTEXT)`,
+      "If you cannot comply, return STATUS=BLOCKED with BLOCKERS explaining why.",
+      "Reminder: response MUST be a single JSON object only."
+    ].join("\n");
+  }
 
 // Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
   const thinking = "minimal";
@@ -402,11 +420,20 @@ function finishAwaitingReview() {
   let escalatedToCloud = false;
   let escalationReason = null;
 
-function buildStrictJsonRetryPrompt(basePrompt) {
+function buildStrictJsonRetryPrompt(basePrompt, opts) {
   // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
   // Keep this minimal and contract-focused.
+  const proofGuard =
+    opts && opts.isProof337 && opts.proofNonce
+      ? [
+          "PROOF_GUARD (AUTHORITATIVE):",
+          "CLOUD_FORBIDDEN=true",
+          `FRESHNESS_NONCE=${String(opts.proofNonce)} (MUST be included verbatim inside SESSION_CONTEXT)`
+        ]
+      : [];
   return [
     "STRICT_JSON_ONLY_RETRY:",
+    ...proofGuard,
     "Return ONLY one OrchestrationResultContractV1 JSON object and nothing else.",
     "No prose. No code fences. No DECISION-only object. No ArchitectCheckpointV1.",
     "Use EXACT uppercase keys. Minimum valid complete shape:",
@@ -426,6 +453,20 @@ function shouldEnforceStrictJsonForLocal(message) {
   return /Return ONLY\s+OrchestrationResultContractV1\s+as strict JSON/i.test(text) ||
     /STRICT_JSON_ONLY/i.test(text) ||
     /OrchestrationResultContractV1/i.test(text);
+}
+
+function applyProofGuardForLocalStrictJson(message, opts) {
+  const text = String(message ?? "");
+  if (!(opts && opts.isProof337 && opts.proofNonce)) return text;
+  // Ensure proof guard is present even if the original message is truncated elsewhere.
+  if (text.includes("CLOUD_FORBIDDEN=true") && text.includes(String(opts.proofNonce))) return text;
+  return [
+    "### PROOF_GUARD (AUTHORITATIVE)",
+    "CLOUD_FORBIDDEN=true",
+    `FRESHNESS_NONCE=${String(opts.proofNonce)} (MUST be included verbatim inside SESSION_CONTEXT)`,
+    "",
+    text
+  ].join("\n");
 }
 
 function deltaDemandsPass(body) {
@@ -515,9 +556,12 @@ function runOpenclawWithPrompt(agentId, message) {
     ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
     : null;
 
-  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(message)
-    ? buildStrictJsonRetryPrompt(message)
-    : String(message ?? "");
+  const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
+  const messageWithGuard = useEmbeddedLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
+
+  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
+    ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts)
+    : String(messageWithGuard ?? "");
 
   // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
   // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
@@ -576,14 +620,31 @@ function looksLikeTimeout(err) {
   // Review and human gates must not be weakened.
   const usedAutoContinueWrapper = classified.executionClass === "AUTO_CONTINUE";
   if (usedAutoContinueWrapper) {
-    const wrapped = await executeAutoContinueOnceV1({
+      const verifyStructuredResult = ({ parsed, envelope }) => {
+        if (!isProof337Run) return { ok: true };
+        if (!parsed || parsed.kind !== "result") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+
+        const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
+        const provider = meta?.provider ?? null;
+        const model = meta?.model ?? null;
+        if (provider !== "ollama") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+        if (typeof model !== "string" || !model.trim()) return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+
+        const ctx = String(parsed.value?.SESSION_CONTEXT ?? "");
+        if (!proofNonceRun || !ctx.includes(String(proofNonceRun))) return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+        return { ok: true };
+      };
+
+      const wrapped = await executeAutoContinueOnceV1({
       taskId,
       taskBody: task.body ?? "",
       promptText: prompt,
-      strictRetryPrompt: buildStrictJsonRetryPrompt(prompt),
+      strictRetryPrompt: buildStrictJsonRetryPrompt(prompt, { isProof337: isProof337Run, proofNonce: proofNonceRun }),
       localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
       localAgentId: ORCH_LOCAL_AGENT_ID,
       cloudAgentId: ORCH_CLOUD_AGENT_ID,
+      cloudForbidden: isProof337Run,
+      verifyStructuredResult,
       run: async (agentId, message) => runOpenclawWithPrompt(agentId, message),
       extractFinalText: (env) => extractAgentFinalText(env),
       parseStructured: (text) => parseOrchestrationResult(text, taskId),
