@@ -59,6 +59,33 @@ const child = spawn(
   }
 );
 
+// The watcher creates the lock as a short-lived launch reservation. Once the
+// detached worker exists, transfer durable lock ownership to that worker PID so
+// orchestration-run-issue-openclaw.mjs can release its own lock on exit.
+if (lockPath) {
+  if (!Number.isInteger(child.pid) || child.pid <= 0) {
+    try { child.kill("SIGTERM"); } catch {}
+    fs.closeSync(fd);
+    throw new Error(`Detached worker launched without a valid pid for issue #${issue}`);
+  }
+  try {
+    fs.writeFileSync(
+      lockPath,
+      JSON.stringify({
+        pid: child.pid,
+        issueNumber: Number(issue),
+        ownerType: "worker",
+        createdAt: new Date().toISOString()
+      }) + "\n",
+      "utf8"
+    );
+  } catch (err) {
+    try { child.kill("SIGTERM"); } catch {}
+    fs.closeSync(fd);
+    throw err;
+  }
+}
+
 child.unref();
 fs.closeSync(fd);
 console.log(`Detached isolated NL execution started for issue #${issue}; pid=${child.pid}; log=${logPath}`);
