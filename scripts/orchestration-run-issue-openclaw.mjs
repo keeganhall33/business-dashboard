@@ -21,6 +21,7 @@
 import { execFileSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 import { executeAutoContinueOnceV1 } from "./orchestration-auto-continue-wrapper.mjs";
+import { selectWorkerLocalAgentIdV1, shouldEnableLocalRoutingV1 } from "./orchestration-agent-selection.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -36,14 +37,11 @@ async function main() {
   const agent = arg("--agent") ?? "main";
   const timeoutSeconds = Number(arg("--timeout") ?? "90");
 
-  // #294A local-first routing controls (repo-side only).
-  // Default is fail-closed (disabled) to avoid breaking hosts that do not have a configured local agent.
-  // However, if the launcher provided an explicit ORCH_LOCAL_AGENT_ID, treat that as an intentional
-  // local-first request for this run and enable local routing.
-  const ORCH_LOCAL_ROUTING_ENABLED =
-    /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? "")) ||
-    String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim().length > 0;
-  const ORCH_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "local");
+  // #294 local-first routing + worker identity selection.
+  // Agent selection must be decided from the task stream BEFORE execution-class branching.
+  const EXPLICIT_LOCAL_ROUTING_ENABLED = /^(?:1|true|on|yes)$/i.test(String(process.env.ORCH_LOCAL_ROUTING_ENABLED ?? ""));
+  const EXPLICIT_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim();
+  // Cloud agent remains configurable (review/gating may still use cloud).
   const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
 
   if (!repo || !issue) {
@@ -351,6 +349,14 @@ function finishAwaitingReview() {
   const taskId = extractField(task.body ?? "", "task_id") ?? `issue-${task.number}`;
   const humanRequired = /\*\*human_approval_required:\*\*\s*true/i.test(task.body ?? "");
   const stream = extractField(task.body ?? "", "stream") ?? "OTHER";
+
+  const workerLocalAgentId = EXPLICIT_LOCAL_AGENT_ID || selectWorkerLocalAgentIdV1(stream) || "local";
+  const ORCH_LOCAL_ROUTING_ENABLED = shouldEnableLocalRoutingV1({
+    stream,
+    explicitLocalAgentId: EXPLICIT_LOCAL_AGENT_ID,
+    explicitLocalRoutingEnabled: EXPLICIT_LOCAL_ROUTING_ENABLED
+  });
+  const ORCH_LOCAL_AGENT_ID = String(workerLocalAgentId);
 
   const classified = classifyExecution({
     stream,
