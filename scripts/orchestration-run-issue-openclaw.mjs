@@ -484,11 +484,15 @@ function runOpenclaw(agentId) {
 
 function runOpenclawWithPrompt(agentId, message) {
   const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
+  const sessionId = useEmbeddedLocal
+    ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
+    : null;
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
       ...(useEmbeddedLocal ? ["--local"] : []),
+      ...(sessionId ? ["--session-id", sessionId] : []),
       "--agent",
       agentId,
       "--message",
