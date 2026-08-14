@@ -35,7 +35,7 @@ export function buildRetrievalPlanFromSourceSelectionV1(input: {
 
   for (const s of input.selected_sources) {
     const base = {
-      v: RETRIEVAL_INTENT_VERSION_V1 as const,
+      v: RETRIEVAL_INTENT_VERSION_V1,
       source_id: s.source_id,
       tier: s.tier,
       availability: s.availability,
@@ -98,4 +98,3 @@ export function buildRetrievalPlanFromSourceSelectionV1(input: {
     intents
   });
 }
-
