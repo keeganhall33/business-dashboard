@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process';
 
 const repo = 'keeganhall33/business-dashboard';
 const diagnosticIssue = '379';
+const root = process.cwd();
+const tsxBin = path.join(root, 'node_modules', '.bin', 'tsx');
 
 function run(cmd, args, opts = {}) {
   try {
@@ -80,7 +82,7 @@ test = test.replace(marker, regression + marker);
 fs.writeFileSync(testPath, test);
 
 run('node', ['--check', 'scripts/orchestration-run-issue-openclaw.mjs'], { cwd: wt });
-run('pnpm', ['exec', 'tsx', '--test', 'test/orchestration-nl-timeout-regression.test.tsx'], { cwd: wt, timeout: 120000 });
+run(tsxBin, ['--test', 'test/orchestration-nl-timeout-regression.test.tsx'], { cwd: wt, timeout: 120000 });
 run('git', ['diff', '--check'], { cwd: wt });
 run('git', ['add', 'scripts/orchestration-run-issue-openclaw.mjs', 'test/orchestration-nl-timeout-regression.test.tsx'], { cwd: wt });
 run('git', ['commit', '-m', 'Fix ArchitectDecision approval ordering and JSON parsing'], { cwd: wt });
