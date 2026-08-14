@@ -26,6 +26,10 @@ import { buildDashboardTruthState } from "@/lib/dashboard/truth-state";
 import { DataLimitationsBanner } from "./DataLimitationsBanner";
 import { hasDefensibleMetaAttribution } from "@/lib/meta/meta-attribution";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { WebsiteSnapshotReadonlyCard } from "./WebsiteSnapshotReadonlyCard";
+import { WebsiteIntelligenceSummaryPanel } from "./WebsiteIntelligenceSummaryPanel";
+import type { WebsiteSnapshotReadonlyFixtureV1 } from "@/lib/dashboard/website-snapshot-readonly-fixture";
+import type { WebsiteIntelligenceSummaryFixtureV1 } from "@/lib/dashboard/website-intelligence-summary-fixture";
 
 const SECTION_PROPS = {
   defaultOpen: false as const,
@@ -35,9 +39,16 @@ const SECTION_PROPS = {
 type Props = {
   data: DashboardOverviewResponse;
   agents: AgentDashboardResponse[];
+  websiteIntel?:
+    | {
+        snapshotCard: WebsiteSnapshotReadonlyFixtureV1;
+        summary: WebsiteIntelligenceSummaryFixtureV1;
+        availability: "AVAILABLE" | "UNAVAILABLE";
+      }
+    | null;
 };
 
-export function DashboardShell({ data }: Props) {
+export function DashboardShell({ data, websiteIntel }: Props) {
   const websiteSnapshot = data.websiteConversion ?? null;
   const metaSnapshot = data.metaAds ?? null;
   const changeInsights = data.changeInsights ?? null;
@@ -110,6 +121,32 @@ export function DashboardShell({ data }: Props) {
               <WebsiteConversionPanel snapshot={websiteSnapshot} range={data.range} />
             ) : (
               <PanelAuditPlaceholder title="Website snapshot unavailable" detail="GA4 + Woo snapshot missing for this range." />
+            )}
+
+            {websiteIntel?.availability === "AVAILABLE" ? (
+              <div className="space-y-5">
+                <WebsiteSnapshotReadonlyCard snapshot={websiteIntel.snapshotCard} />
+                <WebsiteIntelligenceSummaryPanel snapshot={websiteIntel.summary} />
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <WebsiteSnapshotReadonlyCard
+                  snapshot={{
+                    capturedAt: null,
+                    pageCount: null,
+                    changedPageCount: null,
+                    brokenLinkCount: null,
+                    missingAltCount: null,
+                    state: "UNKNOWN",
+                    readOnly: true,
+                    mutationDisabled: true
+                  }}
+                />
+                <PanelAuditPlaceholder
+                  title="Website intelligence unavailable"
+                  detail="Public-read website snapshot is not configured or could not be obtained. Showing UNKNOWN instead of fixtures."
+                />
+              </div>
             )}
           </div>
         </DashboardSection>

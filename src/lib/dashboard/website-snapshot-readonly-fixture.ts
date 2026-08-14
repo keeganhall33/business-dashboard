@@ -1,9 +1,9 @@
 export type WebsiteSnapshotReadonlyFixtureV1 = {
-  capturedAt: string;
-  pageCount: number;
-  changedPageCount: number;
-  brokenLinkCount: number;
-  missingAltCount: number;
+  capturedAt: string | null;
+  pageCount: number | null;
+  changedPageCount: number | null;
+  brokenLinkCount: number | null;
+  missingAltCount: number | null;
   state: "OK" | "UNKNOWN";
   readOnly: true;
   mutationDisabled: true;
@@ -19,4 +19,3 @@ export const WEBSITE_SNAPSHOT_READONLY_FIXTURE_V1: WebsiteSnapshotReadonlyFixtur
   readOnly: true,
   mutationDisabled: true
 };
-

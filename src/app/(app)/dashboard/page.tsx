@@ -3,6 +3,7 @@ import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { headers } from "next/headers";
+import { getDashboardWebsiteIntelV1 } from "@/lib/website-intelligence/dashboard-website-intel-v1";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,10 +34,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie });
   const agents: AgentDashboardResponse[] = [];
+  const websiteIntel = await getDashboardWebsiteIntelV1();
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
   const sanitizedOverview = sanitizeDashboardPayloadForHtml(overview);
   const sanitizedAgents = agents.map((agent) => sanitizeDashboardPayloadForHtml(agent));
 
-  return <DashboardPageClient initialData={sanitizedOverview} agents={sanitizedAgents} />;
+  return <DashboardPageClient initialData={sanitizedOverview} agents={sanitizedAgents} websiteIntel={websiteIntel} />;
 }
