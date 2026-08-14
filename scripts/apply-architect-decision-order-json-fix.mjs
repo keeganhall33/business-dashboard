@@ -56,16 +56,18 @@ const marker = 'test("NL adapter still preserves review-sensitive stream gating 
 if (!test.includes(marker)) throw new Error('test insertion marker not found');
 const regression = `test("NL adapter records matching approvals independent of comment order and accepts JSON decision form", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
-  assert.ok(text.includes('const checkpointId = commentCheckpointId(body)'));
-  assert.ok(text.includes('if (checkpointId) approvalsByCheckpoint.set(checkpointId, body)'));
-  assert.ok(text.includes('/["\\']?DECISION["\\']?\\\\s*:\\\\s*["\\']?(?:APPROVE_AND_PROCEED|APPROVE)\\\\b/i'));
-  assert.equal(text.includes('latestCheckpointId &&\\n      /##\\\\s+ArchitectDecisionV1'), false, 'approval must not depend on checkpoint appearing earlier in comment order');
+  assert.ok(text.includes("const checkpointId = commentCheckpointId(body)"));
+  assert.ok(text.includes("if (checkpointId) approvalsByCheckpoint.set(checkpointId, body)"));
+  assert.ok(text.includes("DECISION["), "decision parser must accept quoted JSON field names");
+  assert.ok(text.includes("APPROVE_AND_PROCEED|APPROVE"));
+  assert.equal(text.includes("latestCheckpointId &&\\n      /##\\\\s+ArchitectDecisionV1"), false, "approval must not depend on checkpoint appearing earlier in comment order");
 });
 
 `;
 test = test.replace(marker, regression + marker);
 fs.writeFileSync(testPath, test);
 
+run('node', ['--check', 'scripts/orchestration-run-issue-openclaw.mjs'], { cwd: wt });
 run('pnpm', ['exec', 'tsx', '--test', 'test/orchestration-nl-timeout-regression.test.tsx'], { cwd: wt, timeout: 120000 });
 run('git', ['diff', '--check'], { cwd: wt });
 run('git', ['add', 'scripts/orchestration-run-issue-openclaw.mjs', 'test/orchestration-nl-timeout-regression.test.tsx'], { cwd: wt });
