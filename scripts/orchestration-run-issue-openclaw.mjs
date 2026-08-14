@@ -409,6 +409,15 @@ function buildStrictJsonRetryPrompt(basePrompt) {
   ].join("\n");
 }
 
+function shouldEnforceStrictJsonForLocal(message) {
+  const text = String(message ?? "");
+  // Only enforce when the task explicitly demands strict JSON-only.
+  // Avoid surprising normal conversational tasks.
+  return /Return ONLY\s+OrchestrationResultContractV1\s+as strict JSON/i.test(text) ||
+    /STRICT_JSON_ONLY/i.test(text) ||
+    /OrchestrationResultContractV1/i.test(text);
+}
+
 function deltaDemandsPass(body) {
   const d = section(body, "Delta") ?? "";
   // Fail-closed: only treat as explicit PASS if the delta directly says STATUS PASS.
@@ -490,6 +499,10 @@ function runOpenclawWithPrompt(agentId, message) {
     ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
     : null;
 
+  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(message)
+    ? buildStrictJsonRetryPrompt(message)
+    : String(message ?? "");
+
   // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
   // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
   // (causing lock contention). For orchestration worker runs, we must guarantee a fresh, per-run state
@@ -510,7 +523,7 @@ function runOpenclawWithPrompt(agentId, message) {
       "--agent",
       agentId,
       "--message",
-      String(message ?? ""),
+      effectiveMessage,
       "--json",
       "--thinking",
       thinking,
