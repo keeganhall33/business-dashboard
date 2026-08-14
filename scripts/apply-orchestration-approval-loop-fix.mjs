@@ -68,13 +68,27 @@ try {
   stage = "patch-test";
   const testPath = path.join(worktree, "test/orchestration-nl-timeout-regression.test.tsx");
   let testText = fs.readFileSync(testPath, "utf8");
+
+  const staleAssertion = '  assert.ok(text.includes("commentCheckpointId(body) === latestCheckpointId"), "approval must match the latest checkpoint id");';
+  if (testText.includes(staleAssertion)) {
+    testText = testText.replace(
+      staleAssertion,
+      '  assert.ok(text.includes("approvalsByCheckpoint.get(latestCheckpointId) ?? null"), "approval must resolve only for the latest checkpoint id");'
+    );
+  }
+
   if (!testText.includes("keeps approval authoritative across duplicate identical checkpoints")) {
     testText += `\n\ntest(\"NL adapter keeps approval authoritative across duplicate identical checkpoints\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"const approvalsByCheckpoint = new Map()\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.set(checkpointId, body)\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.get(latestCheckpointId) ?? null\"));\n});\n\ntest(\"AUTO_CONTINUE prompt explicitly executes implementation instead of re-reviewing\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"EXECUTE IMPLEMENTATION NOW\"));\n  assert.ok(text.includes(\"Do not merely review, approve, summarize, or restate the task\"));\n  assert.equal(text.includes(\"Do not run tools unless explicitly required; prefer a concise result.\"), false);\n});\n`;
-    fs.writeFileSync(testPath, testText);
   }
+  fs.writeFileSync(testPath, testText);
 
   stage = "syntax-check";
   run(process.execPath, ["--check", "scripts/orchestration-run-issue-openclaw.mjs"], { cwd: worktree, capture: true });
+
+  stage = "focused-test";
+  const hostTsx = path.join(process.cwd(), "node_modules", ".bin", "tsx");
+  if (!fs.existsSync(hostTsx)) throw new Error(`host tsx binary not found at ${hostTsx}`);
+  run(hostTsx, ["--test", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree, capture: true });
 
   stage = "diff-check";
   run("git", ["diff", "--check"], { cwd: worktree, capture: true });
@@ -87,7 +101,7 @@ try {
   run("git", ["push", "-u", "origin", branch], { cwd: worktree });
 
   stage = "create-pr";
-  const url = run("gh", ["pr", "create", "--repo", repo, "--base", "main", "--head", branch, "--title", "Fix AUTO_CONTINUE architect approval loop", "--body", "P0 orchestration repair: preserve a matching ArchitectDecisionV1 across duplicate identical checkpoints and explicitly instruct AUTO_CONTINUE workers to execute implementation rather than re-review. Adds focused regressions. Emergency helper performs deterministic Node syntax check + git diff --check; normal PR CI remains authoritative for the TSX regression suite. Refs #365 #366."], { cwd: worktree, capture: true }).trim();
+  const url = run("gh", ["pr", "create", "--repo", repo, "--base", "main", "--head", branch, "--title", "Fix AUTO_CONTINUE architect approval loop", "--body", "P0 orchestration repair: preserve a matching ArchitectDecisionV1 across duplicate identical checkpoints and explicitly instruct AUTO_CONTINUE workers to execute implementation rather than re-review. Updates the stale legacy assertion and adds focused regressions. Focused TSX suite, Node syntax check, and git diff --check must pass before PR creation. Refs #365 #366 #368."], { cwd: worktree, capture: true }).trim();
   console.log(`PR=${url}`);
 } catch (err) {
   reportFailure(err);
