@@ -21,7 +21,9 @@ function formatPacificTimestamp(iso: string) {
 }
 
 export function WebsiteSnapshotReadonlyCard({ snapshot }: Props) {
-  const capturedAt = formatPacificTimestamp(snapshot.capturedAt);
+  const capturedAt = snapshot.capturedAt ? formatPacificTimestamp(snapshot.capturedAt) : "—";
+
+  const valueOrUnknown = (v: number | null) => (typeof v === "number" && Number.isFinite(v) ? String(v) : "Unknown");
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
@@ -42,10 +44,14 @@ export function WebsiteSnapshotReadonlyCard({ snapshot }: Props) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <MetricCard label="Pages" value={String(snapshot.pageCount)} />
-          <MetricCard label="Changed pages" value={String(snapshot.changedPageCount)} detail="Versus previous snapshot" />
-          <MetricCard label="Broken links" value={String(snapshot.brokenLinkCount)} />
-          <MetricCard label="Missing alt" value={String(snapshot.missingAltCount)} detail="Image accessibility" />
+          <MetricCard label="Pages" value={valueOrUnknown(snapshot.pageCount)} />
+          <MetricCard
+            label="Changed pages"
+            value={valueOrUnknown(snapshot.changedPageCount)}
+            detail="Versus previous snapshot"
+          />
+          <MetricCard label="Broken links" value={valueOrUnknown(snapshot.brokenLinkCount)} />
+          <MetricCard label="Missing alt" value={valueOrUnknown(snapshot.missingAltCount)} detail="Image accessibility" />
         </div>
       </div>
     </section>
@@ -61,4 +67,3 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
     </div>
   );
 }
-

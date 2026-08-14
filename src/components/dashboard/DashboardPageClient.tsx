@@ -36,9 +36,16 @@ function isKnownRangePreset(value: string) {
 type Props = {
   initialData: DashboardOverviewResponse;
   agents: AgentDashboardResponse[];
+  websiteIntel?:
+    | {
+        snapshotCard: import("@/lib/dashboard/website-snapshot-readonly-fixture").WebsiteSnapshotReadonlyFixtureV1;
+        summary: import("@/lib/dashboard/website-intelligence-summary-fixture").WebsiteIntelligenceSummaryFixtureV1;
+        availability: "AVAILABLE" | "UNAVAILABLE";
+      }
+    | null;
 };
 
-export function DashboardPageClient({ initialData, agents }: Props) {
+export function DashboardPageClient({ initialData, agents, websiteIntel }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -90,7 +97,7 @@ export function DashboardPageClient({ initialData, agents }: Props) {
   return (
     <>
       <DashboardToastHost />
-      <DashboardShell data={overview} agents={agents} />
+      <DashboardShell data={overview} agents={agents} websiteIntel={websiteIntel ?? null} />
     </>
   );
 }
