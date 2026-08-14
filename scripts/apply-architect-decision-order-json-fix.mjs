@@ -3,11 +3,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+const repo = 'keeganhall33/business-dashboard';
+const diagnosticIssue = '379';
+
 function run(cmd, args, opts = {}) {
-  return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
+  try {
+    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
+  } catch (err) {
+    const stderr = typeof err?.stderr === 'string' ? err.stderr : '';
+    const stdout = typeof err?.stdout === 'string' ? err.stdout : '';
+    const detail = `${cmd} ${args.join(' ')}\nEXIT=${err?.status ?? err?.code ?? 'unknown'}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`.slice(-8000);
+    try {
+      execFileSync('gh', ['issue', 'comment', diagnosticIssue, '--repo', repo, '--body', `## Deterministic repair diagnostic\n\n\`\`\`text\n${detail}\n\`\`\``], { stdio: 'ignore', timeout: 30000 });
+    } catch {}
+    throw err;
+  }
 }
 
-const repo = 'keeganhall33/business-dashboard';
 const stamp = Date.now();
 const branch = `fix/architect-decision-order-json-runtime-${stamp}`;
 const wt = path.join(os.tmpdir(), `jeeves-architect-decision-fix-${stamp}`);
