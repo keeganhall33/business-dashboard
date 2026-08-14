@@ -22,6 +22,8 @@ import { execFileSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 import { executeAutoContinueOnceV1 } from "./orchestration-auto-continue-wrapper.mjs";
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -487,6 +489,18 @@ function runOpenclawWithPrompt(agentId, message) {
   const sessionId = useEmbeddedLocal
     ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
     : null;
+
+  // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
+  // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
+  // (causing lock contention). For orchestration worker runs, we must guarantee a fresh, per-run state
+  // directory for embedded local execution while still reading the canonical config.
+  const openclawEnv = { ...process.env };
+  if (useEmbeddedLocal) {
+    const stateRoot = path.join(os.tmpdir(), `openclaw-orch-${process.pid}-${Date.now()}`);
+    openclawEnv.OPENCLAW_STATE_DIR = stateRoot;
+    // Preserve canonical config so agent ids (local-a/local-b/...) resolve correctly.
+    openclawEnv.OPENCLAW_CONFIG_PATH = openclawEnv.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), ".openclaw", "openclaw.json");
+  }
   return execFileSync(
     "/opt/homebrew/bin/openclaw",
     [
@@ -504,6 +518,7 @@ function runOpenclawWithPrompt(agentId, message) {
       String(timeoutSeconds)
     ],
     {
+      env: openclawEnv,
       encoding: "utf8",
       timeout: (timeoutSeconds + 60) * 1000,
       maxBuffer: 16 * 1024 * 1024,
