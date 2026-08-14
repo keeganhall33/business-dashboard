@@ -3,6 +3,28 @@
 import type { ExecutiveSummary } from "@/lib/types/dashboard";
 import { StatusChip } from "./ui/StatusChip";
 import { formatRelativeTimeFromNow } from "@/lib/date";
+import { EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1 } from "@/lib/dashboard/exec-summary-website-intel-fixture";
+
+function formatPacificTimestamp(iso: string | null) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} PDT`;
+}
+
+function valueOrUnknown(n: number | null) {
+  return n == null ? "Unknown" : String(n);
+}
 
 export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary | null }) {
   if (!summary) {
@@ -99,6 +121,23 @@ export function ExecutiveSummaryPanel({ summary }: { summary?: ExecutiveSummary 
           <CloudflareInline snapshot={summary.cloudflare} warnings={summary.siteHealthWarnings ?? []} cacheIssues={summary.siteCacheIssues ?? []} security={summary.siteSecurityRisks ?? []} />
         </div>
       ) : null}
+
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Website intelligence (read-only)</h4>
+        <div className="mt-2 rounded-2xl border border-white/10 bg-black/25 p-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-white/10 px-3 py-1 font-semibold uppercase tracking-[0.25em] text-zinc-200">READ_ONLY</span>
+            <span className="rounded-full border border-white/10 px-3 py-1 font-semibold uppercase tracking-[0.25em] text-zinc-200">MUTATION_DISABLED</span>
+            <span className="rounded-full border border-white/10 px-3 py-1 font-semibold uppercase tracking-[0.25em] text-zinc-200">
+              {EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.state === "OK" ? "OK" : "Unknown"}
+            </span>
+          </div>
+          <div className="mt-2 text-zinc-200">
+            Captured: {formatPacificTimestamp(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.capturedAt)} · Broken links: {valueOrUnknown(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.brokenLinkCount)} · Missing alt: {valueOrUnknown(EXEC_SUMMARY_WEBSITE_INTEL_FIXTURE_V1.missingAltCount)}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500">See: Website Intelligence summary section (fixtures). No crawling or edits implied.</div>
+        </div>
+      </div>
 
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Decisions needed</h4>
