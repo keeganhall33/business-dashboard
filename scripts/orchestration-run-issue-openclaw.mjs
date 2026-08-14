@@ -594,7 +594,8 @@ function runOpenclawWithPrompt(agentId, message) {
       "--thinking",
       thinking,
       "--timeout",
-      String(timeoutSeconds)
+      // Local inference can be slower; keep bounded but allow enough time for Ollama on host.
+      String(useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : timeoutSeconds)
     ],
     {
       env: openclawEnv,
