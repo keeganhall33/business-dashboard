@@ -1,10 +1,15 @@
 function parseLooseJsonCandidate(text) {
-  const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1] : String(text ?? "");
-  const trimmed = candidate.trim();
-  if (!trimmed.startsWith("{")) return null;
+  const raw = String(text ?? "");
+  const fenced = raw.match(/```json\n([\s\S]*?)```/i);
+  const candidate = (fenced ? fenced[1] : raw).trim();
+
+  // Best-effort extraction: some local models may prepend a short line.
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  const slice = candidate.slice(start, end + 1).trim();
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(slice);
   } catch {
     return null;
   }
