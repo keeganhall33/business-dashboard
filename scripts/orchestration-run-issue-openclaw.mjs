@@ -222,6 +222,7 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
       : [
           `EXECUTE IMPLEMENTATION NOW. Use repository tools as required to implement, test, commit, push, and open the focused PR requested by the task. Do not merely review, approve, summarize, or restate the task.`,
           `Return ONLY OrchestrationResultContractV1 as strict JSON (no prose) after the bounded implementation attempt completes.`,
+          `Use EXACT uppercase keys and this complete shape: {\"TASK_ID\":\"${issueNumber}\",\"STATUS\":\"PASS|BLOCKED|FAILED\",\"SUMMARY\":\"concise outcome\",\"CHANGES\":[],\"FILES_CHANGED\":[],\"DB_CHANGES\":\"NO\",\"MIGRATION\":null,\"TESTS\":\"command/results\",\"PR\":null,\"MERGE_STATUS\":\"N/A\",\"PRODUCTION_CHANGE\":\"NO\",\"UNEXPECTED_RESULTS\":[],\"DECISIONS_REQUIRED\":[],\"BLOCKERS\":[],\"NEXT_RECOMMENDED_TASK\":null,\"SESSION_HEALTH\":\"GOOD\",\"SESSION_CONTEXT\":\"branch/session\"}. Never return a DECISION-only object.`,
           approvedDecision
             ? `An architect approval is already recorded above and remains authoritative for an identical repeated checkpoint. Proceed within that approved scope; do not ask the same approval question again.`
             : `Proceed only within AUTO_CONTINUE scope and preserve all safety gates.`
@@ -400,12 +401,15 @@ function buildStrictJsonRetryPrompt(basePrompt) {
   // Keep this minimal and contract-focused.
   return [
     "STRICT_JSON_ONLY_RETRY:",
-    "Return ONLY the required strict JSON object and nothing else.",
-    "No prose. No code fences. No tool mentions.",
+    "Return ONLY one OrchestrationResultContractV1 JSON object and nothing else.",
+    "No prose. No code fences. No DECISION-only object. No ArchitectCheckpointV1.",
+    "Use EXACT uppercase keys. Minimum valid complete shape:",
+    '{"TASK_ID":"issue-or-task-id","STATUS":"PASS|BLOCKED|FAILED","SUMMARY":"concise outcome","CHANGES":[],"FILES_CHANGED":[],"DB_CHANGES":"NO","MIGRATION":null,"TESTS":"command/results","PR":null,"MERGE_STATUS":"N/A","PRODUCTION_CHANGE":"NO","UNEXPECTED_RESULTS":[],"DECISIONS_REQUIRED":[],"BLOCKERS":[],"NEXT_RECOMMENDED_TASK":null,"SESSION_HEALTH":"GOOD","SESSION_CONTEXT":"branch/session"}',
+    "If implementation succeeded, report the actual files/tests/PR. If it failed, use BLOCKED or FAILED and state the blocker.",
     "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
     "",
-    "Context (do not repeat):",
-    safeTrunc(String(basePrompt ?? ""), 800)
+    "Task context (do not repeat):",
+    safeTrunc(String(basePrompt ?? ""), 1400)
   ].join("\n");
 }
 
