@@ -18,7 +18,7 @@
   - It does not implement SMTP or any mailbox/network integrations.
 */
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 import { executeAutoContinueOnceV1 } from "./orchestration-auto-continue-wrapper.mjs";
 import { selectWorkerLocalAgentIdV1, shouldEnableLocalRoutingV1 } from "./orchestration-agent-selection.mjs";
@@ -534,7 +534,7 @@ function runOpenclaw(agentId) {
   if (isLocal) return runOpenclawWithPrompt(agentId, prompt);
 
   attemptedAgents.push(agentId);
-  return execFileSync(
+  const res = spawnSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
@@ -555,6 +555,24 @@ function runOpenclaw(agentId) {
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const err = new Error(`openclaw exited with code ${res.status}`);
+    err.stdout = res.stdout;
+    err.stderr = res.stderr;
+    throw err;
+  }
+  return extractOpenclawJson(res.stdout, res.stderr);
+}
+
+function extractOpenclawJson(stdout, stderr) {
+  // openclaw sometimes writes logs/warnings to stderr even when --json is set.
+  // Make the structured path robust by extracting the JSON object from combined output.
+  const raw = `${String(stdout ?? "")}\n${String(stderr ?? "")}`;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return String(stdout ?? "");
+  return raw.slice(start, end + 1);
 }
 
 function runOpenclawWithPrompt(agentId, message) {
@@ -581,7 +599,8 @@ function runOpenclawWithPrompt(agentId, message) {
     // Preserve canonical config so agent ids (local-a/local-b/...) resolve correctly.
     openclawEnv.OPENCLAW_CONFIG_PATH = openclawEnv.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), ".openclaw", "openclaw.json");
   }
-  return execFileSync(
+  const effectiveTimeout = useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : Number(timeoutSeconds);
+  const res = spawnSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
@@ -595,17 +614,24 @@ function runOpenclawWithPrompt(agentId, message) {
       "--thinking",
       thinking,
       "--timeout",
-      // Local inference can be slower; keep bounded but allow enough time for Ollama on host.
-      String(useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : timeoutSeconds)
+      String(effectiveTimeout)
     ],
     {
       env: openclawEnv,
       encoding: "utf8",
-      timeout: (timeoutSeconds + 60) * 1000,
+      timeout: (effectiveTimeout + 60) * 1000,
       maxBuffer: 16 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const err = new Error(`openclaw exited with code ${res.status}`);
+    err.stdout = res.stdout;
+    err.stderr = res.stderr;
+    throw err;
+  }
+  return extractOpenclawJson(res.stdout, res.stderr);
 }
 
 function tryParseStructured(envelope) {
