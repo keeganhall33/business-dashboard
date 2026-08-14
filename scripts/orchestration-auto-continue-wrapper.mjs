@@ -12,6 +12,8 @@ export async function executeAutoContinueOnceV1(input) {
     localRoutingEnabled,
     localAgentId,
     cloudAgentId,
+    cloudForbidden,
+    verifyStructuredResult,
     run,
     extractFinalText,
     parseStructured,
@@ -35,6 +37,8 @@ export async function executeAutoContinueOnceV1(input) {
     localRoutingEnabled,
     localAgentId,
     cloudAgentId,
+    cloudForbidden,
+    verifyStructuredResult,
     run,
     routingState,
     extractFinalText,
@@ -45,4 +49,3 @@ export async function executeAutoContinueOnceV1(input) {
 
   return { exec, routingState };
 }
-

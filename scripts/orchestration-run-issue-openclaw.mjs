@@ -190,6 +190,9 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
   const s = extractReferenceDelta(body);
   const approvedDecision = latestApprovedArchitectDecision(comments);
 
+  const isProof337 = Number(issueNumber) === 337;
+  const proofNonce = isProof337 ? `proof-337-${Date.now()}` : null;
+
   // Hard token discipline: do not replay full issue bodies or comment history.
   // Provide only REFERENCE + DELTA + the latest applicable architect decision.
   const maxRefChars = 1200;
@@ -228,7 +231,18 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
             : `Proceed only within AUTO_CONTINUE scope and preserve all safety gates.`
         ].join("\n");
 
-  return [header, "", reference, "", delta, decision ? `\n${decision}` : "", "", outputContract].join("\n\n");
+  const proofGuard = isProof337 && proofNonce
+    ? [
+        "",
+        "### PROOF_GUARD (AUTHORITATIVE)",
+        "CLOUD_FORBIDDEN=true",
+        `FRESHNESS_NONCE=${proofNonce} (MUST be included verbatim inside SESSION_CONTEXT)`,
+        "If you cannot comply, return STATUS=BLOCKED with BLOCKERS explaining why.",
+        "Reminder: response MUST be a single JSON object only."
+      ].join("\n")
+    : "";
+
+  return [header, "", reference, "", delta, decision ? `\n${decision}` : "", proofGuard, "", outputContract].join("\n\n");
 }
 
 function safeTrunc(text, max) {
@@ -382,7 +396,10 @@ function finishAwaitingReview() {
     process.exit(0);
   }
 
-  const prompt = buildCompactAgentPrompt({
+  const isProof337Run = Number(task.number) === 337;
+  const proofNonceRun = isProof337Run ? `proof-337-${Date.now()}` : null;
+
+  let prompt = buildCompactAgentPrompt({
   repo,
   issueNumber: task.number,
   title: task.title,
@@ -390,6 +407,18 @@ function finishAwaitingReview() {
   comments: task.comments ?? [],
   executionClass: classified.executionClass
 });
+
+  if (isProof337Run && proofNonceRun) {
+    prompt = [
+      prompt,
+      "",
+      "### PROOF_GUARD (AUTHORITATIVE)",
+      "CLOUD_FORBIDDEN=true",
+      `FRESHNESS_NONCE=${proofNonceRun} (MUST be included verbatim inside SESSION_CONTEXT)`,
+      "If you cannot comply, return STATUS=BLOCKED with BLOCKERS explaining why.",
+      "Reminder: response MUST be a single JSON object only."
+    ].join("\n");
+  }
 
 // Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
   const thinking = "minimal";
@@ -576,7 +605,22 @@ function looksLikeTimeout(err) {
   // Review and human gates must not be weakened.
   const usedAutoContinueWrapper = classified.executionClass === "AUTO_CONTINUE";
   if (usedAutoContinueWrapper) {
-    const wrapped = await executeAutoContinueOnceV1({
+      const verifyStructuredResult = ({ parsed, envelope }) => {
+        if (!isProof337Run) return { ok: true };
+        if (!parsed || parsed.kind !== "result") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+
+        const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
+        const provider = meta?.provider ?? null;
+        const model = meta?.model ?? null;
+        if (provider !== "ollama") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+        if (typeof model !== "string" || !model.trim()) return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+
+        const ctx = String(parsed.value?.SESSION_CONTEXT ?? "");
+        if (!proofNonceRun || !ctx.includes(String(proofNonceRun))) return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
+        return { ok: true };
+      };
+
+      const wrapped = await executeAutoContinueOnceV1({
       taskId,
       taskBody: task.body ?? "",
       promptText: prompt,
@@ -584,6 +628,8 @@ function looksLikeTimeout(err) {
       localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
       localAgentId: ORCH_LOCAL_AGENT_ID,
       cloudAgentId: ORCH_CLOUD_AGENT_ID,
+      cloudForbidden: isProof337Run,
+      verifyStructuredResult,
       run: async (agentId, message) => runOpenclawWithPrompt(agentId, message),
       extractFinalText: (env) => extractAgentFinalText(env),
       parseStructured: (text) => parseOrchestrationResult(text, taskId),
