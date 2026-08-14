@@ -31,6 +31,53 @@ function arg(name) {
   return i >= 0 ? process.argv[i + 1] : null;
 }
 
+function collectTopLevelJsonObjects(raw) {
+  const text = String(raw ?? "");
+  const found = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const candidate = text.slice(start, i + 1);
+        try { found.push(JSON.stringify(JSON.parse(candidate))); } catch {}
+        start = -1;
+      }
+    }
+  }
+  return found;
+}
+
+export function extractOpenclawJson(stdout, stderr) {
+  const candidates = [
+    ...collectTopLevelJsonObjects(stdout),
+    ...collectTopLevelJsonObjects(stderr)
+  ];
+  const unique = [...new Set(candidates)];
+  if (unique.length === 1) return unique[0];
+  if (unique.length > 1) {
+    throw new Error("Ambiguous OpenClaw JSON output: multiple distinct JSON objects");
+  }
+  return String(stdout ?? "");
+}
+
 async function main() {
   const repo = arg("--repo");
   const issue = arg("--issue");
@@ -563,53 +610,6 @@ function runOpenclaw(agentId) {
     throw err;
   }
   return extractOpenclawJson(res.stdout, res.stderr);
-}
-
-function collectTopLevelJsonObjects(raw) {
-  const text = String(raw ?? "");
-  const found = [];
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') { inString = true; continue; }
-    if (ch === "{") {
-      if (depth === 0) start = i;
-      depth += 1;
-      continue;
-    }
-    if (ch === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        const candidate = text.slice(start, i + 1);
-        try { found.push(JSON.stringify(JSON.parse(candidate))); } catch {}
-        start = -1;
-      }
-    }
-  }
-  return found;
-}
-
-export function extractOpenclawJson(stdout, stderr) {
-  const candidates = [
-    ...collectTopLevelJsonObjects(stdout),
-    ...collectTopLevelJsonObjects(stderr)
-  ];
-  const unique = [...new Set(candidates)];
-  if (unique.length === 1) return unique[0];
-  if (unique.length > 1) {
-    throw new Error("Ambiguous OpenClaw JSON output: multiple distinct JSON objects");
-  }
-  return String(stdout ?? "");
 }
 
 function runOpenclawWithPrompt(agentId, message) {
