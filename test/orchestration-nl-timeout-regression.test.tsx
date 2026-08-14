@@ -41,12 +41,14 @@ test("NL adapter review classifier ignores prohibition-only safety language", ()
   assert.ok(text.includes("/\\bauth(?:entication|orization)?\\b/"), "auth must use word boundaries rather than substring matching");
 });
 
-test("NL adapter consumes only a matching subsequent ArchitectDecisionV1 approval", () => {
+test("NL adapter consumes only approval matching the latest checkpoint id", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.ok(text.includes("number,title,body,url,comments"), "issue comments must be fetched");
   assert.ok(text.includes("function commentCheckpointId(body)"));
   assert.ok(text.includes("function latestApprovedArchitectDecision(comments)"));
-  assert.ok(text.includes("commentCheckpointId(body) === latestCheckpointId"), "approval must match the latest checkpoint id");
+  assert.ok(text.includes("const approvalsByCheckpoint = new Map()"));
+  assert.ok(text.includes("approvalsByCheckpoint.set(checkpointId, body)"));
+  assert.ok(text.includes("approvalsByCheckpoint.get(latestCheckpointId) ?? null"), "approval must match the latest checkpoint id");
   assert.ok(text.includes("latest architect checkpoint has a matching subsequent approval"));
   assert.ok(text.includes("RECORDED ARCHITECT DECISION (authoritative for this rerun)"));
   assert.ok(text.includes("do not ask the same approval question again"));
@@ -70,14 +72,12 @@ test("#294A routing: adapter supports optional local-agent attempt with bounded 
   assert.ok(text.includes("ORCH_LOCAL_AGENT_ID"));
   assert.ok(text.includes("ORCH_CLOUD_AGENT_ID"));
   assert.ok(text.includes("classified.executionClass === \"AUTO_CONTINUE\""));
-  // Routing path is mediated through the local-first helper (bounded retry + bounded cloud fallback).
   assert.ok(text.includes("executeAutoContinueWithLocalFirstV1"));
   assert.ok(text.includes("runOpenclawWithPrompt"));
   assert.ok(text.includes("cloudAgentId: ORCH_CLOUD_AGENT_ID"));
   assert.ok(text.includes("localAgentId: ORCH_LOCAL_AGENT_ID"));
   assert.ok(text.includes("routingMeta()"));
 });
-
 
 test("NL adapter keeps approval authoritative across duplicate identical checkpoints", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
