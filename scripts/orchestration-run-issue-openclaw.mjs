@@ -20,6 +20,7 @@
 
 import { execFileSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
+import { executeAutoContinueOnceV1 } from "./orchestration-auto-continue-wrapper.mjs";
 import fs from "node:fs";
 
 function arg(name) {
@@ -525,15 +526,9 @@ function looksLikeTimeout(err) {
   try {
   // Local-first policy applies ONLY to AUTO_CONTINUE tasks.
   // Review and human gates must not be weakened.
-  if (classified.executionClass === "AUTO_CONTINUE") {
-    const routingState = {
-      attemptedAgents,
-      localAttempted,
-      localResult,
-      escalatedToCloud,
-      escalationReason
-    };
-    const exec = await executeAutoContinueWithLocalFirstV1({
+  const usedAutoContinueWrapper = classified.executionClass === "AUTO_CONTINUE";
+  if (usedAutoContinueWrapper) {
+    const wrapped = await executeAutoContinueOnceV1({
       taskId,
       taskBody: task.body ?? "",
       promptText: prompt,
@@ -541,7 +536,6 @@ function looksLikeTimeout(err) {
       localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
       localAgentId: ORCH_LOCAL_AGENT_ID,
       cloudAgentId: ORCH_CLOUD_AGENT_ID,
-      routingState,
       run: async (agentId, message) => runOpenclawWithPrompt(agentId, message),
       extractFinalText: (env) => extractAgentFinalText(env),
       parseStructured: (text) => parseOrchestrationResult(text),
@@ -549,11 +543,14 @@ function looksLikeTimeout(err) {
       coerceLooseJsonToResultContract: (obj, id) => coerceLooseJsonToResultContract(obj, id)
     });
 
-    // sync back routing state
-    localAttempted = routingState.localAttempted;
-    localResult = routingState.localResult;
-    escalatedToCloud = routingState.escalatedToCloud;
-    escalationReason = routingState.escalationReason;
+    // sync back routing state (single source of truth)
+    attemptedAgents.splice(0, attemptedAgents.length, ...(wrapped.routingState.attemptedAgents ?? []));
+    localAttempted = wrapped.routingState.localAttempted;
+    localResult = wrapped.routingState.localResult;
+    escalatedToCloud = wrapped.routingState.escalatedToCloud;
+    escalationReason = wrapped.routingState.escalationReason;
+
+    const exec = wrapped.exec;
 
     if (exec.coerced) {
       postComment([
@@ -706,6 +703,32 @@ function looksLikeTimeout(err) {
   }
 
   if (parsed.kind === "invalid") {
+  // AUTO_CONTINUE already performed its bounded local retry + bounded cloud fallback inside executeAutoContinueOnceV1.
+  // Do not re-enter any additional retry/escalation logic here.
+  if (classified.executionClass === "AUTO_CONTINUE") {
+    postComment([
+      "## OrchestrationResultContractV1",
+      "",
+      "```json",
+      JSON.stringify(
+        {
+          ...resultBase(taskId),
+          ...routingContractFields(),
+          STATUS: "BLOCKED",
+          SUMMARY: "Agent returned output that did not match required structured contracts",
+          BLOCKERS: [parsed.error],
+          UNEXPECTED_RESULTS: [safeTrunc(finalText, 4000), envelopeShape(envelope)],
+          NEXT_RECOMMENDED_TASK: "Fix worker prompt/contract compliance; bounded retries are already exhausted for this run."
+        },
+        null,
+        2
+      ),
+      "```"
+    ].join("\n"));
+    finishAwaitingReview();
+    process.exit(1);
+  }
+
   // #319: if local routing is enabled and we have only attempted local so far,
   // do exactly one bounded cloud escalation with an explicit reason.
   if (
