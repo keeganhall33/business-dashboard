@@ -12,9 +12,15 @@ function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: opts.capture ? undefined : "inherit", ...opts });
 }
 
-function reportFailure(err) {
+function diagnostic(err) {
   const message = err instanceof Error ? err.message : String(err);
-  const body = `DETERMINISTIC_HELPER_FAILURE stage=${stage}\nerror=${message.slice(0, 1200)}`;
+  const stdout = typeof err?.stdout === "string" ? err.stdout : "";
+  const stderr = typeof err?.stderr === "string" ? err.stderr : "";
+  return `${message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`.slice(0, 5000);
+}
+
+function reportFailure(err) {
+  const body = `DETERMINISTIC_HELPER_FAILURE stage=${stage}\n${diagnostic(err)}`;
   for (const issue of [366, 368]) {
     try { run("gh", ["issue", "comment", String(issue), "--repo", repo, "--body", body]); } catch {}
   }
@@ -63,15 +69,15 @@ try {
   const testPath = path.join(worktree, "test/orchestration-nl-timeout-regression.test.tsx");
   let testText = fs.readFileSync(testPath, "utf8");
   if (!testText.includes("keeps approval authoritative across duplicate identical checkpoints")) {
-    testText += `\n\ntest(\"NL adapter keeps approval authoritative across duplicate identical checkpoints\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"const approvalsByCheckpoint = new Map()\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.set(checkpointId, body)\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.get(latestCheckpointId) ?? null\"));\n  assert.equal(text.includes(\"latestApprovalBody = null\"), false);\n});\n\ntest(\"AUTO_CONTINUE prompt explicitly executes implementation instead of re-reviewing\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"EXECUTE IMPLEMENTATION NOW\"));\n  assert.ok(text.includes(\"Do not merely review, approve, summarize, or restate the task\"));\n  assert.equal(text.includes(\"Do not run tools unless explicitly required; prefer a concise result.\"), false);\n});\n`;
+    testText += `\n\ntest(\"NL adapter keeps approval authoritative across duplicate identical checkpoints\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"const approvalsByCheckpoint = new Map()\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.set(checkpointId, body)\"));\n  assert.ok(text.includes(\"approvalsByCheckpoint.get(latestCheckpointId) ?? null\"));\n});\n\ntest(\"AUTO_CONTINUE prompt explicitly executes implementation instead of re-reviewing\", () => {\n  const text = fs.readFileSync(\"scripts/orchestration-run-issue-openclaw.mjs\", \"utf8\");\n  assert.ok(text.includes(\"EXECUTE IMPLEMENTATION NOW\"));\n  assert.ok(text.includes(\"Do not merely review, approve, summarize, or restate the task\"));\n  assert.equal(text.includes(\"Do not run tools unless explicitly required; prefer a concise result.\"), false);\n});\n`;
     fs.writeFileSync(testPath, testText);
   }
 
   stage = "focused-test";
-  run("pnpm", ["exec", "tsx", "--test", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree });
+  run("pnpm", ["exec", "tsx", "--test", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree, capture: true });
 
   stage = "diff-check";
-  run("git", ["diff", "--check"], { cwd: worktree });
+  run("git", ["diff", "--check"], { cwd: worktree, capture: true });
 
   stage = "commit";
   run("git", ["add", "scripts/orchestration-run-issue-openclaw.mjs", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree });
