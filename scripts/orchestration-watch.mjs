@@ -77,8 +77,6 @@ function listReadyIssues(repo, maxIssues) {
 }
 
 function listHealCandidates(repo, maxIssues) {
-  // Self-heal: valid orchestration tasks must never be invisible due to missing orch:* state.
-  // Only heal issues already labeled agent-orchestration and missing ALL known orch state labels.
   const search = [
     'label:"agent-orchestration"',
     '-label:"orch:ready"',
@@ -88,18 +86,8 @@ function listHealCandidates(repo, maxIssues) {
   ].join(" ");
 
   const json = gh([
-    "issue",
-    "list",
-    "--repo",
-    repo,
-    "--state",
-    "open",
-    "--search",
-    search,
-    "--limit",
-    String(maxIssues),
-    "--json",
-    "number,title,url"
+    "issue", "list", "--repo", repo, "--state", "open",
+    "--search", search, "--limit", String(maxIssues), "--json", "number,title,url"
   ]);
   return JSON.parse(json);
 }
@@ -137,8 +125,6 @@ function hasSection(body, heading) {
 }
 
 function looksLikeOrchestrationTaskBody(body) {
-  // Canonical task surface is the GitHub issue template.
-  // Keep validation deterministic + conservative (fail-closed) to avoid mutating non-task issues.
   const requiredFields = [
     "task_id",
     "milestone",
@@ -266,18 +252,70 @@ function mapStreamToWorkerLocalAgentId(stream) {
   return "local-d";
 }
 
-function acquireWorkerLock(lockPath, issueNumber) {
-  // fail-closed: if lock can't be acquired, do not claim.
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    const payload = JSON.stringify({ pid: process.pid, issueNumber, createdAt: new Date().toISOString() }) + "\n";
-    const fd = fs.openSync(lockPath, "wx");
-    fs.writeFileSync(fd, payload);
-    fs.closeSync(fd);
+    process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return err?.code === "EPERM";
   }
+}
+
+function readWorkerLock(lockPath) {
+  try {
+    return JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function releaseWatcherReservation(lockPath, issueNumber) {
+  try {
+    const lock = readWorkerLock(lockPath);
+    if (!lock) return;
+    if (lock.pid !== process.pid) return;
+    if (Number(lock.issueNumber) !== Number(issueNumber)) return;
+    fs.unlinkSync(lockPath);
+  } catch {
+    // fail closed; next poll can reconcile it
+  }
+}
+
+function acquireWorkerLock(lockPath, issueNumber) {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const payload = JSON.stringify({
+        pid: process.pid,
+        issueNumber,
+        ownerType: "watcher-reservation",
+        createdAt: new Date().toISOString()
+      }) + "\n";
+      const fd = fs.openSync(lockPath, "wx");
+      fs.writeFileSync(fd, payload);
+      fs.closeSync(fd);
+      return true;
+    } catch (err) {
+      if (err?.code !== "EEXIST") return false;
+
+      const existing = readWorkerLock(lockPath);
+      const existingPid = Number(existing?.pid);
+      const watcherOwnedLegacyLock = existingPid === process.pid;
+      const deadOwner = !isProcessAlive(existingPid);
+
+      if (!watcherOwnedLegacyLock && !deadOwner) return false;
+
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
@@ -302,11 +340,9 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
     return;
   }
 
-  // Determine per-stream worker identity BEFORE claiming.
   const localAgentId = mapStreamToWorkerLocalAgentId(stream);
   const lockPath = path.join(os.homedir(), ".openclaw", "state", "orchestration-worker-locks", `${localAgentId}.lock`);
 
-  // Enforce: max 1 in-flight invocation per worker identity.
   if (!acquireWorkerLock(lockPath, issueNumber)) {
     return;
   }
@@ -328,8 +364,6 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
       return;
     }
 
-    // Natural-language tasks are launched detached. The adapter owns its isolated
-    // OpenClaw execution, result posting, timeout/cleanup, and final label transition.
     runCommand(
       `node scripts/launch-orchestration-nl-detached.mjs --repo ${repo} --issue ${issueNumber} --timeout 180 --cloud-agent-id main --local-agent-id ${localAgentId} --worker-lock-path ${lockPath}`,
       Math.max(commandTimeoutMs, 30_000)
@@ -343,18 +377,21 @@ async function handleOne(repo, agent, issueNumber, commandTimeoutMs) {
       SUMMARY: "Bounded task execution stopped safely and requires review.",
       BLOCKERS: [message]
     });
+  } finally {
+    // EXECUTE tasks and failed launches remain watcher-owned and must be released.
+    // Successful detached launches transfer ownership to the child PID, so this
+    // is a no-op for an actually running worker.
+    releaseWatcherReservation(lockPath, issueNumber);
   }
 }
 
 async function loop() {
   const args = parseArgs(process.argv);
   ensureLabels(args.repo);
-  // Heal first so we never miss tasks created without orch:ready.
   selfHealMissingReady(args.repo, args.agent, Math.max(args.maxIssues, 20));
   do {
     let issues = [];
     try {
-      // Periodic heal to enforce template/watcher parity over time.
       selfHealMissingReady(args.repo, args.agent, Math.max(args.maxIssues, 20));
       issues = listReadyIssues(args.repo, args.maxIssues);
     } catch (err) {
