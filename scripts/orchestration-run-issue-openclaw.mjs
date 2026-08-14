@@ -258,7 +258,7 @@ function resultBase(taskId) {
   };
 }
 
-function parseOrchestrationResult(text) {
+function parseOrchestrationResult(text, fallbackTaskId = null) {
   const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : String(text ?? "");
   if (!candidate.trim()) {
@@ -270,11 +270,17 @@ function parseOrchestrationResult(text) {
   const obj = JSON.parse(candidate.trim());
 
   if (obj && typeof obj === "object") {
-    if (typeof obj.TASK_ID === "string" && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") {
-      return { kind: "result", value: obj };
+    const resolvedTaskId = typeof obj.TASK_ID === "string" && obj.TASK_ID.trim()
+      ? obj.TASK_ID.trim()
+      : (fallbackTaskId ? String(fallbackTaskId) : null);
+    if (resolvedTaskId && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") {
+      return {
+        kind: "result",
+        value: { ...resultBase(resolvedTaskId), ...obj, TASK_ID: resolvedTaskId }
+      };
     }
-    if (typeof obj.TASK_ID === "string" && typeof obj.CHECKPOINT_ID === "string" && typeof obj.QUESTION_OR_DECISION === "string") {
-      return { kind: "checkpoint", value: obj };
+    if (resolvedTaskId && typeof obj.CHECKPOINT_ID === "string" && typeof obj.QUESTION_OR_DECISION === "string") {
+      return { kind: "checkpoint", value: { ...obj, TASK_ID: resolvedTaskId } };
     }
   }
 
@@ -546,7 +552,7 @@ function runOpenclawWithPrompt(agentId, message) {
 
 function tryParseStructured(envelope) {
   const finalText = extractAgentFinalText(envelope);
-  const parsed = parseOrchestrationResult(finalText);
+  const parsed = parseOrchestrationResult(finalText, taskId);
   return { finalText, parsed };
 }
 
@@ -574,7 +580,7 @@ function looksLikeTimeout(err) {
       cloudAgentId: ORCH_CLOUD_AGENT_ID,
       run: async (agentId, message) => runOpenclawWithPrompt(agentId, message),
       extractFinalText: (env) => extractAgentFinalText(env),
-      parseStructured: (text) => parseOrchestrationResult(text),
+      parseStructured: (text) => parseOrchestrationResult(text, taskId),
       deltaDemandsPass: (body) => deltaDemandsPass(body),
       coerceLooseJsonToResultContract: (obj, id) => coerceLooseJsonToResultContract(obj, id)
     });
@@ -780,7 +786,7 @@ function looksLikeTimeout(err) {
       const cloudOut = runOpenclaw(ORCH_CLOUD_AGENT_ID);
       const cloudEnvelope = JSON.parse(String(cloudOut ?? ""));
       const cloudFinal = extractAgentFinalText(cloudEnvelope);
-      const cloudParsed = parseOrchestrationResult(cloudFinal);
+      const cloudParsed = parseOrchestrationResult(cloudFinal, taskId);
       if (cloudParsed.kind !== "invalid") {
         envelope = cloudEnvelope;
         // shadow locals for later logging
