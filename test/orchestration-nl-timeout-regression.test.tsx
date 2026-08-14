@@ -77,3 +77,18 @@ test("#294A routing: adapter supports optional local-agent attempt with bounded 
   assert.ok(text.includes("localAgentId: ORCH_LOCAL_AGENT_ID"));
   assert.ok(text.includes("routingMeta()"));
 });
+
+
+test("NL adapter keeps approval authoritative across duplicate identical checkpoints", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("const approvalsByCheckpoint = new Map()"));
+  assert.ok(text.includes("approvalsByCheckpoint.set(checkpointId, body)"));
+  assert.ok(text.includes("approvalsByCheckpoint.get(latestCheckpointId) ?? null"));
+});
+
+test("AUTO_CONTINUE prompt explicitly executes implementation instead of re-reviewing", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("EXECUTE IMPLEMENTATION NOW"));
+  assert.ok(text.includes("Do not merely review, approve, summarize, or restate the task"));
+  assert.equal(text.includes("Do not run tools unless explicitly required; prefer a concise result."), false);
+});
