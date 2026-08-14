@@ -92,3 +92,13 @@ test("AUTO_CONTINUE prompt explicitly executes implementation instead of re-revi
   assert.ok(text.includes("Do not merely review, approve, summarize, or restate the task"));
   assert.equal(text.includes("Do not run tools unless explicitly required; prefer a concise result."), false);
 });
+
+
+test("Ollama prompts include explicit OrchestrationResultContractV1 schema", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("Use EXACT uppercase keys and this complete shape"));
+  assert.ok(text.includes("No DECISION-only object"));
+  assert.ok(text.includes("\"TASK_ID\":\"issue-or-task-id\""));
+  assert.ok(text.includes("\"FILES_CHANGED\":[]"));
+  assert.ok(text.includes("safeTrunc(String(basePrompt ?? \"\"), 1400)"));
+});
