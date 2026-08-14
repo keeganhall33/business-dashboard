@@ -19,6 +19,8 @@ export async function executeAutoContinueWithLocalFirstV1(input) {
     localRoutingEnabled,
     localAgentId,
     cloudAgentId,
+    cloudForbidden,
+    verifyStructuredResult,
     run,
     routingState,
     extractFinalText,
@@ -41,6 +43,14 @@ export async function executeAutoContinueWithLocalFirstV1(input) {
     try {
       const parsed = parseStructured(finalText);
       if (parsed.kind === "invalid") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT", raw, envelope, finalText };
+
+      if (typeof verifyStructuredResult === "function") {
+        const verification = verifyStructuredResult({ parsed, envelope, finalText, agentId });
+        if (verification && verification.ok === false) {
+          return { ok: false, kind: verification.kind ?? "INVALID_STRUCTURED_OUTPUT", raw, envelope, finalText };
+        }
+      }
+
       return { ok: true, kind: parsed.kind, value: parsed.value, raw, envelope, finalText };
     } catch {
       return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT", raw, envelope, finalText };
@@ -70,6 +80,12 @@ export async function executeAutoContinueWithLocalFirstV1(input) {
   }
 
   if (second.ok) return { final: second, coerced: null };
+
+  if (cloudForbidden || !cloudAgentId) {
+    routingState.escalatedToCloud = false;
+    routingState.escalationReason = null;
+    return { final: second, coerced: null };
+  }
 
   routingState.escalatedToCloud = true;
   routingState.escalationReason = "LOCAL_INVALID_STRUCTURED_OUTPUT";
