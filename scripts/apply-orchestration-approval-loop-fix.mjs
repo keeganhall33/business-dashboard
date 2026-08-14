@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const repo = "keeganhall33/business-dashboard";
+const sourceRoot = process.cwd();
 const worktree = path.join(os.tmpdir(), `business-dashboard-approval-loop-${Date.now()}`);
 const branch = `fix/approval-consumption-loop-${Date.now()}`;
 let stage = "startup";
@@ -74,7 +75,9 @@ try {
   }
 
   stage = "focused-test";
-  run("pnpm", ["exec", "tsx", "--test", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree, capture: true });
+  const tsxPath = path.join(sourceRoot, "node_modules", ".bin", "tsx");
+  if (!fs.existsSync(tsxPath)) throw new Error(`canonical TSX runner not found at ${tsxPath}`);
+  run(tsxPath, ["--test", "test/orchestration-nl-timeout-regression.test.tsx"], { cwd: worktree, capture: true });
 
   stage = "diff-check";
   run("git", ["diff", "--check"], { cwd: worktree, capture: true });
