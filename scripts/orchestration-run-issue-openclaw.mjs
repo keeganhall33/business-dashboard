@@ -116,27 +116,26 @@ function commentCheckpointId(body) {
 function latestApprovedArchitectDecision(comments) {
   const list = Array.isArray(comments) ? comments : [];
   let latestCheckpointId = null;
-  let latestApprovalBody = null;
+  const approvalsByCheckpoint = new Map();
 
   for (const comment of list) {
     const body = String(comment?.body ?? "");
     if (/##\s+ArchitectCheckpointV1/i.test(body)) {
-      latestCheckpointId = commentCheckpointId(body);
-      latestApprovalBody = null;
+      const checkpointId = commentCheckpointId(body);
+      if (checkpointId) latestCheckpointId = checkpointId;
       continue;
     }
 
     if (
-      latestCheckpointId &&
       /##\s+ArchitectDecisionV1/i.test(body) &&
-      /DECISION:\s*(?:APPROVE_AND_PROCEED|APPROVE)\b/i.test(body) &&
-      commentCheckpointId(body) === latestCheckpointId
+      /DECISION:\s*(?:APPROVE_AND_PROCEED|APPROVE)\b/i.test(body)
     ) {
-      latestApprovalBody = body;
+      const checkpointId = commentCheckpointId(body);
+      if (checkpointId) approvalsByCheckpoint.set(checkpointId, body);
     }
   }
 
-  return latestApprovalBody;
+  return latestCheckpointId ? approvalsByCheckpoint.get(latestCheckpointId) ?? null : null;
 }
 
 function reviewIntentText(body) {
@@ -221,10 +220,11 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
           `Keep it short: decision + smallest next validation step.`
         ].join("\n")
       : [
-          `Return ONLY OrchestrationResultContractV1 as strict JSON (no prose).`,
+          `EXECUTE IMPLEMENTATION NOW. Use repository tools as required to implement, test, commit, push, and open the focused PR requested by the task. Do not merely review, approve, summarize, or restate the task.`,
+          `Return ONLY OrchestrationResultContractV1 as strict JSON (no prose) after the bounded implementation attempt completes.`,
           approvedDecision
-            ? `An architect approval is already recorded above. Proceed only within that approved scope; do not ask the same approval question again.`
-            : `Do not run tools unless explicitly required; prefer a concise result.`
+            ? `An architect approval is already recorded above and remains authoritative for an identical repeated checkpoint. Proceed within that approved scope; do not ask the same approval question again.`
+            : `Proceed only within AUTO_CONTINUE scope and preserve all safety gates.`
         ].join("\n");
 
   return [header, "", reference, "", delta, decision ? `\n${decision}` : "", "", outputContract].join("\n\n");
