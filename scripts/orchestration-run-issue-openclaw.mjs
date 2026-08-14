@@ -190,8 +190,8 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
   const s = extractReferenceDelta(body);
   const approvedDecision = latestApprovedArchitectDecision(comments);
 
-  const isProof337 = Number(issueNumber) === 337;
-  const proofNonce = isProof337 ? `proof-337-${Date.now()}` : null;
+  // NOTE: proof nonce is generated exactly once per run immediately before invocation.
+  // buildCompactAgentPrompt must not generate any nonce.
 
   // Hard token discipline: do not replay full issue bodies or comment history.
   // Provide only REFERENCE + DELTA + the latest applicable architect decision.
@@ -231,18 +231,7 @@ function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, exe
             : `Proceed only within AUTO_CONTINUE scope and preserve all safety gates.`
         ].join("\n");
 
-  const proofGuard = isProof337 && proofNonce
-    ? [
-        "",
-        "### PROOF_GUARD (AUTHORITATIVE)",
-        "CLOUD_FORBIDDEN=true",
-        `FRESHNESS_NONCE=${proofNonce} (MUST be included verbatim inside SESSION_CONTEXT)`,
-        "If you cannot comply, return STATUS=BLOCKED with BLOCKERS explaining why.",
-        "Reminder: response MUST be a single JSON object only."
-      ].join("\n")
-    : "";
-
-  return [header, "", reference, "", delta, decision ? `\n${decision}` : "", proofGuard, "", outputContract].join("\n\n");
+  return [header, "", reference, "", delta, decision ? `\n${decision}` : "", "", outputContract].join("\n\n");
 }
 
 function safeTrunc(text, max) {
@@ -431,11 +420,20 @@ function finishAwaitingReview() {
   let escalatedToCloud = false;
   let escalationReason = null;
 
-function buildStrictJsonRetryPrompt(basePrompt) {
+function buildStrictJsonRetryPrompt(basePrompt, opts) {
   // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
   // Keep this minimal and contract-focused.
+  const proofGuard =
+    opts && opts.isProof337 && opts.proofNonce
+      ? [
+          "PROOF_GUARD (AUTHORITATIVE):",
+          "CLOUD_FORBIDDEN=true",
+          `FRESHNESS_NONCE=${String(opts.proofNonce)} (MUST be included verbatim inside SESSION_CONTEXT)`
+        ]
+      : [];
   return [
     "STRICT_JSON_ONLY_RETRY:",
+    ...proofGuard,
     "Return ONLY one OrchestrationResultContractV1 JSON object and nothing else.",
     "No prose. No code fences. No DECISION-only object. No ArchitectCheckpointV1.",
     "Use EXACT uppercase keys. Minimum valid complete shape:",
@@ -455,6 +453,20 @@ function shouldEnforceStrictJsonForLocal(message) {
   return /Return ONLY\s+OrchestrationResultContractV1\s+as strict JSON/i.test(text) ||
     /STRICT_JSON_ONLY/i.test(text) ||
     /OrchestrationResultContractV1/i.test(text);
+}
+
+function applyProofGuardForLocalStrictJson(message, opts) {
+  const text = String(message ?? "");
+  if (!(opts && opts.isProof337 && opts.proofNonce)) return text;
+  // Ensure proof guard is present even if the original message is truncated elsewhere.
+  if (text.includes("CLOUD_FORBIDDEN=true") && text.includes(String(opts.proofNonce))) return text;
+  return [
+    "### PROOF_GUARD (AUTHORITATIVE)",
+    "CLOUD_FORBIDDEN=true",
+    `FRESHNESS_NONCE=${String(opts.proofNonce)} (MUST be included verbatim inside SESSION_CONTEXT)`,
+    "",
+    text
+  ].join("\n");
 }
 
 function deltaDemandsPass(body) {
@@ -544,9 +556,12 @@ function runOpenclawWithPrompt(agentId, message) {
     ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
     : null;
 
-  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(message)
-    ? buildStrictJsonRetryPrompt(message)
-    : String(message ?? "");
+  const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
+  const messageWithGuard = useEmbeddedLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
+
+  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
+    ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts)
+    : String(messageWithGuard ?? "");
 
   // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
   // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
@@ -624,7 +639,7 @@ function looksLikeTimeout(err) {
       taskId,
       taskBody: task.body ?? "",
       promptText: prompt,
-      strictRetryPrompt: buildStrictJsonRetryPrompt(prompt),
+      strictRetryPrompt: buildStrictJsonRetryPrompt(prompt, { isProof337: isProof337Run, proofNonce: proofNonceRun }),
       localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
       localAgentId: ORCH_LOCAL_AGENT_ID,
       cloudAgentId: ORCH_CLOUD_AGENT_ID,
