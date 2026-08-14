@@ -18,7 +18,7 @@
   - It does not implement SMTP or any mailbox/network integrations.
 */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
 import { executeAutoContinueOnceV1 } from "./orchestration-auto-continue-wrapper.mjs";
 import { selectWorkerLocalAgentIdV1, shouldEnableLocalRoutingV1 } from "./orchestration-agent-selection.mjs";
@@ -29,6 +29,53 @@ import os from "node:os";
 function arg(name) {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : null;
+}
+
+function collectTopLevelJsonObjects(raw) {
+  const text = String(raw ?? "");
+  const found = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const candidate = text.slice(start, i + 1);
+        try { found.push(JSON.stringify(JSON.parse(candidate))); } catch {}
+        start = -1;
+      }
+    }
+  }
+  return found;
+}
+
+export function extractOpenclawJson(stdout, stderr) {
+  const candidates = [
+    ...collectTopLevelJsonObjects(stdout),
+    ...collectTopLevelJsonObjects(stderr)
+  ];
+  const unique = [...new Set(candidates)];
+  if (unique.length === 1) return unique[0];
+  if (unique.length > 1) {
+    throw new Error("Ambiguous OpenClaw JSON output: multiple distinct JSON objects");
+  }
+  return String(stdout ?? "");
 }
 
 async function main() {
@@ -534,7 +581,7 @@ function runOpenclaw(agentId) {
   if (isLocal) return runOpenclawWithPrompt(agentId, prompt);
 
   attemptedAgents.push(agentId);
-  return execFileSync(
+  const res = spawnSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
@@ -555,6 +602,14 @@ function runOpenclaw(agentId) {
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const err = new Error(`openclaw exited with code ${res.status}`);
+    err.stdout = res.stdout;
+    err.stderr = res.stderr;
+    throw err;
+  }
+  return extractOpenclawJson(res.stdout, res.stderr);
 }
 
 function runOpenclawWithPrompt(agentId, message) {
@@ -581,7 +636,8 @@ function runOpenclawWithPrompt(agentId, message) {
     // Preserve canonical config so agent ids (local-a/local-b/...) resolve correctly.
     openclawEnv.OPENCLAW_CONFIG_PATH = openclawEnv.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), ".openclaw", "openclaw.json");
   }
-  return execFileSync(
+  const effectiveTimeout = useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : Number(timeoutSeconds);
+  const res = spawnSync(
     "/opt/homebrew/bin/openclaw",
     [
       "agent",
@@ -595,17 +651,24 @@ function runOpenclawWithPrompt(agentId, message) {
       "--thinking",
       thinking,
       "--timeout",
-      // Local inference can be slower; keep bounded but allow enough time for Ollama on host.
-      String(useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : timeoutSeconds)
+      String(effectiveTimeout)
     ],
     {
       env: openclawEnv,
       encoding: "utf8",
-      timeout: (timeoutSeconds + 60) * 1000,
+      timeout: (effectiveTimeout + 60) * 1000,
       maxBuffer: 16 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const err = new Error(`openclaw exited with code ${res.status}`);
+    err.stdout = res.stdout;
+    err.stderr = res.stderr;
+    throw err;
+  }
+  return extractOpenclawJson(res.stdout, res.stderr);
 }
 
 function tryParseStructured(envelope) {
