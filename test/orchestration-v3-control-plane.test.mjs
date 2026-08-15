@@ -65,3 +65,12 @@ test("V3 Ollama usage is not reported as cloud usage", () => {
   assert.match(source, /LOCAL_USAGE: localUsage/);
   assert.match(source, /localResult = "SUCCESS"/);
 });
+
+test("V3 rejects model PASS without git or GitHub mutation evidence", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(source, /verifyPassEvidence/);
+  assert.match(source, /PASS_REJECTED_BY_EVIDENCE/);
+  assert.match(source, /git HEAD and open PR heads did not change/);
+  assert.match(source, /no referenced or worker-HEAD-linked PR changed/);
+  assert.match(source, /EVIDENCE_REJECTED/);
+});
