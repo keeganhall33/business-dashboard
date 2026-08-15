@@ -1,6 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 
+const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
+
 export const ORCHESTRATION_V3 = Object.freeze({
   version: 3,
   repo: "keeganhall33/business-dashboard",
@@ -13,8 +15,9 @@ export const ORCHESTRATION_V3 = Object.freeze({
     base: "agent-orchestration"
   }),
   runtime: Object.freeze({
-    root: path.join(os.homedir(), ".openclaw", "runtime", "business-dashboard"),
-    stateRoot: path.join(os.homedir(), ".openclaw", "state", "orchestration-v3"),
+    root: path.join(OPENCLAW_ROOT, "runtime-v3", "business-dashboard"),
+    worktreeRoot: path.join(OPENCLAW_ROOT, "worktrees-v3"),
+    stateRoot: path.join(OPENCLAW_ROOT, "state", "orchestration-v3"),
     logRoot: path.join(os.homedir(), "Library", "Logs"),
     canonicalRef: "origin/main"
   }),
@@ -24,10 +27,10 @@ export const ORCHESTRATION_V3 = Object.freeze({
     cloudFallbackAllowed: false
   }),
   workers: Object.freeze({
-    "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-a") }),
-    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-b") }),
-    "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-c") }),
-    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-d") })
+    "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-a") }),
+    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-b") }),
+    "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-c") }),
+    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-d") })
   })
 });
 
