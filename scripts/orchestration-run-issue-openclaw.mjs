@@ -90,6 +90,8 @@ async function main() {
   const EXPLICIT_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim();
   // Cloud agent remains configurable (review/gating may still use cloud).
   const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
+  // Ephemeral local orchestration uses an explicit Ollama model, never a persistent OpenClaw agent session.
+  const ORCH_LOCAL_MODEL = String(process.env.ORCH_LOCAL_MODEL ?? "ollama/mistral:latest").trim();
 
   if (!repo || !issue) {
     console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
@@ -205,9 +207,6 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
     return { executionClass: "ARCHITECT_REVIEW_REQUIRED", reason: `stream=${stream} is review-sensitive` };
   }
 
-  // Review only affirmative action intent. Safety constraints such as
-  // "No credentials" or "Do not perform production writes" must not turn
-  // a read-only AUTO_CONTINUE task into an architect checkpoint.
   const text = reviewIntentText(body);
   const reviewPatterns = [
     /\bmigration\b/,
@@ -234,12 +233,6 @@ function classifyExecution({ stream, humanApprovalRequired, body, comments }) {
 function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
   const s = extractReferenceDelta(body);
   const approvedDecision = latestApprovedArchitectDecision(comments);
-
-  // NOTE: proof nonce is generated exactly once per run immediately before invocation.
-  // buildCompactAgentPrompt must not generate any nonce.
-
-  // Hard token discipline: do not replay full issue bodies or comment history.
-  // Provide only REFERENCE + DELTA + the latest applicable architect decision.
   const maxRefChars = 1200;
   const maxDeltaChars = 1200;
   const maxDecisionChars = 1400;
@@ -462,20 +455,17 @@ function finishAwaitingReview() {
     ].join("\n");
   }
 
-// Keep turns fast to avoid gateway-level timeouts; prompts are compact and output is strict JSON.
   const thinking = "minimal";
 
   let out;
   const attemptedAgents = [];
 
   let localAttempted = false;
-  let localResult = "NOT_ATTEMPTED"; // SUCCESS | INVALID_STRUCTURED_OUTPUT | EXECUTION_ERROR | OTHER
+  let localResult = "NOT_ATTEMPTED";
   let escalatedToCloud = false;
   let escalationReason = null;
 
 function buildStrictJsonRetryPrompt(basePrompt, opts) {
-  // Prompt REPLACEMENT (not suffix): local models can drift into tool/prose guidance.
-  // Keep this minimal and contract-focused.
   const proofGuard =
     opts && opts.isProof337 && opts.proofNonce
       ? [
@@ -494,16 +484,12 @@ function buildStrictJsonRetryPrompt(basePrompt, opts) {
     "If implementation succeeded, report the actual files/tests/PR. If it failed, use BLOCKED or FAILED and state the blocker.",
     "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
     "",
-    // Intentional: omit large task context on retry; it reduces local instruction-following.
-    // The contract requirements above are sufficient for deterministic JSON return.
     "Task context omitted for retry (intentional)."
   ].join("\n");
 }
 
 function shouldEnforceStrictJsonForLocal(message) {
   const text = String(message ?? "");
-  // Only enforce when the task explicitly demands strict JSON-only.
-  // Avoid surprising normal conversational tasks.
   return /Return ONLY\s+OrchestrationResultContractV1\s+as strict JSON/i.test(text) ||
     /STRICT_JSON_ONLY/i.test(text) ||
     /OrchestrationResultContractV1/i.test(text);
@@ -512,7 +498,6 @@ function shouldEnforceStrictJsonForLocal(message) {
 function applyProofGuardForLocalStrictJson(message, opts) {
   const text = String(message ?? "");
   if (!(opts && opts.isProof337 && opts.proofNonce)) return text;
-  // Ensure proof guard is present even if the original message is truncated elsewhere.
   if (text.includes("CLOUD_FORBIDDEN=true") && text.includes(String(opts.proofNonce))) return text;
   return [
     "### PROOF_GUARD (AUTHORITATIVE)",
@@ -525,7 +510,6 @@ function applyProofGuardForLocalStrictJson(message, opts) {
 
 function deltaDemandsPass(body) {
   const d = section(body, "Delta") ?? "";
-  // Fail-closed: only treat as explicit PASS if the delta directly says STATUS PASS.
   return /\bSTATUS\b[^\n]*\bPASS\b/i.test(d);
 }
 
@@ -559,8 +543,6 @@ function routingMeta() {
 }
 
 function routingContractFields() {
-  // Required first-class routing fields for #294.
-  // Note: MODEL_USED is derived from OpenClaw envelope when available.
   return {
     ROUTING_TIER: ORCH_LOCAL_ROUTING_ENABLED ? "LOCAL_FIRST" : "CLOUD_ONLY",
     MODEL_USED: null,
@@ -574,9 +556,6 @@ function routingContractFields() {
 }
 
 function runOpenclaw(agentId) {
-  // Safety invariant: if the caller requests a local-* agent id, always execute via embedded --local
-  // (session-isolated) even when we're not in the AUTO_CONTINUE routing wrapper.
-  // This prevents accidental gateway/cloud paths and avoids persisted session lock contention.
   const isLocal = String(agentId).startsWith("local-") || agentId === "local";
   if (isLocal) return runOpenclawWithPrompt(agentId, prompt);
 
@@ -613,64 +592,64 @@ function runOpenclaw(agentId) {
 }
 
 function runOpenclawWithPrompt(agentId, message) {
-  const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
-  const sessionId = useEmbeddedLocal
-    ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
-    : null;
-
+  const useEphemeralLocal = String(agentId).startsWith("local-") || agentId === "local";
   const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
-  const messageWithGuard = useEmbeddedLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
-
-  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
+  const messageWithGuard = useEphemeralLocal
+    ? applyProofGuardForLocalStrictJson(message, proofOpts)
+    : String(message ?? "");
+  const effectiveMessage = useEphemeralLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
     ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts)
     : String(messageWithGuard ?? "");
+  const effectiveTimeout = useEphemeralLocal
+    ? Math.max(Number(timeoutSeconds) || 0, 180)
+    : Number(timeoutSeconds);
 
-  // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
-  // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
-  // (causing lock contention). For orchestration worker runs, we must guarantee a fresh, per-run state
-  // directory for embedded local execution while still reading the canonical config.
-  const openclawEnv = { ...process.env };
-  if (useEmbeddedLocal) {
-    const stateRoot = path.join(os.tmpdir(), `openclaw-orch-${process.pid}-${Date.now()}`);
-    openclawEnv.OPENCLAW_STATE_DIR = stateRoot;
-    // Preserve canonical config so agent ids (local-a/local-b/...) resolve correctly.
-    openclawEnv.OPENCLAW_CONFIG_PATH = openclawEnv.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), ".openclaw", "openclaw.json");
-  }
-  const effectiveTimeout = useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : Number(timeoutSeconds);
-  const res = spawnSync(
-    "/opt/homebrew/bin/openclaw",
-    [
-      "agent",
-      ...(useEmbeddedLocal ? ["--local"] : []),
-      ...(sessionId ? ["--session-id", sessionId] : []),
-      "--agent",
-      agentId,
-      "--message",
-      effectiveMessage,
-      "--json",
-      "--thinking",
-      thinking,
-      "--timeout",
-      String(effectiveTimeout)
-    ],
-    {
-      env: openclawEnv,
-      encoding: "utf8",
-      timeout: (effectiveTimeout + 60) * 1000,
-      maxBuffer: 16 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"]
-    }
-  );
+  const args = useEphemeralLocal
+    ? [
+        "agent",
+        "exec",
+        effectiveMessage,
+        "--cwd",
+        process.cwd(),
+        "--model",
+        ORCH_LOCAL_MODEL,
+        "--code-mode",
+        "code",
+        "--local-model-lean",
+        "--json",
+        "--thinking",
+        thinking,
+        "--timeout",
+        String(effectiveTimeout)
+      ]
+    : [
+        "agent",
+        "--agent",
+        agentId,
+        "--message",
+        effectiveMessage,
+        "--json",
+        "--thinking",
+        thinking,
+        "--timeout",
+        String(effectiveTimeout)
+      ];
+
+  const res = spawnSync("/opt/homebrew/bin/openclaw", args, {
+    encoding: "utf8",
+    timeout: (effectiveTimeout + 60) * 1000,
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   if (res.error) throw res.error;
   if (res.status !== 0) {
-    const err = new Error(`openclaw exited with code ${res.status}`);
+    const err = new Error("openclaw exited with code " + String(res.status));
     err.stdout = res.stdout;
     err.stderr = res.stderr;
     throw err;
   }
   return extractOpenclawJson(res.stdout, res.stderr);
 }
-
 function tryParseStructured(envelope) {
   const finalText = extractAgentFinalText(envelope);
   const parsed = parseOrchestrationResult(finalText, taskId);
@@ -687,8 +666,6 @@ function looksLikeTimeout(err) {
 }
 
   try {
-  // Local-first policy applies ONLY to AUTO_CONTINUE tasks.
-  // Review and human gates must not be weakened.
   const usedAutoContinueWrapper = classified.executionClass === "AUTO_CONTINUE";
   if (usedAutoContinueWrapper) {
       const verifyStructuredResult = ({ parsed, envelope }) => {
@@ -723,7 +700,6 @@ function looksLikeTimeout(err) {
       coerceLooseJsonToResultContract: (obj, id) => coerceLooseJsonToResultContract(obj, id)
     });
 
-    // sync back routing state (single source of truth)
     attemptedAgents.splice(0, attemptedAgents.length, ...(wrapped.routingState.attemptedAgents ?? []));
     localAttempted = wrapped.routingState.localAttempted;
     localResult = wrapped.routingState.localResult;
@@ -752,10 +728,6 @@ function looksLikeTimeout(err) {
     out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
   }
   } catch (err) {
-  // If main is degraded/unavailable, fall back to a known-fast orchestration agent.
-  // This preserves the transport contract (openclaw agent) while preventing watcher stalls.
-  // For AUTO_CONTINUE tasks, do not multi-hop into ad-hoc agents (e.g., "coding").
-  // This can bypass local-first policy and obscures routing proof. Fail closed.
   if (classified.executionClass !== "AUTO_CONTINUE" && ORCH_CLOUD_AGENT_ID === "main" && looksLikeTimeout(err)) {
     try {
       out = runOpenclaw("coding");
@@ -883,8 +855,6 @@ function looksLikeTimeout(err) {
   }
 
   if (parsed.kind === "invalid") {
-  // AUTO_CONTINUE already performed its bounded local retry + bounded cloud fallback inside executeAutoContinueOnceV1.
-  // Do not re-enter any additional retry/escalation logic here.
   if (classified.executionClass === "AUTO_CONTINUE") {
     postComment([
       "## OrchestrationResultContractV1",
@@ -909,8 +879,6 @@ function looksLikeTimeout(err) {
     process.exit(1);
   }
 
-  // #319: if local routing is enabled and we have only attempted local so far,
-  // do exactly one bounded cloud escalation with an explicit reason.
   if (
     classified.executionClass === "AUTO_CONTINUE" &&
     ORCH_LOCAL_ROUTING_ENABLED &&
@@ -927,17 +895,13 @@ function looksLikeTimeout(err) {
       const cloudParsed = parseOrchestrationResult(cloudFinal, taskId);
       if (cloudParsed.kind !== "invalid") {
         envelope = cloudEnvelope;
-        // shadow locals for later logging
         parsed = cloudParsed;
       }
     } catch {
-      // If escalation also fails, fall through to the invalid structured output post.
     }
   }
 
-  // If cloud escalation repaired the structured output, continue to the normal post path.
   if (parsed.kind !== "invalid") {
-    // continue
   } else {
   postComment([
     "## OrchestrationResultContractV1",
@@ -994,7 +958,6 @@ function looksLikeTimeout(err) {
   finishAwaitingReview();
 }
 
-// Run only when invoked as a script, not when imported for tests.
 if (process.argv[1] && process.argv[1].includes("orchestration-run-issue-openclaw.mjs")) {
   function releaseWorkerLock() {
     const lockPath = process.env.ORCH_WORKER_LOCK_PATH;
@@ -1004,7 +967,6 @@ if (process.argv[1] && process.argv[1].includes("orchestration-run-issue-opencla
       const pid = JSON.parse(raw).pid;
       if (pid === process.pid) fs.unlinkSync(lockPath);
     } catch {
-      // ignore
     }
   }
 
