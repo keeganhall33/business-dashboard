@@ -55,17 +55,18 @@ const env = {
   ORCH_LOCAL_ROUTING_ENABLED: "true",
   ORCH_LOCAL_AGENT_ID: workerId,
   ORCH_LOCAL_MODEL: ORCHESTRATION_V3.model.id,
-  ORCH_CLOUD_AGENT_ID: "",
+  ORCH_CLOUD_AGENT_ID: workerId,
+  OPENCLAW_MODEL: ORCHESTRATION_V3.model.id,
   OPENCLAW_FALLBACK_MODELS: "",
   OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
 };
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, model: ORCHESTRATION_V3.model.id }));
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false }));
 const run = spawnSync(process.execPath, [
   "scripts/orchestration-run-issue-openclaw.mjs",
   "--repo", ORCHESTRATION_V3.repo,
   "--issue", String(issue),
-  "--agent", "main",
+  "--agent", workerId,
   "--timeout", "900"
 ], {
   cwd: cfg.worktree,
@@ -86,7 +87,6 @@ if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
 } else if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
   add = [];
 } else if (status === "AWAITING_REVIEW") {
-  // V3 never creates a fake review gate for work explicitly marked as not requiring a human.
   add = [ORCHESTRATION_V3.queue.blocked];
 } else if (["BLOCKED", "FAILED"].includes(status) || run.status !== 0 || run.error) {
   add = [ORCHESTRATION_V3.queue.blocked];
