@@ -1,6 +1,17 @@
 import fs from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+
+const ALLOWED_OPENCLAW_UNTRACKED = new Set([
+  "AGENTS.md",
+  "HEARTBEAT.md",
+  "IDENTITY.md",
+  "SOUL.md",
+  "TOOLS.md",
+  "USER.md",
+  "openclaw-workspace-state.json"
+]);
 
 function run(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
@@ -14,7 +25,9 @@ export function inspectGitRoot(cwd) {
     head: null,
     branch: null,
     status: [],
+    trackedChangeCount: 0,
     trackedDeletionCount: 0,
+    unexpectedUntracked: [],
     healthy: false,
     errors: []
   };
@@ -28,9 +41,17 @@ export function inspectGitRoot(cwd) {
     result.branch = run(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
     const status = run(cwd, ["status", "--porcelain=v1"]);
     result.status = status ? status.split("\n") : [];
+    result.trackedChangeCount = result.status.filter((line) => !line.startsWith("?? ")).length;
     result.trackedDeletionCount = result.status.filter((line) => /^\s?D\s|^D\s/.test(line)).length;
+    result.unexpectedUntracked = result.status
+      .filter((line) => line.startsWith("?? "))
+      .map((line) => line.slice(3))
+      .filter((rel) => !ALLOWED_OPENCLAW_UNTRACKED.has(path.normalize(rel)));
+
     if (result.gitRoot !== cwd) result.errors.push("WORKTREE_ROOT_MISMATCH");
     if (result.trackedDeletionCount >= 25) result.errors.push("MASS_TRACKED_DELETION");
+    else if (result.trackedChangeCount > 0) result.errors.push("TRACKED_WORKTREE_DIRTY");
+    if (result.unexpectedUntracked.length > 0) result.errors.push("UNEXPECTED_UNTRACKED_FILES");
     result.healthy = result.errors.length === 0;
   } catch (err) {
     result.errors.push(`GIT_PREFLIGHT_FAILED:${err instanceof Error ? err.message : String(err)}`);
