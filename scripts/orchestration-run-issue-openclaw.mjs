@@ -608,6 +608,7 @@ function runOpenclawWithPrompt(agentId, message) {
     ? [
         "agent",
         "exec",
+        "--message",
         effectiveMessage,
         "--cwd",
         process.cwd(),
