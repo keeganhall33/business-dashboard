@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const PLACEHOLDER_PATH_RE = /^(?:path\/to\/|\/path\/to\/|example\/|todo\/|tbd\/)/i;
 const PLACEHOLDER_TASK_IDS = new Set(["unknown", "issue-or-task-id", "task-id", "issue-id"]);
@@ -12,7 +15,72 @@ function normalizeMergeable(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-export function verifyOrchestrationResultEvidenceV1({ parsed, taskId }) {
+function normalizeRepoPath(value) {
+  return String(value ?? "").trim().replace(/^\.\//, "");
+}
+
+function resolveAgentWorkspace(localAgentId) {
+  if (!localAgentId) return null;
+  try {
+    const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const agents = config?.agents;
+    if (Array.isArray(agents?.list)) {
+      const entry = agents.list.find((item) => (item?.id ?? item?.name) === localAgentId);
+      return typeof entry?.workspace === "string" ? entry.workspace : null;
+    }
+    if (agents?.entries && typeof agents.entries === "object") {
+      const entry = agents.entries[localAgentId];
+      return typeof entry?.workspace === "string" ? entry.workspace : null;
+    }
+  } catch {}
+  return null;
+}
+
+function gitNameSet(workspace, args) {
+  try {
+    const out = execFileSync("git", ["-C", workspace, ...args], {
+      encoding: "utf8",
+      timeout: 30_000
+    });
+    return new Set(String(out ?? "").split("\n").map((s) => s.trim()).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function collectWorkspaceEvidence(workspace) {
+  const names = new Set();
+  for (const set of [
+    gitNameSet(workspace, ["diff", "--name-only"]),
+    gitNameSet(workspace, ["diff", "--cached", "--name-only"]),
+    gitNameSet(workspace, ["diff", "--name-only", "origin/main...HEAD"])
+  ]) {
+    for (const name of set) names.add(normalizeRepoPath(name));
+  }
+  return names;
+}
+
+function parseClaimedPr(pr) {
+  if (!pr) return null;
+  if (typeof pr === "object") {
+    const url = String(pr.url ?? "").trim();
+    const number = Number(pr.number);
+    if (url) return { locator: url, claimedNumber: Number.isFinite(number) ? number : null };
+    if (Number.isFinite(number)) return { locator: String(number), claimedNumber: number };
+    return null;
+  }
+  if (typeof pr === "string") {
+    const text = pr.trim();
+    const urlMatch = text.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/i);
+    if (urlMatch) return { locator: urlMatch[0], claimedNumber: Number(urlMatch[1]) };
+    const numberMatch = text.match(/#(\d+)\b/);
+    if (numberMatch) return { locator: numberMatch[1], claimedNumber: Number(numberMatch[1]) };
+  }
+  return null;
+}
+
+export function verifyOrchestrationResultEvidenceV1({ parsed, taskId, localAgentId }) {
   if (!parsed || parsed.kind !== "result" || !parsed.value || typeof parsed.value !== "object") {
     return { ok: true };
   }
@@ -32,10 +100,10 @@ export function verifyOrchestrationResultEvidenceV1({ parsed, taskId }) {
   if (status !== "PASS") return { ok: true };
 
   const files = Array.isArray(value.FILES_CHANGED) ? value.FILES_CHANGED : [];
-  for (const file of files) {
-    const path = String(file ?? "").trim();
-    if (!path || PLACEHOLDER_PATH_RE.test(path) || path.includes("path/to/")) {
-      return fail(`PASS contains placeholder FILES_CHANGED entry: ${path || "<empty>"}`);
+  const normalizedFiles = files.map(normalizeRepoPath);
+  for (const filePath of normalizedFiles) {
+    if (!filePath || filePath.startsWith("/") || PLACEHOLDER_PATH_RE.test(filePath) || filePath.includes("path/to/")) {
+      return fail(`PASS contains invalid or placeholder FILES_CHANGED entry: ${filePath || "<empty>"}`);
     }
   }
 
@@ -44,16 +112,25 @@ export function verifyOrchestrationResultEvidenceV1({ parsed, taskId }) {
     return fail(`PASS lacks concrete test evidence: ${tests || "<empty>"}`);
   }
 
-  const pr = value.PR;
-  if (pr && typeof pr === "object") {
-    const prUrl = String(pr.url ?? "").trim();
-    if (!/^https:\/\/github\.com\//i.test(prUrl)) {
-      return fail("PASS claims a PR without a valid GitHub URL");
+  const workspace = resolveAgentWorkspace(localAgentId);
+  if (workspace && normalizedFiles.length > 0) {
+    const evidenceNames = collectWorkspaceEvidence(workspace);
+    for (const filePath of normalizedFiles) {
+      if (!evidenceNames.has(filePath)) {
+        return fail(`PASS claims changed file not present in actual git evidence for ${localAgentId}: ${filePath}`);
+      }
     }
+  }
 
+  const claimedPr = parseClaimedPr(value.PR);
+  if (value.PR && !claimedPr) {
+    return fail("PASS claims a PR but it is not machine-verifiable (use PR object with number/url or a #number/URL string)");
+  }
+
+  if (claimedPr) {
     let actual;
     try {
-      actual = JSON.parse(execFileSync("gh", ["pr", "view", prUrl, "--json", "number,url,state,mergeable"], {
+      actual = JSON.parse(execFileSync("gh", ["pr", "view", claimedPr.locator, "--json", "number,url,state,mergeable"], {
         encoding: "utf8",
         timeout: 30_000
       }));
@@ -61,20 +138,16 @@ export function verifyOrchestrationResultEvidenceV1({ parsed, taskId }) {
       return fail(`Could not verify claimed PR: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    if (Number.isFinite(Number(pr.number)) && Number(pr.number) !== Number(actual.number)) {
-      return fail(`Claimed PR number ${pr.number} does not match GitHub PR ${actual.number}`);
-    }
-    if (String(actual.state ?? "").toUpperCase() !== "OPEN" && String(value.MERGE_STATUS ?? "").toUpperCase() === "MERGEABLE") {
-      return fail(`Claimed MERGEABLE but GitHub PR state is ${actual.state}`);
+    if (claimedPr.claimedNumber !== null && claimedPr.claimedNumber !== Number(actual.number)) {
+      return fail(`Claimed PR number ${claimedPr.claimedNumber} does not match GitHub PR ${actual.number}`);
     }
 
     const claimedMergeable = normalizeMergeable(value.MERGE_STATUS);
     const actualMergeable = normalizeMergeable(actual.mergeable);
-    if (claimedMergeable === "MERGEABLE" && actualMergeable !== "MERGEABLE") {
-      return fail(`Claimed MERGEABLE but GitHub reports ${actualMergeable || "UNKNOWN"}`);
-    }
-    if (claimedMergeable === "CONFLICTING" && actualMergeable === "MERGEABLE") {
-      return fail("Claimed CONFLICTING but GitHub reports MERGEABLE");
+    if (String(actual.state ?? "").toUpperCase() === "OPEN" && ["MERGEABLE", "CONFLICTING"].includes(actualMergeable)) {
+      if (claimedMergeable !== actualMergeable) {
+        return fail(`Claimed MERGE_STATUS ${claimedMergeable || "<empty>"} but GitHub reports ${actualMergeable}`);
+      }
     }
   }
 
