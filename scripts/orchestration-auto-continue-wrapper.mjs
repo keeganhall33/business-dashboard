@@ -33,7 +33,8 @@ export async function executeAutoContinueOnceV1(input) {
   const verifyWithEvidence = (context) => {
     const generic = verifyOrchestrationResultEvidenceV1({
       parsed: context?.parsed,
-      taskId
+      taskId,
+      localAgentId
     });
     if (generic && generic.ok === false) return generic;
     if (typeof verifyStructuredResult === "function") {
