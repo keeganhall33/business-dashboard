@@ -34,7 +34,7 @@ export async function executeAutoContinueOnceV1(input) {
     const generic = verifyOrchestrationResultEvidenceV1({
       parsed: context?.parsed,
       taskId,
-      localAgentId
+      workspaceDir: localAgentId ? `${process.env.HOME}/.openclaw/worktrees/${localAgentId}` : null
     });
     if (generic && generic.ok === false) return generic;
     if (typeof verifyStructuredResult === "function") {
@@ -43,11 +43,24 @@ export async function executeAutoContinueOnceV1(input) {
     return { ok: true };
   };
 
+  const repoGuard = [
+    "### REPOSITORY_ROOT_GUARD (AUTHORITATIVE)",
+    "Your configured OpenClaw agent workspace is the repository/worktree root for this task.",
+    "Do NOT search for a nested directory named business-dashboard before working.",
+    "Before reporting that the repository, git metadata, branch, or required files are missing, you MUST actually invoke exec and run: pwd; git rev-parse --show-toplevel; git status --short --branch.",
+    "If git rev-parse succeeds, the repository exists. Continue from that directory and do not report REPOSITORY_NOT_FOUND.",
+    "Use repository-relative paths from that root. Do not invent paths, test commands, commits, or PR updates.",
+    "If the task references an existing PR branch, inspect the current worktree/HEAD first before attempting any checkout or branch mutation."
+  ].join("\n");
+
+  const guardedPromptText = [repoGuard, "", String(promptText ?? "")].join("\n");
+  const guardedRetryPrompt = [repoGuard, "", String(strictRetryPrompt ?? "")].join("\n");
+
   const exec = await executeAutoContinueWithLocalFirstV1({
     taskId,
     taskBody,
-    promptText,
-    strictRetryPrompt,
+    promptText: guardedPromptText,
+    strictRetryPrompt: guardedRetryPrompt,
     localRoutingEnabled,
     localAgentId,
     cloudAgentId,
