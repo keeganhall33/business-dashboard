@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +33,19 @@ function readAgentConfigSurface() {
 function encodeAgentConfig(surface, list) {
   if (surface.kind === "array") return list;
   return Object.fromEntries(list.map(({ id, ...entry }) => [id, entry]));
+}
+function workspaceAttestationPath(worktree) {
+  const hash = crypto.createHash("sha256").update(worktree).digest("hex");
+  return path.join(os.homedir(), ".openclaw", "workspace-attestations", `${hash}.attested`);
+}
+function archiveWorkspaceAttestation(workerId, worktree, backupRoot) {
+  const attestation = workspaceAttestationPath(worktree);
+  if (!fs.existsSync(attestation)) return null;
+  const targetDir = path.join(backupRoot, workerId);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const target = path.join(targetDir, "workspace-attestation.attested");
+  fs.renameSync(attestation, target);
+  return { workerId, attestation, archivedTo: target };
 }
 function archiveWorker(repoRoot, workerId, worktree, backupRoot) {
   const target = path.join(backupRoot, workerId);
@@ -81,7 +95,10 @@ fs.mkdirSync(backupRoot, { recursive: true });
 const openclawConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
 if (fs.existsSync(openclawConfig)) fs.copyFileSync(openclawConfig, path.join(backupRoot, "openclaw.json.before-v3"));
 
+const archivedAttestations = [];
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
+  const archived = archiveWorkspaceAttestation(workerId, cfg.worktree, backupRoot);
+  if (archived) archivedAttestations.push(archived);
   archiveWorker(repoRoot, workerId, cfg.worktree, backupRoot);
 }
 git(repoRoot, ["worktree", "prune"]);
@@ -122,6 +139,6 @@ if (fs.existsSync(ORCHESTRATION_V3.runtime.root)) {
 }
 
 fs.mkdirSync(ORCHESTRATION_V3.runtime.stateRoot, { recursive: true });
-fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key }, null, 2) + "\n");
+fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations }, null, 2) + "\n");
 
-console.log(JSON.stringify({ status: "PREPARED", runtime: ORCHESTRATION_V3.runtime.root, backupRoot, model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, cfg.worktree])) }, null, 2));
+console.log(JSON.stringify({ status: "PREPARED", runtime: ORCHESTRATION_V3.runtime.root, backupRoot, model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations, workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, cfg.worktree])) }, null, 2));
