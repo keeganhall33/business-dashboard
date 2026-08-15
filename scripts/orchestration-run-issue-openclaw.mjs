@@ -610,16 +610,7 @@ function runOpenclawWithPrompt(agentId, message) {
         "exec",
         "--message",
         effectiveMessage,
-        "--model",
-        ORCH_LOCAL_MODEL,
-        "--code-mode",
-        "code",
-        "--local-model-lean",
-        "--json",
-        "--thinking",
-        thinking,
-        "--timeout",
-        String(effectiveTimeout)
+        "--json"
       ]
     : [
         "agent",
@@ -634,7 +625,12 @@ function runOpenclawWithPrompt(agentId, message) {
         String(effectiveTimeout)
       ];
 
+  const childEnv = useEphemeralLocal
+    ? { ...process.env, OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" }
+    : process.env;
+
   const res = spawnSync("/opt/homebrew/bin/openclaw", args, {
+    env: childEnv,
     encoding: "utf8",
     timeout: (effectiveTimeout + 60) * 1000,
     maxBuffer: 16 * 1024 * 1024,
