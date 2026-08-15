@@ -1,0 +1,34 @@
+name: Orchestration V3 CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/orchestration-v3/**'
+      - 'test/orchestration-v3-control-plane.test.mjs'
+      - '.github/workflows/orchestration-v3-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/orchestration-v3/**'
+      - 'test/orchestration-v3-control-plane.test.mjs'
+
+jobs:
+  control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check V3 scripts
+        run: |
+          node --check scripts/orchestration-v3/config.mjs
+          node --check scripts/orchestration-v3/preflight.mjs
+          node --check scripts/orchestration-v3/watcher.mjs
+          node --check scripts/orchestration-v3/worker.mjs
+          node --check scripts/orchestration-v3/doctor.mjs
+          node --check scripts/orchestration-v3/prepare-host.mjs
+          node --check scripts/orchestration-v3/activate-host.mjs
+      - name: Control-plane invariants
+        run: node --test test/orchestration-v3-control-plane.test.mjs
