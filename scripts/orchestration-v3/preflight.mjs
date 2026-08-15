@@ -1,0 +1,55 @@
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { ORCHESTRATION_V3 } from "./config.mjs";
+
+function run(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
+}
+
+export function inspectGitRoot(cwd) {
+  const result = {
+    cwd,
+    exists: fs.existsSync(cwd),
+    gitRoot: null,
+    head: null,
+    branch: null,
+    status: [],
+    trackedDeletionCount: 0,
+    healthy: false,
+    errors: []
+  };
+  if (!result.exists) {
+    result.errors.push("WORKTREE_MISSING");
+    return result;
+  }
+  try {
+    result.gitRoot = run(cwd, ["rev-parse", "--show-toplevel"]);
+    result.head = run(cwd, ["rev-parse", "HEAD"]);
+    result.branch = run(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    const status = run(cwd, ["status", "--porcelain=v1"]);
+    result.status = status ? status.split("\n") : [];
+    result.trackedDeletionCount = result.status.filter((line) => /^\s?D\s|^D\s/.test(line)).length;
+    if (result.gitRoot !== cwd) result.errors.push("WORKTREE_ROOT_MISMATCH");
+    if (result.trackedDeletionCount >= 25) result.errors.push("MASS_TRACKED_DELETION");
+    result.healthy = result.errors.length === 0;
+  } catch (err) {
+    result.errors.push(`GIT_PREFLIGHT_FAILED:${err instanceof Error ? err.message : String(err)}`);
+  }
+  return result;
+}
+
+export function inspectAllWorkers() {
+  return Object.fromEntries(
+    Object.entries(ORCHESTRATION_V3.workers).map(([workerId, cfg]) => [workerId, inspectGitRoot(cfg.worktree)])
+  );
+}
+
+export function requireHealthyWorker(workerId) {
+  const cfg = ORCHESTRATION_V3.workers[workerId];
+  if (!cfg) throw new Error(`UNKNOWN_WORKER:${workerId}`);
+  const inspection = inspectGitRoot(cfg.worktree);
+  if (!inspection.healthy) {
+    throw new Error(`WORKTREE_PREFLIGHT_FAILED:${workerId}:${inspection.errors.join(",")}`);
+  }
+  return inspection;
+}
