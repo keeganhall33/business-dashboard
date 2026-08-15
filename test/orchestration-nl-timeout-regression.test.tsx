@@ -54,6 +54,15 @@ test("NL adapter consumes only a matching ArchitectDecisionV1 approval for the l
   assert.ok(text.includes("do not ask the same approval question again"));
 });
 
+test("NL adapter records matching approvals independent of comment order and accepts JSON decision form", () => {
+  const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.ok(text.includes("const checkpointId = commentCheckpointId(body)"));
+  assert.ok(text.includes("if (checkpointId) approvalsByCheckpoint.set(checkpointId, body)"));
+  assert.ok(text.includes("DECISION["), "decision parser must accept quoted JSON field names");
+  assert.ok(text.includes("APPROVE_AND_PROCEED|APPROVE"));
+  assert.equal(text.includes("latestCheckpointId &&\n      /##\\s+ArchitectDecisionV1"), false, "approval must not depend on checkpoint appearing earlier in comment order");
+});
+
 test("NL adapter still preserves review-sensitive stream gating without a later approval", () => {
   const text = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.ok(text.includes("[\"CORE_INTELLIGENCE\", \"DISCOVERY_INTELLIGENCE\", \"INTELLIGENCE_UX\"].includes(stream)"));
