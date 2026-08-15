@@ -28,6 +28,6 @@ run(process.execPath, ["--check", "scripts/orchestration-run-issue-openclaw.mjs"
 run("git", ["diff", "--check"], worktree);
 run("git", ["add", "scripts/orchestration-run-issue-openclaw.mjs"], worktree);
 run("git", ["commit", "-m", "Remove unsupported agent exec cwd option"], worktree);
-run("git", ["push", "-u", "origin", branch], worktree);
+run("git", ["push", "--force-with-lease", "-u", "origin", branch], worktree);
 const commit = run("git", ["rev-parse", "HEAD"], worktree);
 console.log(JSON.stringify({ status: "PASS", branch, commit, repo }));
