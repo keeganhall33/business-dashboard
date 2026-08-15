@@ -1,4 +1,5 @@
 import { executeAutoContinueWithLocalFirstV1 } from "./orchestration-routing-core.mjs";
+import { verifyOrchestrationResultEvidenceV1 } from "./orchestration-result-evidence-v1.mjs";
 
 // Wrapper used by orchestration-run-issue-openclaw.mjs to prevent nested retry multiplication.
 // Contract: this is the ONLY place AUTO_CONTINUE runs are allowed to invoke `run()`.
@@ -29,6 +30,18 @@ export async function executeAutoContinueOnceV1(input) {
     escalationReason: null
   };
 
+  const verifyWithEvidence = (context) => {
+    const generic = verifyOrchestrationResultEvidenceV1({
+      parsed: context?.parsed,
+      taskId
+    });
+    if (generic && generic.ok === false) return generic;
+    if (typeof verifyStructuredResult === "function") {
+      return verifyStructuredResult(context) ?? { ok: true };
+    }
+    return { ok: true };
+  };
+
   const exec = await executeAutoContinueWithLocalFirstV1({
     taskId,
     taskBody,
@@ -38,7 +51,7 @@ export async function executeAutoContinueOnceV1(input) {
     localAgentId,
     cloudAgentId,
     cloudForbidden,
-    verifyStructuredResult,
+    verifyStructuredResult: verifyWithEvidence,
     run,
     routingState,
     extractFinalText,
