@@ -73,7 +73,13 @@ export async function executeAutoContinueWithLocalFirstV1(input) {
   if (first.ok) return { final: first, coerced: null };
   routingState.localResult = "INVALID_STRUCTURED_OUTPUT";
 
-  const second = await attempt(localAgentId, strictRetryPrompt);
+  const retryMessage = [
+    promptText,
+    "",
+    "STRICT RETRY INSTRUCTIONS:",
+    strictRetryPrompt
+  ].join("\n");
+  const second = await attempt(localAgentId, retryMessage);
   if (deltaDemandsPass(taskBody)) {
     const obj = parseLooseJsonCandidate(second.finalText);
     const coerced = coerceLooseJsonToResultContract(obj, taskId);
