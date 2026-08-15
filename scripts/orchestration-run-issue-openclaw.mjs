@@ -610,8 +610,6 @@ function runOpenclawWithPrompt(agentId, message) {
         "exec",
         "--message",
         effectiveMessage,
-        "--cwd",
-        process.cwd(),
         "--model",
         ORCH_LOCAL_MODEL,
         "--code-mode",
