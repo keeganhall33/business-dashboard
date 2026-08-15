@@ -43,3 +43,11 @@ test("V3 worker invokes the assigned local agent and never main", () => {
   assert.match(source, /ORCH_CLOUD_AGENT_ID: workerId/);
   assert.match(source, /OPENCLAW_FALLBACK_MODELS: ""/);
 });
+
+test("V3 intentional rebuild archives matching OpenClaw workspace attestations", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/prepare-host.mjs", "utf8");
+  assert.match(source, /createHash\("sha256"\)\.update\(worktree\)/);
+  assert.match(source, /workspace-attestations/);
+  assert.match(source, /workspace-attestation\.attested/);
+  assert.match(source, /archiveWorkspaceAttestation/);
+});
