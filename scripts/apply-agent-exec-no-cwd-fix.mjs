@@ -13,7 +13,7 @@ function run(cmd, args, cwd = process.cwd()) {
 
 try { run("git", ["worktree", "remove", "--force", worktree]); } catch {}
 try { run("git", ["branch", "-D", branch]); } catch {}
-run("git", ["fetch", "origin", "main"]);
+run("git", ["fetch", "origin", "main", branch]);
 run("git", ["worktree", "add", "-b", branch, worktree, "origin/main"]);
 
 const file = path.join(worktree, "scripts/orchestration-run-issue-openclaw.mjs");
