@@ -1,0 +1,40 @@
+import os from "node:os";
+import path from "node:path";
+
+export const ORCHESTRATION_V3 = Object.freeze({
+  version: 3,
+  repo: "keeganhall33/business-dashboard",
+  queue: Object.freeze({
+    ready: "orch:ready",
+    running: "orch:running",
+    awaitingReview: "orch:awaiting_review",
+    blocked: "orch:blocked",
+    humanApproval: "orch:awaiting_human_approval",
+    base: "agent-orchestration"
+  }),
+  runtime: Object.freeze({
+    root: path.join(os.homedir(), ".openclaw", "runtime", "business-dashboard"),
+    stateRoot: path.join(os.homedir(), ".openclaw", "state", "orchestration-v3"),
+    logRoot: path.join(os.homedir(), "Library", "Logs"),
+    canonicalRef: "origin/main"
+  }),
+  model: Object.freeze({
+    provider: "ollama",
+    id: "ollama/qwen3.5:9b",
+    cloudFallbackAllowed: false
+  }),
+  workers: Object.freeze({
+    "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-a") }),
+    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-b") }),
+    "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-c") }),
+    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(os.homedir(), ".openclaw", "worktrees", "local-d") })
+  })
+});
+
+export function workerForStream(stream) {
+  const normalized = String(stream ?? "").trim().toUpperCase();
+  for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
+    if (normalized === cfg.stream || (cfg.aliases ?? []).includes(normalized)) return workerId;
+  }
+  return null;
+}
