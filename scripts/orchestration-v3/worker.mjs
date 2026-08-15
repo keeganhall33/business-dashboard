@@ -18,6 +18,10 @@ function gh(args) {
   return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
 }
 
+function git(args, cwd) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
+}
+
 function issueSnapshot() {
   return JSON.parse(gh(["issue", "view", String(issue), "--repo", ORCHESTRATION_V3.repo, "--json", "body,labels,comments"]));
 }
@@ -33,12 +37,20 @@ function editLabels({ remove = [], add = [] }) {
   if (args.length > 6) gh(args);
 }
 
-function latestStatus(snapshot) {
+function postComment(body) {
+  gh(["issue", "comment", String(issue), "--repo", ORCHESTRATION_V3.repo, "--body", body]);
+}
+
+function latestResult(snapshot) {
   const comments = snapshot.comments ?? [];
   for (let i = comments.length - 1; i >= 0; i -= 1) {
     const body = String(comments[i]?.body ?? "");
-    const match = body.match(/"STATUS"\s*:\s*"([A-Z_]+)"/);
-    if (match) return match[1];
+    const fenced = body.match(/```json\s*([\s\S]*?)```/i);
+    if (!fenced) continue;
+    try {
+      const value = JSON.parse(fenced[1]);
+      if (value && typeof value === "object" && typeof value.STATUS === "string") return value;
+    } catch {}
   }
   return null;
 }
@@ -48,8 +60,76 @@ function humanApprovalRequired(body) {
   return match ? match[1].trim().toLowerCase() === "true" : false;
 }
 
+function openPrSnapshot() {
+  const raw = gh([
+    "pr", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--limit", "100",
+    "--json", "number,headRefName,headRefOid,updatedAt"
+  ]);
+  return JSON.parse(raw || "[]");
+}
+
+function referencedPrNumbers(body) {
+  const result = new Set();
+  const re = /\bPR\s*#(\d+)\b/gi;
+  for (const match of String(body ?? "").matchAll(re)) result.add(Number(match[1]));
+  return [...result];
+}
+
+function requiresPrEvidence(body) {
+  const text = String(body ?? "");
+  return /\bexisting\s+PR\b/i.test(text) || /\bpush\b[^\n]{0,120}\bPR\b/i.test(text) || /\bopen\b[^\n]{0,120}\bPR\b/i.test(text) || /\bpull request\b/i.test(text);
+}
+
+function mutationClaimed(body, result) {
+  if ((result?.CHANGES ?? []).length > 0 || (result?.FILES_CHANGED ?? []).length > 0 || result?.PR) return true;
+  return /\b(?:implement|fix|repair|reconcile|package|create|commit|push|open)\b/i.test(String(body ?? ""));
+}
+
+function mapPrs(prs) {
+  return new Map((prs ?? []).map((pr) => [Number(pr.number), pr]));
+}
+
+function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, afterPrs }) {
+  const before = mapPrs(beforePrs);
+  const after = mapPrs(afterPrs);
+  const newPrs = [...after.values()].filter((pr) => !before.has(Number(pr.number)));
+  const changedPrs = [...after.values()].filter((pr) => {
+    const old = before.get(Number(pr.number));
+    return old && old.headRefOid !== pr.headRefOid;
+  });
+  const referenced = referencedPrNumbers(body);
+  const referencedChanged = changedPrs.filter((pr) => referenced.includes(Number(pr.number)));
+  const headLinkedPrs = [...newPrs, ...changedPrs].filter((pr) => pr.headRefOid === afterHead);
+  const gitHeadChanged = beforeHead !== afterHead;
+  const mutationObserved = gitHeadChanged || newPrs.length > 0 || changedPrs.length > 0;
+  const needsMutation = mutationClaimed(body, result);
+  const needsPr = requiresPrEvidence(body) || referenced.length > 0 || Boolean(result?.PR);
+  const prObserved = referencedChanged.length > 0 || headLinkedPrs.length > 0;
+  const errors = [];
+
+  if (needsMutation && !mutationObserved) errors.push("PASS claimed repository work but git HEAD and open PR heads did not change");
+  if (needsPr && !prObserved) errors.push("PASS claimed/required PR work but no referenced or worker-HEAD-linked PR changed");
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    evidence: {
+      beforeHead,
+      afterHead,
+      gitHeadChanged,
+      referencedPrNumbers: referenced,
+      newPrNumbers: newPrs.map((pr) => pr.number),
+      changedPrNumbers: changedPrs.map((pr) => pr.number),
+      workerHeadLinkedPrNumbers: headLinkedPrs.map((pr) => pr.number)
+    }
+  };
+}
+
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
+const beforeSnapshot = issueSnapshot();
+const beforeHead = git(["rev-parse", "HEAD"], cfg.worktree);
+const beforePrs = openPrSnapshot();
 const env = {
   ...process.env,
   ORCH_LOCAL_ROUTING_ENABLED: "true",
@@ -61,7 +141,7 @@ const env = {
   OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
 };
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false }));
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
 const run = spawnSync(process.execPath, [
   "scripts/orchestration-run-issue-openclaw.mjs",
   "--repo", ORCHESTRATION_V3.repo,
@@ -75,9 +155,58 @@ const run = spawnSync(process.execPath, [
   timeout: 950_000
 });
 
-const snapshot = issueSnapshot();
-const status = latestStatus(snapshot);
+let snapshot = issueSnapshot();
+let result = latestResult(snapshot);
+let status = result?.STATUS ?? null;
 const humanRequired = humanApprovalRequired(snapshot.body);
+const afterHead = git(["rev-parse", "HEAD"], cfg.worktree);
+const afterPrs = openPrSnapshot();
+
+if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
+  const verification = verifyPassEvidence({
+    body: snapshot.body,
+    result,
+    beforeHead,
+    afterHead,
+    beforePrs,
+    afterPrs
+  });
+  if (!verification.ok) {
+    const correction = {
+      TASK_ID: result?.TASK_ID ?? `issue-${issue}`,
+      STATUS: "BLOCKED",
+      SUMMARY: "V3 machine-evidence gate rejected an unproven model PASS",
+      CHANGES: [],
+      FILES_CHANGED: [],
+      DB_CHANGES: "NO",
+      MIGRATION: null,
+      TESTS: "Model-reported tests are not accepted without repository/PR mutation evidence for this task",
+      PR: null,
+      MERGE_STATUS: "N/A",
+      PRODUCTION_CHANGE: "NO",
+      UNEXPECTED_RESULTS: [JSON.stringify(verification.evidence)],
+      DECISIONS_REQUIRED: [],
+      BLOCKERS: verification.errors,
+      NEXT_RECOMMENDED_TASK: "Retry the task and require actual tool execution; PASS will remain blocked until git/GitHub evidence changes.",
+      SESSION_HEALTH: "GOOD",
+      SESSION_CONTEXT: `v3-machine-evidence/${workerId}`,
+      ROUTING_TIER: "LOCAL_FIRST",
+      MODEL_USED: result?.MODEL_USED ?? ORCHESTRATION_V3.model.id.replace(/^ollama\//, ""),
+      LOCAL_ATTEMPTED: result?.LOCAL_ATTEMPTED ?? true,
+      LOCAL_RESULT: "EVIDENCE_REJECTED",
+      ESCALATED_TO_CLOUD: false,
+      ESCALATION_REASON: null,
+      CLOUD_USAGE: null,
+      CLOUD_COST: null
+    };
+    postComment(["## OrchestrationResultContractV1", "", "```json", JSON.stringify(correction, null, 2), "```"].join("\n"));
+    status = "BLOCKED";
+    result = correction;
+    snapshot = issueSnapshot();
+    console.log(JSON.stringify({ event: "PASS_REJECTED_BY_EVIDENCE", issue, workerId, ...verification }));
+  }
+}
+
 const current = labelsOf(snapshot);
 const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.blocked, ORCHESTRATION_V3.queue.humanApproval].filter((x) => current.has(x));
 let add = [];
@@ -96,6 +225,6 @@ if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
 }
 
 editLabels({ remove, add });
-console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status, exitCode: run.status, finalLabels: add }));
+console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status, exitCode: run.status, finalLabels: add, beforeHead, afterHead }));
 if (run.error) throw run.error;
-process.exitCode = run.status ?? 1;
+process.exitCode = status === "BLOCKED" ? 1 : (run.status ?? 1);
