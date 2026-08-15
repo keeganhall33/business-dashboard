@@ -15,8 +15,8 @@ function replaceOnce(file, oldText, newText, label) {
   return true;
 }
 
-function gh(args, options = {}) {
-  const r = spawnSync("gh", args, { encoding: "utf8", timeout: 30000, ...options });
+function gh(args) {
+  const r = spawnSync("gh", args, { encoding: "utf8", timeout: 30000 });
   if (r.status !== 0) throw new Error(`gh ${args.join(" ")} failed: ${r.stderr || r.stdout}`);
   return String(r.stdout || "").trim();
 }
@@ -27,31 +27,27 @@ const launcher = path.join(repoDir, "scripts", "launch-orchestration-nl-detached
 replaceOnce(
   watcher,
   `function acquireWorkerLock(lockPath, issueNumber) {`,
-  `function issueHasRunningLabel(repo, issueNumber) {\n  try {\n    const issue = viewIssue(repo, issueNumber);\n    return (issue.labels ?? []).some((l) => l.name === "orch:running");\n  } catch {\n    return true; // fail closed if GitHub state cannot be read\n  }\n}\n\nfunction acquireWorkerLock(repo, lockPath, issueNumber) {`,
+  `function issueHasRunningLabel(repo, issueNumber) {\n  try {\n    const issue = viewIssue(repo, issueNumber);\n    return (issue.labels ?? []).some((l) => l.name === "orch:running");\n  } catch {\n    return true;\n  }\n}\n\nfunction acquireWorkerLock(repo, lockPath, issueNumber) {`,
   "worker lock signature"
 );
-
 replaceOnce(
   watcher,
   `      if (!watcherOwnedLegacyLock && !deadOwner) return false;`,
   `      const existingIssueNumber = Number(existing?.issueNumber);\n      const staleGitHubOwner =\n        existing?.ownerType === "worker" &&\n        Number.isInteger(existingIssueNumber) &&\n        !issueHasRunningLabel(repo, existingIssueNumber);\n\n      if (!watcherOwnedLegacyLock && !deadOwner && !staleGitHubOwner) return false;`,
   "stale lock reclaim"
 );
-
 replaceOnce(
   watcher,
   `  if (!acquireWorkerLock(lockPath, issueNumber)) {`,
   `  if (!acquireWorkerLock(repo, lockPath, issueNumber)) {`,
   "worker lock call"
 );
-
 replaceOnce(
   launcher,
   `env.ORCH_CLOUD_AGENT_ID = env.ORCH_CLOUD_AGENT_ID ?? cloudAgentId;`,
   `env.ORCH_CLOUD_AGENT_ID = localAgentId ? "" : (env.ORCH_CLOUD_AGENT_ID ?? cloudAgentId);`,
   "zero-cloud local launch"
 );
-
 replaceOnce(
   launcher,
   `if (localAgentId) env.ORCH_LOCAL_AGENT_ID = localAgentId;`,
@@ -72,7 +68,6 @@ if (Array.isArray(cfg?.agents?.list)) {
   throw new Error("Could not locate OpenClaw agent list/entries");
 }
 fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + "\n");
-
 const validate = spawnSync("openclaw", ["config", "validate"], { encoding: "utf8", timeout: 30000 });
 if (validate.status !== 0) {
   fs.copyFileSync(backupPath, configPath);
@@ -80,10 +75,11 @@ if (validate.status !== 0) {
 }
 
 for (const n of [413, 414, 416, 447]) {
-  for (const label of ["orch:running", "orch:awaiting_review"]) {
+  for (const label of ["orch:running", "orch:awaiting_review", "orch:ready"]) {
     spawnSync("gh", ["issue", "edit", String(n), "--repo", repo, "--remove-label", label], { stdio: "ignore", timeout: 30000 });
   }
-  spawnSync("gh", ["issue", "edit", String(n), "--repo", repo, "--add-label", "orch:ready"], { stdio: "ignore", timeout: 30000 });
+  const add = spawnSync("gh", ["issue", "edit", String(n), "--repo", repo, "--add-label", "orch:ready"], { encoding: "utf8", timeout: 30000 });
+  if (add.status !== 0) throw new Error(`Failed to requeue #${n}: ${add.stderr || add.stdout}`);
 }
 
 const lockDir = path.join(home, ".openclaw", "state", "orchestration-worker-locks");
@@ -111,12 +107,4 @@ const child = spawn(
 );
 child.unref();
 fs.closeSync(fd);
-
-console.log(JSON.stringify({
-  status: "PASS",
-  watcherPid: child.pid,
-  model: "ollama/qwen3.5:9b",
-  cloudFallback: "DISABLED_FOR_LOCAL_LANES",
-  requeued: [413, 414, 416, 447],
-  configBackup: backupPath
-}));
+console.log(JSON.stringify({ status: "PASS", watcherPid: child.pid, model: "ollama/qwen3.5:9b", cloudFallback: "DISABLED_FOR_LOCAL_LANES", requeued: [413,414,416,447], configBackup: backupPath }));
