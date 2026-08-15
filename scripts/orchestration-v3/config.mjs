@@ -16,8 +16,8 @@ export const ORCHESTRATION_V3 = Object.freeze({
   }),
   runtime: Object.freeze({
     root: path.join(OPENCLAW_ROOT, "runtime-v3", "business-dashboard"),
-    worktreeRoot: path.join(OPENCLAW_ROOT, "worktrees-v3"),
     stateRoot: path.join(OPENCLAW_ROOT, "state", "orchestration-v3"),
+    backupRoot: path.join(OPENCLAW_ROOT, "orchestration-v3-backups"),
     logRoot: path.join(os.homedir(), "Library", "Logs"),
     canonicalRef: "origin/main"
   }),
@@ -27,10 +27,10 @@ export const ORCHESTRATION_V3 = Object.freeze({
     cloudFallbackAllowed: false
   }),
   workers: Object.freeze({
-    "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-a") }),
-    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-b") }),
-    "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-c") }),
-    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(OPENCLAW_ROOT, "worktrees-v3", "local-d") })
+    "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-a") }),
+    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-b") }),
+    "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-c") }),
+    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-d") })
   })
 });
 
