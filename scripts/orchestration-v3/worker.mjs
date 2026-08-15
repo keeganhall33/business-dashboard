@@ -87,6 +87,7 @@ if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
 } else if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
   add = [];
 } else if (status === "AWAITING_REVIEW") {
+  // V3 never creates a fake review gate for work explicitly marked as not requiring a human.
   add = [ORCHESTRATION_V3.queue.blocked];
 } else if (["BLOCKED", "FAILED"].includes(status) || run.status !== 0 || run.error) {
   add = [ORCHESTRATION_V3.queue.blocked];
