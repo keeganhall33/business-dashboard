@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -37,13 +37,26 @@ function resolveAgentWorkspace(localAgentId) {
   return null;
 }
 
+function git(workspace, args, opts = {}) {
+  return execFileSync("git", ["-C", workspace, ...args], {
+    encoding: "utf8",
+    timeout: opts.timeout ?? 30_000,
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
+}
+
+function gitOk(workspace, args) {
+  const out = spawnSync("git", ["-C", workspace, ...args], {
+    encoding: "utf8",
+    timeout: 30_000,
+    stdio: "ignore"
+  });
+  return out.status === 0;
+}
+
 function gitNameSet(workspace, args) {
   try {
-    const out = execFileSync("git", ["-C", workspace, ...args], {
-      encoding: "utf8",
-      timeout: 30_000
-    });
-    return new Set(String(out ?? "").split("\n").map((s) => s.trim()).filter(Boolean));
+    return new Set(git(workspace, args).split("\n").map((s) => normalizeRepoPath(s)).filter(Boolean));
   } catch {
     return new Set();
   }
@@ -56,7 +69,7 @@ function collectWorkspaceEvidence(workspace) {
     gitNameSet(workspace, ["diff", "--cached", "--name-only"]),
     gitNameSet(workspace, ["diff", "--name-only", "origin/main...HEAD"])
   ]) {
-    for (const name of set) names.add(normalizeRepoPath(name));
+    for (const name of set) names.add(name);
   }
   return names;
 }
@@ -80,7 +93,30 @@ function parseClaimedPr(pr) {
   return null;
 }
 
-export function verifyOrchestrationResultEvidenceV1({ parsed, taskId, localAgentId }) {
+function parseTaskPrNumber(taskBody) {
+  const text = String(taskBody ?? "");
+  const explicit = text.match(/\bPR\s*#(\d+)\b/i);
+  if (explicit) return Number(explicit[1]);
+  const url = text.match(/github\.com\/[^\s]+\/pull\/(\d+)/i);
+  return url ? Number(url[1]) : null;
+}
+
+function readPr(locator) {
+  return JSON.parse(execFileSync("gh", [
+    "pr", "view", String(locator),
+    "--json", "number,url,state,mergeable,headRefName,headRefOid,baseRefName"
+  ], {
+    encoding: "utf8",
+    timeout: 30_000
+  }));
+}
+
+function taskRequiresCurrentMainReconcile(taskBody) {
+  const text = String(taskBody ?? "");
+  return /\bcurrent\s+(?:origin\/)?main\b/i.test(text) && /\b(?:reconcil|rebase|merge|conflict)\w*\b/i.test(text);
+}
+
+export function verifyOrchestrationResultEvidenceV1({ parsed, taskId, taskBody, localAgentId }) {
   if (!parsed || parsed.kind !== "result" || !parsed.value || typeof parsed.value !== "object") {
     return { ok: true };
   }
@@ -99,6 +135,27 @@ export function verifyOrchestrationResultEvidenceV1({ parsed, taskId, localAgent
   const status = String(value.STATUS ?? "").trim().toUpperCase();
   if (status !== "PASS") return { ok: true };
 
+  const workspace = resolveAgentWorkspace(localAgentId);
+  if (!workspace) return fail(`Could not resolve workspace for ${localAgentId || "<none>"}`);
+
+  let repoRoot;
+  let headSha;
+  try {
+    repoRoot = git(workspace, ["rev-parse", "--show-toplevel"]);
+    headSha = git(workspace, ["rev-parse", "HEAD"]);
+  } catch (err) {
+    return fail(`PASS cannot be accepted because workspace is not a valid git worktree: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (path.resolve(repoRoot) !== path.resolve(workspace)) {
+    return fail(`Configured workspace is not the git root: workspace=${workspace}, gitRoot=${repoRoot}`);
+  }
+
+  try {
+    git(workspace, ["fetch", "origin", "main"], { timeout: 60_000 });
+  } catch (err) {
+    return fail(`Could not refresh origin/main for machine evidence: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   const files = Array.isArray(value.FILES_CHANGED) ? value.FILES_CHANGED : [];
   const normalizedFiles = files.map(normalizeRepoPath);
   for (const filePath of normalizedFiles) {
@@ -112,44 +169,78 @@ export function verifyOrchestrationResultEvidenceV1({ parsed, taskId, localAgent
     return fail(`PASS lacks concrete test evidence: ${tests || "<empty>"}`);
   }
 
-  const workspace = resolveAgentWorkspace(localAgentId);
-  if (workspace && normalizedFiles.length > 0) {
-    const evidenceNames = collectWorkspaceEvidence(workspace);
-    for (const filePath of normalizedFiles) {
-      if (!evidenceNames.has(filePath)) {
-        return fail(`PASS claims changed file not present in actual git evidence for ${localAgentId}: ${filePath}`);
-      }
+  const evidenceNames = collectWorkspaceEvidence(workspace);
+  for (const filePath of normalizedFiles) {
+    if (!evidenceNames.has(filePath)) {
+      return fail(`PASS claims changed file not present in machine git evidence for ${localAgentId}: ${filePath}`);
     }
   }
 
   const claimedPr = parseClaimedPr(value.PR);
+  const taskPrNumber = parseTaskPrNumber(taskBody);
   if (value.PR && !claimedPr) {
     return fail("PASS claims a PR but it is not machine-verifiable (use PR object with number/url or a #number/URL string)");
   }
 
-  if (claimedPr) {
+  const prLocator = claimedPr?.locator ?? (Number.isFinite(taskPrNumber) ? String(taskPrNumber) : null);
+  if (prLocator) {
     let actual;
     try {
-      actual = JSON.parse(execFileSync("gh", ["pr", "view", claimedPr.locator, "--json", "number,url,state,mergeable"], {
-        encoding: "utf8",
-        timeout: 30_000
-      }));
+      actual = readPr(prLocator);
     } catch (err) {
-      return fail(`Could not verify claimed PR: ${err instanceof Error ? err.message : String(err)}`);
+      return fail(`Could not verify PR ${prLocator}: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    if (claimedPr.claimedNumber !== null && claimedPr.claimedNumber !== Number(actual.number)) {
+    if (claimedPr?.claimedNumber !== null && claimedPr?.claimedNumber !== undefined && claimedPr.claimedNumber !== Number(actual.number)) {
       return fail(`Claimed PR number ${claimedPr.claimedNumber} does not match GitHub PR ${actual.number}`);
+    }
+    if (Number.isFinite(taskPrNumber) && Number(actual.number) !== taskPrNumber) {
+      return fail(`Task targets PR #${taskPrNumber} but result/GitHub resolved PR #${actual.number}`);
+    }
+    if (String(actual.state ?? "").toUpperCase() !== "OPEN") {
+      return fail(`Task PR #${actual.number} is not OPEN (state=${actual.state})`);
+    }
+
+    const actualHead = String(actual.headRefOid ?? "").trim();
+    if (actualHead && actualHead !== headSha) {
+      return fail(`Worker HEAD ${headSha} does not match GitHub PR head ${actualHead}`);
     }
 
     const claimedMergeable = normalizeMergeable(value.MERGE_STATUS);
     const actualMergeable = normalizeMergeable(actual.mergeable);
-    if (String(actual.state ?? "").toUpperCase() === "OPEN" && ["MERGEABLE", "CONFLICTING"].includes(actualMergeable)) {
-      if (claimedMergeable !== actualMergeable) {
-        return fail(`Claimed MERGE_STATUS ${claimedMergeable || "<empty>"} but GitHub reports ${actualMergeable}`);
+    if (["MERGEABLE", "CONFLICTING"].includes(claimedMergeable) && claimedMergeable !== actualMergeable) {
+      return fail(`Claimed MERGE_STATUS ${claimedMergeable} but GitHub reports ${actualMergeable || "UNKNOWN"}`);
+    }
+
+    if (taskRequiresCurrentMainReconcile(taskBody)) {
+      const containsCurrentMain = gitOk(workspace, ["merge-base", "--is-ancestor", "origin/main", "HEAD"]);
+      if (!containsCurrentMain) {
+        return fail(`Task requires reconciliation with current main, but origin/main is not an ancestor of worker/PR HEAD ${headSha}`);
       }
     }
+
+    value.PR = {
+      number: Number(actual.number),
+      url: String(actual.url),
+      headRefName: String(actual.headRefName ?? ""),
+      headRefOid: actualHead,
+      baseRefName: String(actual.baseRefName ?? "")
+    };
+    value.MERGE_STATUS = actualMergeable || "UNKNOWN";
   }
 
-  return { ok: true };
+  value.FILES_CHANGED = Array.from(evidenceNames).sort();
+  value.LOCAL_RESULT = "SUCCESS";
+  value.ESCALATED_TO_CLOUD = false;
+  value.CLOUD_USAGE = null;
+  value.CLOUD_COST = null;
+
+  return {
+    ok: true,
+    machineEvidence: {
+      workspace,
+      headSha,
+      files: value.FILES_CHANGED
+    }
+  };
 }
