@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
@@ -50,9 +51,17 @@ const repoRoot = ensureRepoRoot(process.cwd());
 git(repoRoot, ["fetch", "origin", "main"]);
 run("ollama", ["show", "qwen3.5:9b"]);
 
+// Validate the OpenClaw config surface before any worker directory is touched.
+const currentAgents = JSON.parse(run("openclaw", ["config", "get", "agents.list"]));
+for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
+  if (!currentAgents.some((entry) => entry.id === workerId)) throw new Error(`OPENCLAW_AGENT_MISSING:${workerId}`);
+}
+
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const backupRoot = path.join(ORCHESTRATION_V3.runtime.backupRoot, stamp);
 fs.mkdirSync(backupRoot, { recursive: true });
+const openclawConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
+if (fs.existsSync(openclawConfig)) fs.copyFileSync(openclawConfig, path.join(backupRoot, "openclaw.json.before-v3"));
 
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   archiveWorker(repoRoot, workerId, cfg.worktree, backupRoot);
@@ -66,6 +75,15 @@ for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   if (root !== cfg.worktree) throw new Error(`WORKER_ROOT_MISMATCH:${workerId}:${root}`);
 }
 
+// Keep every non-worker agent untouched; only enforce V3 workspace/model fields on A/B/C/D.
+const nextAgents = currentAgents.map((entry) => {
+  const cfg = ORCHESTRATION_V3.workers[entry.id];
+  return cfg ? { ...entry, workspace: cfg.worktree, model: ORCHESTRATION_V3.model.id } : entry;
+});
+run("openclaw", ["config", "set", "agents.list", JSON.stringify(nextAgents), "--strict-json"]);
+run("openclaw", ["config", "set", "agents.defaults.models", JSON.stringify({ [ORCHESTRATION_V3.model.id]: {} }), "--strict-json", "--merge"]);
+run("openclaw", ["config", "validate"]);
+
 if (fs.existsSync(ORCHESTRATION_V3.runtime.root)) {
   const runtimeRoot = safeText(ORCHESTRATION_V3.runtime.root, ["rev-parse", "--show-toplevel"]);
   if (runtimeRoot !== ORCHESTRATION_V3.runtime.root) throw new Error(`REFUSE_UNKNOWN_RUNTIME_PATH:${ORCHESTRATION_V3.runtime.root}`);
@@ -77,6 +95,6 @@ if (fs.existsSync(ORCHESTRATION_V3.runtime.root)) {
 }
 
 fs.mkdirSync(ORCHESTRATION_V3.runtime.stateRoot, { recursive: true });
-fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]) }, null, 2) + "\n");
+fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id }, null, 2) + "\n");
 
-console.log(JSON.stringify({ status: "PREPARED", runtime: ORCHESTRATION_V3.runtime.root, backupRoot, workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, cfg.worktree])) }, null, 2));
+console.log(JSON.stringify({ status: "PREPARED", runtime: ORCHESTRATION_V3.runtime.root, backupRoot, model: ORCHESTRATION_V3.model.id, workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, cfg.worktree])) }, null, 2));
