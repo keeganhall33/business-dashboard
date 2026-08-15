@@ -35,3 +35,11 @@ test("V3 worker refuses synthetic review state for no-human tasks", () => {
   assert.match(source, /V3 never creates a fake review gate/);
   assert.match(source, /queue\.blocked/);
 });
+
+test("V3 worker invokes the assigned local agent and never main", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(source, /"--agent", workerId/);
+  assert.doesNotMatch(source, /"--agent", "main"/);
+  assert.match(source, /ORCH_CLOUD_AGENT_ID: workerId/);
+  assert.match(source, /OPENCLAW_FALLBACK_MODELS: ""/);
+});
