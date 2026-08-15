@@ -601,16 +601,28 @@ function runOpenclawWithPrompt(agentId, message) {
     ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts)
     : String(messageWithGuard ?? "");
   const effectiveTimeout = useEphemeralLocal
-    ? Math.max(Number(timeoutSeconds) || 0, 180)
+    ? Math.max(Number(timeoutSeconds) || 0, 360)
     : Number(timeoutSeconds);
+
+  const freshLocalSessionId = useEphemeralLocal
+    ? "orch-" + String(taskId) + "-" + String(process.pid) + "-" + String(Date.now()) + "-" + Math.random().toString(36).slice(2, 10)
+    : null;
 
   const args = useEphemeralLocal
     ? [
         "agent",
-        "exec",
+        "--local",
+        "--agent",
+        agentId,
+        "--session-id",
+        freshLocalSessionId,
+        "--model",
+        ORCH_LOCAL_MODEL,
         "--message",
         effectiveMessage,
-        "--json"
+        "--json",
+        "--timeout",
+        String(effectiveTimeout)
       ]
     : [
         "agent",
@@ -626,7 +638,7 @@ function runOpenclawWithPrompt(agentId, message) {
       ];
 
   const childEnv = useEphemeralLocal
-    ? { ...process.env, OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" }
+    ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" }
     : process.env;
 
   const res = spawnSync("/opt/homebrew/bin/openclaw", args, {
