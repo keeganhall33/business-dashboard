@@ -90,6 +90,8 @@ async function main() {
   const EXPLICIT_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim();
   // Cloud agent remains configurable (review/gating may still use cloud).
   const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
+  // Ephemeral local orchestration uses an explicit Ollama model, never a persistent OpenClaw agent session.
+  const ORCH_LOCAL_MODEL = String(process.env.ORCH_LOCAL_MODEL ?? "ollama/mistral:latest").trim();
 
   if (!repo || !issue) {
     console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
@@ -613,64 +615,69 @@ function runOpenclaw(agentId) {
 }
 
 function runOpenclawWithPrompt(agentId, message) {
-  const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
-  const sessionId = useEmbeddedLocal
-    ? `orch-${String(repo).replace(/[^a-z0-9]+/gi, "-")}-issue-${String(issue)}-${Date.now()}`
-    : null;
-
+  const useEphemeralLocal = String(agentId).startsWith("local-") || agentId === "local";
   const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
-  const messageWithGuard = useEmbeddedLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
-
-  const effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
+  const messageWithGuard = useEphemeralLocal
+    ? applyProofGuardForLocalStrictJson(message, proofOpts)
+    : String(message ?? "");
+  const effectiveMessage = useEphemeralLocal && shouldEnforceStrictJsonForLocal(messageWithGuard)
     ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts)
     : String(messageWithGuard ?? "");
+  const effectiveTimeout = useEphemeralLocal
+    ? Math.max(Number(timeoutSeconds) || 0, 180)
+    : Number(timeoutSeconds);
 
-  // Critical isolation: OpenClaw's embedded local agents persist transcripts under OPENCLAW_STATE_DIR.
-  // Even with an explicit --session-id, an existing sessions.json entry may point at a prior sessionFile
-  // (causing lock contention). For orchestration worker runs, we must guarantee a fresh, per-run state
-  // directory for embedded local execution while still reading the canonical config.
-  const openclawEnv = { ...process.env };
-  if (useEmbeddedLocal) {
-    const stateRoot = path.join(os.tmpdir(), `openclaw-orch-${process.pid}-${Date.now()}`);
-    openclawEnv.OPENCLAW_STATE_DIR = stateRoot;
-    // Preserve canonical config so agent ids (local-a/local-b/...) resolve correctly.
-    openclawEnv.OPENCLAW_CONFIG_PATH = openclawEnv.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), ".openclaw", "openclaw.json");
-  }
-  const effectiveTimeout = useEmbeddedLocal ? Math.max(Number(timeoutSeconds) || 0, 180) : Number(timeoutSeconds);
-  const res = spawnSync(
-    "/opt/homebrew/bin/openclaw",
-    [
-      "agent",
-      ...(useEmbeddedLocal ? ["--local"] : []),
-      ...(sessionId ? ["--session-id", sessionId] : []),
-      "--agent",
-      agentId,
-      "--message",
-      effectiveMessage,
-      "--json",
-      "--thinking",
-      thinking,
-      "--timeout",
-      String(effectiveTimeout)
-    ],
-    {
-      env: openclawEnv,
-      encoding: "utf8",
-      timeout: (effectiveTimeout + 60) * 1000,
-      maxBuffer: 16 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"]
-    }
-  );
+  // Persistent OpenClaw agent sessions can retain canonical transcript locks even when
+  // --session-id and OPENCLAW_STATE_DIR are overridden. For orchestration workers, use
+  // agent exec instead: OpenClaw owns a fresh temporary state directory and cleanup for
+  // every run. Worker identity remains scheduler-owned (local-a/b/c/d), while the model
+  // is explicitly Ollama and no fallback is supplied on this local path.
+  const args = useEphemeralLocal
+    ? [
+        "agent",
+        "exec",
+        effectiveMessage,
+        "--cwd",
+        process.cwd(),
+        "--model",
+        ORCH_LOCAL_MODEL,
+        "--code-mode",
+        "code",
+        "--local-model-lean",
+        "--json",
+        "--thinking",
+        thinking,
+        "--timeout",
+        String(effectiveTimeout)
+      ]
+    : [
+        "agent",
+        "--agent",
+        agentId,
+        "--message",
+        effectiveMessage,
+        "--json",
+        "--thinking",
+        thinking,
+        "--timeout",
+        String(effectiveTimeout)
+      ];
+
+  const res = spawnSync("/opt/homebrew/bin/openclaw", args, {
+    encoding: "utf8",
+    timeout: (effectiveTimeout + 60) * 1000,
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   if (res.error) throw res.error;
   if (res.status !== 0) {
-    const err = new Error(`openclaw exited with code ${res.status}`);
+    const err = new Error("openclaw exited with code " + String(res.status));
     err.stdout = res.stdout;
     err.stderr = res.stderr;
     throw err;
   }
   return extractOpenclawJson(res.stdout, res.stderr);
 }
-
 function tryParseStructured(envelope) {
   const finalText = extractAgentFinalText(envelope);
   const parsed = parseOrchestrationResult(finalText, taskId);
