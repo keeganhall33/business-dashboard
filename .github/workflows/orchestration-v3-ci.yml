@@ -30,5 +30,6 @@ jobs:
           node --check scripts/orchestration-v3/doctor.mjs
           node --check scripts/orchestration-v3/prepare-host.mjs
           node --check scripts/orchestration-v3/activate-host.mjs
+          node --check scripts/orchestration-v3/bootstrap-host.mjs
       - name: Control-plane invariants
         run: node --test test/orchestration-v3-control-plane.test.mjs
