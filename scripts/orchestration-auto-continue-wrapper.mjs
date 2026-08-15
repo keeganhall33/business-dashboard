@@ -34,7 +34,7 @@ export async function executeAutoContinueOnceV1(input) {
     const generic = verifyOrchestrationResultEvidenceV1({
       parsed: context?.parsed,
       taskId,
-      workspaceDir: localAgentId ? `${process.env.HOME}/.openclaw/worktrees/${localAgentId}` : null
+      localAgentId
     });
     if (generic && generic.ok === false) return generic;
     if (typeof verifyStructuredResult === "function") {
