@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+const repo = "keeganhall33/business-dashboard";
 const branch = "fix/agent-exec-minimal-env-443";
 const worktree = path.join(os.tmpdir(), "business-dashboard-agent-exec-minimal-env-443");
 
@@ -13,7 +14,7 @@ function run(cmd, args, cwd = process.cwd()) {
 try { run("git", ["worktree", "remove", "--force", worktree]); } catch {}
 try { run("git", ["branch", "-D", branch]); } catch {}
 run("git", ["fetch", "origin", "main"]);
-run("git", ["fetch", "origin", branch]);
+try { run("git", ["fetch", "origin", branch]); } catch {}
 run("git", ["worktree", "add", "-b", branch, worktree, "origin/main"]);
 
 const file = path.join(worktree, "scripts/orchestration-run-issue-openclaw.mjs");
@@ -36,4 +37,10 @@ run("git", ["add", "scripts/orchestration-run-issue-openclaw.mjs"], worktree);
 run("git", ["commit", "-m", "Use minimal compatible agent exec flags with Ollama env pin"], worktree);
 run("git", ["push", "--force-with-lease", "-u", "origin", branch], worktree);
 const commit = run("git", ["rev-parse", "HEAD"], worktree);
-console.log(JSON.stringify({ status: "PASS", branch, commit }));
+let pr = "";
+try {
+  pr = run("gh", ["pr", "create", "--repo", repo, "--base", "main", "--head", branch, "--title", "Use minimal compatible agent exec flags with Ollama env pin", "--body", "P0 follow-up to #443/#337. Uses the installed-compatible local agent exec surface and pins Ollama through environment rather than unsupported CLI flags. Syntax and diff checks pass."], worktree);
+} catch {
+  pr = run("gh", ["pr", "view", branch, "--repo", repo, "--json", "url", "--jq", ".url"], worktree);
+}
+console.log(JSON.stringify({ status: "PASS", branch, commit, pr }));
