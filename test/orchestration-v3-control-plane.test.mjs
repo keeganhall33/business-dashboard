@@ -51,3 +51,17 @@ test("V3 intentional rebuild archives matching OpenClaw workspace attestations",
   assert.match(source, /workspace-attestation\.attested/);
   assert.match(source, /archiveWorkspaceAttestation/);
 });
+
+test("V3 local strict retry preserves full task context and concrete task id", () => {
+  const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.match(source, /### FULL TASK CONTEXT/);
+  assert.match(source, /TASK_ID MUST BE/);
+  assert.doesNotMatch(source, /Task context omitted for retry \(intentional\)/);
+});
+
+test("V3 Ollama usage is not reported as cloud usage", () => {
+  const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  assert.match(source, /providerUsed === "ollama" \? null : \(meta\?\.usage \?\? null\)/);
+  assert.match(source, /LOCAL_USAGE: localUsage/);
+  assert.match(source, /localResult = "SUCCESS"/);
+});
