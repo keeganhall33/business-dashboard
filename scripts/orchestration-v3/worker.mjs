@@ -1,18 +1,31 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { requireHealthyWorker } from "./preflight.mjs";
-import { createObservedExecutionHarness, observedExecutionJournalLineCount, readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "./execution-evidence.mjs";
+import {
+  createObservedExecutionHarness,
+  readObservedExecutionEvidence,
+  requiresTestExecution,
+  requiresDiffCheck
+} from "./execution-evidence.mjs";
+import { buildIsolatedEnvironment, parseMachineEnvelope } from "./diagnose-local-tool-observed.mjs";
+
+const CLOUD_CREDENTIAL_PREFIXES = [
+  "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
+  "GROQ_", "DEEPSEEK_", "PERPLEXITY_", "OPENROUTER_", "COHERE_", "HUGGINGFACE_",
+  "HF_", "TOGETHER_", "CEREBRAS_", "FIREWORKS_", "AZURE_", "BEDROCK_"
+];
 
 function arg(name) {
   const i = process.argv.indexOf(name);
-  return i >= 0 ? process.argv[i + 1] : null;
+  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : null;
 }
 
 const issue = Number(arg("--issue"));
 const workerId = arg("--worker");
-if (!Number.isInteger(issue) || issue <= 0 || !workerId) {
+if (!Number.isInteger(issue) || issue <= 0 || !workerId || !ORCHESTRATION_V3.workers[workerId]) {
   console.error("Usage: node scripts/orchestration-v3/worker.mjs --issue N --worker local-a");
   process.exit(2);
 }
@@ -20,324 +33,245 @@ if (!Number.isInteger(issue) || issue <= 0 || !workerId) {
 function gh(args) {
   return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
 }
-
 function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
 }
-
 function issueSnapshot() {
-  return JSON.parse(gh(["issue", "view", String(issue), "--repo", ORCHESTRATION_V3.repo, "--json", "body,labels,comments"]));
+  return JSON.parse(gh(["issue", "view", String(issue), "--repo", ORCHESTRATION_V3.repo, "--json", "number,title,body,labels"]));
 }
-
 function labelsOf(snapshot) {
-  return new Set((snapshot.labels ?? []).map((l) => l.name));
+  return new Set((snapshot.labels ?? []).map((x) => x.name));
 }
-
 function editLabels({ remove = [], add = [] }) {
   const args = ["issue", "edit", String(issue), "--repo", ORCHESTRATION_V3.repo];
   for (const label of remove) args.push("--remove-label", label);
   for (const label of add) args.push("--add-label", label);
   if (args.length > 6) gh(args);
 }
-
-function postComment(body) {
-  gh(["issue", "comment", String(issue), "--repo", ORCHESTRATION_V3.repo, "--body", body]);
+function postResult(value, meta = null) {
+  const lines = ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(value, null, 2), "```"];
+  if (meta) lines.push("", `<!-- agentMeta: ${JSON.stringify(meta)} -->`);
+  gh(["issue", "comment", String(issue), "--repo", ORCHESTRATION_V3.repo, "--body", lines.join("\n")]);
 }
-
-function latestResult(snapshot) {
-  const comments = snapshot.comments ?? [];
-  for (let i = comments.length - 1; i >= 0; i -= 1) {
-    const body = String(comments[i]?.body ?? "");
-    const fenced = body.match(/```json\s*([\s\S]*?)```/i);
-    if (!fenced) continue;
-    try {
-      const value = JSON.parse(fenced[1]);
-      if (value && typeof value === "object" && typeof value.STATUS === "string") return value;
-    } catch {}
-  }
-  return null;
-}
-
 function humanApprovalRequired(body) {
-  const match = String(body ?? "").match(/\*\*human_approval_required:\*\*\s*([^\n]+)/i);
-  return match ? match[1].trim().toLowerCase() === "true" : false;
+  return /\*\*human_approval_required:\*\*\s*true/i.test(String(body ?? ""));
 }
-
+function resultBase(status, summary) {
+  return {
+    TASK_ID: `issue-${issue}`,
+    STATUS: status,
+    SUMMARY: summary,
+    CHANGES: [],
+    FILES_CHANGED: [],
+    DB_CHANGES: "NO",
+    MIGRATION: null,
+    TESTS: "N/A",
+    PR: null,
+    MERGE_STATUS: "N/A",
+    PRODUCTION_CHANGE: "NO",
+    UNEXPECTED_RESULTS: [],
+    DECISIONS_REQUIRED: [],
+    BLOCKERS: [],
+    NEXT_RECOMMENDED_TASK: null,
+    SESSION_HEALTH: "GOOD",
+    SESSION_CONTEXT: `v3/${workerId}/issue-${issue}`,
+    ROUTING_TIER: "LOCAL_FIRST",
+    MODEL_USED: "qwen3.5:9b",
+    LOCAL_ATTEMPTED: true,
+    LOCAL_RESULT: status === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED",
+    ESCALATED_TO_CLOUD: false,
+    ESCALATION_REASON: null,
+    CLOUD_USAGE: null,
+    CLOUD_COST: null
+  };
+}
 function openPrSnapshot() {
-  const raw = gh([
-    "pr", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--limit", "100",
-    "--json", "number,headRefName,headRefOid,updatedAt"
-  ]);
-  return JSON.parse(raw || "[]");
+  return JSON.parse(gh(["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--limit", "100", "--json", "number,headRefName,headRefOid,updatedAt"]) || "[]");
 }
-
-function referencedPrNumbers(body) {
-  const result = new Set();
-  const re = /\bPR\s*#(\d+)\b/gi;
-  for (const match of String(body ?? "").matchAll(re)) result.add(Number(match[1]));
-  return [...result];
-}
-
-function requiresPrEvidence(body) {
-  const text = String(body ?? "");
-  return /\bexisting\s+PR\b/i.test(text) || /\bpush\b[^\n]{0,120}\bPR\b/i.test(text) || /\bopen\b[^\n]{0,120}\bPR\b/i.test(text) || /\bpull request\b/i.test(text);
-}
-
-function mutationClaimed(body, result) {
-  if ((result?.CHANGES ?? []).length > 0 || (result?.FILES_CHANGED ?? []).length > 0 || result?.PR) return true;
-  return /\b(?:implement|fix|repair|reconcile|package|create|commit|push|open)\b/i.test(String(body ?? ""));
-}
-
 function mapPrs(prs) {
   return new Map((prs ?? []).map((pr) => [Number(pr.number), pr]));
 }
-
-function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, afterPrs, executionEvidence }) {
-  const before = mapPrs(beforePrs);
-  const after = mapPrs(afterPrs);
-  const newPrs = [...after.values()].filter((pr) => !before.has(Number(pr.number)));
-  const changedPrs = [...after.values()].filter((pr) => {
-    const old = before.get(Number(pr.number));
-    return old && old.headRefOid !== pr.headRefOid;
-  });
-  const referenced = referencedPrNumbers(body);
-  const referencedChanged = changedPrs.filter((pr) => referenced.includes(Number(pr.number)));
-  const headLinkedPrs = [...newPrs, ...changedPrs].filter((pr) => pr.headRefOid === afterHead);
-  const gitHeadChanged = beforeHead !== afterHead;
-  const mutationObserved = gitHeadChanged || newPrs.length > 0 || changedPrs.length > 0;
-  const needsMutation = mutationClaimed(body, result);
-  const needsPr = requiresPrEvidence(body) || referenced.length > 0 || Boolean(result?.PR);
-  const prObserved = referencedChanged.length > 0 || headLinkedPrs.length > 0;
-  const errors = [];
-
-  if (!executionEvidence || executionEvidence.toolCallCount <= 0) errors.push("PASS claimed implementation work but no instrumented repository command execution was observed");
-  if (!executionEvidence?.repoPreflightObserved) errors.push("PASS requires observed repo preflight: rev-parse --show-toplevel, status --short --branch, and remote -v must all succeed");
-  if (requiresTestExecution(body) && !executionEvidence?.testExecutionObserved) errors.push("PASS requires at least one observed successful test/build/typecheck command");
-  if (requiresDiffCheck(body) && !executionEvidence?.gitDiffCheckObserved) errors.push("PASS requires observed successful git diff --check");
-  else if (!executionEvidence?.gitDiffObserved) errors.push("PASS requires observed successful git diff inspection");
-  if (needsMutation && !executionEvidence?.gitMutationCommandObserved) errors.push("PASS claimed repository mutation but no successful git mutation command was observed");
-  if (needsMutation && !mutationObserved) errors.push("PASS claimed repository work but git HEAD and open PR heads did not change");
-  if (needsPr && !prObserved) errors.push("PASS claimed/required PR work but no referenced or worker-HEAD-linked PR changed");
-
-  return {
-    ok: errors.length === 0,
-    errors,
-    evidence: {
-      beforeHead,
-      afterHead,
-      gitHeadChanged,
-      referencedPrNumbers: referenced,
-      newPrNumbers: newPrs.map((pr) => pr.number),
-      changedPrNumbers: changedPrs.map((pr) => pr.number),
-      workerHeadLinkedPrNumbers: headLinkedPrs.map((pr) => pr.number),
-      execution: executionEvidence ?? null
+function extractFinalText(envelope) {
+  const seen = new Set();
+  function walk(value) {
+    if (!value || typeof value !== "object" || seen.has(value)) return null;
+    seen.add(value);
+    for (const key of ["finalAssistantVisibleText", "finalAssistantRawText", "final", "text", "reply"]) {
+      if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
     }
-  };
+    for (const child of Object.values(value)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(envelope) ?? "";
 }
-
-function installWorkerRuntimeContract(cfg) {
-  const repoRoot = path.resolve(cfg.worktree);
-  const agentWorkspace = path.resolve(cfg.agentWorkspace);
-  if (repoRoot === agentWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
-  fs.mkdirSync(agentWorkspace, { recursive: true });
-  const openclawStateDir = path.join(agentWorkspace, ".openclaw-state");
-  if (path.resolve(openclawStateDir) === repoRoot) throw new Error(`OPENCLAW_STATE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
-  fs.mkdirSync(openclawStateDir, { recursive: true });
-  const contractPath = path.join(agentWorkspace, "AGENTS.md");
-  const contract = [
-    "# Jeeves V3 Worker",
-    `Repo: ${repoRoot}`,
-    `Control workspace: ${agentWorkspace}`,
-    "Repo and control workspace are different. Never initialize, clean, delete, or reseed the repo.",
-    "Code Mode is active for local execution. The outer exec tool accepts JavaScript/TypeScript, not raw shell.",
-    "Dispatch repository shell commands through tools.callValue(\"openclaw:core:exec\", { command, workdir }).",
-    "Every repo command must target the absolute Repo path above.",
-    "PASS requires machine-observed repo preflight, required tests/build, git diff inspection, mutation command, and real git/GitHub state change.",
-    `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`
-  ].join("\n");
-  fs.writeFileSync(contractPath, `${contract}\n`, "utf8");
-  return { contractPath, repoRoot, agentWorkspace, openclawStateDir };
+function parseResult(text) {
+  const raw = String(text ?? "").trim().replace(/^```json\s*/i, "").replace(/\s*```$/i, "");
+  const value = JSON.parse(raw);
+  if (!value || typeof value !== "object" || !["PASS", "BLOCKED", "FAILED"].includes(String(value.STATUS ?? "").toUpperCase())) {
+    throw new Error("INVALID_ORCHESTRATION_RESULT");
+  }
+  return { ...resultBase(String(value.STATUS).toUpperCase(), String(value.SUMMARY ?? "")), ...value };
+}
+function sanitizeCloudEnv(baseEnv) {
+  const env = { ...baseEnv };
+  for (const key of Object.keys(env)) {
+    if (CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) && /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)) delete env[key];
+  }
+  return env;
+}
+function q(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
 
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
-const runtimeContract = installWorkerRuntimeContract(cfg);
-const beforeSnapshot = issueSnapshot();
-const beforeHead = git(["rev-parse", "HEAD"], cfg.worktree);
-const beforePrs = openPrSnapshot();
-const executionHarness = createObservedExecutionHarness({ issue, workerId });
-const env = {
-  ...process.env,
-  ...executionHarness.envPatch,
-  ORCH_LOCAL_ROUTING_ENABLED: "true",
-  ORCH_LOCAL_AGENT_ID: workerId,
-  ORCH_LOCAL_MODEL: ORCHESTRATION_V3.model.id,
-  ORCH_CLOUD_AGENT_ID: workerId,
-  ORCH_WORKTREE_ROOT: runtimeContract.repoRoot,
-  ORCH_AGENT_WORKSPACE: runtimeContract.agentWorkspace,
-  OPENCLAW_WORKSPACE_DIR: runtimeContract.agentWorkspace,
-  OPENCLAW_STATE_DIR: runtimeContract.openclawStateDir,
-  OPENCLAW_MODEL: ORCHESTRATION_V3.model.id,
-  OPENCLAW_FALLBACK_MODELS: "",
-  OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
-};
+const repoRoot = path.resolve(cfg.worktree);
+const controlWorkspace = path.resolve(cfg.agentWorkspace);
+if (repoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
+fs.mkdirSync(controlWorkspace, { recursive: true });
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, runtimeContract, executionHarness: { journalPath: executionHarness.journalPath, shimRoot: executionHarness.shimRoot, instrumented: Object.keys(executionHarness.resolved) }, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
-
-const implementationTask = mutationClaimed(beforeSnapshot.body, null) && !humanApprovalRequired(beforeSnapshot.body);
-if (implementationTask) {
-  const handshakeStartLine = observedExecutionJournalLineCount(executionHarness.journalPath);
-  const repoCommand = "pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v";
-  const bridgeCall = `return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(repoCommand)}, workdir: ${JSON.stringify(runtimeContract.repoRoot)} });`;
-  const handshakePrompt = [
-    "EXECUTION_HANDSHAKE_V1.",
-    "Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.",
-    "Immediately invoke the outer Code Mode exec tool with the following JavaScript. Do not explain, list tools, inspect memory, or answer first.",
-    bridgeCall,
-    "Never place raw shell directly in the outer Code Mode exec tool.",
-    "After the nested shell tool finishes, reply only EXECUTION_HANDSHAKE_OK."
-  ].join("\n");
-  const handshake = spawnSync("/opt/homebrew/bin/openclaw", [
-    "agent", "exec", handshakePrompt,
-    "--isolated", "--auth-env-only",
-    "--model", ORCHESTRATION_V3.model.id,
-    "--code-mode", "code",
-    "--local-model-lean",
-    "--cwd", runtimeContract.agentWorkspace,
-    "--json", "--timeout", "180"
-  ], {
-    cwd: runtimeContract.agentWorkspace,
-    env,
-    encoding: "utf8",
-    timeout: 210_000,
-    maxBuffer: 8 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  const handshakeEvidence = readObservedExecutionEvidence(executionHarness.journalPath, { startLine: handshakeStartLine });
-  console.log(JSON.stringify({ event: "EXECUTION_HANDSHAKE", issue, workerId, exitCode: handshake.status, error: handshake.error?.message ?? null, evidence: handshakeEvidence }));
-  if (!handshakeEvidence.repoPreflightObserved) {
-    const blocker = {
-      TASK_ID: `issue-${issue}`,
-      STATUS: "BLOCKED",
-      SUMMARY: "V3 execution handshake failed before implementation; no model-observed repository preflight was proven",
-      CHANGES: [],
-      FILES_CHANGED: [],
-      DB_CHANGES: "NO",
-      MIGRATION: null,
-      TESTS: "N/A",
-      PR: null,
-      MERGE_STATUS: "N/A",
-      PRODUCTION_CHANGE: "NO",
-      UNEXPECTED_RESULTS: [JSON.stringify({ handshakeExitCode: handshake.status, handshakeError: handshake.error?.message ?? null, evidence: handshakeEvidence })],
-      DECISIONS_REQUIRED: [],
-      BLOCKERS: ["EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT"],
-      NEXT_RECOMMENDED_TASK: "Retry only after the local model can actually invoke the required exec preflight.",
-      SESSION_HEALTH: "GOOD",
-      SESSION_CONTEXT: `v3-execution-handshake/${workerId}`,
-      ROUTING_TIER: "LOCAL_FIRST",
-      MODEL_USED: ORCHESTRATION_V3.model.id.replace(/^ollama\//, ""),
-      LOCAL_ATTEMPTED: true,
-      LOCAL_RESULT: "EVIDENCE_REJECTED",
-      ESCALATED_TO_CLOUD: false,
-      ESCALATION_REASON: null,
-      CLOUD_USAGE: null,
-      CLOUD_COST: null
-    };
-    postComment(["## OrchestrationResultContractV1", "", "```json", JSON.stringify(blocker, null, 2), "```"].join("\n"));
-    const current = labelsOf(issueSnapshot());
-    const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.humanApproval].filter((x) => current.has(x));
-    editLabels({ remove, add: [ORCHESTRATION_V3.queue.blocked] });
-    console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: "BLOCKED", reason: "EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT" }));
-    process.exit(1);
-  }
+const snapshot = issueSnapshot();
+if (humanApprovalRequired(snapshot.body)) {
+  const value = { ...resultBase("BLOCKED", "Human approval required; V3 worker refused autonomous execution"), STATUS: "AWAITING_HUMAN_APPROVAL", DECISIONS_REQUIRED: ["KEEGAN_APPROVAL_REQUIRED"] };
+  postResult(value);
+  const current = labelsOf(issueSnapshot());
+  editLabels({ remove: [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready].filter((x) => current.has(x)), add: [ORCHESTRATION_V3.queue.humanApproval] });
+  process.exit(0);
 }
 
-const runnerPath = path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-run-issue-openclaw.mjs");
-const run = spawnSync(process.execPath, [
-  runnerPath,
-  "--repo", ORCHESTRATION_V3.repo,
-  "--issue", String(issue),
-  "--agent", workerId,
+const beforeHead = git(["rev-parse", "HEAD"], repoRoot);
+const beforePrs = openPrSnapshot();
+const harness = createObservedExecutionHarness({ issue, workerId });
+const observed = Object.fromEntries(["git", "pnpm", "npm", "npx"].map((name) => [name, path.join(harness.shimRoot, name)]));
+if (!fs.existsSync(observed.git)) throw new Error("OBSERVED_GIT_WRAPPER_MISSING");
+
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `jeeves-v3-worker-${issue}-${workerId}-`));
+const tempHome = path.join(tempRoot, "home");
+const stateDir = path.join(tempRoot, "state");
+const configPath = path.join(tempRoot, "openclaw.json");
+for (const dir of [tempHome, stateDir, controlWorkspace]) fs.mkdirSync(dir, { recursive: true });
+fs.writeFileSync(configPath, "{}\n", "utf8");
+fs.writeFileSync(path.join(controlWorkspace, "AGENTS.md"), [
+  "# Jeeves V3 compatibility worker",
+  `Protected repository: ${repoRoot}`,
+  "Use only the explicitly supplied observed command wrappers for git/package-manager commands.",
+  "Never initialize, delete, clean, or reseed the protected repository.",
+  `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`
+].join("\n") + "\n", "utf8");
+
+const baseEnv = sanitizeCloudEnv(process.env);
+let env = buildIsolatedEnvironment({ baseEnv, tempHome, stateDir, configPath, controlWorkspace, harnessEnv: harness.envPatch });
+if (process.env.HOME) {
+  env.GH_CONFIG_DIR = process.env.GH_CONFIG_DIR || path.join(process.env.HOME, ".config", "gh");
+  env.GIT_CONFIG_GLOBAL = process.env.GIT_CONFIG_GLOBAL || path.join(process.env.HOME, ".gitconfig");
+}
+env.OPENCLAW_FALLBACK_MODELS = "";
+env.OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "ollama-local";
+
+const preflightCommand = `${q(observed.git)} rev-parse --show-toplevel && ${q(observed.git)} status --short --branch && ${q(observed.git)} remote -v`;
+const testRequired = requiresTestExecution(snapshot.body);
+const diffCheckRequired = requiresDiffCheck(snapshot.body);
+const prompt = [
+  `You are Jeeves executing GitHub issue #${issue} in ${ORCHESTRATION_V3.repo}.`,
+  `TASK TITLE: ${snapshot.title}`,
+  "",
+  "TASK BODY:",
+  String(snapshot.body ?? "").slice(0, 12000),
+  "",
+  `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
+  "This is a real implementation run. Do not merely review or narrate commands.",
+  "Use the shell exec tool for shell commands and the exact protected repository as workdir.",
+  "MANDATORY FIRST TOOL ACTION: execute this exact command with the shell exec tool:",
+  preflightCommand,
+  "Do not substitute /usr/bin/git, /opt/homebrew/bin/git, or plain git for the observed git wrapper.",
+  "For every git command use this exact executable:",
+  observed.git,
+  fs.existsSync(observed.pnpm) ? `For every pnpm command use: ${observed.pnpm}` : null,
+  fs.existsSync(observed.npm) ? `For every npm command use: ${observed.npm}` : null,
+  fs.existsSync(observed.npx) ? `For every npx command use: ${observed.npx}` : null,
+  testRequired ? "The issue requires tests/build/typecheck. Actually run the relevant successful command through one of the observed package-manager wrappers before PASS." : null,
+  `Before PASS, inspect the actual changes using: ${q(observed.git)} diff`,
+  diffCheckRequired ? `Before PASS, also run: ${q(observed.git)} diff --check` : null,
+  "Before PASS, perform a real git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue.",
+  "Use gh directly when PR inspection or PR creation/update is required. Do not create a duplicate PR when the issue names an existing PR.",
+  "Cloud use is forbidden. Do not request or use OpenAI/Anthropic/Gemini/etc.",
+  "After the bounded implementation attempt, return ONLY one strict JSON object with this exact uppercase-key shape:",
+  JSON.stringify({
+    TASK_ID: `issue-${issue}`, STATUS: "PASS|BLOCKED|FAILED", SUMMARY: "concise outcome", CHANGES: [], FILES_CHANGED: [], DB_CHANGES: "NO", MIGRATION: null, TESTS: "command/results", PR: null, MERGE_STATUS: "N/A", PRODUCTION_CHANGE: "NO", UNEXPECTED_RESULTS: [], DECISIONS_REQUIRED: [], BLOCKERS: [], NEXT_RECOMMENDED_TASK: null, SESSION_HEALTH: "GOOD", SESSION_CONTEXT: `v3/${workerId}/issue-${issue}`
+  }),
+  "No prose and no markdown fences."
+].filter(Boolean).join("\n");
+
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead }));
+
+const openclawArgs = [
+  "agent", "--local",
+  "--session-key", `agent:${workerId}:issue-${issue}`,
+  "--message", prompt,
+  "--model", ORCHESTRATION_V3.model.id,
+  "--json",
   "--timeout", "900"
-], {
-  cwd: runtimeContract.agentWorkspace,
+];
+const run = spawnSync("/opt/homebrew/bin/openclaw", openclawArgs, {
+  cwd: controlWorkspace,
   env,
-  stdio: "inherit",
-  timeout: 950_000
+  encoding: "utf8",
+  timeout: 950_000,
+  maxBuffer: 24 * 1024 * 1024,
+  stdio: ["ignore", "pipe", "pipe"]
 });
 
-let snapshot = issueSnapshot();
-let result = latestResult(snapshot);
-let status = result?.STATUS ?? null;
-const humanRequired = humanApprovalRequired(snapshot.body);
-const afterHead = git(["rev-parse", "HEAD"], cfg.worktree);
+const executionEvidence = readObservedExecutionEvidence(harness.journalPath);
+const machine = parseMachineEnvelope(run.stdout);
+const afterHead = git(["rev-parse", "HEAD"], repoRoot);
 const afterPrs = openPrSnapshot();
-const executionEvidence = readObservedExecutionEvidence(executionHarness.journalPath);
-console.log(JSON.stringify({ event: "OBSERVED_EXECUTION_EVIDENCE", issue, workerId, executionEvidence }));
+const beforeMap = mapPrs(beforePrs);
+const changedPrs = afterPrs.filter((pr) => !beforeMap.has(Number(pr.number)) || beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid);
+const realMutationObserved = beforeHead !== afterHead || changedPrs.length > 0;
+const providerOk = String(machine.provider ?? "").toLowerCase() === "ollama";
+const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(String(machine.model ?? "").toLowerCase());
+const fallbackOk = machine.fallbackUsed === false;
 
-if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
-  const verification = verifyPassEvidence({
-    body: snapshot.body,
-    result,
-    beforeHead,
-    afterHead,
-    beforePrs,
-    afterPrs,
-    executionEvidence
-  });
-  if (!verification.ok) {
-    const correction = {
-      TASK_ID: result?.TASK_ID ?? `issue-${issue}`,
-      STATUS: "BLOCKED",
-      SUMMARY: "V3 observed-execution and machine-evidence gates rejected an unproven model PASS",
-      CHANGES: [],
-      FILES_CHANGED: [],
-      DB_CHANGES: "NO",
-      MIGRATION: null,
-      TESTS: "Model-reported tests are not accepted without observed command execution and repository/PR mutation evidence",
-      PR: null,
-      MERGE_STATUS: "N/A",
-      PRODUCTION_CHANGE: "NO",
-      UNEXPECTED_RESULTS: [JSON.stringify(verification.evidence)],
-      DECISIONS_REQUIRED: [],
-      BLOCKERS: verification.errors,
-      NEXT_RECOMMENDED_TASK: "Retry the task; PASS remains blocked until required execution stages and actual git/GitHub mutation are machine-observed.",
-      SESSION_HEALTH: "GOOD",
-      SESSION_CONTEXT: `v3-machine-evidence/${workerId}`,
-      ROUTING_TIER: "LOCAL_FIRST",
-      MODEL_USED: result?.MODEL_USED ?? ORCHESTRATION_V3.model.id.replace(/^ollama\//, ""),
-      LOCAL_ATTEMPTED: result?.LOCAL_ATTEMPTED ?? true,
-      LOCAL_RESULT: "EVIDENCE_REJECTED",
-      ESCALATED_TO_CLOUD: false,
-      ESCALATION_REASON: null,
-      CLOUD_USAGE: null,
-      CLOUD_COST: null
-    };
-    postComment(["## OrchestrationResultContractV1", "", "```json", JSON.stringify(correction, null, 2), "```"].join("\n"));
-    status = "BLOCKED";
-    result = correction;
-    snapshot = issueSnapshot();
-    console.log(JSON.stringify({ event: "PASS_REJECTED_BY_EVIDENCE", issue, workerId, ...verification }));
-  }
+let parsed;
+try {
+  const envelope = JSON.parse(String(run.stdout ?? ""));
+  parsed = parseResult(extractFinalText(envelope));
+} catch (error) {
+  parsed = { ...resultBase("BLOCKED", "Local model output could not be parsed as OrchestrationResultContractV1"), BLOCKERS: [error?.message ?? String(error)] };
 }
 
-const current = labelsOf(snapshot);
-const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.blocked, ORCHESTRATION_V3.queue.humanApproval].filter((x) => current.has(x));
-let add = [];
+const evidenceErrors = [];
+if (run.error?.code === "ETIMEDOUT") evidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
+else if (run.status !== 0) evidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${run.status}`);
+if (!providerOk) evidenceErrors.push(`PROVIDER_MISMATCH:${machine.provider}`);
+if (!modelOk) evidenceErrors.push(`MODEL_MISMATCH:${machine.model}`);
+if (!fallbackOk) evidenceErrors.push(`FALLBACK_NOT_PROVEN_FALSE:${machine.fallbackUsed}`);
+if (!executionEvidence.repoPreflightObserved) evidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
+if (testRequired && !executionEvidence.testExecutionObserved) evidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
+if (!executionEvidence.gitDiffObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
+if (diffCheckRequired && !executionEvidence.gitDiffCheckObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
+if (!executionEvidence.gitMutationCommandObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
+if (!realMutationObserved) evidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
 
-if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
-  add = [ORCHESTRATION_V3.queue.humanApproval];
-} else if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
-  add = [];
-} else if (status === "AWAITING_REVIEW") {
-  add = [ORCHESTRATION_V3.queue.blocked];
-} else if (["BLOCKED", "FAILED"].includes(status) || run.status !== 0 || run.error) {
-  add = [ORCHESTRATION_V3.queue.blocked];
-} else {
-  add = [ORCHESTRATION_V3.queue.blocked];
+let finalValue = { ...parsed, ROUTING_TIER: "LOCAL_FIRST", MODEL_USED: machine.model, LOCAL_ATTEMPTED: true, LOCAL_RESULT: parsed.STATUS === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED", ESCALATED_TO_CLOUD: false, ESCALATION_REASON: null, CLOUD_USAGE: null, CLOUD_COST: null };
+if (parsed.STATUS === "PASS" && evidenceErrors.length > 0) {
+  finalValue = {
+    ...resultBase("BLOCKED", "Machine evidence rejected an unproven model PASS"),
+    BLOCKERS: evidenceErrors,
+    UNEXPECTED_RESULTS: [JSON.stringify({ machine, executionEvidence, beforeHead, afterHead, changedPrNumbers: changedPrs.map((pr) => pr.number) })]
+  };
+}
+if (parsed.STATUS !== "PASS" && evidenceErrors.length > 0) {
+  finalValue.BLOCKERS = [...new Set([...(finalValue.BLOCKERS ?? []), ...evidenceErrors])];
 }
 
+postResult(finalValue, { provider: machine.provider, model: machine.model, fallbackUsed: machine.fallbackUsed, toolCalls: machine.toolCalls, toolFailures: machine.toolFailures, executionEvidence });
+const current = labelsOf(issueSnapshot());
+const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.blocked].filter((x) => current.has(x));
+const add = finalValue.STATUS === "PASS" ? [ORCHESTRATION_V3.queue.awaitingReview] : [ORCHESTRATION_V3.queue.blocked];
 editLabels({ remove, add });
-console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status, exitCode: run.status, finalLabels: add, beforeHead, afterHead, executionEvidence }));
-if (run.error) throw run.error;
-process.exitCode = status === "BLOCKED" ? 1 : (run.status ?? 1);
+console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: finalValue.STATUS, machine, executionEvidence, realMutationObserved, changedPrNumbers: changedPrs.map((pr) => pr.number) }));
+process.exit(finalValue.STATUS === "PASS" ? 0 : 1);
