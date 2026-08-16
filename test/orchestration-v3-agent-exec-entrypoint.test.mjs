@@ -7,7 +7,7 @@ import {
   codeModeShellInstruction
 } from "../scripts/orchestration-v3/worker-exec-invocation.mjs";
 
-test("V3 real worker uses capability-aware agent exec instead of legacy agent local", () => {
+test("V3 real worker uses capability-aware invocation instead of hard-coding a CLI shape", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
   assert.match(source, /probeWorkerExecCapabilities/);
   assert.match(source, /buildWorkerExecInvocation/);
@@ -30,10 +30,26 @@ test("worker exec helper enables Code Mode and local-model-lean when available",
   assert.ok(invocation.args.includes("ollama/qwen3.5:9b"));
 });
 
-test("V3 worker fails closed when agent exec is unavailable", () => {
-  const invocation = buildWorkerExecInvocation({ capabilities: parseWorkerExecCapabilities("Usage: openclaw agent"), prompt: "x", controlWorkspace: "/tmp/control" });
+test("V3 worker uses installed legacy local-message path when agent exec is unavailable", () => {
+  const help = `Usage: openclaw agent [options]\nOptions:\n  --local\n  --session-key <key>\n  --message <text>\n  --model <id>\n  --json\n  --timeout <seconds>`;
+  const capabilities = parseWorkerExecCapabilities(help);
+  const first = buildWorkerExecInvocation({ capabilities, prompt: "issue 413", controlWorkspace: "/tmp/local-a", timeoutSeconds: 900 });
+  const second = buildWorkerExecInvocation({ capabilities, prompt: "issue 414", controlWorkspace: "/tmp/local-b", timeoutSeconds: 900 });
+  assert.equal(first.supported, true);
+  assert.equal(first.mode, "LEGACY_AGENT_LOCAL_MESSAGE");
+  assert.deepEqual(first.args.slice(0, 2), ["agent", "--local"]);
+  assert.ok(first.args.includes("--session-key"));
+  assert.ok(first.args.includes("--message"));
+  assert.ok(first.args.includes("--model"));
+  assert.ok(first.args.includes("ollama/qwen3.5:9b"));
+  assert.match(first.sessionKey, /^agent:main:jeeves-v3-[a-f0-9]{24}$/);
+  assert.notEqual(first.sessionKey, second.sessionKey);
+});
+
+test("V3 worker still fails closed when neither supported local path exists", () => {
+  const invocation = buildWorkerExecInvocation({ capabilities: parseWorkerExecCapabilities("Usage: openclaw agent\n  --model <id>"), prompt: "x", controlWorkspace: "/tmp/control" });
   assert.equal(invocation.supported, false);
-  assert.equal(invocation.reason, "OPENCLAW_AGENT_EXEC_UNAVAILABLE");
+  assert.equal(invocation.reason, "OPENCLAW_CLI_MISSING_LOCAL_MESSAGE_PATH");
 });
 
 test("Code Mode shell bridge uses nested core exec with exact workdir", () => {
