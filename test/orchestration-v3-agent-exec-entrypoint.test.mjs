@@ -57,3 +57,14 @@ test("V3 local runner does not recursively build a strict retry prompt", () => {
   assert.match(wrapper, /promptText,\s*\n\s*strictRetryPrompt,/);
   assert.doesNotMatch(wrapper, /normalizeV3LocalPromptForSingleRetry/);
 });
+
+test("V3 protected git worktrees are pre-seeded so OpenClaw never needs BOOTSTRAP.md", () => {
+  const marker = fs.readFileSync("AGENTS.md", "utf8");
+  assert.ok(marker.length > 0 && marker.length < 4000, "root AGENTS.md must stay compact");
+  assert.match(marker, /intentionally pre-seeded/i);
+  assert.match(marker, /Do not run onboarding or create\/delete `BOOTSTRAP\.md`/i);
+  assert.match(marker, /Ollama `qwen3\.5:9b`/i);
+  assert.match(marker, /cloud fallback disabled/i);
+  assert.match(marker, /machine-truth/i);
+  assert.match(marker, /observed repo preflight\/tool\/test\/diff\/mutation evidence/i);
+});
