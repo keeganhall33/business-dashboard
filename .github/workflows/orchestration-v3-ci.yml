@@ -9,6 +9,7 @@ on:
       - 'test/orchestration-v3-control-plane.test.mjs'
       - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
       - 'test/orchestration-v3-local-tool-diagnostic.test.mjs'
+      - 'test/orchestration-v3-code-mode-bridge.test.mjs'
       - '.github/workflows/orchestration-v3-ci.yml'
   push:
     branches:
@@ -20,6 +21,7 @@ on:
       - 'test/orchestration-v3-control-plane.test.mjs'
       - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
       - 'test/orchestration-v3-local-tool-diagnostic.test.mjs'
+      - 'test/orchestration-v3-code-mode-bridge.test.mjs'
 
 jobs:
   control-plane:
@@ -42,4 +44,4 @@ jobs:
           node --check scripts/orchestration-v3/diagnose-local-tool.mjs
           node --check scripts/orchestration-run-issue-openclaw.mjs
       - name: Control-plane invariants
-        run: node --test test/orchestration-v3-control-plane.test.mjs test/orchestration-v3-agent-exec-entrypoint.test.mjs test/orchestration-v3-local-tool-diagnostic.test.mjs
+        run: node --test test/orchestration-v3-control-plane.test.mjs test/orchestration-v3-agent-exec-entrypoint.test.mjs test/orchestration-v3-local-tool-diagnostic.test.mjs test/orchestration-v3-code-mode-bridge.test.mjs
