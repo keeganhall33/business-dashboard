@@ -4,14 +4,18 @@ on:
   pull_request:
     paths:
       - 'scripts/orchestration-v3/**'
+      - 'scripts/orchestration-run-issue-openclaw.mjs'
       - 'test/orchestration-v3-control-plane.test.mjs'
+      - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
       - '.github/workflows/orchestration-v3-ci.yml'
   push:
     branches:
       - main
     paths:
       - 'scripts/orchestration-v3/**'
+      - 'scripts/orchestration-run-issue-openclaw.mjs'
       - 'test/orchestration-v3-control-plane.test.mjs'
+      - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
 
 jobs:
   control-plane:
@@ -31,5 +35,6 @@ jobs:
           node --check scripts/orchestration-v3/prepare-host.mjs
           node --check scripts/orchestration-v3/activate-host.mjs
           node --check scripts/orchestration-v3/bootstrap-host.mjs
+          node --check scripts/orchestration-run-issue-openclaw.mjs
       - name: Control-plane invariants
-        run: node --test test/orchestration-v3-control-plane.test.mjs
+        run: node --test test/orchestration-v3-control-plane.test.mjs test/orchestration-v3-agent-exec-entrypoint.test.mjs
