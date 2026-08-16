@@ -104,25 +104,33 @@ try {
   console.log("=== V3 BOOTSTRAP: SAFE PREPARE ===");
   runLive(process.execPath, ["scripts/orchestration-v3/prepare-host.mjs"], { cwd: tempRoot });
 
-  console.log("=== V3 BOOTSTRAP: ACTIVATE SINGLE WATCHER ===");
-  runLive(process.execPath, ["scripts/orchestration-v3/activate-host.mjs"], { cwd: RUNTIME });
-
-  console.log("=== V3 BOOTSTRAP: RELEASE FOUR LANES ===");
+  console.log("=== V3 BOOTSTRAP: RELEASE FOUR LANES BEFORE WATCHER START ===");
   const requeued = REQUEUE.filter((issueNumber) => requeue(issueNumber));
 
-  run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${V3_LABEL}`]);
+  console.log("=== V3 BOOTSTRAP: ACTIVATE SINGLE WATCHER AGAINST POPULATED QUEUE ===");
+  runLive(process.execPath, ["scripts/orchestration-v3/activate-host.mjs"], { cwd: RUNTIME });
+
   await sleep(7000);
 
   console.log("=== V3 BOOTSTRAP: DOCTOR ===");
   runLive(process.execPath, ["scripts/orchestration-v3/doctor.mjs"], { cwd: RUNTIME });
 
   const running = JSON.parse(run("gh", ["issue", "list", "--repo", REPO, "--state", "open", "--label", "orch:running", "--limit", "20", "--json", "number,title"]));
+  const stillReady = requeued.filter((issueNumber) => {
+    const labels = new Set((issueSnapshot(issueNumber).labels ?? []).map((label) => label.name));
+    return labels.has("orch:ready");
+  });
+  if (requeued.length > 0 && running.length === 0 && stillReady.length === requeued.length) {
+    throw new Error(`V3_ZERO_WORKERS_CLAIMED_AFTER_RELEASE:${stillReady.join(",")}`);
+  }
+
   console.log(JSON.stringify({
     status: "V3_CUTOVER_COMPLETE",
     mainSha,
     runtime: RUNTIME,
     requeued,
     runningIssues: running.map((item) => item.number),
+    stillReady,
     note: "4/4 acceptance remains evidence-gated until provider/model/cloud/worktree proof completes."
   }, null, 2));
 } finally {
