@@ -35,8 +35,9 @@ test("V3 watcher has no historical task resurrection path", () => {
 
 test("V3 worker refuses synthetic review state for no-human tasks", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
-  assert.match(source, /V3 never creates a fake review gate/);
-  assert.match(source, /queue\.blocked/);
+  assert.match(source, /status === "AWAITING_REVIEW"/);
+  assert.match(source, /add = \[ORCHESTRATION_V3\.queue\.blocked\]/);
+  assert.doesNotMatch(source, /add = \[ORCHESTRATION_V3\.queue\.awaitingReview\]/);
 });
 
 test("V3 worker invokes the assigned local agent and never main", () => {
@@ -89,11 +90,12 @@ test("V3 worker requires real repo-root tools from an isolated OpenClaw workspac
     assert.match(cfg.agentWorkspace, /\.openclaw\/agent-workspaces-v3\/local-[abcd]$/);
     assert.match(cfg.worktree, /\.openclaw\/worktrees\/local-[abcd]$/);
   }
-  assert.match(worker, /This OpenClaw workspace is a disposable control workspace/);
-  assert.match(worker, /Protected repository root:/);
-  assert.match(worker, /Never delete, initialize, reseed, clean, or replace the protected repository root as a workspace/);
-  assert.match(worker, /cd \$\{quotedRepoRoot\} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
-  assert.match(worker, /Actually invoke the tool/);
+  assert.match(worker, /Repo and control workspace are different/);
+  assert.match(worker, /Never initialize, clean, delete, or reseed the repo/);
+  assert.match(worker, /Every repo command must target the absolute Repo path above/);
+  assert.match(worker, /EXECUTION_HANDSHAKE_V1/);
+  assert.match(worker, /cd \$\{JSON\.stringify\(runtimeContract\.repoRoot\)\} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
+  assert.match(worker, /Immediately use the exec tool/);
   assert.match(worker, /ORCH_WORKTREE_ROOT/);
   assert.match(worker, /cwd: runtimeContract\.agentWorkspace/);
   assert.match(worker, /runnerPath = path\.join\(ORCHESTRATION_V3\.runtime\.root/);
