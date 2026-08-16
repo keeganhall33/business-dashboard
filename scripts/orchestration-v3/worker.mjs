@@ -149,7 +149,8 @@ function installWorkerRuntimeContract(cfg) {
     `Repo: ${repoRoot}`,
     `Control workspace: ${agentWorkspace}`,
     "Repo and control workspace are different. Never initialize, clean, delete, or reseed the repo.",
-    "For implementation work use exec/read/write/edit/apply_patch, not prose descriptions of tool calls.",
+    "Code Mode is active for local execution. The outer exec tool accepts JavaScript/TypeScript, not raw shell.",
+    "Dispatch repository shell commands through tools.callValue(\"openclaw:core:exec\", { command, workdir }).",
     "Every repo command must target the absolute Repo path above.",
     "PASS requires machine-observed repo preflight, required tests/build, git diff inspection, mutation command, and real git/GitHub state change.",
     `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`
@@ -186,18 +187,21 @@ console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, 
 const implementationTask = mutationClaimed(beforeSnapshot.body, null) && !humanApprovalRequired(beforeSnapshot.body);
 if (implementationTask) {
   const handshakeStartLine = observedExecutionJournalLineCount(executionHarness.journalPath);
-  const repoCommand = `cd ${JSON.stringify(runtimeContract.repoRoot)} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`;
+  const repoCommand = "pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v";
+  const bridgeCall = `return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(repoCommand)}, workdir: ${JSON.stringify(runtimeContract.repoRoot)} });`;
   const handshakePrompt = [
     "EXECUTION_HANDSHAKE_V1.",
-    "Immediately use the exec tool. Do not explain, list tools, inspect memory, or answer first.",
-    `Run exactly: ${repoCommand}`,
-    "After the tool finishes, reply only EXECUTION_HANDSHAKE_OK."
+    "Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.",
+    "Immediately invoke the outer Code Mode exec tool with the following JavaScript. Do not explain, list tools, inspect memory, or answer first.",
+    bridgeCall,
+    "Never place raw shell directly in the outer Code Mode exec tool.",
+    "After the nested shell tool finishes, reply only EXECUTION_HANDSHAKE_OK."
   ].join("\n");
   const handshake = spawnSync("/opt/homebrew/bin/openclaw", [
     "agent", "exec", handshakePrompt,
     "--isolated", "--auth-env-only",
     "--model", ORCHESTRATION_V3.model.id,
-    "--code-mode", "direct",
+    "--code-mode", "code",
     "--local-model-lean",
     "--cwd", runtimeContract.agentWorkspace,
     "--json", "--timeout", "180"
