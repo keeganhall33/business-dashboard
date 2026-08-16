@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { createObservedExecutionHarness, readObservedExecutionEvidence } from "./execution-evidence.mjs";
 
 const MODEL = "ollama/qwen3.5:9b";
@@ -24,6 +24,16 @@ function findExecutable(candidates) {
     if (probe.status === 0 && probe.stdout.trim()) return probe.stdout.trim();
   }
   return null;
+}
+
+export function isMainModule(moduleUrl, argvPath) {
+  if (!argvPath) return false;
+  const modulePath = fileURLToPath(moduleUrl);
+  try {
+    return fs.realpathSync(modulePath) === fs.realpathSync(argvPath);
+  } catch {
+    return path.resolve(modulePath) === path.resolve(argvPath);
+  }
 }
 
 export function parseAgentMeta(stdout) {
@@ -178,7 +188,7 @@ async function main() {
   process.exitCode = report.status === "PASS" ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     console.error(JSON.stringify({ diagnostic: "V3_STANDALONE_TOOL_DIAGNOSTIC_V1", status: "FAILED", reason: "DIAGNOSTIC_CRASH", error: error?.stack ?? String(error) }, null, 2));
     process.exitCode = 1;
