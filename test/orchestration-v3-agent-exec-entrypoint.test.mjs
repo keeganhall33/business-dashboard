@@ -36,3 +36,13 @@ test("V3 adapter accepts agent exec top-level JSON metadata for Ollama evidence"
   assert.match(source, /toolSummary/);
   assert.match(source, /codeModeEngaged/);
 });
+
+test("V3 worker isolates OpenClaw workspace and mutable state from the protected git worktree", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(source, /const openclawStateDir = path\.join\(agentWorkspace, "\.openclaw-state"\)/);
+  assert.match(source, /fs\.mkdirSync\(openclawStateDir, \{ recursive: true \}\)/);
+  assert.match(source, /OPENCLAW_WORKSPACE_DIR:\s*runtimeContract\.agentWorkspace/);
+  assert.match(source, /OPENCLAW_STATE_DIR:\s*runtimeContract\.openclawStateDir/);
+  assert.match(source, /OPENCLAW_STATE_MUST_NOT_EQUAL_GIT_WORKTREE/);
+  assert.match(source, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
+});
