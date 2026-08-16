@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createObservedExecutionHarness, readObservedExecutionEvidence } from "./execution-evidence.mjs";
 
 const MODEL = "ollama/qwen3.5:9b";
+const LEGACY_SESSION_KEY = "agent:main:jeeves-v3-diagnostic";
 const CLOUD_CREDENTIAL_PREFIXES = [
   "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
   "GROQ_", "DEEPSEEK_", "PERPLEXITY_", "OPENROUTER_", "COHERE_", "HUGGINGFACE_",
@@ -42,6 +43,7 @@ export function parseExecCapabilities(helpText) {
     execSubcommand: /Usage:\s+openclaw\s+agent\s+exec\b/i.test(text),
     local: hasFlag(text, "--local"),
     message: hasFlag(text, "--message"),
+    sessionKey: hasFlag(text, "--session-key"),
     isolated: hasFlag(text, "--isolated"),
     authEnvOnly: hasFlag(text, "--auth-env-only"),
     model: hasFlag(text, "--model"),
@@ -146,7 +148,15 @@ export function buildExecInvocation({ capabilities, prompt, controlWorkspace, ti
     if (!capabilities.local || !capabilities.message) {
       return { supported: false, reason: "OPENCLAW_CLI_MISSING_LOCAL_MESSAGE_PATH", args: [], toolMode: null, mode: null, promptIndex: null };
     }
-    const args = ["agent", "--local", "--message", prompt, "--model", MODEL];
+    if (!capabilities.sessionKey) {
+      return { supported: false, reason: "OPENCLAW_CLI_MISSING_SESSION_SELECTOR", args: [], toolMode: null, mode: null, promptIndex: null };
+    }
+    const args = [
+      "agent", "--local",
+      "--session-key", LEGACY_SESSION_KEY,
+      "--message", prompt,
+      "--model", MODEL
+    ];
     if (capabilities.json) args.push("--json");
     if (capabilities.timeout) args.push("--timeout", String(timeoutSeconds));
     return {
@@ -155,7 +165,7 @@ export function buildExecInvocation({ capabilities, prompt, controlWorkspace, ti
       args,
       toolMode: "direct",
       mode: "LEGACY_AGENT_LOCAL_MESSAGE",
-      promptIndex: 3
+      promptIndex: 5
     };
   }
 
