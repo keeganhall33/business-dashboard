@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
@@ -29,7 +31,13 @@ const ready = issueList(ORCHESTRATION_V3.queue.ready);
 const running = issueList(ORCHESTRATION_V3.queue.running);
 const ollama = command("ollama", ["ps"]);
 const watcherProcesses = processList("orchestration-v3/watcher.mjs");
-const legacyWatcherProcesses = processList("orchestration-watch.mjs");
+const legacyProcesses = {
+  WATCHER: processList("scripts/orchestration-watch.mjs"),
+  DETACHED_LAUNCHER: processList("scripts/launch-orchestration-nl-detached.mjs"),
+  RUNNER: processList("scripts/orchestration-run-issue-openclaw.mjs")
+};
+const legacyPlist = path.join(os.homedir(), "Library", "LaunchAgents", "com.keegan.jeeves.orchestration-watch.plist");
+const legacyProcessCount = Object.values(legacyProcesses).reduce((sum, values) => sum + values.length, 0);
 
 const report = {
   CONTROL_PLANE: "UNKNOWN",
@@ -45,15 +53,17 @@ const report = {
   },
   PROCESSES: {
     V3_WATCHER: watcherProcesses,
-    LEGACY_WATCHER: legacyWatcherProcesses
+    LEGACY: legacyProcesses
   },
+  LEGACY_LAUNCHAGENT_PLIST_ACTIVE: fs.existsSync(legacyPlist),
   OLLAMA_PS: ollama.ok ? ollama.stdout : ollama.error,
   STATE_ROOT_EXISTS: fs.existsSync(ORCHESTRATION_V3.runtime.stateRoot)
 };
 
 const workerHealthy = Object.values(workers).every((w) => w.healthy);
-const exactlyOneWatcher = watcherProcesses.length === 1 && legacyWatcherProcesses.length === 0;
-report.CONTROL_PLANE = runtime.healthy && workerHealthy && exactlyOneWatcher ? "HEALTHY" : "DEGRADED";
+const exactlyOneWatcher = watcherProcesses.length === 1;
+const legacyRetired = legacyProcessCount === 0 && !fs.existsSync(legacyPlist);
+report.CONTROL_PLANE = runtime.healthy && workerHealthy && exactlyOneWatcher && legacyRetired ? "HEALTHY" : "DEGRADED";
 
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 process.exitCode = report.CONTROL_PLANE === "HEALTHY" ? 0 : 2;
