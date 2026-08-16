@@ -7,7 +7,14 @@ const REPO = "keeganhall33/business-dashboard";
 const REQUEUE = [413, 414, 416, 447];
 const LEGACY_TERMINAL_LABELS = ["orch:awaiting_review", "orch:blocked", "orch:running", "orch:awaiting_human_approval"];
 const V3_LABEL = "com.keegan.jeeves.orchestration-v3";
+const LEGACY_LABEL = "com.keegan.jeeves.orchestration-watch";
 const RUNTIME = path.join(os.homedir(), ".openclaw", "runtime-v3", "business-dashboard");
+const LEGACY_PROCESS_PATTERNS = [
+  "scripts/orchestration-watch.mjs",
+  "scripts/launch-orchestration-nl-detached.mjs",
+  "scripts/orchestration-run-issue-openclaw.mjs",
+  "openclaw agent --local --agent local-"
+];
 
 function run(exe, args, options = {}) {
   return execFileSync(exe, args, { encoding: "utf8", timeout: 180_000, ...options }).trim();
@@ -76,15 +83,12 @@ try {
   console.log("=== V3 BOOTSTRAP: QUIESCE EXISTING CONTROL PLANE ===");
   const uid = process.getuid();
   bestEffort("launchctl", ["bootout", `gui/${uid}/${V3_LABEL}`]);
-  bestEffort("launchctl", ["bootout", `gui/${uid}/com.keegan.jeeves.orchestration-watch`]);
-  const terminated = {
-    watchers: terminatePattern("scripts/orchestration-v3/watcher.mjs"),
-    workers: terminatePattern("scripts/orchestration-v3/worker.mjs"),
-    runners: terminatePattern("scripts/orchestration-run-issue-openclaw.mjs"),
-    localAgents: terminatePattern("openclaw agent --local --agent local-")
-  };
+  bestEffort("launchctl", ["bootout", `gui/${uid}/${LEGACY_LABEL}`]);
+  const terminated = Object.fromEntries(LEGACY_PROCESS_PATTERNS.map((pattern) => [pattern, terminatePattern(pattern)]));
+  terminated.v3Watcher = terminatePattern("scripts/orchestration-v3/watcher.mjs");
+  terminated.v3Workers = terminatePattern("scripts/orchestration-v3/worker.mjs");
   await sleep(1500);
-  for (const pattern of ["scripts/orchestration-v3/watcher.mjs", "scripts/orchestration-v3/worker.mjs", "scripts/orchestration-run-issue-openclaw.mjs", "openclaw agent --local --agent local-"]) {
+  for (const pattern of [...LEGACY_PROCESS_PATTERNS, "scripts/orchestration-v3/watcher.mjs", "scripts/orchestration-v3/worker.mjs"]) {
     for (const pid of matchingPids(pattern)) {
       try { process.kill(pid, "SIGKILL"); } catch {}
     }
@@ -100,7 +104,6 @@ try {
   console.log("=== V3 BOOTSTRAP: RELEASE FOUR LANES ===");
   for (const issueNumber of REQUEUE) requeue(issueNumber);
 
-  // Restart the already-installed V3 watcher so it polls the freshly released queue immediately.
   run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${V3_LABEL}`]);
   await sleep(7000);
 

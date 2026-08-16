@@ -94,6 +94,32 @@ test("V3 bootstrap quiesces watcher and workers before worktree preparation", ()
   assert.match(source, /scripts\/orchestration-v3\/worker\.mjs/);
 });
 
+test("V3 live watcher and worker never call legacy orchestration entrypoints", () => {
+  const forbidden = [
+    "scripts/orchestration-watch.mjs",
+    "scripts/launch-orchestration-nl-detached.mjs",
+    "scripts/orchestration-run-issue-openclaw.mjs"
+  ];
+  for (const file of ["scripts/orchestration-v3/watcher.mjs", "scripts/orchestration-v3/worker.mjs"]) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const legacy of forbidden) assert.equal(source.includes(legacy), false, `${file} must not reference ${legacy}`);
+  }
+});
+
+test("V3 activation retires every legacy runtime surface and doctor fails if one survives", () => {
+  const activation = fs.readFileSync("scripts/orchestration-v3/activate-host.mjs", "utf8");
+  const bootstrap = fs.readFileSync("scripts/orchestration-v3/bootstrap-host.mjs", "utf8");
+  const doctor = fs.readFileSync("scripts/orchestration-v3/doctor.mjs", "utf8");
+  for (const legacy of ["scripts/orchestration-watch.mjs", "scripts/launch-orchestration-nl-detached.mjs", "scripts/orchestration-run-issue-openclaw.mjs"]) {
+    assert.match(activation, new RegExp(legacy.replaceAll(".", "\\.")));
+    assert.match(bootstrap, new RegExp(legacy.replaceAll(".", "\\.")));
+    assert.match(doctor, new RegExp(legacy.replaceAll(".", "\\.")));
+  }
+  assert.match(activation, /archiveLegacyPlist/);
+  assert.match(doctor, /LEGACY_LAUNCHAGENT_PLIST_ACTIVE/);
+  assert.match(doctor, /legacyRetired/);
+});
+
 test("observed execution journal classifies only successful required stages", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "v3-evidence-test-"));
   const journal = path.join(dir, "commands.tsv");

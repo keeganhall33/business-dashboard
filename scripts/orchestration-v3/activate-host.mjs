@@ -27,10 +27,24 @@ function ensureLabel(name, description) {
   if (labels.some((l) => l.name === name)) return;
   run("gh", ["label", "create", name, "--repo", ORCHESTRATION_V3.repo, "--color", "ededed", "--description", description]);
 }
-function legacyPids() {
-  const res = bestEffort("pgrep", ["-f", "scripts/orchestration-watch.mjs"]);
+function matchingPids(pattern) {
+  const res = bestEffort("pgrep", ["-f", pattern]);
   if (res.status !== 0) return [];
   return String(res.stdout ?? "").trim().split(/\s+/).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n !== process.pid);
+}
+function terminatePattern(pattern) {
+  const pids = matchingPids(pattern);
+  for (const pid of pids) {
+    try { process.kill(pid, "SIGTERM"); } catch {}
+  }
+  return pids;
+}
+function archiveLegacyPlist(plist) {
+  if (!fs.existsSync(plist)) return null;
+  const archived = `${plist}.retired-v3`;
+  try { fs.rmSync(archived, { force: true }); } catch {}
+  fs.renameSync(plist, archived);
+  return archived;
 }
 
 requirePrepared();
@@ -46,13 +60,17 @@ const oldLabel = "com.keegan.jeeves.orchestration-watch";
 const newLabel = "com.keegan.jeeves.orchestration-v3";
 const launchAgents = path.join(os.homedir(), "Library", "LaunchAgents");
 const plist = path.join(launchAgents, `${newLabel}.plist`);
+const oldPlist = path.join(launchAgents, `${oldLabel}.plist`);
 fs.mkdirSync(launchAgents, { recursive: true });
 
-for (const pid of legacyPids()) {
-  try { process.kill(pid, "SIGTERM"); } catch {}
-}
 bestEffort("launchctl", ["bootout", `gui/${uid}/${oldLabel}`]);
 bestEffort("launchctl", ["bootout", `gui/${uid}/${newLabel}`]);
+const retiredLegacyProcesses = {
+  watcher: terminatePattern("scripts/orchestration-watch.mjs"),
+  detachedLauncher: terminatePattern("scripts/launch-orchestration-nl-detached.mjs"),
+  runner: terminatePattern("scripts/orchestration-run-issue-openclaw.mjs")
+};
+const archivedLegacyPlist = archiveLegacyPlist(oldPlist);
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${newLabel}</string>\n<key>ProgramArguments</key><array><string>${process.execPath}</string><string>${path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-v3", "watcher.mjs")}</string><string>--interval</string><string>60</string></array>\n<key>WorkingDirectory</key><string>${ORCHESTRATION_V3.runtime.root}</string>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n<key>ThrottleInterval</key><integer>10</integer>\n<key>StandardOutPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.out.log")}</string>\n<key>StandardErrorPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.err.log")}</string>\n<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>\n</dict></plist>\n`;
 fs.writeFileSync(plist, xml);
@@ -61,10 +79,26 @@ run("launchctl", ["bootstrap", `gui/${uid}`, plist]);
 run("launchctl", ["kickstart", "-k", `gui/${uid}/${newLabel}`]);
 
 await new Promise((resolve) => setTimeout(resolve, 4000));
+for (const [name, pattern] of Object.entries({
+  legacyWatcher: "scripts/orchestration-watch.mjs",
+  legacyDetachedLauncher: "scripts/launch-orchestration-nl-detached.mjs",
+  legacyRunner: "scripts/orchestration-run-issue-openclaw.mjs"
+})) {
+  const pids = matchingPids(pattern);
+  if (pids.length) throw new Error(`LEGACY_PROCESS_STILL_RUNNING:${name}:${pids.join(",")}`);
+}
+if (fs.existsSync(oldPlist)) throw new Error(`LEGACY_LAUNCHAGENT_PLIST_STILL_ACTIVE:${oldPlist}`);
+
 const doctor = spawnSync(process.execPath, ["scripts/orchestration-v3/doctor.mjs"], { cwd: ORCHESTRATION_V3.runtime.root, encoding: "utf8", timeout: 60_000 });
 process.stdout.write(doctor.stdout ?? "");
 process.stderr.write(doctor.stderr ?? "");
 if (doctor.status !== 0) throw new Error("V3_DOCTOR_FAILED_AFTER_CUTOVER");
 
-fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "activated.json"), JSON.stringify({ activatedAt: new Date().toISOString(), label: newLabel, plist }, null, 2) + "\n");
-console.log(JSON.stringify({ status: "ACTIVATED", launchAgent: newLabel, plist }));
+fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "activated.json"), JSON.stringify({
+  activatedAt: new Date().toISOString(),
+  label: newLabel,
+  plist,
+  archivedLegacyPlist,
+  retiredLegacyProcesses
+}, null, 2) + "\n");
+console.log(JSON.stringify({ status: "ACTIVATED", launchAgent: newLabel, plist, archivedLegacyPlist, retiredLegacyProcesses }));
