@@ -11,6 +11,9 @@ export function parseWorkerExecCapabilities(helpText) {
   const text = String(helpText ?? "");
   return {
     execSubcommand: /Usage:\s+openclaw\s+agent\s+exec\b/i.test(text),
+    local: hasFlag(text, "--local"),
+    message: hasFlag(text, "--message"),
+    sessionKey: hasFlag(text, "--session-key"),
     isolated: hasFlag(text, "--isolated"),
     authEnvOnly: hasFlag(text, "--auth-env-only"),
     model: hasFlag(text, "--model"),
@@ -31,13 +34,36 @@ export function probeWorkerExecCapabilities(openclaw = "/opt/homebrew/bin/opencl
   return parseWorkerExecCapabilities(`${probe.stdout ?? ""}\n${probe.stderr ?? ""}`);
 }
 
-export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds = 900 }) {
-  if (!capabilities?.execSubcommand) {
-    return { supported: false, reason: "OPENCLAW_AGENT_EXEC_UNAVAILABLE", args: [], mode: null, codeMode: false, promptIndex: null };
+export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, sessionKey, timeoutSeconds = 900 }) {
+  if (!capabilities?.model) {
+    return { supported: false, reason: "OPENCLAW_WORKER_MISSING_MODEL_FLAG", args: [], mode: null, codeMode: false, promptIndex: null };
   }
-  if (!capabilities.model) {
-    return { supported: false, reason: "OPENCLAW_AGENT_EXEC_MISSING_MODEL_FLAG", args: [], mode: null, codeMode: false, promptIndex: null };
+
+  if (!capabilities.execSubcommand) {
+    if (!capabilities.local || !capabilities.message) {
+      return { supported: false, reason: "OPENCLAW_CLI_MISSING_LOCAL_MESSAGE_PATH", args: [], mode: null, codeMode: false, promptIndex: null };
+    }
+    if (!capabilities.sessionKey || !sessionKey) {
+      return { supported: false, reason: "OPENCLAW_CLI_MISSING_SESSION_SELECTOR", args: [], mode: null, codeMode: false, promptIndex: null };
+    }
+    const args = [
+      "agent", "--local",
+      "--session-key", sessionKey,
+      "--message", prompt,
+      "--model", MODEL
+    ];
+    if (capabilities.json) args.push("--json");
+    if (capabilities.timeout) args.push("--timeout", String(timeoutSeconds));
+    return {
+      supported: true,
+      reason: null,
+      args,
+      mode: "LEGACY_AGENT_LOCAL_MESSAGE",
+      codeMode: false,
+      promptIndex: 5
+    };
   }
+
   const args = ["agent", "exec", prompt];
   if (capabilities.isolated) args.push("--isolated");
   if (capabilities.authEnvOnly) args.push("--auth-env-only");
