@@ -34,18 +34,27 @@ function encodeAgentConfig(surface, list) {
   if (surface.kind === "array") return list;
   return Object.fromEntries(list.map(({ id, ...entry }) => [id, entry]));
 }
-function workspaceAttestationPath(worktree) {
-  const hash = crypto.createHash("sha256").update(worktree).digest("hex");
+function workspaceAttestationPath(workspace) {
+  const hash = crypto.createHash("sha256").update(workspace).digest("hex");
   return path.join(os.homedir(), ".openclaw", "workspace-attestations", `${hash}.attested`);
 }
-function archiveWorkspaceAttestation(workerId, worktree, backupRoot) {
-  const attestation = workspaceAttestationPath(worktree);
+function archiveWorkspaceAttestation(workerId, workspace, backupRoot) {
+  const attestation = workspaceAttestationPath(workspace);
   if (!fs.existsSync(attestation)) return null;
   const targetDir = path.join(backupRoot, workerId);
   fs.mkdirSync(targetDir, { recursive: true });
   const target = path.join(targetDir, "workspace-attestation.attested");
   fs.renameSync(attestation, target);
   return { workerId, attestation, archivedTo: target };
+}
+function archiveAgentWorkspace(workerId, workspace, backupRoot) {
+  if (!fs.existsSync(workspace)) return null;
+  const targetDir = path.join(backupRoot, workerId);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const target = path.join(targetDir, "openclaw-agent-workspace");
+  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  fs.renameSync(workspace, target);
+  return { workerId, workspace, archivedTo: target };
 }
 function archiveWorker(repoRoot, workerId, worktree, backupRoot) {
   const target = path.join(backupRoot, workerId);
@@ -74,6 +83,7 @@ function archiveWorker(repoRoot, workerId, worktree, backupRoot) {
   const remove = spawnSync("git", ["worktree", "remove", "--force", worktree], { cwd: repoRoot, encoding: "utf8", timeout: 120_000 });
   if (remove.status !== 0 && fs.existsSync(worktree)) {
     const fullBackup = path.join(target, "unregistered-worktree");
+    if (fs.existsSync(fullBackup)) fs.rmSync(fullBackup, { recursive: true, force: true });
     fs.renameSync(worktree, fullBackup);
   }
 }
@@ -96,9 +106,13 @@ const openclawConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
 if (fs.existsSync(openclawConfig)) fs.copyFileSync(openclawConfig, path.join(backupRoot, "openclaw.json.before-v3"));
 
 const archivedAttestations = [];
+const archivedAgentWorkspaces = [];
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
-  const archived = archiveWorkspaceAttestation(workerId, cfg.worktree, backupRoot);
+  // OpenClaw owns agentWorkspace only. The git worktree is never an OpenClaw workspace.
+  const archived = archiveWorkspaceAttestation(workerId, cfg.agentWorkspace, backupRoot);
   if (archived) archivedAttestations.push(archived);
+  const archivedWorkspace = archiveAgentWorkspace(workerId, cfg.agentWorkspace, backupRoot);
+  if (archivedWorkspace) archivedAgentWorkspaces.push(archivedWorkspace);
   archiveWorker(repoRoot, workerId, cfg.worktree, backupRoot);
 }
 git(repoRoot, ["worktree", "prune"]);
@@ -108,12 +122,18 @@ for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   git(repoRoot, ["worktree", "add", "--detach", cfg.worktree, "origin/main"]);
   const root = git(cfg.worktree, ["rev-parse", "--show-toplevel"]);
   if (root !== cfg.worktree) throw new Error(`WORKER_ROOT_MISMATCH:${workerId}:${root}`);
+
+  fs.mkdirSync(cfg.agentWorkspace, { recursive: true });
+  if (path.resolve(cfg.agentWorkspace) === path.resolve(cfg.worktree)) {
+    throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
+  }
 }
 
-// Keep every non-worker agent untouched; only enforce V3 workspace/model fields on A/B/C/D.
+// Keep every non-worker agent untouched. A/B/C/D use disposable OpenClaw-owned workspaces,
+// while their protected git worktrees stay outside OpenClaw workspace initialization.
 const nextAgents = currentAgents.map((entry) => {
   const cfg = ORCHESTRATION_V3.workers[entry.id];
-  return cfg ? { ...entry, workspace: cfg.worktree, model: ORCHESTRATION_V3.model.id } : entry;
+  return cfg ? { ...entry, workspace: cfg.agentWorkspace, model: ORCHESTRATION_V3.model.id } : entry;
 });
 run("openclaw", ["config", "set", agentSurface.key, JSON.stringify(encodeAgentConfig(agentSurface, nextAgents)), "--strict-json"]);
 run("openclaw", ["config", "set", "agents.defaults.models", JSON.stringify({ [ORCHESTRATION_V3.model.id]: {} }), "--strict-json", "--merge"]);
@@ -123,7 +143,8 @@ const verifiedSurface = readAgentConfigSurface();
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   const entry = verifiedSurface.list.find((candidate) => candidate.id === workerId);
   if (!entry) throw new Error(`OPENCLAW_AGENT_MISSING_AFTER_WRITE:${workerId}`);
-  if (path.resolve(String(entry.workspace ?? "")) !== path.resolve(cfg.worktree)) throw new Error(`OPENCLAW_WORKSPACE_MISMATCH:${workerId}:${entry.workspace ?? "<missing>"}`);
+  if (path.resolve(String(entry.workspace ?? "")) !== path.resolve(cfg.agentWorkspace)) throw new Error(`OPENCLAW_WORKSPACE_MISMATCH:${workerId}:${entry.workspace ?? "<missing>"}`);
+  if (path.resolve(String(entry.workspace ?? "")) === path.resolve(cfg.worktree)) throw new Error(`OPENCLAW_WORKSPACE_POINTS_AT_GIT_WORKTREE:${workerId}`);
   const model = typeof entry.model === "string" ? entry.model : entry.model?.primary;
   if (model !== ORCHESTRATION_V3.model.id) throw new Error(`OPENCLAW_MODEL_MISMATCH:${workerId}:${model ?? "<missing>"}`);
 }
@@ -139,6 +160,15 @@ if (fs.existsSync(ORCHESTRATION_V3.runtime.root)) {
 }
 
 fs.mkdirSync(ORCHESTRATION_V3.runtime.stateRoot, { recursive: true });
-fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations }, null, 2) + "\n");
+fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations, archivedAgentWorkspaces }, null, 2) + "\n");
 
-console.log(JSON.stringify({ status: "PREPARED", runtime: ORCHESTRATION_V3.runtime.root, backupRoot, model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations, workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, cfg.worktree])) }, null, 2));
+console.log(JSON.stringify({
+  status: "PREPARED",
+  runtime: ORCHESTRATION_V3.runtime.root,
+  backupRoot,
+  model: ORCHESTRATION_V3.model.id,
+  agentConfigKey: agentSurface.key,
+  archivedAttestations,
+  archivedAgentWorkspaces,
+  workers: Object.fromEntries(Object.entries(ORCHESTRATION_V3.workers).map(([id, cfg]) => [id, { worktree: cfg.worktree, agentWorkspace: cfg.agentWorkspace }]))
+}, null, 2));
