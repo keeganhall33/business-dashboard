@@ -1,1 +1,0 @@
-V3 doctor now treats bounded worktree dirt as expected only for the worker mapped to an orch:running issue; structural worktree failures remain fatal.
