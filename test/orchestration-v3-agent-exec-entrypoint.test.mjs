@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-test("V3 local coding path uses isolated OpenClaw agent exec with the direct shell tool surface", () => {
+test("V3 local coding path uses isolated OpenClaw agent exec with compact Code Mode", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   const localExec = source.match(/\?\s*\["agent",\s*"exec"[\s\S]*?\]\s*:\s*\["agent"/i)?.[0] ?? "";
   assert.match(localExec, /\["agent",\s*"exec",\s*effectiveMessage/);
   assert.match(localExec, /"--isolated"/);
   assert.match(localExec, /"--auth-env-only"/);
-  assert.match(localExec, /"--code-mode",\s*"direct"/);
+  assert.match(localExec, /"--code-mode",\s*"code"/);
   assert.match(localExec, /"--local-model-lean"/);
   assert.match(localExec, /"--model",\s*ORCH_LOCAL_MODEL/);
   assert.match(localExec, /"--cwd",\s*ORCH_AGENT_WORKSPACE/);
+  assert.doesNotMatch(localExec, /"--code-mode",\s*"direct"/);
   assert.doesNotMatch(localExec, /"--fallback"/);
   assert.doesNotMatch(localExec, /openai\//i);
   assert.match(source, /OLLAMA_API_KEY:\s*process\.env\.OLLAMA_API_KEY \|\| "ollama-local"/);
@@ -19,14 +20,18 @@ test("V3 local coding path uses isolated OpenClaw agent exec with the direct she
   assert.doesNotMatch(source, /\["agent",\s*"--local",\s*"--agent"/);
 });
 
-test("V3 direct-tool prompt carries the protected repo-root execution contract", () => {
+test("V3 Code Mode prompt carries protected repo preflight through hidden shell exec bridge", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.match(source, /ORCH_WORKTREE_ROOT/);
   assert.match(source, /MANDATORY FIRST TOOL ACTION/);
+  assert.match(source, /openclaw:core:exec/);
+  assert.match(source, /tools\.callValue/);
   assert.match(source, /git rev-parse --show-toplevel/);
   assert.match(source, /git status --short --branch/);
   assert.match(source, /git remote -v/);
-  assert.match(source, /Every repository command must explicitly target that protected repository root/);
+  assert.match(source, /Every repository\/test\/diff\/mutation shell command/);
+  assert.match(source, /Never place raw shell in the outer Code Mode exec tool/);
+  assert.doesNotMatch(source, /MANDATORY FIRST TOOL ACTION: use exec to run exactly: cd/);
 });
 
 test("V3 adapter accepts agent exec top-level JSON metadata for Ollama evidence", () => {
