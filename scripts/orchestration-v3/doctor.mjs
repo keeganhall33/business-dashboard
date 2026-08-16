@@ -2,8 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { ORCHESTRATION_V3 } from "./config.mjs";
+import { ORCHESTRATION_V3, workerForStream } from "./config.mjs";
 import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
+
+const TOLERATED_ACTIVE_WORKER_ERRORS = new Set([
+  "TRACKED_WORKTREE_DIRTY",
+  "UNEXPECTED_UNTRACKED_FILES"
+]);
 
 function command(name, args, options = {}) {
   try {
@@ -14,7 +19,7 @@ function command(name, args, options = {}) {
 }
 
 function issueList(label) {
-  const res = command("gh", ["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,labels"]);
+  const res = command("gh", ["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,labels"]);
   if (!res.ok) return { ok: false, issues: [], error: res.error };
   return { ok: true, issues: JSON.parse(res.stdout || "[]") };
 }
@@ -25,10 +30,27 @@ function processList(pattern) {
   return res.stdout ? res.stdout.split("\n") : [];
 }
 
+function extractStream(body) {
+  const match = String(body ?? "").match(/\*\*stream:\*\*\s*([^\n\r]+)/i);
+  return match ? match[1].trim() : null;
+}
+
+function activeWorkerIds(runningIssues) {
+  return new Set((runningIssues ?? []).map((issue) => workerForStream(extractStream(issue.body))).filter(Boolean));
+}
+
+function workerHealthyForControlPlane(workerId, inspection, activeWorkers) {
+  if (inspection.healthy) return true;
+  if (!activeWorkers.has(workerId)) return false;
+  if (!Array.isArray(inspection.errors) || inspection.errors.length === 0) return false;
+  return inspection.errors.every((error) => TOLERATED_ACTIVE_WORKER_ERRORS.has(error));
+}
+
 const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
 const workers = inspectAllWorkers();
 const ready = issueList(ORCHESTRATION_V3.queue.ready);
 const running = issueList(ORCHESTRATION_V3.queue.running);
+const activeWorkers = activeWorkerIds(running.issues);
 const ollama = command("ollama", ["ps"]);
 const watcherProcesses = processList("orchestration-v3/watcher.mjs");
 const legacyProcesses = {
@@ -39,6 +61,10 @@ const legacyProcesses = {
 const legacyPlist = path.join(os.homedir(), "Library", "LaunchAgents", "com.keegan.jeeves.orchestration-watch.plist");
 const legacyProcessCount = Object.values(legacyProcesses).reduce((sum, values) => sum + values.length, 0);
 
+const workerEffectiveHealth = Object.fromEntries(
+  Object.entries(workers).map(([workerId, inspection]) => [workerId, workerHealthyForControlPlane(workerId, inspection, activeWorkers)])
+);
+
 const report = {
   CONTROL_PLANE: "UNKNOWN",
   VERSION: ORCHESTRATION_V3.version,
@@ -47,6 +73,8 @@ const report = {
   CLOUD_FALLBACK_ALLOWED: ORCHESTRATION_V3.model.cloudFallbackAllowed,
   RUNTIME: runtime,
   WORKERS: workers,
+  ACTIVE_WORKERS: [...activeWorkers],
+  WORKER_EFFECTIVE_HEALTH: workerEffectiveHealth,
   QUEUE: {
     READY: ready.issues.map((i) => i.number),
     RUNNING: running.issues.map((i) => i.number)
@@ -60,7 +88,7 @@ const report = {
   STATE_ROOT_EXISTS: fs.existsSync(ORCHESTRATION_V3.runtime.stateRoot)
 };
 
-const workerHealthy = Object.values(workers).every((w) => w.healthy);
+const workerHealthy = Object.values(workerEffectiveHealth).every(Boolean);
 const exactlyOneWatcher = watcherProcesses.length === 1;
 const legacyRetired = legacyProcessCount === 0 && !fs.existsSync(legacyPlist);
 report.CONTROL_PLANE = runtime.healthy && workerHealthy && exactlyOneWatcher && legacyRetired ? "HEALTHY" : "DEGRADED";
