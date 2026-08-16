@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import { normalizeV3LocalPromptForSingleRetry } from "../scripts/orchestration-auto-continue-wrapper.mjs";
 
 test("V3 local coding path uses isolated OpenClaw agent exec with forced code tools", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
@@ -45,4 +46,14 @@ test("V3 worker isolates OpenClaw workspace and mutable state from the protected
   assert.match(source, /OPENCLAW_STATE_DIR:\s*runtimeContract\.openclawStateDir/);
   assert.match(source, /OPENCLAW_STATE_MUST_NOT_EQUAL_GIT_WORKTREE/);
   assert.match(source, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
+});
+
+test("V3 cloud-forbidden local prompts cannot trigger the adapter's legacy nested strict wrapper", () => {
+  const original = "Return OrchestrationResultContractV1. STRICT_JSON_ONLY_RETRY. Keep the full task context and JSON shape.";
+  const normalized = normalizeV3LocalPromptForSingleRetry(original);
+  assert.doesNotMatch(normalized, /OrchestrationResultContractV1/);
+  assert.doesNotMatch(normalized, /STRICT_JSON_ONLY/);
+  assert.match(normalized, /orchestration result JSON contract/);
+  assert.match(normalized, /STRICT_OUTPUT_RETRY/);
+  assert.match(normalized, /full task context and JSON shape/);
 });
