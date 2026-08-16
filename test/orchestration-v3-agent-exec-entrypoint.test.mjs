@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { normalizeV3LocalPromptForSingleRetry } from "../scripts/orchestration-auto-continue-wrapper.mjs";
 
-test("V3 local coding path uses isolated OpenClaw agent exec with forced code tools", () => {
+test("V3 local coding path uses isolated OpenClaw agent exec with the direct shell tool surface", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   const localExec = source.match(/\?\s*\["agent",\s*"exec"[\s\S]*?\]\s*:\s*\["agent"/i)?.[0] ?? "";
   assert.match(localExec, /\["agent",\s*"exec",\s*effectiveMessage/);
   assert.match(localExec, /"--isolated"/);
   assert.match(localExec, /"--auth-env-only"/);
-  assert.match(localExec, /"--code-mode",\s*"code"/);
+  assert.match(localExec, /"--code-mode",\s*"direct"/);
   assert.match(localExec, /"--local-model-lean"/);
   assert.match(localExec, /"--model",\s*ORCH_LOCAL_MODEL/);
   assert.match(localExec, /"--cwd",\s*ORCH_AGENT_WORKSPACE/);
@@ -20,7 +19,7 @@ test("V3 local coding path uses isolated OpenClaw agent exec with forced code to
   assert.doesNotMatch(source, /\["agent",\s*"--local",\s*"--agent"/);
 });
 
-test("V3 agent exec prompt carries the protected repo-root execution contract", () => {
+test("V3 direct-tool prompt carries the protected repo-root execution contract", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   assert.match(source, /ORCH_WORKTREE_ROOT/);
   assert.match(source, /MANDATORY FIRST TOOL ACTION/);
@@ -48,12 +47,13 @@ test("V3 worker isolates OpenClaw workspace and mutable state from the protected
   assert.match(source, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
 });
 
-test("V3 cloud-forbidden local prompts cannot trigger the adapter's legacy nested strict wrapper", () => {
-  const original = "Return OrchestrationResultContractV1. STRICT_JSON_ONLY_RETRY. Keep the full task context and JSON shape.";
-  const normalized = normalizeV3LocalPromptForSingleRetry(original);
-  assert.doesNotMatch(normalized, /OrchestrationResultContractV1/);
-  assert.doesNotMatch(normalized, /STRICT_JSON_ONLY/);
-  assert.match(normalized, /orchestration result JSON contract/);
-  assert.match(normalized, /STRICT_OUTPUT_RETRY/);
-  assert.match(normalized, /full task context and JSON shape/);
+test("V3 local runner does not recursively build a strict retry prompt", () => {
+  const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
+  const runner = source.match(/function runOpenclawWithPrompt\([\s\S]*?\n  }\n\n  try \{/i)?.[0] ?? "";
+  assert.match(runner, /const effectiveMessage = String\(messageWithGuard \?\? ""\)/);
+  assert.doesNotMatch(runner, /buildStrictJsonRetryPrompt\(/);
+
+  const wrapper = fs.readFileSync("scripts/orchestration-auto-continue-wrapper.mjs", "utf8");
+  assert.match(wrapper, /promptText,\s*\n\s*strictRetryPrompt,/);
+  assert.doesNotMatch(wrapper, /normalizeV3LocalPromptForSingleRetry/);
 });
