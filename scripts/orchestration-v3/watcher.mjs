@@ -34,11 +34,30 @@ function leasePath(workerId) {
 function readLease(workerId) {
   try { return JSON.parse(fs.readFileSync(leasePath(workerId), "utf8")); } catch { return null; }
 }
+function issueIsRunning(issueNumber) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
+  try {
+    const snapshot = issue(issueNumber);
+    return (snapshot.labels ?? []).some((label) => label.name === ORCHESTRATION_V3.queue.running);
+  } catch {
+    return false;
+  }
+}
 function reconcileLease(workerId) {
   const lease = readLease(workerId);
   if (!lease) return null;
-  if (alive(Number(lease.pid))) return lease;
+  const pidAlive = alive(Number(lease.pid));
+  const issueRunning = issueIsRunning(Number(lease.issueNumber));
+  if (pidAlive && issueRunning) return lease;
   try { fs.unlinkSync(leasePath(workerId)); } catch {}
+  console.log(JSON.stringify({
+    event: "STALE_LEASE_RECLAIMED",
+    workerId,
+    issueNumber: Number(lease.issueNumber) || null,
+    pid: Number(lease.pid) || null,
+    pidAlive,
+    issueRunning
+  }));
   return null;
 }
 function claim(issueNumber) {
