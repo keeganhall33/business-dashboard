@@ -38,14 +38,14 @@ function workspaceAttestationPath(workspace) {
   const hash = crypto.createHash("sha256").update(workspace).digest("hex");
   return path.join(os.homedir(), ".openclaw", "workspace-attestations", `${hash}.attested`);
 }
-function archiveWorkspaceAttestation(workerId, workspace, backupRoot) {
+function archiveWorkspaceAttestation(workerId, workspace, backupRoot, kind) {
   const attestation = workspaceAttestationPath(workspace);
   if (!fs.existsSync(attestation)) return null;
   const targetDir = path.join(backupRoot, workerId);
   fs.mkdirSync(targetDir, { recursive: true });
-  const target = path.join(targetDir, "workspace-attestation.attested");
+  const target = path.join(targetDir, `workspace-attestation-${kind}.attested`);
   fs.renameSync(attestation, target);
-  return { workerId, attestation, archivedTo: target };
+  return { workerId, workspace, kind, attestation, archivedTo: target };
 }
 function archiveAgentWorkspace(workerId, workspace, backupRoot) {
   if (!fs.existsSync(workspace)) return null;
@@ -109,8 +109,12 @@ const archivedAttestations = [];
 const archivedAgentWorkspaces = [];
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   // OpenClaw owns agentWorkspace only. The git worktree is never an OpenClaw workspace.
-  const archived = archiveWorkspaceAttestation(workerId, cfg.agentWorkspace, backupRoot);
-  if (archived) archivedAttestations.push(archived);
+  // During an intentional rebuild, archive exact legacy attestations for both known paths.
+  // A prior buggy runtime may have attested the protected git worktree before this invariant existed.
+  const archivedAgentWorkspaceAttestation = archiveWorkspaceAttestation(workerId, cfg.agentWorkspace, backupRoot, "agent-workspace");
+  if (archivedAgentWorkspaceAttestation) archivedAttestations.push(archivedAgentWorkspaceAttestation);
+  const archivedWorktreeAttestation = archiveWorkspaceAttestation(workerId, cfg.worktree, backupRoot, "git-worktree");
+  if (archivedWorktreeAttestation) archivedAttestations.push(archivedWorktreeAttestation);
   const archivedWorkspace = archiveAgentWorkspace(workerId, cfg.agentWorkspace, backupRoot);
   if (archivedWorkspace) archivedAgentWorkspaces.push(archivedWorkspace);
   archiveWorker(repoRoot, workerId, cfg.worktree, backupRoot);

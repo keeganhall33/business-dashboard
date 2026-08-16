@@ -47,12 +47,15 @@ test("V3 worker invokes the assigned local agent and never main", () => {
   assert.match(source, /OPENCLAW_FALLBACK_MODELS: ""/);
 });
 
-test("V3 intentional rebuild archives matching OpenClaw workspace attestations", () => {
+test("V3 intentional rebuild archives exact agent-workspace and stale git-worktree attestations", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/prepare-host.mjs", "utf8");
   assert.match(source, /createHash\("sha256"\)\.update\(workspace\)/);
   assert.match(source, /workspace-attestations/);
-  assert.match(source, /workspace-attestation\.attested/);
-  assert.match(source, /archiveWorkspaceAttestation/);
+  assert.match(source, /archiveWorkspaceAttestation\(workerId, cfg\.agentWorkspace, backupRoot, "agent-workspace"\)/);
+  assert.match(source, /archiveWorkspaceAttestation\(workerId, cfg\.worktree, backupRoot, "git-worktree"\)/);
+  assert.match(source, /workspace-attestation-\$\{kind\}\.attested/);
+  assert.match(source, /fs\.renameSync\(attestation, target\)/);
+  assert.doesNotMatch(source, /readdirSync\([^\n]*workspace-attestations/);
 });
 
 test("V3 local strict retry preserves full task context and concrete task id", () => {
