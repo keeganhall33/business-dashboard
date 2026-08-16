@@ -140,6 +140,9 @@ function installWorkerRuntimeContract(cfg) {
   const agentWorkspace = path.resolve(cfg.agentWorkspace);
   if (repoRoot === agentWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
   fs.mkdirSync(agentWorkspace, { recursive: true });
+  const openclawStateDir = path.join(agentWorkspace, ".openclaw-state");
+  if (path.resolve(openclawStateDir) === repoRoot) throw new Error(`OPENCLAW_STATE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
+  fs.mkdirSync(openclawStateDir, { recursive: true });
   const contractPath = path.join(agentWorkspace, "AGENTS.md");
   const quotedRepoRoot = JSON.stringify(repoRoot);
   const contract = [
@@ -148,6 +151,7 @@ function installWorkerRuntimeContract(cfg) {
     "This OpenClaw workspace is a disposable control workspace. It is NOT the business-dashboard git repository.",
     `Protected repository root: ${repoRoot}`,
     `OpenClaw control workspace: ${agentWorkspace}`,
+    `OpenClaw mutable state: ${openclawStateDir}`,
     "Never delete, initialize, reseed, clean, or replace the protected repository root as a workspace.",
     "Do NOT search for a nested business-dashboard directory. The absolute protected repository root above is authoritative.",
     "",
@@ -171,7 +175,7 @@ function installWorkerRuntimeContract(cfg) {
     "Cloud fallback is forbidden for this acceptance runtime."
   ].join("\n");
   fs.writeFileSync(contractPath, `${contract}\n`, "utf8");
-  return { contractPath, repoRoot, agentWorkspace };
+  return { contractPath, repoRoot, agentWorkspace, openclawStateDir };
 }
 
 const preflight = requireHealthyWorker(workerId);
@@ -190,6 +194,8 @@ const env = {
   ORCH_CLOUD_AGENT_ID: workerId,
   ORCH_WORKTREE_ROOT: runtimeContract.repoRoot,
   ORCH_AGENT_WORKSPACE: runtimeContract.agentWorkspace,
+  OPENCLAW_WORKSPACE_DIR: runtimeContract.agentWorkspace,
+  OPENCLAW_STATE_DIR: runtimeContract.openclawStateDir,
   OPENCLAW_MODEL: ORCHESTRATION_V3.model.id,
   OPENCLAW_FALLBACK_MODELS: "",
   OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
