@@ -28,9 +28,30 @@ export function createObservedExecutionHarness({ issue, workerId }) {
     const real = resolveExecutable(command);
     if (!real) continue;
     resolved[command] = real;
+    const guard = command === "git" ? [
+      'if [ "$1" = "commit" ]; then',
+      '  deletions=$("$REAL" diff --cached --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '  if [ "${deletions:-0}" -ge 25 ]; then',
+      '    printf \'%s\\tgit\\t97\\tGUARD_MASS_TRACKED_DELETION commit staged_deletions=%s args=%s\\n\' "$(date +%s)" "$deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
+      '    echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git commit with $deletions staged deletions" >&2',
+      '    exit 97',
+      '  fi',
+      'fi',
+      'if [ "$1" = "push" ]; then',
+      '  if "$REAL" rev-parse --verify origin/main >/dev/null 2>&1; then',
+      '    deletions=$("$REAL" diff --name-only --diff-filter=D origin/main...HEAD | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '    if [ "${deletions:-0}" -ge 25 ]; then',
+      '      printf \'%s\\tgit\\t98\\tGUARD_MASS_TRACKED_DELETION push deletions_vs_origin_main=%s args=%s\\n\' "$(date +%s)" "$deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
+      '      echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git push with $deletions deletions vs origin/main" >&2',
+      '      exit 98',
+      '    fi',
+      '  fi',
+      'fi'
+    ] : [];
     const shim = [
       "#!/bin/sh",
       `REAL=${shellQuote(real)}`,
+      ...guard,
       '"$REAL" "$@"',
       "status=$?",
       `printf '%s\\t%s\\t%s\\t%s\\n' "$(date +%s)" ${shellQuote(command)} "$status" "$*" >> "$ORCH_EXECUTION_JOURNAL"`,
@@ -88,6 +109,7 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     gitDiffObserved: succeeded("git", /\bdiff\b/),
     gitDiffCheckObserved: succeeded("git", /\bdiff\s+--check\b/),
     gitMutationCommandObserved: gitEvents.some((event) => event.status === 0 && /\b(add|commit|push|merge|rebase|cherry-pick|checkout|switch)\b/i.test(event.args)),
+    massDeletionGuardTriggered: gitEvents.some((event) => [97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
     successfulCommands: events.filter((event) => event.status === 0).map((event) => `${event.command} ${event.args}`),
     failedCommands: events.filter((event) => event.status !== 0).map((event) => `${event.command} ${event.args} [exit ${event.status}]`)
   };
