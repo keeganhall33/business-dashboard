@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { requireHealthyWorker } from "./preflight.mjs";
-import { createObservedExecutionHarness, readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "./execution-evidence.mjs";
+import { createObservedExecutionHarness, observedExecutionJournalLineCount, readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "./execution-evidence.mjs";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -144,35 +144,15 @@ function installWorkerRuntimeContract(cfg) {
   if (path.resolve(openclawStateDir) === repoRoot) throw new Error(`OPENCLAW_STATE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
   fs.mkdirSync(openclawStateDir, { recursive: true });
   const contractPath = path.join(agentWorkspace, "AGENTS.md");
-  const quotedRepoRoot = JSON.stringify(repoRoot);
   const contract = [
-    "# Jeeves Orchestration V3 Worker Contract",
-    "",
-    "This OpenClaw workspace is a disposable control workspace. It is NOT the business-dashboard git repository.",
-    `Protected repository root: ${repoRoot}`,
-    `OpenClaw control workspace: ${agentWorkspace}`,
-    `OpenClaw mutable state: ${openclawStateDir}`,
-    "Never delete, initialize, reseed, clean, or replace the protected repository root as a workspace.",
-    "Do NOT search for a nested business-dashboard directory. The absolute protected repository root above is authoritative.",
-    "",
-    "## Mandatory first tool action for implementation tasks",
-    "Use the structured exec tool before reasoning about repository availability. Run exactly:",
-    `cd ${quotedRepoRoot} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`,
-    "Treat a successful git rev-parse result equal to the protected repository root as authoritative repository proof.",
-    "",
-    "## Mandatory execution behavior",
-    "Every repository command must explicitly operate on the protected repository root, either by setting the tool cwd there or by prefixing the command with cd to that exact absolute path.",
-    "For tasks requesting code, tests, commits, pushes, PR updates, or PR creation, you MUST perform the work with structured repository tools (exec/read/write/edit/apply_patch) rather than describing commands or inventing results.",
-    "Do not emit a proposed tool call as plain text. Actually invoke the tool.",
-    "The V3 harness now instruments git/pnpm/npm/npx execution. A PASS requires machine-observed successful repo preflight, test/build execution when required, git diff inspection, mutation commands, and actual git/GitHub state change.",
-    "Before returning PASS, verify machine state with git status, git rev-parse HEAD, the requested tests, and gh/pr evidence when PR work is required.",
-    "If a required command fails, return BLOCKED or FAILED with the exact observed error. Never fabricate files, commits, tests, pushes, or PRs.",
-    "A PASS without observable git/GitHub mutation evidence will be rejected by the V3 verifier.",
-    "Do not run broad destructive commands such as rm -rf, git clean, or bulk deletion against the protected repository unless the originating task explicitly requires it and machine safety gates permit it.",
-    "",
-    `Assigned worker: ${workerId}`,
-    `Assigned model: ${ORCHESTRATION_V3.model.id}`,
-    "Cloud fallback is forbidden for this acceptance runtime."
+    "# Jeeves V3 Worker",
+    `Repo: ${repoRoot}`,
+    `Control workspace: ${agentWorkspace}`,
+    "Repo and control workspace are different. Never initialize, clean, delete, or reseed the repo.",
+    "For implementation work use exec/read/write/edit/apply_patch, not prose descriptions of tool calls.",
+    "Every repo command must target the absolute Repo path above.",
+    "PASS requires machine-observed repo preflight, required tests/build, git diff inspection, mutation command, and real git/GitHub state change.",
+    `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`
   ].join("\n");
   fs.writeFileSync(contractPath, `${contract}\n`, "utf8");
   return { contractPath, repoRoot, agentWorkspace, openclawStateDir };
@@ -202,6 +182,72 @@ const env = {
 };
 
 console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, runtimeContract, executionHarness: { journalPath: executionHarness.journalPath, shimRoot: executionHarness.shimRoot, instrumented: Object.keys(executionHarness.resolved) }, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
+
+const implementationTask = mutationClaimed(beforeSnapshot.body, null) && !humanApprovalRequired(beforeSnapshot.body);
+if (implementationTask) {
+  const handshakeStartLine = observedExecutionJournalLineCount(executionHarness.journalPath);
+  const repoCommand = `cd ${JSON.stringify(runtimeContract.repoRoot)} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`;
+  const handshakePrompt = [
+    "EXECUTION_HANDSHAKE_V1.",
+    "Immediately use the exec tool. Do not explain, list tools, inspect memory, or answer first.",
+    `Run exactly: ${repoCommand}`,
+    "After the tool finishes, reply only EXECUTION_HANDSHAKE_OK."
+  ].join("\n");
+  const handshake = spawnSync("/opt/homebrew/bin/openclaw", [
+    "agent", "exec", handshakePrompt,
+    "--isolated", "--auth-env-only",
+    "--model", ORCHESTRATION_V3.model.id,
+    "--code-mode", "direct",
+    "--local-model-lean",
+    "--cwd", runtimeContract.agentWorkspace,
+    "--json", "--timeout", "180"
+  ], {
+    cwd: runtimeContract.agentWorkspace,
+    env,
+    encoding: "utf8",
+    timeout: 210_000,
+    maxBuffer: 8 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const handshakeEvidence = readObservedExecutionEvidence(executionHarness.journalPath, { startLine: handshakeStartLine });
+  console.log(JSON.stringify({ event: "EXECUTION_HANDSHAKE", issue, workerId, exitCode: handshake.status, error: handshake.error?.message ?? null, evidence: handshakeEvidence }));
+  if (!handshakeEvidence.repoPreflightObserved) {
+    const blocker = {
+      TASK_ID: `issue-${issue}`,
+      STATUS: "BLOCKED",
+      SUMMARY: "V3 execution handshake failed before implementation; no model-observed repository preflight was proven",
+      CHANGES: [],
+      FILES_CHANGED: [],
+      DB_CHANGES: "NO",
+      MIGRATION: null,
+      TESTS: "N/A",
+      PR: null,
+      MERGE_STATUS: "N/A",
+      PRODUCTION_CHANGE: "NO",
+      UNEXPECTED_RESULTS: [JSON.stringify({ handshakeExitCode: handshake.status, handshakeError: handshake.error?.message ?? null, evidence: handshakeEvidence })],
+      DECISIONS_REQUIRED: [],
+      BLOCKERS: ["EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT"],
+      NEXT_RECOMMENDED_TASK: "Retry only after the local model can actually invoke the required exec preflight.",
+      SESSION_HEALTH: "GOOD",
+      SESSION_CONTEXT: `v3-execution-handshake/${workerId}`,
+      ROUTING_TIER: "LOCAL_FIRST",
+      MODEL_USED: ORCHESTRATION_V3.model.id.replace(/^ollama\//, ""),
+      LOCAL_ATTEMPTED: true,
+      LOCAL_RESULT: "EVIDENCE_REJECTED",
+      ESCALATED_TO_CLOUD: false,
+      ESCALATION_REASON: null,
+      CLOUD_USAGE: null,
+      CLOUD_COST: null
+    };
+    postComment(["## OrchestrationResultContractV1", "", "```json", JSON.stringify(blocker, null, 2), "```"].join("\n"));
+    const current = labelsOf(issueSnapshot());
+    const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.humanApproval].filter((x) => current.has(x));
+    editLabels({ remove, add: [ORCHESTRATION_V3.queue.blocked] });
+    console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: "BLOCKED", reason: "EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT" }));
+    process.exit(1);
+  }
+}
+
 const runnerPath = path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-run-issue-openclaw.mjs");
 const run = spawnSync(process.execPath, [
   runnerPath,
@@ -280,7 +326,6 @@ if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
 } else if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
   add = [];
 } else if (status === "AWAITING_REVIEW") {
-  // V3 never creates a fake review gate for work explicitly marked as not requiring a human.
   add = [ORCHESTRATION_V3.queue.blocked];
 } else if (["BLOCKED", "FAILED"].includes(status) || run.status !== 0 || run.error) {
   add = [ORCHESTRATION_V3.queue.blocked];
