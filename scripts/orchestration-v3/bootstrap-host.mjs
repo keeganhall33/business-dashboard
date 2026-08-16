@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 const REPO = "keeganhall33/business-dashboard";
-const REQUEUE = [413, 414, 416, 447];
+const REQUEUE = [413, 414, 416, 337];
 const LEGACY_TERMINAL_LABELS = ["orch:awaiting_review", "orch:blocked", "orch:running", "orch:awaiting_human_approval"];
 const V3_LABEL = "com.keegan.jeeves.orchestration-v3";
 const LEGACY_LABEL = "com.keegan.jeeves.orchestration-watch";
@@ -25,17 +25,22 @@ function runLive(exe, args, options = {}) {
   if (result.status !== 0) throw new Error(`${exe} ${args.join(" ")} failed with exit ${result.status}`);
 }
 function git(cwd, args) { return run("git", args, { cwd }); }
-function labels(issueNumber) {
-  const snapshot = JSON.parse(run("gh", ["issue", "view", String(issueNumber), "--repo", REPO, "--json", "labels"]));
-  return new Set((snapshot.labels ?? []).map((label) => label.name));
+function issueSnapshot(issueNumber) {
+  return JSON.parse(run("gh", ["issue", "view", String(issueNumber), "--repo", REPO, "--json", "state,labels"]));
 }
 function requeue(issueNumber) {
-  const present = labels(issueNumber);
+  const snapshot = issueSnapshot(issueNumber);
+  if (snapshot.state !== "OPEN") {
+    console.log(JSON.stringify({ status: "SKIP_CLOSED_REQUEUE", issueNumber, state: snapshot.state }));
+    return false;
+  }
+  const present = new Set((snapshot.labels ?? []).map((label) => label.name));
   for (const label of LEGACY_TERMINAL_LABELS) {
     if (!present.has(label)) continue;
     run("gh", ["issue", "edit", String(issueNumber), "--repo", REPO, "--remove-label", label]);
   }
   if (!present.has("orch:ready")) run("gh", ["issue", "edit", String(issueNumber), "--repo", REPO, "--add-label", "orch:ready"]);
+  return true;
 }
 function bestEffort(exe, args, options = {}) {
   return spawnSync(exe, args, { encoding: "utf8", timeout: 60_000, ...options });
@@ -76,9 +81,10 @@ try {
     "scripts/orchestration-v3/doctor.mjs",
     "scripts/orchestration-v3/prepare-host.mjs",
     "scripts/orchestration-v3/activate-host.mjs",
-    "scripts/orchestration-v3/bootstrap-host.mjs"
+    "scripts/orchestration-v3/bootstrap-host.mjs",
+    "scripts/orchestration-v3/execution-evidence.mjs"
   ]) runLive(process.execPath, ["--check", file], { cwd: tempRoot });
-  runLive(process.execPath, ["--test", "test/orchestration-v3-control-plane.test.mjs"], { cwd: tempRoot });
+  runLive(process.execPath, ["--test", "test/orchestration-v3-control-plane.test.mjs", "test/orchestration-v3-mass-deletion-guard.test.mjs"], { cwd: tempRoot });
 
   console.log("=== V3 BOOTSTRAP: QUIESCE EXISTING CONTROL PLANE ===");
   const uid = process.getuid();
@@ -102,7 +108,7 @@ try {
   runLive(process.execPath, ["scripts/orchestration-v3/activate-host.mjs"], { cwd: RUNTIME });
 
   console.log("=== V3 BOOTSTRAP: RELEASE FOUR LANES ===");
-  for (const issueNumber of REQUEUE) requeue(issueNumber);
+  const requeued = REQUEUE.filter((issueNumber) => requeue(issueNumber));
 
   run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${V3_LABEL}`]);
   await sleep(7000);
@@ -115,7 +121,7 @@ try {
     status: "V3_CUTOVER_COMPLETE",
     mainSha,
     runtime: RUNTIME,
-    requeued: REQUEUE,
+    requeued,
     runningIssues: running.map((item) => item.number),
     note: "4/4 acceptance remains evidence-gated until provider/model/cloud/worktree proof completes."
   }, null, 2));
