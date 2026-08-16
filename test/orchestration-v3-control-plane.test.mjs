@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { ORCHESTRATION_V3, workerForStream } from "../scripts/orchestration-v3/config.mjs";
+import { readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "../scripts/orchestration-v3/execution-evidence.mjs";
 
 test("V3 uses one fixed four-worker map", () => {
   assert.deepEqual(Object.keys(ORCHESTRATION_V3.workers), ["local-a", "local-b", "local-c", "local-d"]);
@@ -106,4 +109,44 @@ test("V3 bootstrap quiesces watcher and workers before worktree preparation", ()
   assert.match(source, /scripts\/orchestration-run-issue-openclaw\.mjs/);
   assert.match(source, /openclaw agent --local --agent local-/);
   assert.match(source, /SIGKILL/);
+});
+
+test("V3 PASS requires machine-observed repository execution stages", () => {
+  const worker = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  const harness = fs.readFileSync("scripts/orchestration-v3/execution-evidence.mjs", "utf8");
+  assert.match(worker, /createObservedExecutionHarness/);
+  assert.match(worker, /repoPreflightObserved/);
+  assert.match(worker, /testExecutionObserved/);
+  assert.match(worker, /gitDiffCheckObserved/);
+  assert.match(worker, /gitMutationCommandObserved/);
+  assert.match(worker, /instrumented repository command execution was observed/);
+  assert.match(harness, /commands\.tsv/);
+  assert.match(harness, /ORCH_EXECUTION_JOURNAL/);
+  assert.match(harness, /gitMutationCommandObserved/);
+});
+
+test("observed execution journal classifies only successful required stages", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "v3-evidence-test-"));
+  const journal = path.join(dir, "commands.tsv");
+  fs.writeFileSync(journal, [
+    "1\tgit\t0\trev-parse --show-toplevel",
+    "2\tgit\t0\tstatus --short --branch",
+    "3\tgit\t0\tremote -v",
+    "4\tpnpm\t0\trun build",
+    "5\tgit\t0\tdiff --check",
+    "6\tgit\t0\tadd src/example.ts",
+    "7\tgit\t0\tcommit -m fix",
+    "8\tgit\t0\tpush origin HEAD",
+    ""
+  ].join("\n"));
+  const evidence = readObservedExecutionEvidence(journal);
+  assert.equal(evidence.toolCallCount, 8);
+  assert.equal(evidence.repoPreflightObserved, true);
+  assert.equal(evidence.testExecutionObserved, true);
+  assert.equal(evidence.gitDiffObserved, true);
+  assert.equal(evidence.gitDiffCheckObserved, true);
+  assert.equal(evidence.gitMutationCommandObserved, true);
+  assert.equal(requiresTestExecution("run focused tests + build"), true);
+  assert.equal(requiresDiffCheck("then git diff --check"), true);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
