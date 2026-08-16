@@ -26,6 +26,7 @@ test("standalone diagnostic pins Ollama qwen3.5 and isolates through controlled 
   assert.match(source, /createObservedExecutionHarness/);
   assert.match(source, /MISSING_OBSERVED_GIT_EXECUTION/);
   assert.match(source, /LEGACY_AGENT_LOCAL_MESSAGE/);
+  assert.match(source, /agent:main:jeeves-v3-diagnostic/);
   assert.doesNotMatch(source, /watcher\.mjs|worker\.mjs|editLabels|postComment|api\.github\.com|\bissue\s+(?:edit|comment)\b/);
 });
 
@@ -45,6 +46,7 @@ test("diagnostic detects modern agent exec and 2026.7.1 legacy agent flag surfac
     execSubcommand: true,
     local: false,
     message: false,
+    sessionKey: false,
     isolated: true,
     authEnvOnly: true,
     model: true,
@@ -59,6 +61,7 @@ test("diagnostic detects modern agent exec and 2026.7.1 legacy agent flag surfac
     Usage: openclaw agent [options]
     --local
     -m, --message <text>
+    --session-key <key>
     --model <id>
     --json
     --timeout <seconds>
@@ -66,17 +69,19 @@ test("diagnostic detects modern agent exec and 2026.7.1 legacy agent flag surfac
   assert.equal(legacy.execSubcommand, false);
   assert.equal(legacy.local, true);
   assert.equal(legacy.message, true);
+  assert.equal(legacy.sessionKey, true);
   assert.equal(legacy.isolated, false);
   assert.equal(legacy.authEnvOnly, false);
   assert.equal(legacy.model, true);
   assert.equal(legacy.codeMode, false);
 });
 
-test("2026.7.1-style CLI uses embedded local message path instead of agent exec", () => {
+test("2026.7.1-style CLI uses embedded local message path with isolated explicit session key", () => {
   const capabilities = parseExecCapabilities(`
     Usage: openclaw agent [options]
     --local
     -m, --message <text>
+    --session-key <key>
     --model <id>
     --json
     --timeout <seconds>
@@ -90,15 +95,29 @@ test("2026.7.1-style CLI uses embedded local message path instead of agent exec"
   assert.equal(invocation.supported, true);
   assert.equal(invocation.mode, "LEGACY_AGENT_LOCAL_MESSAGE");
   assert.equal(invocation.toolMode, "direct");
-  assert.equal(invocation.promptIndex, 3);
+  assert.equal(invocation.promptIndex, 5);
   assert.deepEqual(invocation.args, [
-    "agent", "--local", "--message", "diagnostic",
+    "agent", "--local",
+    "--session-key", "agent:main:jeeves-v3-diagnostic",
+    "--message", "diagnostic",
     "--model", "ollama/qwen3.5:9b",
     "--json", "--timeout", "120"
   ]);
   assert.equal(invocation.args.includes("exec"), false);
   assert.equal(invocation.args.includes("--isolated"), false);
   assert.equal(invocation.args.includes("--auth-env-only"), false);
+});
+
+test("legacy CLI fails closed if no non-delivery session selector is available", () => {
+  const capabilities = parseExecCapabilities(`
+    Usage: openclaw agent [options]
+    --local
+    -m, --message <text>
+    --model <id>
+  `);
+  const invocation = buildExecInvocation({ capabilities, prompt: "diagnostic", controlWorkspace: "/tmp/workspace", timeoutSeconds: 120 });
+  assert.equal(invocation.supported, false);
+  assert.equal(invocation.reason, "OPENCLAW_CLI_MISSING_SESSION_SELECTOR");
 });
 
 test("modern CLI keeps agent exec path and only passes supported flags", () => {
