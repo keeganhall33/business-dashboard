@@ -437,10 +437,10 @@ async function main() {
     }
     const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
     const messageWithGuard = useEphemeralLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
-    const effectiveMessage = useEphemeralLocal && shouldEnforceStrictJsonForLocal(messageWithGuard) ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts) : String(messageWithGuard ?? "");
+    const effectiveMessage = String(messageWithGuard ?? "");
     const effectiveTimeout = useEphemeralLocal ? Math.max(Number(timeoutSeconds) || 0, 360) : Number(timeoutSeconds);
     const args = useEphemeralLocal
-      ? ["agent", "exec", effectiveMessage, "--isolated", "--auth-env-only", "--model", ORCH_LOCAL_MODEL, "--code-mode", "code", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
+      ? ["agent", "exec", effectiveMessage, "--isolated", "--auth-env-only", "--model", ORCH_LOCAL_MODEL, "--code-mode", "direct", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
       : ["agent", "--agent", agentId, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout)];
     const childEnv = useEphemeralLocal ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" } : process.env;
     const res = spawnSync("/opt/homebrew/bin/openclaw", args, { env: childEnv, encoding: "utf8", timeout: (effectiveTimeout + 60) * 1000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
