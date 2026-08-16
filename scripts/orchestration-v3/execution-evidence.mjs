@@ -54,10 +54,17 @@ export function createObservedExecutionHarness({ issue, workerId }) {
   };
 }
 
-export function readObservedExecutionEvidence(journalPath) {
+export function observedExecutionJournalLineCount(journalPath) {
   let raw = "";
   try { raw = fs.readFileSync(journalPath, "utf8"); } catch {}
-  const events = raw.split("\n").filter(Boolean).map((line) => {
+  return raw.split("\n").filter(Boolean).length;
+}
+
+export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {}) {
+  let raw = "";
+  try { raw = fs.readFileSync(journalPath, "utf8"); } catch {}
+  const lines = raw.split("\n").filter(Boolean).slice(Math.max(0, Number(startLine) || 0));
+  const events = lines.map((line) => {
     const [timestamp, command, statusText, ...rest] = line.split("\t");
     return {
       timestamp: Number(timestamp) || null,
