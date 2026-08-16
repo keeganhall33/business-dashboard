@@ -91,7 +91,9 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
   fs.writeFileSync(path.join(controlWorkspace, "AGENTS.md"), [
     "# V3 Local Tool Diagnostic",
     `Protected repo: ${resolvedRepoRoot}`,
-    "Use the exec tool when instructed. Do not initialize or modify the protected repo."
+    "Code Mode is active. The outer exec tool accepts JavaScript/TypeScript, not raw shell.",
+    "Dispatch shell commands through tools.callValue(\"openclaw:core:exec\", { command, workdir }).",
+    "Do not initialize or modify the protected repo."
   ].join("\n") + "\n", "utf8");
 
   const harness = createObservedExecutionHarness({ issue: "diagnostic", workerId: "single" });
@@ -104,18 +106,21 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
     OPENCLAW_FALLBACK_MODELS: "",
     OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
   };
+  const shellCommand = "git status --short --branch";
+  const bridgeCall = `return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(shellCommand)}, workdir: ${JSON.stringify(resolvedRepoRoot)} });`;
   const prompt = [
     "V3_STANDALONE_TOOL_DIAGNOSTIC_V1.",
-    "Immediately use the exec tool exactly once. Do not explain, list tools, inspect memory, or answer before the tool call.",
-    `Run exactly this harmless command in this exact workdir: git status --short --branch`,
-    `Workdir: ${resolvedRepoRoot}`,
-    "After the command finishes, reply only V3_DIAGNOSTIC_OK."
+    "Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.",
+    "Immediately invoke the outer Code Mode exec tool exactly once with the following JavaScript. Do not explain, list tools, inspect memory, or answer first.",
+    bridgeCall,
+    "Never place raw shell directly in the outer Code Mode exec tool.",
+    "After the nested shell tool finishes, reply only V3_DIAGNOSTIC_OK."
   ].join("\n");
   const args = [
     "agent", "exec", prompt,
     "--isolated", "--auth-env-only",
     "--model", MODEL,
-    "--code-mode", "direct",
+    "--code-mode", "code",
     "--local-model-lean",
     "--cwd", controlWorkspace,
     "--json", "--timeout", String(timeoutSeconds)
