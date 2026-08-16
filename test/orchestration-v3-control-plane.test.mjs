@@ -74,3 +74,14 @@ test("V3 rejects model PASS without git or GitHub mutation evidence", () => {
   assert.match(source, /no referenced or worker-HEAD-linked PR changed/);
   assert.match(source, /EVIDENCE_REJECTED/);
 });
+
+test("V3 worker tells OpenClaw the worktree itself is the repository root and requires real tools", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(source, /installWorkerRuntimeContract/);
+  assert.match(source, /This workspace directory is the git repository root/);
+  assert.match(source, /Do NOT search for a nested business-dashboard directory/);
+  assert.match(source, /pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
+  assert.match(source, /Actually invoke the tool/);
+  assert.match(source, /Before returning PASS, verify machine state/);
+  assert.match(source, /ORCH_WORKTREE_ROOT/);
+});
