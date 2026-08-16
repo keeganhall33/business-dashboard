@@ -46,7 +46,7 @@ test("V3 worker invokes the assigned local agent and never main", () => {
 
 test("V3 intentional rebuild archives matching OpenClaw workspace attestations", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/prepare-host.mjs", "utf8");
-  assert.match(source, /createHash\("sha256"\)\.update\(worktree\)/);
+  assert.match(source, /createHash\("sha256"\)\.update\(workspace\)/);
   assert.match(source, /workspace-attestations/);
   assert.match(source, /workspace-attestation\.attested/);
   assert.match(source, /archiveWorkspaceAttestation/);
@@ -75,13 +75,23 @@ test("V3 rejects model PASS without git or GitHub mutation evidence", () => {
   assert.match(source, /EVIDENCE_REJECTED/);
 });
 
-test("V3 worker tells OpenClaw the worktree itself is the repository root and requires real tools", () => {
-  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
-  assert.match(source, /installWorkerRuntimeContract/);
-  assert.match(source, /This workspace directory is the git repository root/);
-  assert.match(source, /Do NOT search for a nested business-dashboard directory/);
-  assert.match(source, /pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
-  assert.match(source, /Actually invoke the tool/);
-  assert.match(source, /Before returning PASS, verify machine state/);
-  assert.match(source, /ORCH_WORKTREE_ROOT/);
+test("V3 worker requires real repo-root tools from an isolated OpenClaw workspace", () => {
+  const worker = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  const prepare = fs.readFileSync("scripts/orchestration-v3/prepare-host.mjs", "utf8");
+  for (const cfg of Object.values(ORCHESTRATION_V3.workers)) {
+    assert.notEqual(cfg.agentWorkspace, cfg.worktree);
+    assert.match(cfg.agentWorkspace, /\.openclaw\/agent-workspaces-v3\/local-[abcd]$/);
+    assert.match(cfg.worktree, /\.openclaw\/worktrees\/local-[abcd]$/);
+  }
+  assert.match(worker, /This OpenClaw workspace is a disposable control workspace/);
+  assert.match(worker, /Protected repository root:/);
+  assert.match(worker, /Never delete, initialize, reseed, clean, or replace the protected repository root as a workspace/);
+  assert.match(worker, /cd \$\{quotedRepoRoot\} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
+  assert.match(worker, /Actually invoke the tool/);
+  assert.match(worker, /ORCH_WORKTREE_ROOT/);
+  assert.match(worker, /cwd: runtimeContract\.agentWorkspace/);
+  assert.match(worker, /runnerPath = path\.join\(ORCHESTRATION_V3\.runtime\.root/);
+  assert.match(prepare, /workspace: cfg\.agentWorkspace/);
+  assert.match(prepare, /OPENCLAW_WORKSPACE_POINTS_AT_GIT_WORKTREE/);
+  assert.match(prepare, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
 });
