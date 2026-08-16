@@ -1,17 +1,46 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import {
+  parseWorkerExecCapabilities,
+  buildWorkerExecInvocation,
+  codeModeShellInstruction
+} from "../scripts/orchestration-v3/worker-exec-invocation.mjs";
 
-test("V3 real worker uses Mac-proven embedded local OpenClaw invocation", () => {
+test("V3 real worker uses capability-aware agent exec instead of legacy agent local", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
-  assert.match(source, /"agent", "--local"/);
-  assert.match(source, /"--session-key", `agent:\$\{workerId\}:issue-\$\{issue\}`/);
-  assert.match(source, /"--message", prompt/);
-  assert.match(source, /"--model", ORCHESTRATION_V3\.model\.id/);
-  assert.match(source, /"--json"/);
-  assert.match(source, /"--timeout", "900"/);
-  assert.doesNotMatch(source, /"agent", "exec"/);
-  assert.doesNotMatch(source, /--isolated|--auth-env-only|--code-mode|--local-model-lean/);
+  assert.match(source, /probeWorkerExecCapabilities/);
+  assert.match(source, /buildWorkerExecInvocation/);
+  assert.match(source, /codeModeShellInstruction/);
+  assert.match(source, /invocation\.args/);
+  assert.doesNotMatch(source, /"agent", "--local"/);
+});
+
+test("worker exec helper enables Code Mode and local-model-lean when available", () => {
+  const help = `Usage: openclaw agent exec <prompt>\nOptions:\n  --isolated\n  --auth-env-only\n  --model <id>\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <dir>\n  --json\n  --timeout <seconds>`;
+  const capabilities = parseWorkerExecCapabilities(help);
+  const invocation = buildWorkerExecInvocation({ capabilities, prompt: "do work", controlWorkspace: "/tmp/control", timeoutSeconds: 900 });
+  assert.equal(invocation.supported, true);
+  assert.equal(invocation.mode, "AGENT_EXEC_CODE_MODE");
+  assert.deepEqual(invocation.args.slice(0, 3), ["agent", "exec", "do work"]);
+  assert.ok(invocation.args.includes("--isolated"));
+  assert.ok(invocation.args.includes("--auth-env-only"));
+  assert.ok(invocation.args.includes("--code-mode"));
+  assert.ok(invocation.args.includes("--local-model-lean"));
+  assert.ok(invocation.args.includes("ollama/qwen3.5:9b"));
+});
+
+test("V3 worker fails closed when agent exec is unavailable", () => {
+  const invocation = buildWorkerExecInvocation({ capabilities: parseWorkerExecCapabilities("Usage: openclaw agent"), prompt: "x", controlWorkspace: "/tmp/control" });
+  assert.equal(invocation.supported, false);
+  assert.equal(invocation.reason, "OPENCLAW_AGENT_EXEC_UNAVAILABLE");
+});
+
+test("Code Mode shell bridge uses nested core exec with exact workdir", () => {
+  const js = codeModeShellInstruction("git status --short --branch", "/repo/root");
+  assert.match(js, /tools\.callValue\("openclaw:core:exec"/);
+  assert.match(js, /git status --short --branch/);
+  assert.match(js, /\/repo\/root/);
 });
 
 test("V3 worker gives Qwen absolute observed command wrappers", () => {
@@ -21,7 +50,7 @@ test("V3 worker gives Qwen absolute observed command wrappers", () => {
   assert.match(source, /observed\.git/);
   assert.match(source, /For every git command use this exact executable/);
   assert.match(source, /For every pnpm command use/);
-  assert.match(source, /Before PASS, inspect the actual changes/);
+  assert.match(source, /actually execute and inspect/);
   assert.match(source, /perform a real git mutation/);
 });
 
