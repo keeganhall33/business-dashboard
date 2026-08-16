@@ -37,15 +37,19 @@ function hasFlag(helpText, flag) {
 }
 
 export function parseExecCapabilities(helpText) {
+  const text = String(helpText ?? "");
   return {
-    isolated: hasFlag(helpText, "--isolated"),
-    authEnvOnly: hasFlag(helpText, "--auth-env-only"),
-    model: hasFlag(helpText, "--model"),
-    codeMode: hasFlag(helpText, "--code-mode"),
-    localModelLean: hasFlag(helpText, "--local-model-lean"),
-    cwd: hasFlag(helpText, "--cwd"),
-    json: hasFlag(helpText, "--json"),
-    timeout: hasFlag(helpText, "--timeout")
+    execSubcommand: /Usage:\s+openclaw\s+agent\s+exec\b/i.test(text),
+    local: hasFlag(text, "--local"),
+    message: hasFlag(text, "--message"),
+    isolated: hasFlag(text, "--isolated"),
+    authEnvOnly: hasFlag(text, "--auth-env-only"),
+    model: hasFlag(text, "--model"),
+    codeMode: hasFlag(text, "--code-mode"),
+    localModelLean: hasFlag(text, "--local-model-lean"),
+    cwd: hasFlag(text, "--cwd"),
+    json: hasFlag(text, "--json"),
+    timeout: hasFlag(text, "--timeout")
   };
 }
 
@@ -135,8 +139,26 @@ export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stat
 
 export function buildExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds }) {
   if (!capabilities.model) {
-    return { supported: false, reason: "OPENCLAW_CLI_MISSING_MODEL_FLAG", args: [], toolMode: null };
+    return { supported: false, reason: "OPENCLAW_CLI_MISSING_MODEL_FLAG", args: [], toolMode: null, mode: null, promptIndex: null };
   }
+
+  if (!capabilities.execSubcommand) {
+    if (!capabilities.local || !capabilities.message) {
+      return { supported: false, reason: "OPENCLAW_CLI_MISSING_LOCAL_MESSAGE_PATH", args: [], toolMode: null, mode: null, promptIndex: null };
+    }
+    const args = ["agent", "--local", "--message", prompt, "--model", MODEL];
+    if (capabilities.json) args.push("--json");
+    if (capabilities.timeout) args.push("--timeout", String(timeoutSeconds));
+    return {
+      supported: true,
+      reason: null,
+      args,
+      toolMode: "direct",
+      mode: "LEGACY_AGENT_LOCAL_MESSAGE",
+      promptIndex: 3
+    };
+  }
+
   const args = ["agent", "exec", prompt];
   if (capabilities.isolated) args.push("--isolated");
   if (capabilities.authEnvOnly) args.push("--auth-env-only");
@@ -147,7 +169,14 @@ export function buildExecInvocation({ capabilities, prompt, controlWorkspace, ti
   if (capabilities.cwd) args.push("--cwd", controlWorkspace);
   if (capabilities.json) args.push("--json");
   if (capabilities.timeout) args.push("--timeout", String(timeoutSeconds));
-  return { supported: true, reason: null, args, toolMode };
+  return {
+    supported: true,
+    reason: null,
+    args,
+    toolMode,
+    mode: "AGENT_EXEC",
+    promptIndex: 2
+  };
 }
 
 function buildPrompt({ toolMode, repoRoot }) {
@@ -214,7 +243,7 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
     harnessEnv: harness.envPatch
   });
 
-  const provisionalToolMode = capabilities.codeMode ? "code" : "direct";
+  const provisionalToolMode = capabilities.execSubcommand && capabilities.codeMode ? "code" : "direct";
   const prompt = buildPrompt({ toolMode: provisionalToolMode, repoRoot: resolvedRepoRoot });
   const invocation = buildExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds });
   if (!invocation.supported) {
@@ -275,7 +304,8 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
     },
     invocation: {
       executable: openclaw,
-      args: invocation.args.map((value, index) => index === 2 ? "<DIAGNOSTIC_PROMPT>" : value),
+      mode: invocation.mode,
+      args: invocation.args.map((value, index) => index === invocation.promptIndex ? "<DIAGNOSTIC_PROMPT>" : value),
       toolMode: invocation.toolMode,
       timeoutSeconds: Number(timeoutSeconds)
     },
