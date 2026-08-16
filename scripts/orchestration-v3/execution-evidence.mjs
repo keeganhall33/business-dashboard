@@ -29,10 +29,26 @@ export function createObservedExecutionHarness({ issue, workerId }) {
     if (!real) continue;
     resolved[command] = real;
     const guard = command === "git" ? [
+      'if "$REAL" rev-parse --is-inside-work-tree >/dev/null 2>&1; then',
+      '  worktree_deletions=$("$REAL" diff --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '  staged_deletions=$("$REAL" diff --cached --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '  total_deletions=$(( ${worktree_deletions:-0} + ${staged_deletions:-0} ))',
+      '  case "$1" in reset|clean) ;;',
+      '    *) if [ "$total_deletions" -ge 25 ]; then',
+      '      printf \'%s\\tgit\\t96\\tGUARD_MASS_TRACKED_DELETION autoheal deletions=%s args=%s\\n\' "$(date +%s)" "$total_deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
+      '      "$REAL" reset --hard HEAD >/dev/null 2>&1 || true',
+      '      "$REAL" clean -fd >/dev/null 2>&1 || true',
+      '      echo "V3_GUARD_MASS_TRACKED_DELETION: auto-healed disposable worktree after $total_deletions deletions" >&2',
+      '      exit 96',
+      '    fi ;;',
+      '  esac',
+      'fi',
       'if [ "$1" = "commit" ]; then',
       '  deletions=$("$REAL" diff --cached --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
       '  if [ "${deletions:-0}" -ge 25 ]; then',
       '    printf \'%s\\tgit\\t97\\tGUARD_MASS_TRACKED_DELETION commit staged_deletions=%s args=%s\\n\' "$(date +%s)" "$deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
+      '    "$REAL" reset --hard HEAD >/dev/null 2>&1 || true',
+      '    "$REAL" clean -fd >/dev/null 2>&1 || true',
       '    echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git commit with $deletions staged deletions" >&2',
       '    exit 97',
       '  fi',
@@ -109,7 +125,8 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     gitDiffObserved: succeeded("git", /\bdiff\b/),
     gitDiffCheckObserved: succeeded("git", /\bdiff\s+--check\b/),
     gitMutationCommandObserved: gitEvents.some((event) => event.status === 0 && /\b(add|commit|push|merge|rebase|cherry-pick|checkout|switch)\b/i.test(event.args)),
-    massDeletionGuardTriggered: gitEvents.some((event) => [97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
+    massDeletionGuardTriggered: gitEvents.some((event) => [96, 97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
+    massDeletionAutoHealed: gitEvents.some((event) => event.status === 96 && /autoheal/.test(event.args)),
     successfulCommands: events.filter((event) => event.status === 0).map((event) => `${event.command} ${event.args}`),
     failedCommands: events.filter((event) => event.status !== 0).map((event) => `${event.command} ${event.args} [exit ${event.status}]`)
   };
