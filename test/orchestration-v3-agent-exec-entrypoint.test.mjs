@@ -52,6 +52,33 @@ test("V3 worker isolates OpenClaw workspace and mutable state from the protected
   assert.match(source, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
 });
 
+test("V3 requires a model-observed repo-preflight handshake before implementation", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(source, /EXECUTION_HANDSHAKE_V1/);
+  assert.match(source, /observedExecutionJournalLineCount/);
+  assert.match(source, /readObservedExecutionEvidence\(executionHarness\.journalPath, \{ startLine: handshakeStartLine \}\)/);
+  assert.match(source, /git rev-parse --show-toplevel/);
+  assert.match(source, /git status --short --branch/);
+  assert.match(source, /git remote -v/);
+  assert.match(source, /if \(!handshakeEvidence\.repoPreflightObserved\)/);
+  assert.match(source, /EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT/);
+  assert.match(source, /"--model", ORCHESTRATION_V3\.model\.id/);
+  assert.match(source, /"--code-mode", "direct"/);
+  assert.doesNotMatch(source, /openai\//i);
+});
+
+test("V3 handshake evidence is journal-range scoped while final PASS still uses the full journal", () => {
+  const evidence = fs.readFileSync("scripts/orchestration-v3/execution-evidence.mjs", "utf8");
+  const worker = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(evidence, /observedExecutionJournalLineCount/);
+  assert.match(evidence, /slice\(Math\.max\(0, Number\(startLine\) \|\| 0\)\)/);
+  assert.match(worker, /const handshakeEvidence = readObservedExecutionEvidence\(executionHarness\.journalPath, \{ startLine: handshakeStartLine \}\)/);
+  assert.match(worker, /const executionEvidence = readObservedExecutionEvidence\(executionHarness\.journalPath\)/);
+  assert.match(worker, /requires observed successful git diff --check/);
+  assert.match(worker, /no successful git mutation command was observed/);
+  assert.match(worker, /git HEAD and open PR heads did not change/);
+});
+
 test("V3 local runner does not recursively build a strict retry prompt", () => {
   const source = fs.readFileSync("scripts/orchestration-run-issue-openclaw.mjs", "utf8");
   const runner = source.match(/function runOpenclawWithPrompt\([\s\S]*?\n  }\n\n  try \{/i)?.[0] ?? "";
