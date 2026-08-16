@@ -117,6 +117,17 @@ test("V3 activation retires every legacy runtime surface and doctor fails if one
   assert.match(doctor, /legacyRetired/);
 });
 
+test("V3 doctor tolerates only bounded worktree dirt from the worker that is actively running", () => {
+  const doctor = fs.readFileSync("scripts/orchestration-v3/doctor.mjs", "utf8");
+  assert.match(doctor, /workerForStream/);
+  assert.match(doctor, /ACTIVE_WORKERS/);
+  assert.match(doctor, /TOLERATED_ACTIVE_WORKER_ERRORS/);
+  assert.match(doctor, /TRACKED_WORKTREE_DIRTY/);
+  assert.match(doctor, /UNEXPECTED_UNTRACKED_FILES/);
+  assert.match(doctor, /if \(!activeWorkers\.has\(workerId\)\) return false/);
+  assert.doesNotMatch(doctor, /MASS_TRACKED_DELETION[\s\S]*TOLERATED_ACTIVE_WORKER_ERRORS/);
+});
+
 test("observed execution journal classifies only successful required stages", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "v3-evidence-test-"));
   const journal = path.join(dir, "commands.tsv");
