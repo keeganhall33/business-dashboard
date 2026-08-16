@@ -88,6 +88,8 @@ async function main() {
   const EXPLICIT_LOCAL_AGENT_ID = String(process.env.ORCH_LOCAL_AGENT_ID ?? "").trim();
   const ORCH_CLOUD_AGENT_ID = String(process.env.ORCH_CLOUD_AGENT_ID ?? agent);
   const ORCH_LOCAL_MODEL = String(process.env.ORCH_LOCAL_MODEL ?? "ollama/mistral:latest").trim();
+  const ORCH_WORKTREE_ROOT = String(process.env.ORCH_WORKTREE_ROOT ?? "").trim();
+  const ORCH_AGENT_WORKSPACE = String(process.env.ORCH_AGENT_WORKSPACE ?? process.cwd()).trim();
 
   if (!repo || !issue) {
     console.error("Usage: node scripts/orchestration-run-issue-openclaw.mjs --repo owner/repo --issue N [--agent main] [--timeout 120]");
@@ -234,11 +236,21 @@ async function main() {
   function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
     const s = extractReferenceDelta(body);
     const approvedDecision = latestApprovedArchitectDecision(comments);
+    const protectedRepoContract = ORCH_WORKTREE_ROOT
+      ? [
+          `PROTECTED REPOSITORY ROOT: ${ORCH_WORKTREE_ROOT}`,
+          `The OpenClaw cwd is a disposable control workspace, not the repository.`,
+          `MANDATORY FIRST TOOL ACTION: use exec to run exactly: cd ${JSON.stringify(ORCH_WORKTREE_ROOT)} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`,
+          `Every repository command must explicitly target that protected repository root. Do not search for a nested checkout.`,
+          `For implementation work, actually invoke repository tools; never describe or invent tool calls.`
+        ].join("\n")
+      : null;
     const header = [
       `You are Jeeves executing GitHub orchestration task #${issueNumber} in ${repo}.`,
       `Work from the local business-dashboard repository/worktree.`,
+      protectedRepoContract,
       `TASK TITLE: ${title}`
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const reference = s.reference ? `REFERENCE (truncated):\n${safeTrunc(s.reference, 1200)}` : `REFERENCE: (missing)`;
     const delta = s.delta ? `DELTA (truncated):\n${safeTrunc(s.delta, 1200)}` : `DELTA: (missing)`;
@@ -427,9 +439,8 @@ async function main() {
     const messageWithGuard = useEphemeralLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
     const effectiveMessage = useEphemeralLocal && shouldEnforceStrictJsonForLocal(messageWithGuard) ? buildStrictJsonRetryPrompt(messageWithGuard, proofOpts) : String(messageWithGuard ?? "");
     const effectiveTimeout = useEphemeralLocal ? Math.max(Number(timeoutSeconds) || 0, 360) : Number(timeoutSeconds);
-    const freshLocalSessionId = useEphemeralLocal ? `orch-${String(taskId)}-${String(process.pid)}-${String(Date.now())}-${Math.random().toString(36).slice(2, 10)}` : null;
     const args = useEphemeralLocal
-      ? ["agent", "--local", "--agent", agentId, "--session-id", freshLocalSessionId, "--model", ORCH_LOCAL_MODEL, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout)]
+      ? ["agent", "exec", effectiveMessage, "--model", ORCH_LOCAL_MODEL, "--code-mode", "code", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
       : ["agent", "--agent", agentId, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout)];
     const childEnv = useEphemeralLocal ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" } : process.env;
     const res = spawnSync("/opt/homebrew/bin/openclaw", args, { env: childEnv, encoding: "utf8", timeout: (effectiveTimeout + 60) * 1000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
@@ -505,7 +516,7 @@ async function main() {
     process.exit(1);
   }
 
-  const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? null;
+  const meta = envelope?.meta?.agentMeta ?? envelope?.result?.meta?.agentMeta ?? envelope?.result?.agentMeta ?? envelope ?? null;
   const modelUsed = meta?.model ?? null;
   const providerUsed = meta?.provider ?? null;
   const localUsage = providerUsed === "ollama" ? (meta?.usage ?? null) : null;
@@ -520,7 +531,7 @@ async function main() {
   const contractBody = parsed.kind === "checkpoint"
     ? ["## ArchitectCheckpointV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n")
     : ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(valueWithRouting, null, 2), "```"].join("\n");
-  const metaLine = meta ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, provider: meta.provider ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null })}` : "agentMeta: unavailable";
+  const metaLine = meta ? `agentMeta: ${JSON.stringify({ model: meta.model ?? null, provider: meta.provider ?? null, usage: meta.usage ?? null, costUsd: meta.costUsd ?? null, toolSummary: meta.toolSummary ?? null, codeModeEngaged: meta.codeModeEngaged ?? null })}` : "agentMeta: unavailable";
   const routingLine = `routing: ${JSON.stringify(routingMeta())}`;
   postComment([contractBody, "", `<!-- ${metaLine} -->`, `<!-- ${routingLine} -->`].join("\n"));
   finishAwaitingReview();
