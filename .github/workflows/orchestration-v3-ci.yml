@@ -3,6 +3,7 @@ name: Orchestration V3 CI
 on:
   pull_request:
     paths:
+      - 'AGENTS.md'
       - 'scripts/orchestration-v3/**'
       - 'scripts/orchestration-run-issue-openclaw.mjs'
       - 'test/orchestration-v3-control-plane.test.mjs'
@@ -12,6 +13,7 @@ on:
     branches:
       - main
     paths:
+      - 'AGENTS.md'
       - 'scripts/orchestration-v3/**'
       - 'scripts/orchestration-run-issue-openclaw.mjs'
       - 'test/orchestration-v3-control-plane.test.mjs'
