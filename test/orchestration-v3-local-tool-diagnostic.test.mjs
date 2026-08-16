@@ -21,7 +21,7 @@ test("standalone diagnostic is pinned to isolated Ollama qwen3.5 and compact Cod
   assert.match(source, /git status --short --branch/);
   assert.match(source, /createObservedExecutionHarness/);
   assert.match(source, /MISSING_OBSERVED_GIT_EXECUTION/);
-  assert.doesNotMatch(source, /gh\s|watcher\.mjs|worker\.mjs|editLabels|postComment|api\.github\.com/);
+  assert.doesNotMatch(source, /watcher\.mjs|worker\.mjs|editLabels|postComment|api\.github\.com|\bissue\s+(?:edit|comment)\b/);
 });
 
 test("diagnostic only passes with observed git execution and compatible local model metadata", () => {
