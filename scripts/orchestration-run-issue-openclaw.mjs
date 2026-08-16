@@ -236,13 +236,16 @@ async function main() {
   function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
     const s = extractReferenceDelta(body);
     const approvedDecision = latestApprovedArchitectDecision(comments);
+    const repoPreflightCommand = "pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v";
     const protectedRepoContract = ORCH_WORKTREE_ROOT
       ? [
           `PROTECTED REPOSITORY ROOT: ${ORCH_WORKTREE_ROOT}`,
           `The OpenClaw cwd is a disposable control workspace, not the repository.`,
-          `MANDATORY FIRST TOOL ACTION: use exec to run exactly: cd ${JSON.stringify(ORCH_WORKTREE_ROOT)} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`,
-          `Every repository command must explicitly target that protected repository root. Do not search for a nested checkout.`,
-          `For implementation work, actually invoke repository tools; never describe or invent tool calls.`
+          `Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.`,
+          `MANDATORY FIRST TOOL ACTION: invoke Code Mode exec with JavaScript exactly like: return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(repoPreflightCommand)}, workdir: ${JSON.stringify(ORCH_WORKTREE_ROOT)} });`,
+          `Every repository/test/diff/mutation shell command must explicitly target the protected repository root and be dispatched from Code Mode through tools.callValue("openclaw:core:exec", { command, workdir: ${JSON.stringify(ORCH_WORKTREE_ROOT)} }).`,
+          `Never place raw shell in the outer Code Mode exec tool. Do not search for a nested checkout.`,
+          `For implementation work, actually invoke repository tools through the Code Mode catalog bridge; never describe or invent tool calls.`
         ].join("\n")
       : null;
     const header = [
@@ -440,7 +443,7 @@ async function main() {
     const effectiveMessage = String(messageWithGuard ?? "");
     const effectiveTimeout = useEphemeralLocal ? Math.max(Number(timeoutSeconds) || 0, 360) : Number(timeoutSeconds);
     const args = useEphemeralLocal
-      ? ["agent", "exec", effectiveMessage, "--isolated", "--auth-env-only", "--model", ORCH_LOCAL_MODEL, "--code-mode", "direct", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
+      ? ["agent", "exec", effectiveMessage, "--isolated", "--auth-env-only", "--model", ORCH_LOCAL_MODEL, "--code-mode", "code", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
       : ["agent", "--agent", agentId, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout)];
     const childEnv = useEphemeralLocal ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" } : process.env;
     const res = spawnSync("/opt/homebrew/bin/openclaw", args, { env: childEnv, encoding: "utf8", timeout: (effectiveTimeout + 60) * 1000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
