@@ -28,16 +28,13 @@ test("V3 watcher has no historical task resurrection path", () => {
   assert.match(source, /queue\.ready/);
 });
 
-test("V3 real worker uses the Mac-proven embedded local API, not unsupported agent exec", () => {
+test("V3 real worker uses capability-aware agent exec and Code Mode bridge", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
-  assert.match(source, /"agent", "--local"/);
-  assert.match(source, /"--session-key"/);
-  assert.match(source, /"--message", prompt/);
-  assert.match(source, /"--model", ORCHESTRATION_V3\.model\.id/);
-  assert.doesNotMatch(source, /"agent", "exec"/);
-  assert.doesNotMatch(source, /--isolated/);
-  assert.doesNotMatch(source, /--auth-env-only/);
-  assert.doesNotMatch(source, /--code-mode/);
+  assert.match(source, /probeWorkerExecCapabilities/);
+  assert.match(source, /buildWorkerExecInvocation/);
+  assert.match(source, /codeModeShellInstruction/);
+  assert.match(source, /CODE MODE SHELL BRIDGE IS AUTHORITATIVE/);
+  assert.doesNotMatch(source, /"agent", "--local"/);
 });
 
 test("V3 worker uses absolute observed wrappers for all repo execution evidence", () => {

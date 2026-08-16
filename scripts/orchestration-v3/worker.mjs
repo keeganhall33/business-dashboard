@@ -11,6 +11,11 @@ import {
   requiresDiffCheck
 } from "./execution-evidence.mjs";
 import { buildIsolatedEnvironment, parseMachineEnvelope } from "./diagnose-local-tool-observed.mjs";
+import {
+  probeWorkerExecCapabilities,
+  buildWorkerExecInvocation,
+  codeModeShellInstruction
+} from "./worker-exec-invocation.mjs";
 
 const CLOUD_CREDENTIAL_PREFIXES = [
   "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
@@ -155,7 +160,7 @@ const configPath = path.join(tempRoot, "openclaw.json");
 for (const dir of [tempHome, stateDir, controlWorkspace]) fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(configPath, "{}\n", "utf8");
 fs.writeFileSync(path.join(controlWorkspace, "AGENTS.md"), [
-  "# Jeeves V3 compatibility worker",
+  "# Jeeves V3 capability-aware worker",
   `Protected repository: ${repoRoot}`,
   "Use only the explicitly supplied observed command wrappers for git/package-manager commands.",
   "Never initialize, delete, clean, or reseed the protected repository.",
@@ -171,9 +176,31 @@ if (process.env.HOME) {
 env.OPENCLAW_FALLBACK_MODELS = "";
 env.OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "ollama-local";
 
+const openclaw = "/opt/homebrew/bin/openclaw";
+const capabilities = probeWorkerExecCapabilities(openclaw);
 const preflightCommand = `${q(observed.git)} rev-parse --show-toplevel && ${q(observed.git)} status --short --branch && ${q(observed.git)} remote -v`;
 const testRequired = requiresTestExecution(snapshot.body);
 const diffCheckRequired = requiresDiffCheck(snapshot.body);
+const codeModeBridge = capabilities.codeMode;
+const firstToolInstruction = codeModeBridge
+  ? [
+      "MANDATORY FIRST TOOL ACTION: invoke the outer Code Mode exec tool exactly once with this JavaScript:",
+      codeModeShellInstruction(preflightCommand, repoRoot),
+      "The outer Code Mode exec tool accepts JavaScript/TypeScript, not raw shell. Never place raw shell directly in it."
+    ].join("\n")
+  : [
+      "MANDATORY FIRST TOOL ACTION: execute this exact command with the shell exec tool:",
+      preflightCommand
+    ].join("\n");
+const shellExecutionInstruction = codeModeBridge
+  ? [
+      "CODE MODE SHELL BRIDGE IS AUTHORITATIVE.",
+      "For EVERY shell command, invoke the outer exec tool with JavaScript that calls tools.callValue(\"openclaw:core:exec\", { command: <exact shell command>, workdir: <exact workdir> }).",
+      `Every repository command must use workdir ${repoRoot}.`,
+      "Do not narrate a command instead of invoking the bridge. Do not claim success from command text you did not execute."
+    ].join("\n")
+  : "Use the shell exec tool for shell commands and the exact protected repository as workdir.";
+
 const prompt = [
   `You are Jeeves executing GitHub issue #${issue} in ${ORCHESTRATION_V3.repo}.`,
   `TASK TITLE: ${snapshot.title}`,
@@ -183,20 +210,19 @@ const prompt = [
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
   "This is a real implementation run. Do not merely review or narrate commands.",
-  "Use the shell exec tool for shell commands and the exact protected repository as workdir.",
-  "MANDATORY FIRST TOOL ACTION: execute this exact command with the shell exec tool:",
-  preflightCommand,
+  shellExecutionInstruction,
+  firstToolInstruction,
   "Do not substitute /usr/bin/git, /opt/homebrew/bin/git, or plain git for the observed git wrapper.",
   "For every git command use this exact executable:",
   observed.git,
   fs.existsSync(observed.pnpm) ? `For every pnpm command use: ${observed.pnpm}` : null,
   fs.existsSync(observed.npm) ? `For every npm command use: ${observed.npm}` : null,
   fs.existsSync(observed.npx) ? `For every npx command use: ${observed.npx}` : null,
-  testRequired ? "The issue requires tests/build/typecheck. Actually run the relevant successful command through one of the observed package-manager wrappers before PASS." : null,
-  `Before PASS, inspect the actual changes using: ${q(observed.git)} diff`,
-  diffCheckRequired ? `Before PASS, also run: ${q(observed.git)} diff --check` : null,
+  testRequired ? "The issue requires tests/build/typecheck. Actually execute the relevant successful command through one of the observed package-manager wrappers before PASS." : null,
+  `Before PASS, actually execute and inspect: ${q(observed.git)} diff`,
+  diffCheckRequired ? `Before PASS, actually execute: ${q(observed.git)} diff --check` : null,
   "Before PASS, perform a real git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue.",
-  "Use gh directly when PR inspection or PR creation/update is required. Do not create a duplicate PR when the issue names an existing PR.",
+  "Use gh inside the same shell bridge when PR inspection or PR creation/update is required. Do not create a duplicate PR when the issue names an existing PR.",
   "Cloud use is forbidden. Do not request or use OpenAI/Anthropic/Gemini/etc.",
   "After the bounded implementation attempt, return ONLY one strict JSON object with this exact uppercase-key shape:",
   JSON.stringify({
@@ -205,17 +231,18 @@ const prompt = [
   "No prose and no markdown fences."
 ].filter(Boolean).join("\n");
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead }));
+const invocation = buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds: 900 });
+if (!invocation.supported) {
+  const value = { ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"), BLOCKERS: [invocation.reason] };
+  postResult(value, { provider: null, model: null, fallbackUsed: null, capabilities, invocation });
+  const current = labelsOf(issueSnapshot());
+  editLabels({ remove: [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready].filter((x) => current.has(x)), add: [ORCHESTRATION_V3.queue.blocked] });
+  process.exit(1);
+}
 
-const openclawArgs = [
-  "agent", "--local",
-  "--session-key", `agent:${workerId}:issue-${issue}`,
-  "--message", prompt,
-  "--model", ORCHESTRATION_V3.model.id,
-  "--json",
-  "--timeout", "900"
-];
-const run = spawnSync("/opt/homebrew/bin/openclaw", openclawArgs, {
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead, capabilities, invocationMode: invocation.mode }));
+
+const run = spawnSync(openclaw, invocation.args, {
   cwd: controlWorkspace,
   env,
   encoding: "utf8",
@@ -268,10 +295,10 @@ if (parsed.STATUS !== "PASS" && evidenceErrors.length > 0) {
   finalValue.BLOCKERS = [...new Set([...(finalValue.BLOCKERS ?? []), ...evidenceErrors])];
 }
 
-postResult(finalValue, { provider: machine.provider, model: machine.model, fallbackUsed: machine.fallbackUsed, toolCalls: machine.toolCalls, toolFailures: machine.toolFailures, executionEvidence });
+postResult(finalValue, { provider: machine.provider, model: machine.model, fallbackUsed: machine.fallbackUsed, toolCalls: machine.toolCalls, toolFailures: machine.toolFailures, executionEvidence, capabilities, invocationMode: invocation.mode });
 const current = labelsOf(issueSnapshot());
 const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.blocked].filter((x) => current.has(x));
 const add = finalValue.STATUS === "PASS" ? [ORCHESTRATION_V3.queue.awaitingReview] : [ORCHESTRATION_V3.queue.blocked];
 editLabels({ remove, add });
-console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: finalValue.STATUS, machine, executionEvidence, realMutationObserved, changedPrNumbers: changedPrs.map((pr) => pr.number) }));
+console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: finalValue.STATUS, machine, executionEvidence, realMutationObserved, changedPrNumbers: changedPrs.map((pr) => pr.number), invocationMode: invocation.mode }));
 process.exit(finalValue.STATUS === "PASS" ? 0 : 1);
