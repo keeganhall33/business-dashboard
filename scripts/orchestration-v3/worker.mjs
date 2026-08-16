@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { requireHealthyWorker } from "./preflight.mjs";
+import { createObservedExecutionHarness, readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "./execution-evidence.mjs";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -91,7 +92,7 @@ function mapPrs(prs) {
   return new Map((prs ?? []).map((pr) => [Number(pr.number), pr]));
 }
 
-function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, afterPrs }) {
+function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, afterPrs, executionEvidence }) {
   const before = mapPrs(beforePrs);
   const after = mapPrs(afterPrs);
   const newPrs = [...after.values()].filter((pr) => !before.has(Number(pr.number)));
@@ -109,6 +110,12 @@ function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, af
   const prObserved = referencedChanged.length > 0 || headLinkedPrs.length > 0;
   const errors = [];
 
+  if (!executionEvidence || executionEvidence.toolCallCount <= 0) errors.push("PASS claimed implementation work but no instrumented repository command execution was observed");
+  if (!executionEvidence?.repoPreflightObserved) errors.push("PASS requires observed repo preflight: rev-parse --show-toplevel, status --short --branch, and remote -v must all succeed");
+  if (requiresTestExecution(body) && !executionEvidence?.testExecutionObserved) errors.push("PASS requires at least one observed successful test/build/typecheck command");
+  if (requiresDiffCheck(body) && !executionEvidence?.gitDiffCheckObserved) errors.push("PASS requires observed successful git diff --check");
+  else if (!executionEvidence?.gitDiffObserved) errors.push("PASS requires observed successful git diff inspection");
+  if (needsMutation && !executionEvidence?.gitMutationCommandObserved) errors.push("PASS claimed repository mutation but no successful git mutation command was observed");
   if (needsMutation && !mutationObserved) errors.push("PASS claimed repository work but git HEAD and open PR heads did not change");
   if (needsPr && !prObserved) errors.push("PASS claimed/required PR work but no referenced or worker-HEAD-linked PR changed");
 
@@ -122,7 +129,8 @@ function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, af
       referencedPrNumbers: referenced,
       newPrNumbers: newPrs.map((pr) => pr.number),
       changedPrNumbers: changedPrs.map((pr) => pr.number),
-      workerHeadLinkedPrNumbers: headLinkedPrs.map((pr) => pr.number)
+      workerHeadLinkedPrNumbers: headLinkedPrs.map((pr) => pr.number),
+      execution: executionEvidence ?? null
     }
   };
 }
@@ -152,6 +160,7 @@ function installWorkerRuntimeContract(cfg) {
     "Every repository command must explicitly operate on the protected repository root, either by setting the tool cwd there or by prefixing the command with cd to that exact absolute path.",
     "For tasks requesting code, tests, commits, pushes, PR updates, or PR creation, you MUST perform the work with structured repository tools (exec/read/write/edit/apply_patch) rather than describing commands or inventing results.",
     "Do not emit a proposed tool call as plain text. Actually invoke the tool.",
+    "The V3 harness now instruments git/pnpm/npm/npx execution. A PASS requires machine-observed successful repo preflight, test/build execution when required, git diff inspection, mutation commands, and actual git/GitHub state change.",
     "Before returning PASS, verify machine state with git status, git rev-parse HEAD, the requested tests, and gh/pr evidence when PR work is required.",
     "If a required command fails, return BLOCKED or FAILED with the exact observed error. Never fabricate files, commits, tests, pushes, or PRs.",
     "A PASS without observable git/GitHub mutation evidence will be rejected by the V3 verifier.",
@@ -171,8 +180,10 @@ const runtimeContract = installWorkerRuntimeContract(cfg);
 const beforeSnapshot = issueSnapshot();
 const beforeHead = git(["rev-parse", "HEAD"], cfg.worktree);
 const beforePrs = openPrSnapshot();
+const executionHarness = createObservedExecutionHarness({ issue, workerId });
 const env = {
   ...process.env,
+  ...executionHarness.envPatch,
   ORCH_LOCAL_ROUTING_ENABLED: "true",
   ORCH_LOCAL_AGENT_ID: workerId,
   ORCH_LOCAL_MODEL: ORCHESTRATION_V3.model.id,
@@ -184,7 +195,7 @@ const env = {
   OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
 };
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, runtimeContract, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, runtimeContract, executionHarness: { journalPath: executionHarness.journalPath, shimRoot: executionHarness.shimRoot, instrumented: Object.keys(executionHarness.resolved) }, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
 const runnerPath = path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-run-issue-openclaw.mjs");
 const run = spawnSync(process.execPath, [
   runnerPath,
@@ -205,6 +216,8 @@ let status = result?.STATUS ?? null;
 const humanRequired = humanApprovalRequired(snapshot.body);
 const afterHead = git(["rev-parse", "HEAD"], cfg.worktree);
 const afterPrs = openPrSnapshot();
+const executionEvidence = readObservedExecutionEvidence(executionHarness.journalPath);
+console.log(JSON.stringify({ event: "OBSERVED_EXECUTION_EVIDENCE", issue, workerId, executionEvidence }));
 
 if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
   const verification = verifyPassEvidence({
@@ -213,25 +226,26 @@ if (["PASS", "COMPLETE", "SUCCESS"].includes(status)) {
     beforeHead,
     afterHead,
     beforePrs,
-    afterPrs
+    afterPrs,
+    executionEvidence
   });
   if (!verification.ok) {
     const correction = {
       TASK_ID: result?.TASK_ID ?? `issue-${issue}`,
       STATUS: "BLOCKED",
-      SUMMARY: "V3 machine-evidence gate rejected an unproven model PASS",
+      SUMMARY: "V3 observed-execution and machine-evidence gates rejected an unproven model PASS",
       CHANGES: [],
       FILES_CHANGED: [],
       DB_CHANGES: "NO",
       MIGRATION: null,
-      TESTS: "Model-reported tests are not accepted without repository/PR mutation evidence for this task",
+      TESTS: "Model-reported tests are not accepted without observed command execution and repository/PR mutation evidence",
       PR: null,
       MERGE_STATUS: "N/A",
       PRODUCTION_CHANGE: "NO",
       UNEXPECTED_RESULTS: [JSON.stringify(verification.evidence)],
       DECISIONS_REQUIRED: [],
       BLOCKERS: verification.errors,
-      NEXT_RECOMMENDED_TASK: "Retry the task and require actual tool execution; PASS will remain blocked until git/GitHub evidence changes.",
+      NEXT_RECOMMENDED_TASK: "Retry the task; PASS remains blocked until required execution stages and actual git/GitHub mutation are machine-observed.",
       SESSION_HEALTH: "GOOD",
       SESSION_CONTEXT: `v3-machine-evidence/${workerId}`,
       ROUTING_TIER: "LOCAL_FIRST",
@@ -269,6 +283,6 @@ if (humanRequired || status === "AWAITING_HUMAN_APPROVAL") {
 }
 
 editLabels({ remove, add });
-console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status, exitCode: run.status, finalLabels: add, beforeHead, afterHead }));
+console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status, exitCode: run.status, finalLabels: add, beforeHead, afterHead, executionEvidence }));
 if (run.error) throw run.error;
 process.exitCode = status === "BLOCKED" ? 1 : (run.status ?? 1);
