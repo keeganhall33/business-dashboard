@@ -1,4 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { requireHealthyWorker } from "./preflight.mjs";
 
@@ -125,8 +127,39 @@ function verifyPassEvidence({ body, result, beforeHead, afterHead, beforePrs, af
   };
 }
 
+function installWorkerRuntimeContract(cfg) {
+  const repoRoot = path.resolve(cfg.worktree);
+  const contractPath = path.join(repoRoot, "AGENTS.md");
+  const contract = [
+    "# Jeeves Orchestration V3 Worker Contract",
+    "",
+    `This workspace directory is the git repository root for ${ORCHESTRATION_V3.repo}.`,
+    `Repository root: ${repoRoot}`,
+    "Do NOT search for a nested business-dashboard directory. Do NOT claim the repository is missing merely because the directory name is local-a/local-b/local-c/local-d.",
+    "",
+    "## Mandatory first action for implementation tasks",
+    "Use the structured exec tool before reasoning about repository availability. Run exactly:",
+    "`pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v`",
+    "Treat a successful `git rev-parse --show-toplevel` result as authoritative proof that the current workspace is the repository root.",
+    "",
+    "## Mandatory execution behavior",
+    "For tasks requesting code, tests, commits, pushes, PR updates, or PR creation, you MUST perform the work with structured repository tools (exec/read/write/edit/apply_patch) rather than describing commands or inventing results.",
+    "Do not emit a proposed tool call as plain text. Actually invoke the tool.",
+    "Before returning PASS, verify machine state with git status, git rev-parse HEAD, the requested tests, and gh/pr evidence when PR work is required.",
+    "If a required command fails, return BLOCKED or FAILED with the exact observed error. Never fabricate files, commits, tests, pushes, or PRs.",
+    "A PASS without observable git/GitHub mutation evidence will be rejected by the V3 verifier.",
+    "",
+    `Assigned worker: ${workerId}`,
+    `Assigned model: ${ORCHESTRATION_V3.model.id}`,
+    "Cloud fallback is forbidden for this acceptance runtime."
+  ].join("\n");
+  fs.writeFileSync(contractPath, `${contract}\n`, "utf8");
+  return { contractPath, repoRoot };
+}
+
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
+const runtimeContract = installWorkerRuntimeContract(cfg);
 const beforeSnapshot = issueSnapshot();
 const beforeHead = git(["rev-parse", "HEAD"], cfg.worktree);
 const beforePrs = openPrSnapshot();
@@ -136,12 +169,13 @@ const env = {
   ORCH_LOCAL_AGENT_ID: workerId,
   ORCH_LOCAL_MODEL: ORCHESTRATION_V3.model.id,
   ORCH_CLOUD_AGENT_ID: workerId,
+  ORCH_WORKTREE_ROOT: runtimeContract.repoRoot,
   OPENCLAW_MODEL: ORCHESTRATION_V3.model.id,
   OPENCLAW_FALLBACK_MODELS: "",
   OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
 };
 
-console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
+console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, runtimeContract, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, beforeHead }));
 const run = spawnSync(process.execPath, [
   "scripts/orchestration-run-issue-openclaw.mjs",
   "--repo", ORCHESTRATION_V3.repo,
