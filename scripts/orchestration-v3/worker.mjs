@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+import { extractOrchestrationResult } from "./result-contract.mjs";
 import { requireHealthyWorker } from "./preflight.mjs";
 import {
   createObservedExecutionHarness,
@@ -95,30 +96,6 @@ function openPrSnapshot() {
 }
 function mapPrs(prs) {
   return new Map((prs ?? []).map((pr) => [Number(pr.number), pr]));
-}
-function extractFinalText(envelope) {
-  const seen = new Set();
-  function walk(value) {
-    if (!value || typeof value !== "object" || seen.has(value)) return null;
-    seen.add(value);
-    for (const key of ["finalAssistantVisibleText", "finalAssistantRawText", "final", "text", "reply"]) {
-      if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
-    }
-    for (const child of Object.values(value)) {
-      const found = walk(child);
-      if (found) return found;
-    }
-    return null;
-  }
-  return walk(envelope) ?? "";
-}
-function parseResult(text) {
-  const raw = String(text ?? "").trim().replace(/^```json\s*/i, "").replace(/\s*```$/i, "");
-  const value = JSON.parse(raw);
-  if (!value || typeof value !== "object" || !["PASS", "BLOCKED", "FAILED"].includes(String(value.STATUS ?? "").toUpperCase())) {
-    throw new Error("INVALID_ORCHESTRATION_RESULT");
-  }
-  return { ...resultBase(String(value.STATUS).toUpperCase(), String(value.SUMMARY ?? "")), ...value };
 }
 function sanitizeCloudEnv(baseEnv) {
   const env = { ...baseEnv };
@@ -265,7 +242,8 @@ const fallbackOk = machine.fallbackUsed === false;
 let parsed;
 try {
   const envelope = JSON.parse(String(run.stdout ?? ""));
-  parsed = parseResult(extractFinalText(envelope));
+  const value = extractOrchestrationResult(envelope);
+  parsed = { ...resultBase(value.STATUS, String(value.SUMMARY ?? "")), ...value };
 } catch (error) {
   parsed = { ...resultBase("BLOCKED", "Local model output could not be parsed as OrchestrationResultContractV1"), BLOCKERS: [error?.message ?? String(error)] };
 }
