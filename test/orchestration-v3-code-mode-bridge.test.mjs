@@ -4,17 +4,13 @@ import test from "node:test";
 
 test("V3 worker handshake uses compact Code Mode shell bridge", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
-  const handshake = source.match(/const handshakePrompt = \[[\s\S]*?const handshakeEvidence/iu)?.[0] ?? "";
-  assert.match(handshake, /EXECUTION_HANDSHAKE_V1/);
-  assert.match(handshake, /openclaw:core:exec/);
-  assert.match(handshake, /tools\.callValue/);
-  assert.match(handshake, /"--code-mode", "code"/);
-  assert.doesNotMatch(handshake, /"--code-mode", "direct"/);
-  assert.match(handshake, /Never place raw shell directly in the outer Code Mode exec tool/);
-  assert.match(handshake, /git rev-parse --show-toplevel/);
-  assert.match(handshake, /git status --short --branch/);
-  assert.match(handshake, /git remote -v/);
-  assert.match(handshake, /workdir: \$\{JSON\.stringify\(runtimeContract\.repoRoot\)\}/);
+  assert.match(source, /EXECUTION_HANDSHAKE_V1/);
+  assert.match(source, /const bridgeCall = `return await tools\.callValue\("openclaw:core:exec"/);
+  assert.match(source, /"--code-mode", "code"/);
+  assert.doesNotMatch(source, /"--code-mode", "direct"/);
+  assert.match(source, /Never place raw shell directly in the outer Code Mode exec tool/);
+  assert.match(source, /const repoCommand = "pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v"/);
+  assert.match(source, /workdir: \$\{JSON\.stringify\(runtimeContract\.repoRoot\)\}/);
 });
 
 test("all local V3 agent-exec entrypoints reject direct Code Mode", () => {
