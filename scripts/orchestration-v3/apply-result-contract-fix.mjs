@@ -13,32 +13,6 @@ if (!source.includes(parserImport)) {
   source = source.replace(importAnchor, `${importAnchor}\n${parserImport}`);
 }
 
-const oldFunctions = `function extractFinalText(envelope) {
-  const seen = new Set();
-  function walk(value) {
-    if (!value || typeof value !== "object" || seen.has(value)) return null;
-    seen.add(value);
-    for (const key of ["finalAssistantVisibleText", "finalAssistantRawText", "final", "text", "reply"]) {
-      if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
-    }
-    for (const child of Object.values(value)) {
-      const found = walk(child);
-      if (found) return found;
-    }
-    return null;
-  }
-  return walk(envelope) ?? "";
-}
-function parseResult(text) {
-  const raw = String(text ?? "").trim().replace(/^\\`\\`\\`json\\s*/i, "").replace(/\\s*\\`\\`\\`$/i, "");
-  const value = JSON.parse(raw);
-  if (!value || typeof value !== "object" || !["PASS", "BLOCKED", "FAILED"].includes(String(value.STATUS ?? "").toUpperCase())) {
-    throw new Error("INVALID_ORCHESTRATION_RESULT");
-  }
-  return { ...resultBase(String(value.STATUS).toUpperCase(), String(value.SUMMARY ?? "")), ...value };
-}
-`;
-
 if (source.includes("function extractFinalText(envelope)")) {
   const start = source.indexOf("function extractFinalText(envelope)");
   const endMarker = "function sanitizeCloudEnv(baseEnv)";
