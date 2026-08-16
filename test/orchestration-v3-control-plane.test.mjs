@@ -94,8 +94,12 @@ test("V3 worker requires real repo-root tools from an isolated OpenClaw workspac
   assert.match(worker, /Never initialize, clean, delete, or reseed the repo/);
   assert.match(worker, /Every repo command must target the absolute Repo path above/);
   assert.match(worker, /EXECUTION_HANDSHAKE_V1/);
-  assert.match(worker, /cd \$\{JSON\.stringify\(runtimeContract\.repoRoot\)\} && pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v/);
-  assert.match(worker, /Immediately use the exec tool/);
+  assert.match(worker, /const repoCommand = "pwd && git rev-parse --show-toplevel && git status --short --branch && git remote -v"/);
+  assert.match(worker, /openclaw:core:exec/);
+  assert.match(worker, /tools\.callValue/);
+  assert.match(worker, /"--code-mode", "code"/);
+  assert.doesNotMatch(worker, /"--code-mode", "direct"/);
+  assert.match(worker, /Immediately invoke the outer Code Mode exec tool/);
   assert.match(worker, /ORCH_WORKTREE_ROOT/);
   assert.match(worker, /cwd: runtimeContract\.agentWorkspace/);
   assert.match(worker, /runnerPath = path\.join\(ORCHESTRATION_V3\.runtime\.root/);
