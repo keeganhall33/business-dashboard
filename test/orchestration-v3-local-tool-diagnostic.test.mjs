@@ -25,11 +25,13 @@ test("standalone diagnostic pins Ollama qwen3.5 and isolates through controlled 
   assert.match(source, /git status --short --branch/);
   assert.match(source, /createObservedExecutionHarness/);
   assert.match(source, /MISSING_OBSERVED_GIT_EXECUTION/);
+  assert.match(source, /LEGACY_AGENT_LOCAL_MESSAGE/);
   assert.doesNotMatch(source, /watcher\.mjs|worker\.mjs|editLabels|postComment|api\.github\.com|\bissue\s+(?:edit|comment)\b/);
 });
 
-test("diagnostic detects modern and legacy agent exec flag surfaces", () => {
+test("diagnostic detects modern agent exec and 2026.7.1 legacy agent flag surfaces", () => {
   const modern = parseExecCapabilities(`
+    Usage: openclaw agent exec [options] <prompt>
     --isolated
     --auth-env-only
     --model <provider/model>
@@ -40,6 +42,9 @@ test("diagnostic detects modern and legacy agent exec flag surfaces", () => {
     --timeout <seconds>
   `);
   assert.deepEqual(modern, {
+    execSubcommand: true,
+    local: false,
+    message: false,
     isolated: true,
     authEnvOnly: true,
     model: true,
@@ -51,21 +56,31 @@ test("diagnostic detects modern and legacy agent exec flag surfaces", () => {
   });
 
   const legacy = parseExecCapabilities(`
-    --model <provider/model>
-    --code-mode <mode>
-    --local-model-lean
-    --cwd <dir>
+    Usage: openclaw agent [options]
+    --local
+    -m, --message <text>
+    --model <id>
     --json
     --timeout <seconds>
   `);
+  assert.equal(legacy.execSubcommand, false);
+  assert.equal(legacy.local, true);
+  assert.equal(legacy.message, true);
   assert.equal(legacy.isolated, false);
   assert.equal(legacy.authEnvOnly, false);
   assert.equal(legacy.model, true);
-  assert.equal(legacy.codeMode, true);
+  assert.equal(legacy.codeMode, false);
 });
 
-test("legacy CLI invocation omits unsupported isolation flags instead of failing parser", () => {
-  const capabilities = parseExecCapabilities(`--model <provider/model>\n--code-mode <mode>\n--cwd <dir>\n--json\n--timeout <seconds>`);
+test("2026.7.1-style CLI uses embedded local message path instead of agent exec", () => {
+  const capabilities = parseExecCapabilities(`
+    Usage: openclaw agent [options]
+    --local
+    -m, --message <text>
+    --model <id>
+    --json
+    --timeout <seconds>
+  `);
   const invocation = buildExecInvocation({
     capabilities,
     prompt: "diagnostic",
@@ -73,6 +88,36 @@ test("legacy CLI invocation omits unsupported isolation flags instead of failing
     timeoutSeconds: 120
   });
   assert.equal(invocation.supported, true);
+  assert.equal(invocation.mode, "LEGACY_AGENT_LOCAL_MESSAGE");
+  assert.equal(invocation.toolMode, "direct");
+  assert.equal(invocation.promptIndex, 3);
+  assert.deepEqual(invocation.args, [
+    "agent", "--local", "--message", "diagnostic",
+    "--model", "ollama/qwen3.5:9b",
+    "--json", "--timeout", "120"
+  ]);
+  assert.equal(invocation.args.includes("exec"), false);
+  assert.equal(invocation.args.includes("--isolated"), false);
+  assert.equal(invocation.args.includes("--auth-env-only"), false);
+});
+
+test("modern CLI keeps agent exec path and only passes supported flags", () => {
+  const capabilities = parseExecCapabilities(`
+    Usage: openclaw agent exec [options] <prompt>
+    --model <provider/model>
+    --code-mode <mode>
+    --cwd <dir>
+    --json
+    --timeout <seconds>
+  `);
+  const invocation = buildExecInvocation({
+    capabilities,
+    prompt: "diagnostic",
+    controlWorkspace: "/tmp/workspace",
+    timeoutSeconds: 120
+  });
+  assert.equal(invocation.supported, true);
+  assert.equal(invocation.mode, "AGENT_EXEC");
   assert.equal(invocation.toolMode, "code");
   assert.equal(invocation.args.includes("--isolated"), false);
   assert.equal(invocation.args.includes("--auth-env-only"), false);
