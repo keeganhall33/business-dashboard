@@ -3,14 +3,18 @@ import fs from "node:fs";
 import test from "node:test";
 import { classifyDiagnostic, parseAgentMeta } from "../scripts/orchestration-v3/diagnose-local-tool.mjs";
 
-test("standalone diagnostic is pinned to isolated Ollama qwen3.5 and has no scheduler/GitHub mutation path", () => {
+test("standalone diagnostic is pinned to isolated Ollama qwen3.5 and compact Code Mode", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/diagnose-local-tool.mjs", "utf8");
   assert.match(source, /const MODEL = "ollama\/qwen3\.5:9b"/);
   assert.match(source, /"--isolated", "--auth-env-only"/);
   assert.match(source, /"--model", MODEL/);
-  assert.match(source, /"--code-mode", "direct"/);
+  assert.match(source, /"--code-mode", "code"/);
+  assert.doesNotMatch(source, /"--code-mode", "direct"/);
   assert.match(source, /"--local-model-lean"/);
   assert.match(source, /OPENCLAW_FALLBACK_MODELS: ""/);
+  assert.match(source, /openclaw:core:exec/);
+  assert.match(source, /tools\.callValue/);
+  assert.match(source, /Never place raw shell directly in the outer Code Mode exec tool/);
   assert.match(source, /git status --short --branch/);
   assert.match(source, /createObservedExecutionHarness/);
   assert.match(source, /MISSING_OBSERVED_GIT_EXECUTION/);
