@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const MODEL = "ollama/qwen3.5:9b";
@@ -5,6 +6,15 @@ const MODEL = "ollama/qwen3.5:9b";
 function hasFlag(helpText, flag) {
   const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[\\s,])${escaped}(?=[\\s=<]|$)`, "m").test(String(helpText ?? ""));
+}
+
+function legacySessionKey({ sessionKey, controlWorkspace, prompt }) {
+  if (sessionKey) return String(sessionKey);
+  const digest = createHash("sha256")
+    .update(`${String(controlWorkspace ?? "")}\n${String(prompt ?? "")}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `agent:main:jeeves-v3-${digest}`;
 }
 
 export function parseWorkerExecCapabilities(helpText) {
@@ -43,12 +53,13 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
     if (!capabilities.local || !capabilities.message) {
       return { supported: false, reason: "OPENCLAW_CLI_MISSING_LOCAL_MESSAGE_PATH", args: [], mode: null, codeMode: false, promptIndex: null };
     }
-    if (!capabilities.sessionKey || !sessionKey) {
+    if (!capabilities.sessionKey) {
       return { supported: false, reason: "OPENCLAW_CLI_MISSING_SESSION_SELECTOR", args: [], mode: null, codeMode: false, promptIndex: null };
     }
+    const resolvedSessionKey = legacySessionKey({ sessionKey, controlWorkspace, prompt });
     const args = [
       "agent", "--local",
-      "--session-key", sessionKey,
+      "--session-key", resolvedSessionKey,
       "--message", prompt,
       "--model", MODEL
     ];
@@ -60,7 +71,8 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
       args,
       mode: "LEGACY_AGENT_LOCAL_MESSAGE",
       codeMode: false,
-      promptIndex: 5
+      promptIndex: 5,
+      sessionKey: resolvedSessionKey
     };
   }
 
@@ -79,7 +91,8 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
     args,
     mode: capabilities.codeMode ? "AGENT_EXEC_CODE_MODE" : "AGENT_EXEC_DIRECT",
     codeMode: Boolean(capabilities.codeMode),
-    promptIndex: 2
+    promptIndex: 2,
+    sessionKey: null
   };
 }
 
