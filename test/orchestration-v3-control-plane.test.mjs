@@ -95,3 +95,15 @@ test("V3 worker requires real repo-root tools from an isolated OpenClaw workspac
   assert.match(prepare, /OPENCLAW_WORKSPACE_POINTS_AT_GIT_WORKTREE/);
   assert.match(prepare, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
 });
+
+test("V3 bootstrap quiesces watcher and workers before worktree preparation", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/bootstrap-host.mjs", "utf8");
+  const quiesce = source.indexOf("=== V3 BOOTSTRAP: QUIESCE EXISTING CONTROL PLANE ===");
+  const prepare = source.indexOf("=== V3 BOOTSTRAP: SAFE PREPARE ===");
+  assert.ok(quiesce >= 0 && prepare > quiesce);
+  assert.match(source, /bootout/);
+  assert.match(source, /scripts\/orchestration-v3\/worker\.mjs/);
+  assert.match(source, /scripts\/orchestration-run-issue-openclaw\.mjs/);
+  assert.match(source, /openclaw agent --local --agent local-/);
+  assert.match(source, /SIGKILL/);
+});
