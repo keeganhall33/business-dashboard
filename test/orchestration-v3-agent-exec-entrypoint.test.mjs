@@ -60,10 +60,13 @@ test("V3 requires a model-observed repo-preflight handshake before implementatio
   assert.match(source, /git rev-parse --show-toplevel/);
   assert.match(source, /git status --short --branch/);
   assert.match(source, /git remote -v/);
+  assert.match(source, /openclaw:core:exec/);
+  assert.match(source, /tools\.callValue/);
   assert.match(source, /if \(!handshakeEvidence\.repoPreflightObserved\)/);
   assert.match(source, /EXECUTION_HANDSHAKE_MISSING_OBSERVED_REPO_PREFLIGHT/);
   assert.match(source, /"--model", ORCHESTRATION_V3\.model\.id/);
-  assert.match(source, /"--code-mode", "direct"/);
+  assert.match(source, /"--code-mode", "code"/);
+  assert.doesNotMatch(source, /"--code-mode", "direct"/);
   assert.doesNotMatch(source, /openai\//i);
 });
 
