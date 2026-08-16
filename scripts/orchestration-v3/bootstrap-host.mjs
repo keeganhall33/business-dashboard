@@ -30,6 +30,21 @@ function requeue(issueNumber) {
   }
   if (!present.has("orch:ready")) run("gh", ["issue", "edit", String(issueNumber), "--repo", REPO, "--add-label", "orch:ready"]);
 }
+function bestEffort(exe, args, options = {}) {
+  return spawnSync(exe, args, { encoding: "utf8", timeout: 60_000, ...options });
+}
+function matchingPids(pattern) {
+  const result = bestEffort("pgrep", ["-f", pattern]);
+  if (result.status !== 0) return [];
+  return String(result.stdout ?? "").trim().split(/\s+/).map(Number).filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+}
+function terminatePattern(pattern) {
+  const initial = matchingPids(pattern);
+  for (const pid of initial) {
+    try { process.kill(pid, "SIGTERM"); } catch {}
+  }
+  return initial;
+}
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 const sourceRoot = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
@@ -57,6 +72,24 @@ try {
     "scripts/orchestration-v3/bootstrap-host.mjs"
   ]) runLive(process.execPath, ["--check", file], { cwd: tempRoot });
   runLive(process.execPath, ["--test", "test/orchestration-v3-control-plane.test.mjs"], { cwd: tempRoot });
+
+  console.log("=== V3 BOOTSTRAP: QUIESCE EXISTING CONTROL PLANE ===");
+  const uid = process.getuid();
+  bestEffort("launchctl", ["bootout", `gui/${uid}/${V3_LABEL}`]);
+  bestEffort("launchctl", ["bootout", `gui/${uid}/com.keegan.jeeves.orchestration-watch`]);
+  const terminated = {
+    watchers: terminatePattern("scripts/orchestration-v3/watcher.mjs"),
+    workers: terminatePattern("scripts/orchestration-v3/worker.mjs"),
+    runners: terminatePattern("scripts/orchestration-run-issue-openclaw.mjs"),
+    localAgents: terminatePattern("openclaw agent --local --agent local-")
+  };
+  await sleep(1500);
+  for (const pattern of ["scripts/orchestration-v3/watcher.mjs", "scripts/orchestration-v3/worker.mjs", "scripts/orchestration-run-issue-openclaw.mjs", "openclaw agent --local --agent local-"]) {
+    for (const pid of matchingPids(pattern)) {
+      try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+  }
+  console.log(JSON.stringify({ status: "QUIESCED", terminated }, null, 2));
 
   console.log("=== V3 BOOTSTRAP: SAFE PREPARE ===");
   runLive(process.execPath, ["scripts/orchestration-v3/prepare-host.mjs"], { cwd: tempRoot });
