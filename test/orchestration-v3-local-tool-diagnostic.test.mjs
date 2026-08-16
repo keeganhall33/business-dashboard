@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { classifyDiagnostic, parseAgentMeta } from "../scripts/orchestration-v3/diagnose-local-tool.mjs";
+import { classifyDiagnostic, isMainModule, parseAgentMeta } from "../scripts/orchestration-v3/diagnose-local-tool.mjs";
 
 test("standalone diagnostic is pinned to isolated Ollama qwen3.5 and has no scheduler/GitHub mutation path", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/diagnose-local-tool.mjs", "utf8");
@@ -37,4 +40,13 @@ test("diagnostic only passes with observed git execution and compatible local mo
 test("diagnostic extracts provider/model from OpenClaw JSON envelope", () => {
   const parsed = parseAgentMeta(JSON.stringify({ meta: { agentMeta: { provider: "ollama", model: "qwen3.5:9b" } } }));
   assert.deepEqual(parsed, { provider: "ollama", model: "qwen3.5:9b", parseError: null });
+});
+
+test("diagnostic main-module detection tolerates symlink and path aliases", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "v3-diagnostic-main-"));
+  const real = path.join(temp, "diagnose-local-tool.mjs");
+  const alias = path.join(temp, "alias.mjs");
+  fs.writeFileSync(real, "// fixture\n", "utf8");
+  fs.symlinkSync(real, alias);
+  assert.equal(isMainModule(pathToFileURL(real).href, alias), true);
 });
