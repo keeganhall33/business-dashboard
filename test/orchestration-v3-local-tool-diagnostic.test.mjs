@@ -4,27 +4,112 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { classifyDiagnostic, isMainModule, parseAgentMeta } from "../scripts/orchestration-v3/diagnose-local-tool.mjs";
+import {
+  buildExecInvocation,
+  buildIsolatedEnvironment,
+  classifyDiagnostic,
+  isMainModule,
+  parseAgentMeta,
+  parseExecCapabilities
+} from "../scripts/orchestration-v3/diagnose-local-tool.mjs";
 
-test("standalone diagnostic is pinned to isolated Ollama qwen3.5 and compact Code Mode", () => {
+test("standalone diagnostic pins Ollama qwen3.5 and isolates through controlled temp paths", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/diagnose-local-tool.mjs", "utf8");
   assert.match(source, /const MODEL = "ollama\/qwen3\.5:9b"/);
-  assert.match(source, /"--isolated", "--auth-env-only"/);
-  assert.match(source, /"--model", MODEL/);
-  assert.match(source, /"--code-mode", "code"/);
-  assert.doesNotMatch(source, /"--code-mode", "direct"/);
-  assert.match(source, /"--local-model-lean"/);
+  assert.match(source, /OPENCLAW_HOME/);
+  assert.match(source, /OPENCLAW_STATE_DIR/);
+  assert.match(source, /OPENCLAW_CONFIG_PATH/);
+  assert.match(source, /OPENCLAW_WORKSPACE_DIR/);
   assert.match(source, /OPENCLAW_FALLBACK_MODELS: ""/);
-  assert.match(source, /openclaw:core:exec/);
-  assert.match(source, /tools\.callValue/);
-  assert.match(source, /Never place raw shell directly in the outer Code Mode exec tool/);
+  assert.match(source, /OPENCLAW_LOAD_SHELL_ENV: "0"/);
   assert.match(source, /git status --short --branch/);
   assert.match(source, /createObservedExecutionHarness/);
   assert.match(source, /MISSING_OBSERVED_GIT_EXECUTION/);
   assert.doesNotMatch(source, /watcher\.mjs|worker\.mjs|editLabels|postComment|api\.github\.com|\bissue\s+(?:edit|comment)\b/);
 });
 
-test("diagnostic only passes with observed git execution and compatible local model metadata", () => {
+test("diagnostic detects modern and legacy agent exec flag surfaces", () => {
+  const modern = parseExecCapabilities(`
+    --isolated
+    --auth-env-only
+    --model <provider/model>
+    --code-mode <mode>
+    --local-model-lean
+    --cwd <dir>
+    --json
+    --timeout <seconds>
+  `);
+  assert.deepEqual(modern, {
+    isolated: true,
+    authEnvOnly: true,
+    model: true,
+    codeMode: true,
+    localModelLean: true,
+    cwd: true,
+    json: true,
+    timeout: true
+  });
+
+  const legacy = parseExecCapabilities(`
+    --model <provider/model>
+    --code-mode <mode>
+    --local-model-lean
+    --cwd <dir>
+    --json
+    --timeout <seconds>
+  `);
+  assert.equal(legacy.isolated, false);
+  assert.equal(legacy.authEnvOnly, false);
+  assert.equal(legacy.model, true);
+  assert.equal(legacy.codeMode, true);
+});
+
+test("legacy CLI invocation omits unsupported isolation flags instead of failing parser", () => {
+  const capabilities = parseExecCapabilities(`--model <provider/model>\n--code-mode <mode>\n--cwd <dir>\n--json\n--timeout <seconds>`);
+  const invocation = buildExecInvocation({
+    capabilities,
+    prompt: "diagnostic",
+    controlWorkspace: "/tmp/workspace",
+    timeoutSeconds: 120
+  });
+  assert.equal(invocation.supported, true);
+  assert.equal(invocation.toolMode, "code");
+  assert.equal(invocation.args.includes("--isolated"), false);
+  assert.equal(invocation.args.includes("--auth-env-only"), false);
+  assert.deepEqual(invocation.args.slice(0, 5), ["agent", "exec", "diagnostic", "--model", "ollama/qwen3.5:9b"]);
+});
+
+test("diagnostic environment removes ambient OpenClaw and cloud credentials", () => {
+  const env = buildIsolatedEnvironment({
+    baseEnv: {
+      PATH: "/usr/bin",
+      HOME: "/Users/example",
+      OPENCLAW_PROFILE: "default",
+      OPENAI_API_KEY: "cloud-secret",
+      ANTHROPIC_API_KEY: "cloud-secret-2",
+      OLLAMA_API_KEY: "local-key",
+      OLLAMA_HOST: "http://127.0.0.1:11434"
+    },
+    tempHome: "/tmp/home",
+    stateDir: "/tmp/state",
+    configPath: "/tmp/openclaw.json",
+    controlWorkspace: "/tmp/workspace",
+    harnessEnv: { ORCH_EXECUTION_JOURNAL: "/tmp/journal", PATH: "/tmp/shims:/usr/bin" }
+  });
+  assert.equal(env.OPENAI_API_KEY, undefined);
+  assert.equal(env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(env.OPENCLAW_PROFILE, undefined);
+  assert.equal(env.HOME, "/tmp/home");
+  assert.equal(env.OPENCLAW_HOME, "/tmp/home");
+  assert.equal(env.OPENCLAW_STATE_DIR, "/tmp/state");
+  assert.equal(env.OPENCLAW_CONFIG_PATH, "/tmp/openclaw.json");
+  assert.equal(env.OPENCLAW_WORKSPACE_DIR, "/tmp/workspace");
+  assert.equal(env.OLLAMA_API_KEY, "local-key");
+  assert.equal(env.OLLAMA_HOST, "http://127.0.0.1:11434");
+  assert.equal(env.PATH, "/tmp/shims:/usr/bin");
+});
+
+test("diagnostic only passes with observed git execution and explicit compatible model metadata", () => {
   const evidence = { successfulCommands: ["git status --short --branch"] };
   const pass = classifyDiagnostic({ processResult: { status: 0, error: null }, evidence, agentMeta: { provider: "ollama", model: "qwen3.5:9b" } });
   assert.deepEqual(pass, {
@@ -36,6 +121,7 @@ test("diagnostic only passes with observed git execution and compatible local mo
   });
 
   assert.equal(classifyDiagnostic({ processResult: { status: 0, error: null }, evidence: { successfulCommands: [] }, agentMeta: { provider: "ollama", model: "qwen3.5:9b" } }).reason, "MISSING_OBSERVED_GIT_EXECUTION");
+  assert.equal(classifyDiagnostic({ processResult: { status: 0, error: null }, evidence, agentMeta: { provider: null, model: null } }).reason, "MISSING_PROVIDER_MODEL_EVIDENCE");
   assert.equal(classifyDiagnostic({ processResult: { status: 0, error: null }, evidence, agentMeta: { provider: "openai", model: "gpt-5" } }).reason, "PROVIDER_MISMATCH");
   assert.equal(classifyDiagnostic({ processResult: { status: 0, error: null }, evidence, agentMeta: { provider: "ollama", model: "mistral:latest" } }).reason, "MODEL_MISMATCH");
   assert.equal(classifyDiagnostic({ processResult: { status: null, error: { code: "ETIMEDOUT", message: "spawnSync openclaw ETIMEDOUT" } }, evidence: { successfulCommands: [] }, agentMeta: {} }).reason, "OPENCLAW_PROCESS_TIMEOUT");

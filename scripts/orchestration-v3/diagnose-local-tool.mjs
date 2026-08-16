@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import { createObservedExecutionHarness, readObservedExecutionEvidence } from "./execution-evidence.mjs";
 
 const MODEL = "ollama/qwen3.5:9b";
+const CLOUD_CREDENTIAL_PREFIXES = [
+  "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
+  "GROQ_", "DEEPSEEK_", "PERPLEXITY_", "OPENROUTER_", "COHERE_", "HUGGINGFACE_",
+  "HF_", "TOGETHER_", "CEREBRAS_", "FIREWORKS_", "AZURE_", "BEDROCK_"
+];
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -24,6 +29,24 @@ function findExecutable(candidates) {
     if (probe.status === 0 && probe.stdout.trim()) return probe.stdout.trim();
   }
   return null;
+}
+
+function hasFlag(helpText, flag) {
+  const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[\\s,])${escaped}(?=[\\s=<]|$)`, "m").test(String(helpText ?? ""));
+}
+
+export function parseExecCapabilities(helpText) {
+  return {
+    isolated: hasFlag(helpText, "--isolated"),
+    authEnvOnly: hasFlag(helpText, "--auth-env-only"),
+    model: hasFlag(helpText, "--model"),
+    codeMode: hasFlag(helpText, "--code-mode"),
+    localModelLean: hasFlag(helpText, "--local-model-lean"),
+    cwd: hasFlag(helpText, "--cwd"),
+    json: hasFlag(helpText, "--json"),
+    timeout: hasFlag(helpText, "--timeout")
+  };
 }
 
 export function isMainModule(moduleUrl, argvPath) {
@@ -57,8 +80,8 @@ export function classifyDiagnostic({ processResult, evidence, agentMeta }) {
   const processTimedOut = processResult?.error?.code === "ETIMEDOUT" || /ETIMEDOUT|timed out|timeout/i.test(String(processResult?.error?.message ?? ""));
   const provider = String(agentMeta?.provider ?? "").toLowerCase();
   const model = String(agentMeta?.model ?? "").toLowerCase();
-  const providerCompatible = !provider || provider === "ollama";
-  const modelCompatible = !model || model === "qwen3.5:9b" || model === MODEL;
+  const providerCompatible = provider === "ollama";
+  const modelCompatible = model === "qwen3.5:9b" || model === MODEL;
 
   let status = "PASS";
   let reason = "OBSERVED_LOCAL_TOOL_EXECUTION";
@@ -71,6 +94,9 @@ export function classifyDiagnostic({ processResult, evidence, agentMeta }) {
   } else if (!observedGit) {
     status = "FAILED";
     reason = "MISSING_OBSERVED_GIT_EXECUTION";
+  } else if (!provider || !model) {
+    status = "FAILED";
+    reason = "MISSING_PROVIDER_MODEL_EVIDENCE";
   } else if (!providerCompatible) {
     status = "FAILED";
     reason = "PROVIDER_MISMATCH";
@@ -80,6 +106,70 @@ export function classifyDiagnostic({ processResult, evidence, agentMeta }) {
   }
 
   return { status, reason, observedGit, providerCompatible, modelCompatible };
+}
+
+export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stateDir, configPath, controlWorkspace, harnessEnv = {} }) {
+  const env = { ...baseEnv };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("OPENCLAW_")) delete env[key];
+    if (CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) && /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)) {
+      delete env[key];
+    }
+  }
+  Object.assign(env, harnessEnv, {
+    HOME: tempHome,
+    OPENCLAW_HOME: tempHome,
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_CONFIG_PATH: configPath,
+    OPENCLAW_WORKSPACE_DIR: controlWorkspace,
+    OPENCLAW_LOAD_SHELL_ENV: "0",
+    OPENCLAW_EXEC_SHELL_SNAPSHOT: "0",
+    OPENCLAW_NO_AUTO_UPDATE: "1",
+    OPENCLAW_MODEL: MODEL,
+    OPENCLAW_FALLBACK_MODELS: "",
+    OLLAMA_API_KEY: baseEnv.OLLAMA_API_KEY || "ollama-local"
+  });
+  if (baseEnv.OLLAMA_HOST) env.OLLAMA_HOST = baseEnv.OLLAMA_HOST;
+  return env;
+}
+
+export function buildExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds }) {
+  if (!capabilities.model) {
+    return { supported: false, reason: "OPENCLAW_CLI_MISSING_MODEL_FLAG", args: [], toolMode: null };
+  }
+  const args = ["agent", "exec", prompt];
+  if (capabilities.isolated) args.push("--isolated");
+  if (capabilities.authEnvOnly) args.push("--auth-env-only");
+  args.push("--model", MODEL);
+  const toolMode = capabilities.codeMode ? "code" : "direct";
+  if (capabilities.codeMode) args.push("--code-mode", "code");
+  if (capabilities.localModelLean) args.push("--local-model-lean");
+  if (capabilities.cwd) args.push("--cwd", controlWorkspace);
+  if (capabilities.json) args.push("--json");
+  if (capabilities.timeout) args.push("--timeout", String(timeoutSeconds));
+  return { supported: true, reason: null, args, toolMode };
+}
+
+function buildPrompt({ toolMode, repoRoot }) {
+  const shellCommand = "git status --short --branch";
+  if (toolMode === "code") {
+    const bridgeCall = `return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(shellCommand)}, workdir: ${JSON.stringify(repoRoot)} });`;
+    return [
+      "V3_STANDALONE_TOOL_DIAGNOSTIC_V1.",
+      "Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.",
+      "Immediately invoke the outer Code Mode exec tool exactly once with the following JavaScript. Do not explain, list tools, inspect memory, or answer first.",
+      bridgeCall,
+      "Never place raw shell directly in the outer Code Mode exec tool.",
+      "After the nested shell tool finishes, reply only V3_DIAGNOSTIC_OK."
+    ].join("\n");
+  }
+  return [
+    "V3_STANDALONE_TOOL_DIAGNOSTIC_V1.",
+    "Immediately use the shell exec tool exactly once. Do not explain, list tools, inspect memory, or answer first.",
+    `Run command: ${shellCommand}`,
+    `Use exact workdir: ${repoRoot}`,
+    "After the command finishes, reply only V3_DIAGNOSTIC_OK."
+  ].join("\n");
 }
 
 export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
@@ -93,52 +183,61 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
   if (!openclaw) throw new Error("OPENCLAW_NOT_FOUND");
   const ollama = findExecutable(["/opt/homebrew/bin/ollama", "ollama"]);
 
+  const helpProbe = spawnSync(openclaw, ["agent", "exec", "--help"], { encoding: "utf8", timeout: 10000, maxBuffer: 2 * 1024 * 1024 });
+  const helpText = `${helpProbe.stdout ?? ""}\n${helpProbe.stderr ?? ""}`;
+  const capabilities = parseExecCapabilities(helpText);
+  const versionProbe = spawnSync(openclaw, ["--version"], { encoding: "utf8", timeout: 10000 });
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jeeves-v3-local-tool-diagnostic-"));
+  const tempHome = path.join(tempRoot, "home");
   const controlWorkspace = path.join(tempRoot, "workspace");
   const stateDir = path.join(tempRoot, "state");
+  const configPath = path.join(tempRoot, "openclaw.json");
+  fs.mkdirSync(tempHome, { recursive: true });
   fs.mkdirSync(controlWorkspace, { recursive: true });
   fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(configPath, "{}\n", "utf8");
   fs.writeFileSync(path.join(controlWorkspace, "AGENTS.md"), [
     "# V3 Local Tool Diagnostic",
     `Protected repo: ${resolvedRepoRoot}`,
-    "Code Mode is active. The outer exec tool accepts JavaScript/TypeScript, not raw shell.",
-    "Dispatch shell commands through tools.callValue(\"openclaw:core:exec\", { command, workdir }).",
+    "Execute only the requested harmless git status command against the protected repo.",
     "Do not initialize or modify the protected repo."
   ].join("\n") + "\n", "utf8");
 
   const harness = createObservedExecutionHarness({ issue: "diagnostic", workerId: "single" });
-  const env = {
-    ...process.env,
-    ...harness.envPatch,
-    OPENCLAW_WORKSPACE_DIR: controlWorkspace,
-    OPENCLAW_STATE_DIR: stateDir,
-    OPENCLAW_MODEL: MODEL,
-    OPENCLAW_FALLBACK_MODELS: "",
-    OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local"
-  };
-  const shellCommand = "git status --short --branch";
-  const bridgeCall = `return await tools.callValue("openclaw:core:exec", { command: ${JSON.stringify(shellCommand)}, workdir: ${JSON.stringify(resolvedRepoRoot)} });`;
-  const prompt = [
-    "V3_STANDALONE_TOOL_DIAGNOSTIC_V1.",
-    "Code Mode is active. The model-visible exec tool accepts JavaScript/TypeScript, not raw shell.",
-    "Immediately invoke the outer Code Mode exec tool exactly once with the following JavaScript. Do not explain, list tools, inspect memory, or answer first.",
-    bridgeCall,
-    "Never place raw shell directly in the outer Code Mode exec tool.",
-    "After the nested shell tool finishes, reply only V3_DIAGNOSTIC_OK."
-  ].join("\n");
-  const args = [
-    "agent", "exec", prompt,
-    "--isolated", "--auth-env-only",
-    "--model", MODEL,
-    "--code-mode", "code",
-    "--local-model-lean",
-    "--cwd", controlWorkspace,
-    "--json", "--timeout", String(timeoutSeconds)
-  ];
+  const env = buildIsolatedEnvironment({
+    baseEnv: process.env,
+    tempHome,
+    stateDir,
+    configPath,
+    controlWorkspace,
+    harnessEnv: harness.envPatch
+  });
+
+  const provisionalToolMode = capabilities.codeMode ? "code" : "direct";
+  const prompt = buildPrompt({ toolMode: provisionalToolMode, repoRoot: resolvedRepoRoot });
+  const invocation = buildExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds });
+  if (!invocation.supported) {
+    return {
+      diagnostic: "V3_STANDALONE_TOOL_DIAGNOSTIC_V1",
+      status: "FAILED",
+      reason: invocation.reason,
+      modelRequired: MODEL,
+      cloudFallbackAllowed: false,
+      repoRoot: resolvedRepoRoot,
+      cli: {
+        version: tail(versionProbe.stdout || versionProbe.stderr, 1000).trim(),
+        helpStatus: helpProbe.status,
+        capabilities,
+        helpTail: tail(helpText, 4000)
+      },
+      executionEvidence: readObservedExecutionEvidence(harness.journalPath)
+    };
+  }
 
   const ollamaBefore = ollama ? spawnSync(ollama, ["ps"], { encoding: "utf8", timeout: 10000 }) : null;
   const startedAt = Date.now();
-  const processResult = spawnSync(openclaw, args, {
+  const processResult = spawnSync(openclaw, invocation.args, {
     cwd: controlWorkspace,
     env,
     encoding: "utf8",
@@ -152,7 +251,7 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
   const agentMeta = parseAgentMeta(processResult.stdout);
   const classification = classifyDiagnostic({ processResult, evidence, agentMeta });
 
-  const report = {
+  return {
     diagnostic: "V3_STANDALONE_TOOL_DIAGNOSTIC_V1",
     status: classification.status,
     reason: classification.reason,
@@ -161,9 +260,23 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
     repoRoot: resolvedRepoRoot,
     controlWorkspace,
     stateDir,
+    configPath,
+    isolation: {
+      mode: capabilities.isolated || capabilities.authEnvOnly ? "CLI_FLAGS_PLUS_TEMP_PATHS" : "TEMP_PATHS_AND_SANITIZED_ENV",
+      temporaryHome: tempHome,
+      ambientOpenClawConfigInherited: false,
+      ambientCloudCredentialsStripped: true
+    },
+    cli: {
+      version: tail(versionProbe.stdout || versionProbe.stderr, 1000).trim(),
+      helpStatus: helpProbe.status,
+      capabilities,
+      helpTail: tail(helpText, 4000)
+    },
     invocation: {
       executable: openclaw,
-      args: args.map((value, index) => index === 2 ? "<DIAGNOSTIC_PROMPT>" : value),
+      args: invocation.args.map((value, index) => index === 2 ? "<DIAGNOSTIC_PROMPT>" : value),
+      toolMode: invocation.toolMode,
       timeoutSeconds: Number(timeoutSeconds)
     },
     process: {
@@ -182,7 +295,6 @@ export function runDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
       after: tail(ollamaAfter?.stdout || ollamaAfter?.stderr, 2000)
     }
   };
-  return report;
 }
 
 async function main() {
