@@ -28,16 +28,23 @@ export const ORCHESTRATION_V3 = Object.freeze({
   }),
   workers: Object.freeze({
     "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", aliases: ["LEARNING_INTELLIGENCE", "FINANCIAL_INTELLIGENCE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-a"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-a") }),
-    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-b"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-b") }),
+    "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", aliases: ["LEARNING_INTELLIGENCE", "FINANCIAL_INTELLIGENCE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-b"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-b") }),
     "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-c"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-c") }),
     "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-d"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-d") })
   })
 });
 
-export function workerForStream(stream) {
+export function workerCandidatesForStream(stream) {
   const normalized = String(stream ?? "").trim().toUpperCase();
+  const primary = [];
+  const overflow = [];
   for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
-    if (normalized === cfg.stream || (cfg.aliases ?? []).includes(normalized)) return workerId;
+    if (normalized === cfg.stream) primary.push(workerId);
+    else if ((cfg.aliases ?? []).includes(normalized)) overflow.push(workerId);
   }
-  return null;
+  return [...primary, ...overflow];
+}
+
+export function workerForStream(stream) {
+  return workerCandidatesForStream(stream)[0] ?? null;
 }
