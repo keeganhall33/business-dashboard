@@ -20,6 +20,9 @@ function issue(number) {
 function readyIssues() {
   return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title"]));
 }
+function runningIssues() {
+  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.running, "--limit", "100", "--json", "number,title"]));
+}
 function field(body, name) {
   const m = String(body ?? "").match(new RegExp(`\\*\\*${name}:\\*\\*\\s*([^\\n]+)`, "i"));
   return m ? m[1].trim() : null;
@@ -60,6 +63,26 @@ function reconcileLease(workerId) {
   }));
   return null;
 }
+function activeLeaseIssueNumbers() {
+  const active = new Set();
+  for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
+    const lease = reconcileLease(workerId);
+    if (lease) active.add(Number(lease.issueNumber));
+  }
+  return active;
+}
+function reconcileRunningClaims() {
+  const activeIssues = activeLeaseIssueNumbers();
+  for (const candidate of runningIssues()) {
+    if (activeIssues.has(Number(candidate.number))) continue;
+    gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.ready]);
+    console.log(JSON.stringify({
+      event: "STALE_RUNNING_REQUEUED",
+      issueNumber: Number(candidate.number),
+      reason: "NO_AUTHORITATIVE_LIVE_LEASE"
+    }));
+  }
+}
 function claim(issueNumber) {
   gh(["issue", "edit", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.ready, "--add-label", ORCHESTRATION_V3.queue.running]);
 }
@@ -85,7 +108,7 @@ const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
 if (!runtime.healthy) throw new Error(`CANONICAL_RUNTIME_UNHEALTHY:${runtime.errors.join(",")}`);
 
 async function poll() {
-  for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) reconcileLease(workerId);
+  reconcileRunningClaims();
   const ready = readyIssues();
   for (const candidate of ready) {
     const snapshot = issue(candidate.number);
