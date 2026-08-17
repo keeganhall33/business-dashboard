@@ -15,7 +15,7 @@ export const ORCHESTRATION_V3 = Object.freeze({
     base: "agent-orchestration"
   }),
   runtime: Object.freeze({
-    root: path.join(OPENCLAW_ROOT, ".openclaw").replace(/\/\.openclaw$/, ".openclaw"),
+    root: path.join(OPENCLAW_ROOT, "runtime-v3", "business-dashboard"),
     stateRoot: path.join(OPENCLAW_ROOT, "state", "orchestration-v3"),
     backupRoot: path.join(OPENCLAW_ROOT, "orchestration-v3-backups"),
     logRoot: path.join(os.homedir(), "Library", "Logs"),
