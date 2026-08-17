@@ -34,8 +34,19 @@ export const ORCHESTRATION_V3 = Object.freeze({
   })
 });
 
+const OVERFLOW_PREFERENCE = Object.freeze({
+  LEARNING_INTELLIGENCE: ["local-b", "local-a"],
+  FINANCIAL_INTELLIGENCE: ["local-b", "local-a"]
+});
+
 export function workerCandidatesForStream(stream) {
   const normalized = String(stream ?? "").trim().toUpperCase();
+  const preferredOverflow = OVERFLOW_PREFERENCE[normalized];
+  if (preferredOverflow) return preferredOverflow.filter((workerId) => {
+    const cfg = ORCHESTRATION_V3.workers[workerId];
+    return cfg && (normalized === cfg.stream || (cfg.aliases ?? []).includes(normalized));
+  });
+
   const primary = [];
   const overflow = [];
   for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
