@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot } from "./preflight.mjs";
+import { integrateValidatedPrQueue } from "./integration-queue.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -134,6 +135,13 @@ const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
 if (!runtime.healthy) throw new Error(`CANONICAL_RUNTIME_UNHEALTHY:${runtime.errors.join(",")}`);
 
 async function poll() {
+  try {
+    const integration = integrateValidatedPrQueue({ maxMerges: 1 });
+    console.log(JSON.stringify(integration));
+  } catch (err) {
+    if (isTransientGhError(err)) console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
+    else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
+  }
   reconcileRunningClaims();
   const ready = readyIssues().sort((left, right) => {
     const leftPriority = RECOVERY_PRIORITY_ISSUES.get(Number(left.number)) ?? Number.MAX_SAFE_INTEGER;
