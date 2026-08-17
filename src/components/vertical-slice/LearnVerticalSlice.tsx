@@ -1,4 +1,5 @@
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import { CapabilityRegistryCard } from "./CapabilityRegistryCard";
 import { VerticalSliceCard, Pill, DefinitionRow } from "./VerticalSliceCard";
 
 export function LearnVerticalSlice({ data }: { data: DashboardOverviewResponse }) {
@@ -39,6 +40,8 @@ export function LearnVerticalSlice({ data }: { data: DashboardOverviewResponse }
           <li>Whether source freshness is deteriorating and recommendations should be suppressed.</li>
         </ul>
       </VerticalSliceCard>
+
+      <CapabilityRegistryCard />
 
       <VerticalSliceCard title="Current data" subtitle="Shows whether the system has enough evidence to propose next steps.">
         <div className="text-sm text-zinc-300">Top actions available: {hasAnyActions ? "Yes" : "No"}</div>
