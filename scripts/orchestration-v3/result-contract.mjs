@@ -1,5 +1,11 @@
 const VALID_STATUSES = new Set(["PASS", "BLOCKED", "FAILED"]);
-const AUTHORITATIVE_KEYS = ["finalAssistantVisibleText", "finalAssistantRawText", "final"];
+const AUTHORITATIVE_KEYS = [
+  "finalAssistantVisibleText",
+  "finalAssistantRawText",
+  "final",
+  "outputText",
+  "output_text"
+];
 const GENERIC_KEYS = ["text", "reply"];
 
 function isObject(value) {
@@ -82,6 +88,42 @@ function collectStrings(envelope, keys) {
   return values;
 }
 
+function collectAssistantContent(envelope) {
+  const seen = new Set();
+  const values = [];
+
+  function pushContent(content) {
+    if (typeof content === "string" && content.trim()) {
+      values.push(content.trim());
+      return;
+    }
+    if (!Array.isArray(content)) return;
+    for (const block of content) {
+      if (typeof block === "string" && block.trim()) values.push(block.trim());
+      else if (isObject(block)) {
+        for (const key of ["text", "content", "output_text"]) {
+          if (typeof block[key] === "string" && block[key].trim()) values.push(block[key].trim());
+        }
+      }
+    }
+  }
+
+  function walk(value) {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    if (String(value.role ?? "").toLowerCase() === "assistant") pushContent(value.content);
+    for (const child of Object.values(value)) walk(child);
+  }
+
+  walk(envelope);
+  return values;
+}
+
+function uniqueContracts(texts) {
+  const contracts = texts.flatMap(parseCandidatesFromText);
+  return new Map(contracts.map((value) => [JSON.stringify(value), value]));
+}
+
 export function parseOrchestrationResultText(text) {
   const candidates = parseCandidatesFromText(text);
   if (candidates.length === 0) throw new Error("NO_VALID_ORCHESTRATION_RESULT");
@@ -90,15 +132,15 @@ export function parseOrchestrationResultText(text) {
 }
 
 export function extractOrchestrationResult(envelope) {
-  const authoritativeTexts = collectStrings(envelope, AUTHORITATIVE_KEYS);
-  const authoritative = authoritativeTexts.flatMap(parseCandidatesFromText);
-  const authoritativeUnique = new Map(authoritative.map((value) => [JSON.stringify(value), value]));
+  const authoritativeTexts = [
+    ...collectStrings(envelope, AUTHORITATIVE_KEYS),
+    ...collectAssistantContent(envelope)
+  ];
+  const authoritativeUnique = uniqueContracts(authoritativeTexts);
   if (authoritativeUnique.size === 1) return [...authoritativeUnique.values()][0];
   if (authoritativeUnique.size > 1) throw new Error("AMBIGUOUS_AUTHORITATIVE_ORCHESTRATION_RESULTS");
 
-  const genericTexts = collectStrings(envelope, GENERIC_KEYS);
-  const generic = genericTexts.flatMap(parseCandidatesFromText);
-  const genericUnique = new Map(generic.map((value) => [JSON.stringify(value), value]));
+  const genericUnique = uniqueContracts(collectStrings(envelope, GENERIC_KEYS));
   if (genericUnique.size === 1) return [...genericUnique.values()][0];
   if (genericUnique.size > 1) throw new Error("AMBIGUOUS_ORCHESTRATION_RESULTS");
   throw new Error("NO_VALID_ORCHESTRATION_RESULT");
