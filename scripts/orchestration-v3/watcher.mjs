@@ -10,6 +10,7 @@ function arg(name, fallback = null) {
 }
 const intervalSeconds = Number(arg("--interval", "60"));
 if (!Number.isFinite(intervalSeconds) || intervalSeconds < 20) throw new Error("--interval must be >=20");
+const RECOVERY_PRIORITY_ISSUES = new Map([537, 535, 536, 538, 416, 542].map((issueNumber, index) => [issueNumber, index]));
 
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -134,7 +135,12 @@ if (!runtime.healthy) throw new Error(`CANONICAL_RUNTIME_UNHEALTHY:${runtime.err
 
 async function poll() {
   reconcileRunningClaims();
-  const ready = readyIssues();
+  const ready = readyIssues().sort((left, right) => {
+    const leftPriority = RECOVERY_PRIORITY_ISSUES.get(Number(left.number)) ?? Number.MAX_SAFE_INTEGER;
+    const rightPriority = RECOVERY_PRIORITY_ISSUES.get(Number(right.number)) ?? Number.MAX_SAFE_INTEGER;
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    return Number(left.number) - Number(right.number);
+  });
   for (const candidate of ready) {
     try {
       const snapshot = issue(candidate.number);
