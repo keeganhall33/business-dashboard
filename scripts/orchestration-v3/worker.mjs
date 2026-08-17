@@ -36,8 +36,33 @@ if (!Number.isInteger(issue) || issue <= 0 || !workerId || !ORCHESTRATION_V3.wor
   process.exit(2);
 }
 
-function gh(args) {
-  return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function isTransientGhError(err) {
+  const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
+  return /\b(502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable/i.test(text);
+}
+function gh(args, { attempts = 3 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
+    } catch (err) {
+      lastError = err;
+      if (!isTransientGhError(err) || attempt === attempts) throw err;
+      const delayMs = 1000 * 2 ** (attempt - 1);
+      console.error(JSON.stringify({
+        event: "WORKER_GH_TRANSIENT_RETRY",
+        attempt,
+        delayMs,
+        command: args.slice(0, 3),
+        error: err instanceof Error ? err.message : String(err)
+      }));
+      sleepSync(delayMs);
+    }
+  }
+  throw lastError;
 }
 function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
