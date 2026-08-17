@@ -51,14 +51,25 @@ test("V3 worker uses absolute observed wrappers for all repo execution evidence"
   assert.match(source, /MISSING_OBSERVED_GIT_MUTATION_COMMAND/);
 });
 
-test("V3 worker fails closed on cloud/provider/model/fallback contamination", () => {
+test("V3 keeps Ollama acceptance strict while allowing product escalation", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+
+  // Local acceptance path remains strict.
   assert.match(source, /sanitizeCloudEnv/);
   assert.match(source, /OPENCLAW_FALLBACK_MODELS = ""/);
   assert.match(source, /PROVIDER_MISMATCH/);
   assert.match(source, /MODEL_MISMATCH/);
   assert.match(source, /FALLBACK_NOT_PROVEN_FALSE/);
-  assert.match(source, /ESCALATED_TO_CLOUD: false/);
+
+  // #337 is the only strict 4\/4 Ollama proof.
+  assert.match(source, /issue !== 337/);
+
+  // Normal product work may escalate after its bounded local failure.
+  assert.match(source, /PRODUCT_ESCALATION_START/);
+  assert.match(source, /"agent",\s*"--agent",\s*"main"/);
+  assert.match(source, /LOCAL_FIRST_WITH_CLOUD_ESCALATION/);
+  assert.match(source, /ESCALATED_TO_CLOUD:\s*true/);
+  assert.match(source, /Machine evidence rejected an unproven stronger-path PASS/);
 });
 
 test("V3 worker preserves human approval and real mutation gates", () => {
