@@ -1,4 +1,6 @@
 import type { CreativeDirectionWorkspaceFixtureV1 } from "@/lib/creative-direction/dashboard-refresh-fixtures";
+import { CreativeVisualizationPanel } from "@/components/creative-visualization/CreativeVisualizationPanel";
+import { CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1 } from "@/lib/creative-visualization/fixtures";
 
 export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWorkspaceFixtureV1 }) {
   const rec = data.current_recommendation;
@@ -58,6 +60,8 @@ export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWo
           <InfoBlock title="Creative experiments" items={data.creative_experiments} />
           <InfoBlock title="Creative learnings" items={data.creative_learnings} />
         </section>
+
+        <CreativeVisualizationPanel comparisonSet={CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1} />
 
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
