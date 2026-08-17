@@ -6,6 +6,8 @@ import {
   sortDirectionsByStage,
   toDashboardConsumableRoadmap
 } from "@/lib/creative-direction-v1/roadmap";
+import { CREATIVE_DIRECTION_CANDIDATE_REQUIRED_FIELDS } from "@/lib/creative-direction-v1/contracts";
+import { creativeDirectionMarketBaselineCoverage } from "@/lib/creative-direction-v1/fixtures";
 
 test("fixture contract includes market evidence metadata and five executable candidate directions", () => {
   const roadmap = getCreativeDirectionRoadmap();
@@ -21,14 +23,43 @@ test("fixture contract includes market evidence metadata and five executable can
   assert.ok(evidenceClasses.has("COLLECTOR_BEHAVIOR"));
 
   for (const direction of roadmap.directions) {
-    assert.ok(direction.DIRECTION_ID);
-    assert.ok(direction.MEDIUM);
+    for (const field of CREATIVE_DIRECTION_CANDIDATE_REQUIRED_FIELDS) {
+      const value = direction[field];
+      assert.notEqual(value, undefined, `${direction.DIRECTION_ID} missing ${field}`);
+      assert.notEqual(value, null, `${direction.DIRECTION_ID} null ${field}`);
+      if (typeof value === "string") assert.ok(value.length > 0, `${direction.DIRECTION_ID} empty ${field}`);
+      if (Array.isArray(value)) assert.ok(value.length > 0, `${direction.DIRECTION_ID} empty ${field}`);
+    }
     assert.ok(direction.MATERIALS.length > 0);
     assert.ok(direction.COMPOSITION.length > 20);
     assert.ok(direction.PALETTE_COLOR_LOGIC.length > 20);
     assert.ok(direction.SUCCESS_CRITERIA.length >= 3);
     assert.ok(direction.WHAT_WOULD_CHANGE_THE_RECOMMENDATION.length >= 3);
     assert.ok(direction.evidenceIds.length > 0);
+  }
+});
+
+test("market baseline fixture maps every required evidence class to cited metadata", () => {
+  const roadmap = getCreativeDirectionRoadmap();
+  const evidenceById = new Map(roadmap.evidence.map((item) => [item.evidenceId, item]));
+
+  assert.deepEqual(Object.values(creativeDirectionMarketBaselineCoverage), [
+    "evidence-art-basel-ubs-hnw-painting-demand",
+    "evidence-auction-category-sculpture",
+    "evidence-works-on-paper-collector-category",
+    "evidence-younger-collector-digital-expansion",
+    "evidence-direct-from-artist-expanded",
+    "evidence-surrealism-market-strength"
+  ]);
+
+  for (const evidenceId of Object.values(creativeDirectionMarketBaselineCoverage)) {
+    const evidence = evidenceById.get(evidenceId);
+    assert.ok(evidence, `${evidenceId} is missing from roadmap evidence`);
+    assert.ok(evidence.title.length > 20);
+    assert.ok(evidence.publisher.length > 0);
+    assert.ok(evidence.claimSummary.length > 40);
+    assert.equal(evidence.provenance.collectionMethod, "FIXTURE_BASELINE");
+    assert.match(evidence.provenance.citationLabel, /fixture/i);
   }
 });
 

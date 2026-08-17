@@ -1,5 +1,14 @@
 import type { CreativeDirectionCandidate, CreativeDirectionRoadmap, EvidenceReference } from "./contracts";
 
+export const creativeDirectionMarketBaselineCoverage = {
+  paintingsRemainDominantHnwCollectorPurchasing: "evidence-art-basel-ubs-hnw-painting-demand",
+  sculptureMajorPhysicalMedium: "evidence-auction-category-sculpture",
+  worksOnPaperMeaningfulCollectorCategory: "evidence-works-on-paper-collector-category",
+  youngerCollectorDigitalParticipationExpanded: "evidence-younger-collector-digital-expansion",
+  directFromArtistStudioBuyingExpanded: "evidence-direct-from-artist-expanded",
+  surrealismMarketStrengthAndContemporaryInfluence: "evidence-surrealism-market-strength"
+} as const;
+
 export const creativeDirectionEvidenceFixtures: EvidenceReference[] = [
   {
     evidenceId: "evidence-art-basel-ubs-hnw-painting-demand",
