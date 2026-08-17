@@ -273,10 +273,212 @@ if (parsed.STATUS !== "PASS" && evidenceErrors.length > 0) {
   finalValue.BLOCKERS = [...new Set([...(finalValue.BLOCKERS ?? []), ...evidenceErrors])];
 }
 
-postResult(finalValue, { provider: machine.provider, model: machine.model, fallbackUsed: machine.fallbackUsed, toolCalls: machine.toolCalls, toolFailures: machine.toolFailures, executionEvidence, capabilities, invocationMode: invocation.mode });
+let resultMachine = machine;
+let resultExecutionEvidence = executionEvidence;
+let resultInvocationMode = invocation.mode;
+let resultRealMutationObserved = realMutationObserved;
+let resultChangedPrs = changedPrs;
+
+/*
+ * Product delivery and the background 4/4 Ollama proof are intentionally
+ * separate concerns.
+ *
+ * #337 remains strict Ollama-only acceptance.
+ * Every other non-human task may use the approved stronger coding path after
+ * one bounded local failure.
+ */
+if (finalValue.STATUS !== "PASS" && issue !== 337) {
+  const localFailureReason =
+    (finalValue.BLOCKERS ?? [])[0] ??
+    (run.error?.code === "ETIMEDOUT" ? "OPENCLAW_PROCESS_TIMEOUT" : null) ??
+    "LOCAL_EVIDENCE_FAILURE";
+
+  const cloudPrompt = prompt.replace(
+    "Cloud use is forbidden. Do not request or use OpenAI/Anthropic/Gemini/etc.",
+    [
+      "The bounded local Ollama attempt failed.",
+      "You are now the APPROVED STRONGER CODING PATH for this normal product task.",
+      "Complete the implementation now.",
+      "Preserve every repository, test, diff, mutation, PR, and human-approval safety gate above.",
+      "Do not perform production/business actions."
+    ].join(" ")
+  );
+
+  const cloudEnv = { ...process.env, ...harness.envPatch };
+  if (process.env.HOME) {
+    cloudEnv.GH_CONFIG_DIR =
+      process.env.GH_CONFIG_DIR || path.join(process.env.HOME, ".config", "gh");
+    cloudEnv.GIT_CONFIG_GLOBAL =
+      process.env.GIT_CONFIG_GLOBAL || path.join(process.env.HOME, ".gitconfig");
+  }
+
+  console.log(JSON.stringify({
+    event: "PRODUCT_ESCALATION_START",
+    issue,
+    workerId,
+    reason: localFailureReason,
+    cloudAgent: "main"
+  }));
+
+  const cloudRun = spawnSync(
+    openclaw,
+    [
+      "agent",
+      "--agent", "main",
+      "--message", cloudPrompt,
+      "--json",
+      "--timeout", "900"
+    ],
+    {
+      cwd: controlWorkspace,
+      env: cloudEnv,
+      encoding: "utf8",
+      timeout: 950_000,
+      maxBuffer: 24 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  const cloudExecutionEvidence =
+    readObservedExecutionEvidence(harness.journalPath);
+  const cloudMachine = parseMachineEnvelope(cloudRun.stdout);
+
+  const cloudAfterHead = git(["rev-parse", "HEAD"], repoRoot);
+  const cloudAfterPrs = openPrSnapshot();
+  const cloudChangedPrs = cloudAfterPrs.filter(
+    (pr) =>
+      !beforeMap.has(Number(pr.number)) ||
+      beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
+  );
+
+  const cloudRealMutationObserved =
+    beforeHead !== cloudAfterHead || cloudChangedPrs.length > 0;
+
+  let cloudParsed;
+  try {
+    const envelope = JSON.parse(String(cloudRun.stdout ?? ""));
+    const value = extractOrchestrationResult(envelope);
+    cloudParsed = {
+      ...resultBase(value.STATUS, String(value.SUMMARY ?? "")),
+      ...value
+    };
+  } catch (error) {
+    cloudParsed = {
+      ...resultBase(
+        "BLOCKED",
+        "Stronger coding path output could not be parsed as OrchestrationResultContractV1"
+      ),
+      BLOCKERS: [error?.message ?? String(error)]
+    };
+  }
+
+  const cloudEvidenceErrors = [];
+
+  if (cloudRun.error?.code === "ETIMEDOUT") {
+    cloudEvidenceErrors.push("CLOUD_OPENCLAW_PROCESS_TIMEOUT");
+  } else if (cloudRun.status !== 0) {
+    cloudEvidenceErrors.push(`CLOUD_OPENCLAW_PROCESS_FAILED:${cloudRun.status}`);
+  }
+
+  if (!cloudExecutionEvidence.repoPreflightObserved) {
+    cloudEvidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
+  }
+  if (testRequired && !cloudExecutionEvidence.testExecutionObserved) {
+    cloudEvidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
+  }
+  if (!cloudExecutionEvidence.gitDiffObserved) {
+    cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
+  }
+  if (diffCheckRequired && !cloudExecutionEvidence.gitDiffCheckObserved) {
+    cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
+  }
+  if (!cloudExecutionEvidence.gitMutationCommandObserved) {
+    cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
+  }
+  if (!cloudRealMutationObserved) {
+    cloudEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
+  }
+
+  let cloudFinalValue = {
+    ...cloudParsed,
+    ROUTING_TIER: "LOCAL_FIRST_WITH_CLOUD_ESCALATION",
+    MODEL_USED: cloudMachine.model,
+    LOCAL_ATTEMPTED: true,
+    LOCAL_RESULT: "EVIDENCE_REJECTED",
+    ESCALATED_TO_CLOUD: true,
+    ESCALATION_REASON: localFailureReason,
+    CLOUD_USAGE: "USED",
+    CLOUD_COST: null
+  };
+
+  if (cloudParsed.STATUS === "PASS" && cloudEvidenceErrors.length > 0) {
+    cloudFinalValue = {
+      ...resultBase(
+        "BLOCKED",
+        "Machine evidence rejected an unproven stronger-path PASS"
+      ),
+      ROUTING_TIER: "LOCAL_FIRST_WITH_CLOUD_ESCALATION",
+      MODEL_USED: cloudMachine.model,
+      LOCAL_ATTEMPTED: true,
+      LOCAL_RESULT: "EVIDENCE_REJECTED",
+      ESCALATED_TO_CLOUD: true,
+      ESCALATION_REASON: localFailureReason,
+      CLOUD_USAGE: "USED",
+      CLOUD_COST: null,
+      BLOCKERS: cloudEvidenceErrors,
+      UNEXPECTED_RESULTS: [
+        JSON.stringify({
+          cloudMachine,
+          cloudExecutionEvidence,
+          beforeHead,
+          cloudAfterHead,
+          changedPrNumbers: cloudChangedPrs.map((pr) => pr.number)
+        })
+      ]
+    };
+  }
+
+  if (cloudParsed.STATUS !== "PASS" && cloudEvidenceErrors.length > 0) {
+    cloudFinalValue.BLOCKERS = [
+      ...new Set([
+        ...(cloudFinalValue.BLOCKERS ?? []),
+        ...cloudEvidenceErrors
+      ])
+    ];
+  }
+
+  finalValue = cloudFinalValue;
+  resultMachine = cloudMachine;
+  resultExecutionEvidence = cloudExecutionEvidence;
+  resultInvocationMode = "CLOUD_AGENT_MAIN_AFTER_LOCAL_FAILURE";
+  resultRealMutationObserved = cloudRealMutationObserved;
+  resultChangedPrs = cloudChangedPrs;
+}
+
+postResult(finalValue, {
+  provider: resultMachine.provider,
+  model: resultMachine.model,
+  fallbackUsed: resultMachine.fallbackUsed,
+  toolCalls: resultMachine.toolCalls,
+  toolFailures: resultMachine.toolFailures,
+  executionEvidence: resultExecutionEvidence,
+  capabilities,
+  invocationMode: resultInvocationMode
+});
 const current = labelsOf(issueSnapshot());
 const remove = [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready, ORCHESTRATION_V3.queue.awaitingReview, ORCHESTRATION_V3.queue.blocked].filter((x) => current.has(x));
 const add = finalValue.STATUS === "PASS" ? [ORCHESTRATION_V3.queue.awaitingReview] : [ORCHESTRATION_V3.queue.blocked];
 editLabels({ remove, add });
-console.log(JSON.stringify({ event: "WORKER_END", issue, workerId, status: finalValue.STATUS, machine, executionEvidence, realMutationObserved, changedPrNumbers: changedPrs.map((pr) => pr.number), invocationMode: invocation.mode }));
+console.log(JSON.stringify({
+  event: "WORKER_END",
+  issue,
+  workerId,
+  status: finalValue.STATUS,
+  machine: resultMachine,
+  executionEvidence: resultExecutionEvidence,
+  realMutationObserved: resultRealMutationObserved,
+  changedPrNumbers: resultChangedPrs.map((pr) => pr.number),
+  invocationMode: resultInvocationMode,
+  escalatedToCloud: finalValue.ESCALATED_TO_CLOUD
+}));
 process.exit(finalValue.STATUS === "PASS" ? 0 : 1);
