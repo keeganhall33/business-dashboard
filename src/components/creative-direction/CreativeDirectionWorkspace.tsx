@@ -1,6 +1,16 @@
 import type { CreativeDirectionWorkspaceFixtureV1 } from "@/lib/creative-direction/dashboard-refresh-fixtures";
+import type { CreativeConceptComparisonV1, CreativeVisualizationRequestV1 } from "@/lib/creative-direction/visualization-fixtures";
 
-export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWorkspaceFixtureV1 }) {
+export function CreativeDirectionWorkspace({
+  data,
+  visualization
+}: {
+  data: CreativeDirectionWorkspaceFixtureV1;
+  visualization?: {
+    request: CreativeVisualizationRequestV1;
+    comparison: CreativeConceptComparisonV1;
+  };
+}) {
   const rec = data.current_recommendation;
   const stages = ["KEEP_NOW", "TEST_NOW", "DEVELOP_NEXT", "DEFER", "AVOID"] as const;
 
@@ -59,6 +69,58 @@ export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWo
           <InfoBlock title="Creative learnings" items={data.creative_learnings} />
         </section>
 
+        {visualization && (
+          <section className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-3xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{visualization.request.ACTION_LABEL}</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-normal">Creative visualization concept studies</h2>
+                <p className="mt-3 text-sm leading-6 text-stone-700">{visualization.request.visualization_goal}</p>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                Generated concepts are not market evidence.
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 lg:grid-cols-3">
+              {visualization.request.concepts.map((concept) => (
+                <article key={concept.CONCEPT_ID} className="flex min-h-full flex-col rounded-2xl border border-stone-200 bg-[#fffdf8] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold">{concept.CONCEPT_ID}</h3>
+                    <span className="rounded-full border border-stone-200 bg-white px-2 py-1 text-xs font-semibold text-stone-700">{concept.KEEGAN_FEEDBACK.state}</span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-stone-700">{concept.STRATEGIC_HYPOTHESIS}</p>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <ConceptDetail label="Composition" value={concept.COMPOSITION_SPEC} />
+                    <ConceptDetail label="Subject" value={concept.SUBJECT_SPEC} />
+                    <ConceptDetail label="Palette" value={concept.PALETTE_SPEC} />
+                    <ConceptDetail label="Lighting" value={concept.LIGHTING_SPEC} />
+                    <ConceptDetail label="Transformation" value={concept.TRANSFORMATION_MECHANISM} />
+                    <ConceptDetail label="Depth / relief" value={concept["PHYSICAL_DEPTH/RELIEF_SPEC"]} />
+                  </dl>
+                  <div className="mt-4 rounded-xl border border-stone-200 bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Controlled variables</p>
+                    <p className="mt-2 text-sm leading-6 text-stone-800">{concept.CONTROLLED_VARIABLES.join(", ")}</p>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-stone-200 bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Prompt spec</p>
+                    <p className="mt-2 text-xs leading-5 text-stone-700">{concept.GENERATION_PROMPT_SPEC}</p>
+                  </div>
+                  <div className="mt-auto pt-4 text-xs leading-5 text-stone-600">
+                    Lineage: v{concept.LINEAGE.version}{concept.LINEAGE.parent_concept_id ? ` from ${concept.LINEAGE.parent_concept_id}` : " original"} · Evidence refs: {concept.MARKET_EVIDENCE_REFERENCES.join(", ")}
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <InfoBlock title="Side-by-side comparison" items={visualization.comparison.isolate_variable_options.map((variable) => `${variable}: ${(visualization.request.concepts.filter((concept) => concept.CONTROLLED_VARIABLES.includes(variable)).map((concept) => concept.CONCEPT_ID).join(", ") || "not varied")}`)} />
+              <InfoBlock title="Pin / favorite / reject" items={[`Pinned: ${visualization.comparison.pinned_concept_ids.join(", ")}`, `Rejected: ${visualization.comparison.rejected_concept_ids.join(", ")}`, "Voice/text annotations are HUMAN_REPORTED preference context only."]} />
+              <InfoBlock title="More like this / less like this" items={[visualization.comparison.next_regeneration_request.instruction, `Isolate one variable and regenerate: ${visualization.comparison.next_regeneration_request.isolate_variable}`, "Compare concept to strategic recommendation/evidence without changing confidence."]} />
+            </div>
+          </section>
+        )}
+
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
             <h2 className="text-xl font-semibold">Refresh cadence</h2>
@@ -86,6 +148,15 @@ export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWo
         </section>
       </div>
     </main>
+  );
+}
+
+function ConceptDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">{label}</dt>
+      <dd className="mt-1 leading-6 text-stone-800">{value}</dd>
+    </div>
   );
 }
 
