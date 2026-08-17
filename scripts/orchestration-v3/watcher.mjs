@@ -11,8 +11,27 @@ function arg(name, fallback = null) {
 const intervalSeconds = Number(arg("--interval", "60"));
 if (!Number.isFinite(intervalSeconds) || intervalSeconds < 20) throw new Error("--interval must be >=20");
 
-function gh(args) {
-  return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function isTransientGhError(err) {
+  const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
+  return /\b(502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable/i.test(text);
+}
+function gh(args, { attempts = 3 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return execFileSync("gh", args, { encoding: "utf8", timeout: 30_000 }).trim();
+    } catch (err) {
+      lastError = err;
+      if (!isTransientGhError(err) || attempt === attempts) throw err;
+      const delayMs = 1000 * 2 ** (attempt - 1);
+      console.error(JSON.stringify({ event: "GH_TRANSIENT_RETRY", attempt, delayMs, command: args.slice(0, 3), error: err instanceof Error ? err.message : String(err) }));
+      sleepSync(delayMs);
+    }
+  }
+  throw lastError;
 }
 function issue(number) {
   return JSON.parse(gh(["issue", "view", String(number), "--repo", ORCHESTRATION_V3.repo, "--json", "number,body,labels,title"]));
@@ -42,8 +61,12 @@ function issueIsRunning(issueNumber) {
   try {
     const snapshot = issue(issueNumber);
     return (snapshot.labels ?? []).some((label) => label.name === ORCHESTRATION_V3.queue.running);
-  } catch {
-    return false;
+  } catch (err) {
+    if (isTransientGhError(err)) {
+      console.error(JSON.stringify({ event: "ISSUE_RUNNING_STATE_UNKNOWN", issueNumber, reason: "GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
+      return null;
+    }
+    throw err;
   }
 }
 function reconcileLease(workerId) {
@@ -51,7 +74,8 @@ function reconcileLease(workerId) {
   if (!lease) return null;
   const pidAlive = alive(Number(lease.pid));
   const issueRunning = issueIsRunning(Number(lease.issueNumber));
-  if (pidAlive && issueRunning) return lease;
+  if (pidAlive && issueRunning !== false) return lease;
+  if (issueRunning === null) return lease;
   try { fs.unlinkSync(leasePath(workerId)); } catch {}
   console.log(JSON.stringify({
     event: "STALE_LEASE_RECLAIMED",
@@ -67,13 +91,14 @@ function activeLeaseIssueNumbers() {
   const active = new Set();
   for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
     const lease = reconcileLease(workerId);
-    if (lease) active.add(Number(lease.issueNumber));
+    if (lease && alive(Number(lease.pid))) active.add(Number(lease.issueNumber));
   }
   return active;
 }
 function reconcileRunningClaims() {
   const activeIssues = activeLeaseIssueNumbers();
-  for (const candidate of runningIssues()) {
+  const candidates = runningIssues();
+  for (const candidate of candidates) {
     if (activeIssues.has(Number(candidate.number))) continue;
     gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.ready]);
     console.log(JSON.stringify({
@@ -111,19 +136,27 @@ async function poll() {
   reconcileRunningClaims();
   const ready = readyIssues();
   for (const candidate of ready) {
-    const snapshot = issue(candidate.number);
-    const workerId = workerForStream(field(snapshot.body, "stream"));
-    if (!workerId) {
-      console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: candidate.number, stream: field(snapshot.body, "stream") }));
-      continue;
-    }
-    if (reconcileLease(workerId)) continue;
-    claim(candidate.number);
     try {
-      launch(workerId, candidate.number);
+      const snapshot = issue(candidate.number);
+      const workerId = workerForStream(field(snapshot.body, "stream"));
+      if (!workerId) {
+        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: candidate.number, stream: field(snapshot.body, "stream") }));
+        continue;
+      }
+      if (reconcileLease(workerId)) continue;
+      claim(candidate.number);
+      try {
+        launch(workerId, candidate.number);
+      } catch (err) {
+        gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
+        console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: candidate.number, error: err instanceof Error ? err.message : String(err) }));
+      }
     } catch (err) {
-      gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
-      console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: candidate.number, error: err instanceof Error ? err.message : String(err) }));
+      if (isTransientGhError(err)) {
+        console.error(JSON.stringify({ event: "CANDIDATE_DEFERRED_GITHUB_TRANSIENT", issueNumber: candidate.number, error: err instanceof Error ? err.message : String(err) }));
+        continue;
+      }
+      throw err;
     }
   }
 }
