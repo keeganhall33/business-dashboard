@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
-import { ORCHESTRATION_V3, workerForStream } from "./config.mjs";
+import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot } from "./preflight.mjs";
 
 function arg(name, fallback = null) {
@@ -144,12 +144,14 @@ async function poll() {
   for (const candidate of ready) {
     try {
       const snapshot = issue(candidate.number);
-      const workerId = workerForStream(field(snapshot.body, "stream"));
-      if (!workerId) {
-        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: candidate.number, stream: field(snapshot.body, "stream") }));
+      const stream = field(snapshot.body, "stream");
+      const workerCandidates = workerCandidatesForStream(stream);
+      if (workerCandidates.length === 0) {
+        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: candidate.number, stream }));
         continue;
       }
-      if (reconcileLease(workerId)) continue;
+      const workerId = workerCandidates.find((candidateWorkerId) => !reconcileLease(candidateWorkerId));
+      if (!workerId) continue;
       claim(candidate.number);
       try {
         launch(workerId, candidate.number);
