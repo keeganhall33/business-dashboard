@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { ORCHESTRATION_V3 } from "./config.mjs";
+
+const evidenceReadCounts = new Map();
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
@@ -13,6 +16,197 @@ function resolveExecutable(name) {
   } catch {
     return null;
   }
+}
+
+function runChecked(command, args, cwd, timeout = 180_000) {
+  const res = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    timeout,
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return {
+    ok: !res.error && res.status === 0,
+    status: res.status,
+    stdout: String(res.stdout ?? "").trim(),
+    stderr: String(res.stderr ?? "").trim(),
+    error: res.error?.message ?? null,
+    command: [command, ...args].join(" ")
+  };
+}
+
+function parseHarnessIdentity(journalPath) {
+  const match = String(journalPath ?? "").match(/jeeves-v3-evidence-(\d+)-(local-[abcd])-/);
+  if (!match) return null;
+  return { issue: Number(match[1]), workerId: match[2] };
+}
+
+export function classifyChangedTestFiles(files) {
+  return (files ?? []).filter((file) =>
+    /(?:^|\/)(?:test|tests)\/.*\.(?:mjs|js|ts|tsx)$/i.test(file) ||
+    /\.(?:test|spec)\.(?:mjs|js|ts|tsx)$/i.test(file)
+  );
+}
+
+export function shouldAttemptCloudHostVerification(readCount) {
+  return Number(readCount) >= 2;
+}
+
+function packageScripts(repoRoot) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).scripts ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function hostVerifyCloudFallback(journalPath) {
+  const identity = parseHarnessIdentity(journalPath);
+  if (!identity) return { attempted: false, verified: false, errors: ["HOST_VERIFY_IDENTITY_UNAVAILABLE"], successfulCommands: [], failedCommands: [] };
+
+  const cfg = ORCHESTRATION_V3.workers[identity.workerId];
+  if (!cfg) return { attempted: false, verified: false, errors: ["HOST_VERIFY_WORKER_UNMAPPED"], successfulCommands: [], failedCommands: [] };
+
+  const repoRoot = path.resolve(cfg.worktree);
+  const gitExe = resolveExecutable("git");
+  const ghExe = resolveExecutable("gh");
+  const nodeExe = process.execPath;
+  const npxExe = resolveExecutable("npx");
+  const npmExe = resolveExecutable("npm");
+  const successfulCommands = [];
+  const failedCommands = [];
+  const errors = [];
+
+  if (!gitExe || !ghExe) {
+    return { attempted: true, verified: false, errors: ["HOST_VERIFY_REQUIRED_EXECUTABLE_MISSING"], successfulCommands, failedCommands };
+  }
+
+  const run = (command, args, timeout = 180_000) => {
+    const result = runChecked(command, args, repoRoot, timeout);
+    if (result.ok) successfulCommands.push(result.command);
+    else failedCommands.push(`${result.command} [exit ${String(result.status)}] ${result.stderr || result.error || ""}`.trim());
+    return result;
+  };
+
+  const branchRes = run(gitExe, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const headRes = run(gitExe, ["rev-parse", "HEAD"]);
+  const baseRes = run(gitExe, ["rev-parse", "origin/main"]);
+  if (!branchRes.ok || !headRes.ok || !baseRes.ok) errors.push("HOST_VERIFY_GIT_IDENTITY_FAILED");
+
+  const branch = branchRes.stdout;
+  const head = headRes.stdout;
+  const base = baseRes.stdout;
+  if (!branch || branch === "HEAD") errors.push("HOST_VERIFY_BRANCH_REQUIRED");
+  if (!head || !base || head === base) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
+
+  let issueBody = "";
+  const issueRes = run(ghExe, ["issue", "view", String(identity.issue), "--repo", ORCHESTRATION_V3.repo, "--json", "body", "--jq", ".body"]);
+  if (issueRes.ok) issueBody = issueRes.stdout;
+  else errors.push("HOST_VERIFY_ISSUE_READ_FAILED");
+
+  let prs = [];
+  if (branch && branch !== "HEAD") {
+    const prRes = run(ghExe, ["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--head", branch, "--state", "open", "--limit", "10", "--json", "number,headRefName,headRefOid,baseRefName,url"]);
+    if (prRes.ok) {
+      try { prs = JSON.parse(prRes.stdout || "[]"); } catch { errors.push("HOST_VERIFY_PR_JSON_INVALID"); }
+    } else {
+      errors.push("HOST_VERIFY_PR_LOOKUP_FAILED");
+    }
+  }
+  const matchingPr = prs.find((pr) => String(pr.headRefOid ?? "") === head && String(pr.headRefName ?? "") === branch);
+  if (!matchingPr) errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
+
+  const changedRes = head && base && head !== base
+    ? run(gitExe, ["diff", "--name-only", `${base}...${head}`])
+    : { ok: false, stdout: "" };
+  const changedFiles = changedRes.ok ? changedRes.stdout.split("\n").filter(Boolean) : [];
+  if (changedFiles.length === 0) errors.push("HOST_VERIFY_CHANGED_FILES_REQUIRED");
+
+  const diffCheckRes = head && base && head !== base
+    ? run(gitExe, ["diff", "--check", `${base}...${head}`])
+    : { ok: false };
+  if (!diffCheckRes.ok) errors.push("HOST_VERIFY_DIFF_CHECK_FAILED");
+
+  const changedTestFiles = classifyChangedTestFiles(changedFiles);
+  let focusedTestsOk = true;
+  for (const testFile of changedTestFiles) {
+    const ext = path.extname(testFile).toLowerCase();
+    let result;
+    if ([".ts", ".tsx"].includes(ext)) {
+      if (!npxExe) {
+        focusedTestsOk = false;
+        errors.push("HOST_VERIFY_NPX_REQUIRED_FOR_TS_TEST");
+        break;
+      }
+      result = run(npxExe, ["tsx", "--test", testFile], 300_000);
+    } else {
+      result = run(nodeExe, ["--test", testFile], 300_000);
+    }
+    if (!result.ok) {
+      focusedTestsOk = false;
+      errors.push(`HOST_VERIFY_FOCUSED_TEST_FAILED:${testFile}`);
+    }
+  }
+
+  const testRequired = requiresTestExecution(issueBody);
+  const scripts = packageScripts(repoRoot);
+  let typecheckOk = true;
+  let buildOk = true;
+  let supplementalValidationObserved = changedTestFiles.length > 0 && focusedTestsOk;
+
+  if (testRequired && fs.existsSync(path.join(repoRoot, "tsconfig.json")) && npxExe) {
+    const typecheck = run(npxExe, ["tsc", "--noEmit"], 300_000);
+    typecheckOk = typecheck.ok;
+    supplementalValidationObserved = true;
+    if (!typecheck.ok) errors.push("HOST_VERIFY_TYPECHECK_FAILED");
+  }
+
+  if (testRequired && scripts.build && npmExe) {
+    const build = run(npmExe, ["run", "build"], 600_000);
+    buildOk = build.ok;
+    supplementalValidationObserved = true;
+    if (!build.ok) errors.push("HOST_VERIFY_BUILD_FAILED");
+  }
+
+  if (testRequired && !supplementalValidationObserved) errors.push("HOST_VERIFY_TEST_BUILD_TYPECHECK_NOT_DERIVABLE");
+
+  const cleanRes = run(gitExe, ["status", "--porcelain"]);
+  const clean = cleanRes.ok && cleanRes.stdout.trim() === "";
+  if (!clean) errors.push("HOST_VERIFY_WORKTREE_NOT_CLEAN");
+
+  const verified =
+    errors.length === 0 &&
+    Boolean(matchingPr) &&
+    changedFiles.length > 0 &&
+    diffCheckRes.ok &&
+    focusedTestsOk &&
+    typecheckOk &&
+    buildOk &&
+    clean;
+
+  return {
+    attempted: true,
+    verified,
+    issue: identity.issue,
+    workerId: identity.workerId,
+    repoRoot,
+    branch,
+    head,
+    base,
+    prNumber: matchingPr?.number ?? null,
+    prUrl: matchingPr?.url ?? null,
+    changedFiles,
+    changedTestFiles,
+    diffCheckPassed: Boolean(diffCheckRes.ok),
+    focusedTestsPassed: focusedTestsOk,
+    typecheckPassed: typecheckOk,
+    buildPassed: buildOk,
+    worktreeClean: clean,
+    errors,
+    successfulCommands,
+    failedCommands
+  };
 }
 
 export function createObservedExecutionHarness({ issue, workerId }) {
@@ -98,6 +292,9 @@ export function observedExecutionJournalLineCount(journalPath) {
 }
 
 export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {}) {
+  const readCount = (evidenceReadCounts.get(journalPath) ?? 0) + 1;
+  evidenceReadCounts.set(journalPath, readCount);
+
   let raw = "";
   try { raw = fs.readFileSync(journalPath, "utf8"); } catch {}
   const lines = raw.split("\n").filter(Boolean).slice(Math.max(0, Number(startLine) || 0));
@@ -128,8 +325,27 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     massDeletionGuardTriggered: gitEvents.some((event) => [96, 97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
     massDeletionAutoHealed: gitEvents.some((event) => event.status === 96 && /autoheal/.test(event.args)),
     successfulCommands: events.filter((event) => event.status === 0).map((event) => `${event.command} ${event.args}`),
-    failedCommands: events.filter((event) => event.status !== 0).map((event) => `${event.command} ${event.args} [exit ${event.status}]`)
+    failedCommands: events.filter((event) => event.status !== 0).map((event) => `${event.command} ${event.args} [exit ${event.status}]`),
+    evidenceReadCount: readCount,
+    hostVerification: null
   };
+
+  if (shouldAttemptCloudHostVerification(readCount)) {
+    const hostVerification = hostVerifyCloudFallback(journalPath);
+    evidence.hostVerification = hostVerification;
+    if (hostVerification.attempted && hostVerification.verified) {
+      evidence.repoToolExecutionObserved = true;
+      evidence.testExecutionObserved = true;
+      evidence.gitDiffObserved = true;
+      evidence.gitDiffCheckObserved = true;
+      evidence.gitMutationCommandObserved = true;
+      evidence.successfulCommands = [...evidence.successfulCommands, ...hostVerification.successfulCommands];
+      evidence.failedCommands = [...evidence.failedCommands, ...hostVerification.failedCommands];
+    } else if (hostVerification.attempted) {
+      evidence.failedCommands = [...evidence.failedCommands, ...hostVerification.failedCommands, ...hostVerification.errors];
+    }
+  }
+
   return evidence;
 }
 
