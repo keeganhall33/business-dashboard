@@ -1,0 +1,101 @@
+name: Validated Main Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-dashboard-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate integrated main
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Focused/unit test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff hygiene
+        run: git diff --check
+
+  deploy:
+    name: Deploy validated commit
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+      SMOKE_BASE_URL: https://keegan-dashboard.fly.dev
+    steps:
+      - name: Checkout exact validated commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require Fly production credential
+        shell: bash
+        run: |
+          if [ -z "${FLY_API_TOKEN:-}" ]; then
+            echo "::error::Missing repository secret FLY_API_TOKEN. Automatic production deployment is configured but cannot run until this secret is present."
+            exit 1
+          fi
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy exact validated commit to Fly
+        run: flyctl deploy --remote-only --strategy rolling
+
+      - name: Trigger Vercel publish for same main commit
+        if: ${{ env.VERCEL_DEPLOY_HOOK_URL != '' }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 2 \
+            -X POST "$VERCEL_DEPLOY_HOOK_URL" >/dev/null
+          echo "Vercel deploy hook triggered."
+
+      - name: Note missing optional Vercel hook
+        if: ${{ env.VERCEL_DEPLOY_HOOK_URL == '' }}
+        run: echo "VERCEL_DEPLOY_HOOK_URL is not configured; Fly deployed successfully but Vercel publish was skipped."
+
+      - name: Smoke check production
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if ./scripts/smoke-check.sh; then
+              exit 0
+            fi
+            echo "Production not healthy yet; retrying smoke check in 15s (attempt $attempt/6)."
+            sleep 15
+          done
+          echo "::error::Production smoke check failed after deployment."
+          exit 1
