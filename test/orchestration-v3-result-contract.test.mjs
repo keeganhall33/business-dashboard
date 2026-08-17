@@ -21,6 +21,21 @@ test("prefers authoritative final assistant field over generic text", () => {
   assert.equal(extractOrchestrationResult(envelope).STATUS, "PASS");
 });
 
+test("parses OpenClaw assistant string content", () => {
+  const envelope = { result: { messages: [{ role: "assistant", content: JSON.stringify(pass) }] } };
+  assert.equal(extractOrchestrationResult(envelope).STATUS, "PASS");
+});
+
+test("parses OpenClaw assistant content blocks", () => {
+  const envelope = { result: { messages: [{ role: "assistant", content: [{ type: "output_text", text: JSON.stringify(pass) }] }] } };
+  assert.equal(extractOrchestrationResult(envelope).STATUS, "PASS");
+});
+
+test("parses output_text envelope fields", () => {
+  const envelope = { result: { output_text: JSON.stringify(pass) } };
+  assert.equal(extractOrchestrationResult(envelope).STATUS, "PASS");
+});
+
 test("rejects malformed JSON", () => {
   assert.throws(() => parseOrchestrationResultText('{"STATUS":"PASS"'), /NO_VALID_ORCHESTRATION_RESULT/);
 });
