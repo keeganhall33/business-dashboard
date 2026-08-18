@@ -3,6 +3,8 @@ import {
   PROJECT_ECONOMICS_ASSESSMENT_CONTRACT_VERSION_V1,
   type ConfidenceV1,
   type CoverageStateV1,
+  type FinancialRecommendationV1,
+  type FinancialScenarioV1,
   type FinancialHealthSnapshotV1,
   type MoneyRangeV1,
   type ProjectEconomicsAssessmentV1,
@@ -15,6 +17,59 @@ const FIXTURE_AS_OF = "2026-08-17T00:00:00.000Z";
 
 function confidence(level: ConfidenceV1["level"], reasons: string[], qualifiers: string[] = []): ConfidenceV1 {
   return { level, reasons, qualifiers };
+}
+
+type ProjectEconomicsFixtureInput = Omit<
+  ProjectEconomicsAssessmentV1,
+  | "DIRECT_REVENUE_RANGE"
+  | "DIRECT_COST_RANGE"
+  | "CONTRIBUTION_VALUE_RANGE"
+  | "CASH_TIMING"
+  | "TIME_REQUIREMENT"
+  | "CREATIVE_HOURS"
+  | "OPPORTUNITY_COST"
+  | "STRATEGIC_OPTION_VALUE"
+  | "ASSUMPTIONS"
+  | "BREAKEVEN"
+  | "KEY_UNCERTAINTY"
+  | "WHAT_WOULD_CHANGE_THE_ECONOMICS"
+  | "direct_cost_range"
+  | "creative_hours_range"
+  | "opportunity_cost_range"
+>;
+
+function toProjectEconomicsV1(input: ProjectEconomicsFixtureInput): ProjectEconomicsAssessmentV1 {
+  const direct_cost_range = input.capital_required_range;
+  const creative_hours_range = input.time_required_range;
+  const opportunity_cost_range = unknownMoneyRange(input.evidence_refs.map((item) => item.ref_id));
+  return {
+    ...input,
+    DIRECT_REVENUE_RANGE: input.direct_revenue_range,
+    DIRECT_COST_RANGE: direct_cost_range,
+    CONTRIBUTION_VALUE_RANGE: input.contribution_range,
+    CASH_TIMING: {
+      inflow_window: input.payback_window,
+      outflow_window: "0_30_DAYS",
+      liquidity_notes: input.downside
+    },
+    TIME_REQUIREMENT: input.time_required_range,
+    CREATIVE_HOURS: creative_hours_range,
+    OPPORTUNITY_COST: {
+      notes: input.opportunity_cost_notes,
+      range: opportunity_cost_range
+    },
+    STRATEGIC_OPTION_VALUE: {
+      not_monetized: true,
+      notes: input.strategic_value_not_monetized
+    },
+    ASSUMPTIONS: input.key_assumptions,
+    BREAKEVEN: input.break_even,
+    KEY_UNCERTAINTY: input.confidence.qualifiers[0] ?? input.downside[0] ?? "Fixture uncertainty only.",
+    WHAT_WOULD_CHANGE_THE_ECONOMICS: input.what_would_change_the_recommendation,
+    direct_cost_range,
+    creative_hours_range,
+    opportunity_cost_range
+  };
 }
 
 export function qualifyConfidenceForCostCoverage(input: {
@@ -45,6 +100,13 @@ export function deriveDirectFinancialValue(input: {
   if ((input.contributionRange.low_cents ?? 0) > 0) return "POSITIVE";
   return "NEUTRAL";
 }
+
+const FINANCIAL_RECOMMENDATION_STAGE_ORDER: Record<FinancialRecommendationV1["stage"], number> = {
+  DO_NOW: 1,
+  PREPARE: 2,
+  MONITOR: 3,
+  DEFER: 4
+};
 
 const HEALTHY_SNAPSHOT: FinancialHealthSnapshotV1 = {
   contract_version: FINANCIAL_INTELLIGENCE_SNAPSHOT_CONTRACT_VERSION_V1,
@@ -105,7 +167,7 @@ const MISSING_COST_SNAPSHOT: FinancialHealthSnapshotV1 = {
   next_best_action: "Attach cost evidence before using this snapshot for profit-sensitive recommendations."
 };
 
-const STRATEGIC_WEAK_DIRECT_PROJECT: ProjectEconomicsAssessmentV1 = {
+const STRATEGIC_WEAK_DIRECT_PROJECT: ProjectEconomicsFixtureInput = {
   contract_version: PROJECT_ECONOMICS_ASSESSMENT_CONTRACT_VERSION_V1,
   assessment_id: "project-economics-strategic-weak-direct",
   project_id: "museum-authority-study",
@@ -130,7 +192,7 @@ const STRATEGIC_WEAK_DIRECT_PROJECT: ProjectEconomicsAssessmentV1 = {
   ]
 };
 
-const HIGH_REVENUE_HIGH_RISK_PROJECT: ProjectEconomicsAssessmentV1 = {
+const HIGH_REVENUE_HIGH_RISK_PROJECT: ProjectEconomicsFixtureInput = {
   contract_version: PROJECT_ECONOMICS_ASSESSMENT_CONTRACT_VERSION_V1,
   assessment_id: "project-economics-high-revenue-high-capital-concentration",
   project_id: "single-collector-large-commission",
@@ -155,7 +217,7 @@ const HIGH_REVENUE_HIGH_RISK_PROJECT: ProjectEconomicsAssessmentV1 = {
   ]
 };
 
-const MISSING_COST_PROJECT: ProjectEconomicsAssessmentV1 = {
+const MISSING_COST_PROJECT: ProjectEconomicsFixtureInput = {
   ...HIGH_REVENUE_HIGH_RISK_PROJECT,
   assessment_id: "project-economics-missing-unknown-cost-coverage",
   project_id: "print-drop-unknown-fulfillment-cost",
@@ -185,17 +247,129 @@ export const FINANCIAL_HEALTH_SNAPSHOT_FIXTURES_V1: FinancialHealthSnapshotV1[] 
 ].sort((a, b) => a.snapshot_id.localeCompare(b.snapshot_id));
 
 export const PROJECT_ECONOMICS_ASSESSMENT_FIXTURES_V1: ProjectEconomicsAssessmentV1[] = [
-  HIGH_REVENUE_HIGH_RISK_PROJECT,
-  MISSING_COST_PROJECT,
-  STRATEGIC_WEAK_DIRECT_PROJECT
+  toProjectEconomicsV1(HIGH_REVENUE_HIGH_RISK_PROJECT),
+  toProjectEconomicsV1(MISSING_COST_PROJECT),
+  toProjectEconomicsV1(STRATEGIC_WEAK_DIRECT_PROJECT)
 ].sort((a, b) => a.assessment_id.localeCompare(b.assessment_id));
+
+export const FINANCIAL_SCENARIO_FIXTURES_V1: FinancialScenarioV1[] = ([
+  {
+    scenario_id: "scenario-base-controlled-originals",
+    kind: "BASE",
+    project_id: "museum-authority-study",
+    cash_low_point_range: moneyRange({ low_cents: 4300000, high_cents: 4700000, coverage_state: "PARTIAL", evidence_refs: ["planned-costs-fixture"] }),
+    projected_contribution_range: moneyRange({ low_cents: -180000, high_cents: -70000, coverage_state: "PARTIAL", evidence_refs: ["project-budget-fixture", "project-revenue-fixture"] }),
+    liquidity_pinch_window: { start: null, end: null },
+    assumptions: ["Strategic work remains bounded and no additional production commitment is made."],
+    sensitivities: ["Studio hours", "direct sponsor coverage"],
+    break_even_conditions: ["Cover $1,200-$1,800 of direct project cost before direct economics turn neutral."],
+    unknowns: ["Actual authority lift is qualitative and not monetized."],
+    confidence: confidence("MEDIUM", ["fixture_project_costs_known"], ["strategic_value_not_monetized"]),
+    order: 1
+  },
+  {
+    scenario_id: "scenario-upside-deposit-covered-commission",
+    kind: "UPSIDE",
+    project_id: "single-collector-large-commission",
+    cash_low_point_range: moneyRange({ low_cents: 5200000, high_cents: 5700000, coverage_state: "PARTIAL", evidence_refs: ["capital-fixture", "buyer-revenue-fixture"] }),
+    projected_contribution_range: moneyRange({ low_cents: 1200000, high_cents: 1700000, coverage_state: "PARTIAL", evidence_refs: ["buyer-revenue-fixture", "capital-fixture"] }),
+    liquidity_pinch_window: { start: null, end: null },
+    assumptions: ["Deposit arrives before major direct costs.", "Scope does not expand."],
+    sensitivities: ["deposit timing", "creative hours", "shipping or framing cost"],
+    break_even_conditions: ["Staged payment covers direct cost before delivery."],
+    unknowns: [],
+    confidence: confidence("MEDIUM", ["direct_revenue_and_capital_known"], ["deposit_timing_sensitive"]),
+    order: 2
+  },
+  {
+    scenario_id: "scenario-downside-liquidity-pinch",
+    kind: "DOWNSIDE",
+    project_id: "single-collector-large-commission",
+    cash_low_point_range: moneyRange({ low_cents: 900000, high_cents: 1400000, coverage_state: "PARTIAL", evidence_refs: ["capital-fixture", "planned-costs-fixture"] }),
+    projected_contribution_range: moneyRange({ low_cents: -250000, high_cents: 400000, coverage_state: "PARTIAL", evidence_refs: ["capital-fixture"] }),
+    liquidity_pinch_window: { start: "2026-09-15", end: "2026-10-15" },
+    assumptions: ["Direct costs arrive before buyer payment.", "No offsetting sale closes in the same window."],
+    sensitivities: ["payment delay", "materials cost", "studio capacity drag"],
+    break_even_conditions: ["Require deposit or delay cost outflow before committing."],
+    unknowns: ["Exact cash timing until terms are approved."],
+    confidence: confidence("LOW", ["cash_timing_fixture_only"], ["future_liquidity_pinch"]),
+    order: 3
+  },
+  {
+    scenario_id: "scenario-unknown-cost-print-drop",
+    kind: "BASE",
+    project_id: "print-drop-unknown-fulfillment-cost",
+    cash_low_point_range: unknownMoneyRange(["unknown-fulfillment-cost-fixture"]),
+    projected_contribution_range: unknownMoneyRange(["unknown-fulfillment-cost-fixture"]),
+    liquidity_pinch_window: { start: null, end: null },
+    assumptions: ["Production and fulfillment costs are UNKNOWN, not zero."],
+    sensitivities: ["fulfillment cost", "platform fees", "packaging"],
+    break_even_conditions: ["Cannot calculate until direct cost range is known."],
+    unknowns: ["Direct cost", "profit", "cash timing"],
+    confidence: confidence("LOW", ["revenue_fixture_present"], ["project_cost_coverage_unknown"]),
+    order: 4
+  }
+] satisfies FinancialScenarioV1[]).sort((a, b) => a.order - b.order || a.scenario_id.localeCompare(b.scenario_id));
+
+export const FINANCIAL_RECOMMENDATION_FIXTURES_V1: FinancialRecommendationV1[] = ([
+  {
+    recommendation_id: "financial-rec-require-deposit-before-commission",
+    stage: "DO_NOW",
+    project_id: "single-collector-large-commission",
+    recommendation: "Do not commit to the high-revenue commission until payment timing protects cash.",
+    rationale: "Direct revenue is attractive, but contribution and liquidity depend on deposit timing and high creative-hour load.",
+    expected_financial_effect: moneyRange({ low_cents: 900000, high_cents: 1500000, coverage_state: "COMPLETE", evidence_refs: ["buyer-revenue-fixture", "capital-fixture"] }),
+    strategic_option_value: null,
+    confidence: confidence("MEDIUM", ["direct_revenue_and_capital_known"], ["high_concentration_risk"]),
+    evidence_refs: HIGH_REVENUE_HIGH_RISK_PROJECT.evidence_refs,
+    next_step: "Prepare deposit and staged-payment requirement for approval before any production commitment.",
+    approval_required_before_action: true
+  },
+  {
+    recommendation_id: "financial-rec-preserve-strategic-study",
+    stage: "PREPARE",
+    project_id: "museum-authority-study",
+    recommendation: "Keep the strategic study as an option, but do not justify it with fake direct economics.",
+    rationale: "Direct economics are weak; the reason to consider it is qualitative premium-positioning option value.",
+    expected_financial_effect: STRATEGIC_WEAK_DIRECT_PROJECT.contribution_range,
+    strategic_option_value: {
+      not_monetized: true,
+      notes: STRATEGIC_WEAK_DIRECT_PROJECT.strategic_value_not_monetized
+    },
+    confidence: STRATEGIC_WEAK_DIRECT_PROJECT.confidence,
+    evidence_refs: STRATEGIC_WEAK_DIRECT_PROJECT.evidence_refs,
+    next_step: "Define non-financial success criteria before spending studio capacity.",
+    approval_required_before_action: true
+  },
+  {
+    recommendation_id: "financial-rec-block-unknown-cost-profit",
+    stage: "MONITOR",
+    project_id: "print-drop-unknown-fulfillment-cost",
+    recommendation: "Do not rank the print drop by profit until direct costs are known.",
+    rationale: "Revenue may be visible, but contribution is UNKNOWN and must not be treated as zero cost.",
+    expected_financial_effect: unknownMoneyRange(["unknown-fulfillment-cost-fixture"]),
+    strategic_option_value: null,
+    confidence: MISSING_COST_PROJECT.confidence,
+    evidence_refs: MISSING_COST_PROJECT.evidence_refs,
+    next_step: "Collect production, fulfillment, platform, and packaging cost ranges.",
+    approval_required_before_action: true
+  }
+] satisfies FinancialRecommendationV1[]).sort(
+  (a, b) =>
+    FINANCIAL_RECOMMENDATION_STAGE_ORDER[a.stage] - FINANCIAL_RECOMMENDATION_STAGE_ORDER[b.stage] ||
+    a.recommendation_id.localeCompare(b.recommendation_id)
+);
 
 export function getFinancialIntelligenceFixtureBundleV1(): {
   snapshots: FinancialHealthSnapshotV1[];
   project_assessments: ProjectEconomicsAssessmentV1[];
+  scenarios: FinancialScenarioV1[];
+  recommendations: FinancialRecommendationV1[];
 } {
   return {
     snapshots: FINANCIAL_HEALTH_SNAPSHOT_FIXTURES_V1,
-    project_assessments: PROJECT_ECONOMICS_ASSESSMENT_FIXTURES_V1
+    project_assessments: PROJECT_ECONOMICS_ASSESSMENT_FIXTURES_V1,
+    scenarios: FINANCIAL_SCENARIO_FIXTURES_V1,
+    recommendations: FINANCIAL_RECOMMENDATION_FIXTURES_V1
   };
 }

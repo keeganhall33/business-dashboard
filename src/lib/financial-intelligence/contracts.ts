@@ -6,6 +6,8 @@ export type ConfidenceLevelV1 = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
 export type FinancialStateV1 = "STRONG" | "STABLE" | "WATCH" | "AT_RISK" | "UNKNOWN";
 export type PaybackWindowV1 = "IMMEDIATE" | "0_30_DAYS" | "31_90_DAYS" | "90_PLUS_DAYS" | "UNKNOWN" | "NOT_EXPECTED";
 export type DirectFinancialValueV1 = "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "UNKNOWN";
+export type FinancialScenarioKindV1 = "BASE" | "UPSIDE" | "DOWNSIDE";
+export type FinancialRecommendationStageV1 = "DO_NOW" | "PREPARE" | "MONITOR" | "DEFER";
 
 export type EvidenceRefV1 = {
   ref_id: string;
@@ -71,11 +73,36 @@ export type ProjectEconomicsAssessmentV1 = {
   assessment_id: string;
   project_id: string;
   option_id: string | null;
+  DIRECT_REVENUE_RANGE: MoneyRangeV1;
+  DIRECT_COST_RANGE: MoneyRangeV1;
+  CONTRIBUTION_VALUE_RANGE: MoneyRangeV1;
+  CASH_TIMING: {
+    inflow_window: PaybackWindowV1;
+    outflow_window: PaybackWindowV1;
+    liquidity_notes: string[];
+  };
+  TIME_REQUIREMENT: TimeRangeV1;
+  CREATIVE_HOURS: TimeRangeV1;
+  OPPORTUNITY_COST: {
+    notes: string[];
+    range: MoneyRangeV1;
+  };
+  STRATEGIC_OPTION_VALUE: {
+    not_monetized: true;
+    notes: string[];
+  };
+  ASSUMPTIONS: string[];
+  BREAKEVEN: MoneyRangeV1;
+  KEY_UNCERTAINTY: string;
+  WHAT_WOULD_CHANGE_THE_ECONOMICS: string[];
   capital_required_range: MoneyRangeV1;
   direct_revenue_range: MoneyRangeV1;
+  direct_cost_range: MoneyRangeV1;
   contribution_range: MoneyRangeV1;
   time_required_range: TimeRangeV1;
+  creative_hours_range: TimeRangeV1;
   opportunity_cost_notes: string[];
+  opportunity_cost_range: MoneyRangeV1;
   payback_window: PaybackWindowV1;
   direct_financial_value: DirectFinancialValueV1;
   strategic_value_not_monetized: string[];
@@ -85,6 +112,38 @@ export type ProjectEconomicsAssessmentV1 = {
   break_even: MoneyRangeV1;
   what_would_change_the_recommendation: string[];
   evidence_refs: EvidenceRefV1[];
+};
+
+export type FinancialSnapshotV1 = FinancialHealthSnapshotV1;
+export type ProjectEconomicsV1 = ProjectEconomicsAssessmentV1;
+
+export type FinancialScenarioV1 = {
+  scenario_id: string;
+  kind: FinancialScenarioKindV1;
+  project_id: string | null;
+  cash_low_point_range: MoneyRangeV1;
+  projected_contribution_range: MoneyRangeV1;
+  liquidity_pinch_window: { start: string | null; end: string | null };
+  assumptions: string[];
+  sensitivities: string[];
+  break_even_conditions: string[];
+  unknowns: string[];
+  confidence: ConfidenceV1;
+  order: number;
+};
+
+export type FinancialRecommendationV1 = {
+  recommendation_id: string;
+  stage: FinancialRecommendationStageV1;
+  project_id: string | null;
+  recommendation: string;
+  rationale: string;
+  expected_financial_effect: MoneyRangeV1;
+  strategic_option_value: ProjectEconomicsV1["STRATEGIC_OPTION_VALUE"] | null;
+  confidence: ConfidenceV1;
+  evidence_refs: EvidenceRefV1[];
+  next_step: string;
+  approval_required_before_action: true;
 };
 
 export function moneyRange(input: Omit<MoneyRangeV1, "currency"> & { currency?: "USD" | "UNKNOWN" }): MoneyRangeV1 {
