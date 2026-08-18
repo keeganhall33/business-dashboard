@@ -40,6 +40,19 @@ test("telemetry workflow does not run a parallel executive recommendation engine
   assert.equal(exists("scripts/run-executive-refresh.mjs"), false);
 });
 
+test("completed milestone proof harnesses stay out of the active script tree", () => {
+  for (const legacy of [
+    "scripts/m8-live-reconcile.mjs",
+    "scripts/m9-generate-causal-explanations.ts",
+    "scripts/m10-generate-recommendations.ts",
+    "scripts/m11-action-center-api-integration.ts",
+    "scripts/m11-run-action-center-scenarios.ts",
+    "scripts/m12-run-action-execution-scenarios.ts"
+  ]) {
+    assert.equal(exists(legacy), false, `${legacy} should remain historical only`);
+  }
+});
+
 test("committed 1Password templates are isolated from local env files", () => {
   const envDir = path.join(root, "config/env");
   const templates = fs.readdirSync(envDir).filter((name) => name.endsWith(".op.env"));
