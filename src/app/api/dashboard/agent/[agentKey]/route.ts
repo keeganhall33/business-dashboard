@@ -1,6 +1,7 @@
 import { notFound, ok, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { normalizeDeliverableLinks } from "@/lib/domain/deliverables";
+import { getAgentOperatingModel } from "@/lib/agents/operating-model";
 import {
   getAgentProfile,
   getAgentUpdates,
@@ -8,7 +9,8 @@ import {
   getAgentMessages,
   getLatestScoreboardMetrics,
   getOrCreateAgentThread,
-  getTasks
+  getTasks,
+  getAgentTasksByStatus
 } from "@/lib/supabase/queries";
 
 type ScoreboardMetricRow = {
@@ -64,16 +66,17 @@ export async function GET(request: Request, context: { params: Promise<{ agentKe
 
   try {
     const { agentKey } = await context.params;
+    const operatingModel = getAgentOperatingModel(agentKey);
 
     if (process.env.E2E_TEST === "1") {
       return ok({
         ok: true,
         agent: {
           agentKey,
-          displayName: agentKey === "avery" ? "Avery" : agentKey,
-          roleTitle: "E2E fixture",
-          mandate: "E2E fixture",
-          decisionScope: "E2E fixture"
+          displayName: operatingModel?.displayName ?? (agentKey === "avery" ? "Avery" : agentKey),
+          roleTitle: operatingModel?.roleTitle ?? "E2E fixture",
+          mandate: operatingModel?.mandate ?? "E2E fixture",
+          decisionScope: operatingModel?.decisionScope ?? "E2E fixture"
         },
         ownedMetrics: [],
         recentUpdates: [],
@@ -99,19 +102,19 @@ export async function GET(request: Request, context: { params: Promise<{ agentKe
           }
         ],
         completedTasks: [],
-        weeklyOutputRequirements: { weekly: [] },
+        weeklyOutputRequirements: { weekly: operatingModel?.weeklyOutputRequirements ?? [] },
         planQueue: { pending: null, recent: [] },
         conversation: { threadId: `thread-${agentKey}`, title: "E2E", messages: [] }
       });
     }
 
     const profile = await getAgentProfile(agentKey).catch(() => null);
-    if (!profile) return notFound(`Unknown agent: ${agentKey}`);
+    if (!profile || !operatingModel) return notFound(`Unknown agent: ${agentKey}`);
 
     const [metrics, updates, openTasks, completedTasks, plans] = await Promise.all([
       getLatestScoreboardMetrics() as Promise<ScoreboardMetricRow[]>,
       getAgentUpdates(agentKey, 10) as Promise<AgentUpdateRow[]>,
-      getTasks({ agentKey, status: "pending" }),
+      getAgentTasksByStatus(agentKey, ["pending", "in_review", "approved", "in_progress", "blocked"], 100),
       getTasks({ agentKey, status: "completed" }),
       getAgentPlans(agentKey, { limit: 5 })
     ]);
@@ -133,11 +136,11 @@ export async function GET(request: Request, context: { params: Promise<{ agentKe
     return ok({
       ok: true,
       agent: {
-        agentKey: profile.agent_key,
-        displayName: profile.display_name,
-        roleTitle: profile.role_title,
-        mandate: profile.mandate,
-        decisionScope: profile.decision_scope
+        agentKey: operatingModel.key,
+        displayName: operatingModel.displayName,
+        roleTitle: operatingModel.roleTitle,
+        mandate: operatingModel.mandate,
+        decisionScope: operatingModel.decisionScope
       },
       ownedMetrics,
       recentUpdates: updates.map((u) => ({
@@ -149,14 +152,12 @@ export async function GET(request: Request, context: { params: Promise<{ agentKe
         priority: u.priority,
         createdAt: u.created_at
       })),
-      openTasks: (openTasks.items as TaskRow[]).map(mapTask),
+      openTasks: (openTasks as TaskRow[]).map(mapTask),
       completedTasks: (completedTasks.items as TaskRow[]).map(mapTask),
-      weeklyOutputRequirements: { weekly: ["3 revenue insights", "3 actions", "1 pricing recommendation"] },
+      weeklyOutputRequirements: { weekly: operatingModel.weeklyOutputRequirements },
       planQueue: {
         pending: mapPlan(plans.find((p) => p.status === "pending") ?? null),
-        recent: plans
-          .filter((p) => p.status !== "pending")
-          .map((p) => mapPlan(p))
+        recent: plans.filter((p) => p.status !== "pending").map((p) => mapPlan(p))
       },
       conversation: {
         threadId: thread.id,
