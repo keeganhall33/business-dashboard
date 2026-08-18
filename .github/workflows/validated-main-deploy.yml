@@ -75,4 +75,4 @@ jobs:
 # - Vercel Git integration is the only production deployment path.
 # - Pull requests and main both receive the same GitHub-native typecheck/test/build validation.
 # - Production smoke checks run only after a validated push to main.
-# - Fly deployment credentials, flyctl, and Vercel deploy hooks are intentionally not used here.
+# - Retired provider deployment tooling and deploy hooks are intentionally absent.
