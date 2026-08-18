@@ -462,7 +462,9 @@ create table if not exists agent_kpi_readings (
 create index if not exists idx_agent_kpi_readings_kpi_key_measured_at
   on agent_kpi_readings(kpi_key, measured_at desc);
 
--- 2.14 Agent idea engine
+-- 2.14 Human-managed idea board
+-- Ideas are a reviewed product surface. Fresh bootstrap must not recreate
+-- quota-driven autonomous idea generation.
 create table if not exists agent_ideas (
   id uuid primary key default gen_random_uuid(),
   agent_key text not null references agent_profiles(agent_key) on delete cascade,
@@ -528,17 +530,6 @@ create table if not exists ceo_question_comments (
 
 create index if not exists idx_ceo_question_comments_question_id_created_at
   on ceo_question_comments(question_id, created_at);
-
--- 2.16 Daily idea quota view
-create or replace view agent_daily_idea_quota as
-select
-  agent_key,
-  date_trunc('day', created_at) as idea_date,
-  count(*) as ideas_logged,
-  1 as required_ideas,
-  (count(*) >= 1) as met_quota
-from agent_ideas
-group by agent_key, date_trunc('day', created_at);
 
 -- =========================================================
 -- 3. SCHEDULER TABLES (from SCHEDULER_SPEC.md canonical block)
@@ -1173,11 +1164,16 @@ $$;
 -- Agent profiles
 insert into agent_profiles (agent_key, display_name, role_title, mandate, decision_scope)
 values
-  ('avery','Avery','Executive Operator','Synthesize priorities, issue directives, and keep the system focused.','Directive setting, prioritization, approvals discipline.'),
-  ('sloan','Sloan','Head of Product & Ecommerce','Increase revenue, conversion rate, AOV, repeat purchase rate, and monetization efficiency.','Pricing, conversion, offer structure, checkout optimization, collector monetization.'),
-  ('lyra','Lyra','Head of Brand & Narrative','Increase engagement, cultural relevance, and message clarity without diluting premium positioning.','Narrative, campaign language, homepage hierarchy, brand authority.'),
-  ('noah','Noah','Head of Partnerships & Research','Expand prestige partnerships and keep the opportunity pipeline full and moving.','Target discovery, partnership strategy, outreach prep, pipeline management.')
-on conflict (agent_key) do nothing;
+  ('avery','Avery','Executive Strategy & Chief of Staff','Identify the binding constraint, set the few highest-leverage priorities, reconcile specialist recommendations, manage Career OS phase gates, and adapt strategy as evidence and outcomes change.','Executive prioritization, cross-agent coordination, Career OS sequencing, strategic tradeoffs, approval discipline, recommendation conflict resolution, and escalation to Keegan.'),
+  ('sloan','Sloan','Revenue & Commerce Intelligence','Increase durable cash generation and collector economics by improving pricing, offers, conversion, launch performance, retention, and revenue per unit of Keegan''s scarce creative time.','Pricing architecture, print and original economics, ecommerce conversion, collector offers, launch tests, retention, funnel leakage, channel economics, and revenue experiments.'),
+  ('lyra','Lyra','Brand, Audience & Cultural Intelligence','Build sustained awareness, identifiable authorship, cultural relevance, and premium demand by turning Keegan''s work, story, proof, and cultural moments into a repeatable audience and narrative system.','Brand positioning, content systems, audience growth and quality, cultural storytelling, visual-language communication, launches, social proof, media narrative, and message clarity.'),
+  ('noah','Noah','External Intelligence, Relationships & Opportunities','Continuously discover and qualify the people, rooms, cultural windows, partnerships, market patterns, competitor moves, and emerging business models that can accelerate Keegan''s career and business.','External intelligence, Opportunity Radar, relationship paths, Cultural Power Map, event/access planning, partnerships, licensing reconnaissance, competitor pattern analysis, Success Pattern Library, and timing intelligence.')
+on conflict (agent_key) do update set
+  display_name = excluded.display_name,
+  role_title = excluded.role_title,
+  mandate = excluded.mandate,
+  decision_scope = excluded.decision_scope,
+  updated_at = now();
 
 -- Scoreboard metrics (minimal starter set used by API + rules)
 insert into scoreboard_metrics (metric_key, metric_name, category, unit, target_value, owner_agent)
@@ -1196,17 +1192,18 @@ values
   ('agent_task_completion_rate','Agent Task Completion Rate','system','percent',80,'avery')
 on conflict (metric_key) do nothing;
 
--- Alert rules (per BACKEND_SPEC.md)
+-- Legacy metric threshold rules are retained only as inactive audit rows.
+-- Career OS + Fusion + Avery is the active recommendation path.
 insert into metric_alert_rules (
   metric_key, condition_operator, threshold_value, assigned_agent, severity, trigger_action, is_active
 ) values
-  ('aov','<',150,'sloan','critical','Design premium pricing architecture and strengthen offer ladder.',true),
-  ('conversion_rate','<',2.0,'sloan','critical','Audit homepage/PDP/checkout friction and propose CRO fixes.',true),
-  ('conversion_rate','<',2.0,'lyra','high','Sharpen brand messaging to improve conversion clarity.',true),
-  ('cart_abandonment_rate','>',70,'sloan','high','Fix checkout and deploy cart recovery strategy.',true),
-  ('engagement_rate','<',3.0,'lyra','high','Tighten authority-based storytelling and campaign language.',true),
-  ('social_growth_monthly','<',5.0,'lyra','medium','Create visibility plan and collaboration-driven content push.',true),
-  ('active_brand_conversations','<',5,'noah','critical','Run a prestige-target research sprint and pipeline expansion plan.',true)
+  ('aov','<',150,'sloan','critical','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('conversion_rate','<',2.0,'sloan','critical','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('conversion_rate','<',2.0,'lyra','high','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('cart_abandonment_rate','>',70,'sloan','high','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('engagement_rate','<',3.0,'lyra','high','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('social_growth_monthly','<',5.0,'lyra','medium','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false),
+  ('active_brand_conversations','<',5,'noah','critical','Retired legacy metric threshold rule; route metric evidence through Career OS + Fusion + Avery.',false)
 on conflict do nothing;
 
 -- Scheduled job seeds (from SCHEDULER_SPEC.md)
@@ -1215,7 +1212,7 @@ insert into scheduled_jobs (
 ) values
  ('daily-agent-cycle','Daily Agent Cycle','5 6 * * *','America/Los_Angeles','/api/scheduler/daily-agent-cycle',true),
  ('daily-health-check','Daily Health Check','15 6 * * *','America/Los_Angeles','/api/scheduler/daily-health-check',true),
- ('agent-idea-pulse','Agent Idea Pulse','0 9 * * *','America/Los_Angeles','/api/scheduler/agent-idea-pulse',true),
+ ('agent-idea-pulse','Agent KPI Pulse','0 9 * * *','America/Los_Angeles','/api/scheduler/agent-idea-pulse',true),
  ('ceo-digest','CEO Digest','30 6 * * *','America/Los_Angeles','/api/scheduler/ceo-digest',true),
  ('weekly-command-cycle','Weekly Command Cycle','0 7 * * 1','America/Los_Angeles','/api/scheduler/weekly-command-cycle',true),
  ('midweek-opportunity-pulse','Midweek Opportunity Pulse','30 11 * * 3','America/Los_Angeles','/api/scheduler/midweek-opportunity-pulse',true),

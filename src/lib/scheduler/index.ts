@@ -8,7 +8,6 @@ export * from "./dailyAgentCycle";
 export * from "./dailyHealthCheck";
 export * from "./deliverableHarvest";
 export * from "./eveningCloseout";
-export * from "./ideaQuota";
 export * from "./jobLogger";
 export * from "./midweekOpportunityPulse";
 export * from "./proofEnforcement";

@@ -38,7 +38,7 @@ export async function runAgentIdeaPulse() {
       };
     },
     summarize: (result) => ({
-      summary: `Agent KPI pulse complete (${result.outputs.reduce((sum, output) => sum + output.kpisLogged, 0)} KPI readings logged; no quota-driven ideas created).`,
+      summary: `Agent KPI pulse complete (${result.outputs.reduce((sum, output) => sum + output.kpisLogged, 0)} KPI readings logged; no autonomous ideas created).`,
       detailsJson: result
     })
   });
