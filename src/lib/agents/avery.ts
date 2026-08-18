@@ -1,6 +1,5 @@
 import {
   AgentRunResult,
-  ensureDailyIdeaAndKpis,
   formatNumberValue,
   formatPercent,
   formatUsd,
@@ -12,39 +11,36 @@ import {
   submitAgentPlanDraft,
   writeAgentOutputs
 } from "./shared";
-import { getAgentUpdates, getCommerceTelemetry, getRecentOutcomeMemory } from "@/lib/supabase/queries";
-import { buildCareerOperatingSystem, type CareerOutcomeRow } from "@/lib/career/career-operating-system";
+import { getAgentUpdates, getCommerceTelemetry } from "@/lib/supabase/queries";
+import { getAgentDecisionContext, topResearchSummary } from "./decision-context";
+import { recordDailyAgentKpis } from "./kpi-pulse";
 
 function formatDateOnly(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
 export async function runAvery(): Promise<AgentRunResult> {
-  const [sharedContext, careerOutcomeMemory] = await Promise.all([
+  const [sharedContext, decisionContext] = await Promise.all([
     getSharedAgentContextForAgent("avery"),
-    getRecentOutcomeMemory({ agentKey: "avery", includeExpired: true, limit: 500 })
+    getAgentDecisionContext("avery")
   ]);
-  const { metrics, opportunities, researchMemory } = sharedContext;
-  const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
-    getAgentUpdates("sloan", 5),
-    getAgentUpdates("lyra", 5),
-    getAgentUpdates("noah", 5)
-  ]);
+  const { metrics, opportunities } = sharedContext;
+  const {
+    careerOs,
+    fusionDecision,
+    fusionSummary,
+    relevantResearch,
+    recentMeasuredOutcomes
+  } = decisionContext;
 
-  const careerOs = buildCareerOperatingSystem(careerOutcomeMemory as CareerOutcomeRow[]);
-  const careerFeedbackCount = careerOutcomeMemory.filter(
-    (row: { metadata?: Record<string, unknown> | null }) => row.metadata?.source === "career_os_v1"
-  ).length;
-  const recentIntelCount = researchMemory.length;
+  const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
+    getAgentUpdates("sloan", 8),
+    getAgentUpdates("lyra", 8),
+    getAgentUpdates("noah", 8)
+  ]);
 
   const aov = metricSnapshot(metrics, "aov");
   const conversion = metricSnapshot(metrics, "conversion_rate");
-  const aovAvgValue = aov?.average ?? aov?.current ?? null;
-  const aovCurrentValue = aov?.current ?? aov?.average ?? null;
-  const aovDeltaValue = aov?.changePercent ?? null;
-  const conversionAvgValue = conversion?.average ?? conversion?.current ?? null;
-  const conversionCurrentValue = conversion?.current ?? conversion?.average ?? null;
-  const conversionDeltaValue = conversion?.changePercent ?? null;
   const dateEnd = new Date();
   const dateStart = new Date(dateEnd);
   dateStart.setUTCDate(dateStart.getUTCDate() - 30);
@@ -56,57 +52,55 @@ export async function runAvery(): Promise<AgentRunResult> {
   const orders = commerceTelemetry?.woo?.summary?.orders ?? null;
   const sessions = commerceTelemetry?.ga4?.summary?.sessions ?? null;
   const fallbackConversionValue = orders != null && sessions ? (orders / sessions) * 100 : null;
-  const resolvedAovAvg = aovAvgValue ?? fallbackAovValue;
-  const resolvedAovCurrent = aovCurrentValue ?? fallbackAovValue;
-  const resolvedConversionAvg = conversionAvgValue ?? fallbackConversionValue;
-  const resolvedConversionCurrent = conversionCurrentValue ?? fallbackConversionValue;
+  const resolvedAov = aov?.average ?? aov?.current ?? fallbackAovValue;
+  const resolvedConversion = conversion?.average ?? conversion?.current ?? fallbackConversionValue;
   const activeOpportunityCount = opportunities?.length ?? 0;
-  const directiveSummary =
-    `Pricing and purchase conversion remain below target: AOV 30d avg ${formatUsd(resolvedAovAvg)} (Δ ${formatPercent(
-      aovDeltaValue
-    )}), purchase conversion ${formatPercent(resolvedConversionAvg)} (Δ ${formatPercent(
-      conversionDeltaValue
-    )}). Active opportunities tracked: ${formatNumberValue(activeOpportunityCount)}. ` +
-    `Career OS: Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}, ${careerOs.phaseCompletionPercent}% gates complete; ` +
-    `current bottleneck: ${careerOs.primaryBottleneck}. Awaiting results: ${careerOs.awaitingResults.length}. ` +
-    `Feedback records available: ${careerFeedbackCount}; recent research-memory signals available: ${recentIntelCount}.`;
+  const activeMoves = careerOs.todayMoves.slice(0, 5);
+  const activeMoveSummary = activeMoves.length
+    ? activeMoves.map((move) => `${move.lane}: ${move.title}`).join(" | ")
+    : "No ready Career OS moves";
+  const researchSignal = topResearchSummary(relevantResearch);
+
+  const directiveTitle = `Phase ${careerOs.currentPhase.number}: ${careerOs.currentPhase.title}`;
+  const directiveSummary = [
+    `Career OS phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} is ${careerOs.phaseCompletionPercent}% complete.`,
+    `Binding strategic bottleneck: ${careerOs.primaryBottleneck}.`,
+    `Ready moves: ${activeMoveSummary}.`,
+    `Internal revenue evidence: AOV ${formatUsd(resolvedAov)}, purchase conversion ${formatPercent(resolvedConversion)}, active opportunities ${formatNumberValue(activeOpportunityCount)}.`,
+    `Fusion: ${fusionSummary}`,
+    `Awaiting real-world results: ${careerOs.awaitingResults.length}; recent measured outcomes available: ${recentMeasuredOutcomes.length}.`
+  ].join(" ");
 
   const insights = [
     {
-      title: "Revenue gap is still primarily structural",
-      summary: `AOV 30d avg is ${formatUsd(resolvedAovAvg)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
-        resolvedAovCurrent
-      )}, trend ${formatPercent(aovDeltaValue)}). Purchase conversion 30d avg is ${formatPercent(
-        resolvedConversionAvg
-      )} vs target ${formatPercent(conversion?.target)} (latest ${formatPercent(
-        resolvedConversionCurrent
-      )}, Δ ${formatPercent(conversionDeltaValue)}).`,
+      title: "The current Career OS bottleneck is the executive binding constraint",
+      summary: `${careerOs.primaryBottleneck} Phase completion: ${careerOs.phaseCompletionPercent}%.`,
       detailMd:
-        "The strongest path is not more noise. It is better offer structure and sharper brand presentation.",
+        "Avery should change the tactical mix whenever new evidence warrants it, but should not let attractive side projects displace the current phase objective without an explicit strategic decision.",
       priority: "critical" as const,
+      relatedMetricKeys: []
+    },
+    {
+      title: "Revenue metrics are decision inputs, not permanent strategy",
+      summary: `AOV is ${formatUsd(resolvedAov)} and purchase conversion is ${formatPercent(resolvedConversion)}.`,
+      detailMd:
+        "These can be binding business constraints, but they do not automatically outrank identity, audience, relationship, rights, or owned-IP gates. Sloan should diagnose the intervention; Avery should decide the cross-business priority.",
+      priority: "high" as const,
       relatedMetricKeys: ["aov", "conversion_rate", "monthly_revenue"]
     },
     {
-      title: "Career OS phase gate",
-      summary: `Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} is ${careerOs.phaseCompletionPercent}% complete. Highest current bottleneck: ${careerOs.primaryBottleneck}.`,
-      detailMd:
-        careerOs.awaitingResults.length > 0
-          ? `${careerOs.awaitingResults.length} executed career move(s) are still awaiting real-world results. Do not treat execution as proof of success; close those loops before advancing outcome-dependent gates.`
-          : "No career moves are currently waiting on delayed outcomes. Advance the highest-leverage executable moves while continuing to ingest new intelligence.",
-      priority: "critical" as const,
+      title: "External intelligence must enter strategy through evidence gates",
+      summary: fusionSummary,
+      detailMd: fusionDecision?.isDecision
+        ? "A current Fusion decision is available and may re-rank work when it is compatible with hard constraints and the Career OS objective."
+        : "No canonical Fusion operating decision is available. Supplemental research can create questions or research tasks, but should not independently change operating strategy.",
+      priority: "high" as const,
       relatedMetricKeys: []
     },
     {
-      title: "Pipeline expansion must accelerate",
-      summary: `Only ${formatNumberValue(activeOpportunityCount)} high-priority opportunities are active right now.`,
-      detailMd: "The system needs more high-status opportunities entering the funnel.",
-      priority: "critical" as const,
-      relatedMetricKeys: []
-    },
-    {
-      title: "Cross-agent work must stay coordinated",
-      summary: "Brand, ecommerce, research, and career feedback need to converge on the same 2 to 3 priorities backed by current evidence.",
-      detailMd: `Recent output counts: Sloan ${sloanUpdates.length}, Lyra ${lyraUpdates.length}, Noah ${noahUpdates.length}. Career feedback records ${careerFeedbackCount}; recent intelligence records ${recentIntelCount}.`,
+      title: "Cross-agent outputs must converge on one operating week",
+      summary: `Recent specialist updates: Sloan ${sloanUpdates.length}, Lyra ${lyraUpdates.length}, Noah ${noahUpdates.length}.`,
+      detailMd: `Specialist advice should be judged against the same phase objective, hard constraints, measured outcomes, and Fusion state. Supplemental research signal: ${researchSignal}`,
       priority: "high" as const,
       relatedMetricKeys: []
     }
@@ -116,50 +110,60 @@ export async function runAvery(): Promise<AgentRunResult> {
     {
       title: "Advance the current Career OS bottleneck",
       summary: careerOs.primaryBottleneck,
-      detailMd: `Current phase: ${careerOs.currentPhase.title}. Use new research, measured outcomes, and relationship/opportunity changes to challenge the tactic while preserving the phase objective.`,
+      detailMd: `Current phase: ${careerOs.currentPhase.title}. Current ready moves: ${activeMoveSummary}.`,
       priority: "critical" as const,
       relatedMetricKeys: []
     },
+    ...(careerOs.awaitingResults.length
+      ? [
+          {
+            title: "Close the oldest unresolved feedback loops",
+            summary: `${careerOs.awaitingResults.length} executed move(s) are awaiting results. Review due outcomes before treating those tactics as validated.`,
+            priority: "critical" as const,
+            relatedMetricKeys: []
+          }
+        ]
+      : []),
+    ...(fusionDecision?.isDecision
+      ? [
+          {
+            title: "Evaluate the current Fusion decision against the phase objective",
+            summary: fusionDecision.recommendedAction ?? fusionDecision.headline ?? "Review the current Fusion decision.",
+            priority: "high" as const,
+            relatedMetricKeys: []
+          }
+        ]
+      : []),
     {
-      title: "Reprioritize all agents around AOV, purchase conversion, and pipeline",
-      summary: "Kill low-leverage drift and force concentration on the highest-value bottlenecks.",
-      priority: "critical" as const,
-      relatedMetricKeys: ["aov", "conversion_rate"]
-    },
-    {
-      title: "Sequence work into one clear operating week",
-      summary: "Career OS gates first, pricing/conversion next, messaging/distribution next, opportunity preparation after that unless new evidence changes the order.",
-      priority: "high" as const,
-      relatedMetricKeys: []
-    },
-    {
-      title: "Enforce approval discipline",
-      summary: "Require approval for any external action or irreversible change.",
+      title: "Sequence specialists around the binding constraint",
+      summary:
+        "Assign Sloan, Lyra, and Noah the work in their domain that most directly advances the current phase. Suppress static recurring recommendations that are not supported by new evidence.",
       priority: "high" as const,
       relatedMetricKeys: []
     }
   ];
 
   const bigBet = {
-    title: "Prestige revenue sprint",
-    summary: "Coordinate product, brand, relationship, and partnership systems around one premium growth push without losing the current Career OS phase gate.",
-    detailMd: "The business should behave like a focused luxury operator, not a generalist content machine. Career feedback and new intelligence can change tactics; the phase objective remains the guardrail until its gates are defensibly satisfied.",
+    title: `Phase acceleration: ${careerOs.currentPhase.title}`,
+    summary:
+      "Concentrate the executive system on satisfying the current phase gates while protecting cash flow, creative quality, reputation, rights, and future optionality.",
+    detailMd: `${directiveSummary}\n\nThe objective is not to maximize activity. It is to choose the smallest set of actions with the highest expected effect on Keegan's trajectory, then learn from the results.`,
     priority: "critical" as const,
     relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
   };
 
   const tasks = [
     {
-      title: "Define weekly command priorities",
-      description: `Publish the top 3 system priorities and suppress low-value work for the week. Current Career OS bottleneck: ${careerOs.primaryBottleneck}`,
-      priority: "high" as const,
-      expectedImpact: "Better strategic alignment and faster execution",
-      impactScore: 8.0,
-      whyThisMatters: "Focus drift kills performance.",
+      title: `Set weekly priorities for ${careerOs.currentPhase.title}`,
+      description: `Publish no more than three binding weekly priorities using the current Career OS moves, unresolved outcomes, internal evidence, Fusion decision, and specialist findings. Current bottleneck: ${careerOs.primaryBottleneck}`,
+      priority: "critical" as const,
+      expectedImpact: "Higher decision quality, less strategic drift, and faster phase progression",
+      impactScore: 9.4,
+      whyThisMatters: "A broad backlog is not an operating strategy.",
       relatedMetricKeys: ["agent_task_completion_rate"],
       requiresApproval: false,
       executionType: "strategy" as const,
-      expectedDurationDays: 2
+      expectedDurationDays: 1
     }
   ];
 
@@ -172,13 +176,14 @@ export async function runAvery(): Promise<AgentRunResult> {
     outcomes: [
       {
         outcomeType: "decision",
-        title: "Directive: premium revenue sprint",
+        title: `Executive directive: ${directiveTitle}`,
         summary: directiveSummary,
         detailMd: bigBet.detailMd,
-        impactScore: 9.1,
+        impactScore: 9.3,
         impactWindow: "7d",
-        relatedMetricKeys: ["aov", "conversion_rate"],
+        relatedMetricKeys: ["aov", "conversion_rate", "monthly_revenue"],
         metadata: {
+          source: "agent_strategy_cycle",
           sloanUpdates: sloanUpdates.length,
           lyraUpdates: lyraUpdates.length,
           noahUpdates: noahUpdates.length,
@@ -187,8 +192,11 @@ export async function runAvery(): Promise<AgentRunResult> {
           careerOsCompletionPercent: careerOs.phaseCompletionPercent,
           careerOsBottleneck: careerOs.primaryBottleneck,
           careerOsAwaitingResults: careerOs.awaitingResults.length,
-          careerFeedbackCount,
-          recentIntelCount
+          activeCareerMoves: activeMoves.map((move) => move.id),
+          fusionRunId: fusionDecision?.runId ?? null,
+          fusionDecisionAvailable: Boolean(fusionDecision?.isDecision),
+          measuredOutcomesRead: recentMeasuredOutcomes.length,
+          supplementalResearchRead: relevantResearch.length
         }
       }
     ]
@@ -196,7 +204,7 @@ export async function runAvery(): Promise<AgentRunResult> {
 
   const plan = await submitAgentPlanDraft({
     agentKey: "avery",
-    planTitle: "Executive operating directive",
+    planTitle: `Executive operating directive: ${careerOs.currentPhase.title}`,
     summary: directiveSummary,
     detailMd: bigBet.detailMd,
     payload: {
@@ -207,10 +215,9 @@ export async function runAvery(): Promise<AgentRunResult> {
       postApprovalUpdates: [
         {
           updateType: "directive",
-          title: "Weekly Executive Directive",
+          title: directiveTitle,
           summary: directiveSummary,
-          detailMd:
-            `Current Career OS phase: ${careerOs.currentPhase.title}. Current bottleneck: ${careerOs.primaryBottleneck}. Top business priorities remain premium pricing, conversion clarity, and partnership pipeline expansion unless new evidence changes the tactical order.`,
+          detailMd: `Current bottleneck: ${careerOs.primaryBottleneck}. Tactics may change as evidence changes; the phase objective remains the operating guardrail until its gates are defensibly satisfied.`,
           priority: "critical",
           relatedMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
         }
@@ -219,22 +226,20 @@ export async function runAvery(): Promise<AgentRunResult> {
   });
 
   await publishCeoDirective({
-    directive: "Premium revenue sprint",
+    directive: directiveTitle,
     detailMd: directiveSummary,
     targetAgents: ["sloan", "lyra", "noah"],
     priority: "critical"
   });
 
   await logWarRoomNote({
-    title: "Weekly Executive Directive",
+    title: directiveTitle,
     summary: directiveSummary,
     detailMd: bigBet.detailMd,
     metadata: {
       metrics: {
-        aov_current: aov?.current ?? null,
-        aov_avg_30d: aov?.average ?? null,
-        conversion_rate_current: conversion?.current ?? null,
-        conversion_rate_avg_30d: conversion?.average ?? null,
+        aov: resolvedAov,
+        conversion_rate: resolvedConversion,
         active_opportunities_count: activeOpportunityCount
       },
       careerOs: {
@@ -243,20 +248,18 @@ export async function runAvery(): Promise<AgentRunResult> {
         completionPercent: careerOs.phaseCompletionPercent,
         bottleneck: careerOs.primaryBottleneck,
         awaitingResults: careerOs.awaitingResults.length,
-        feedbackRecords: careerFeedbackCount,
-        recentIntelRecords: recentIntelCount
+        readyMoves: activeMoves.map((move) => ({ id: move.id, lane: move.lane, title: move.title }))
+      },
+      fusion: {
+        runId: fusionDecision?.runId ?? null,
+        decisionAvailable: Boolean(fusionDecision?.isDecision),
+        selectedCandidateId: fusionDecision?.selectedCandidateId ?? null
       }
     }
   });
 
   const status = await publishAgentStatusSnapshot("avery");
-
-  await ensureDailyIdeaAndKpis({
-    agentKey: "avery",
-    metrics,
-    fallbackIdeaTitle: "Kill low-leverage drift: enforce 3 weekly priorities",
-    fallbackIdeaSummary: directiveSummary
-  });
+  await recordDailyAgentKpis({ agentKey: "avery", metrics });
 
   return {
     summary: directiveSummary,
