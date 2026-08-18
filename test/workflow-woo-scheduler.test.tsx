@@ -8,47 +8,40 @@ function readWorkflow() {
   return fs.readFileSync(WORKFLOW, "utf8");
 }
 
-test("woo scheduler job does not reference GA4 service account or website env file", () => {
-  const yaml = readWorkflow();
-
-  // Must not reference GA4 1Password item in the workflow at all.
-  // (Woo job previously failed because op run attempted to resolve it.)
-  assert.ok(!yaml.includes("GA4 Service Account JSON"), "workflow must not reference GA4 Service Account JSON");
-
-  // Woo job must not inherit the website env injection path.
-  // Scope this assertion to the woo job block only (other jobs can legitimately use .env.website.ci).
+function getWooBlock(yaml: string) {
   const start = yaml.indexOf("\njobs:\n");
   assert.ok(start !== -1, "workflow must contain jobs section");
 
   const wooStart = yaml.indexOf("\n  woo:\n", start);
   assert.ok(wooStart !== -1, "workflow must contain jobs.woo block");
 
-  // The next job in this workflow file is website; use it as the delimiter.
   const websiteStart = yaml.indexOf("\n  website:\n", wooStart);
   assert.ok(websiteStart !== -1, "workflow must contain jobs.website block");
 
-  const wooBlock = yaml.slice(wooStart, websiteStart);
+  return yaml.slice(wooStart, websiteStart);
+}
 
-  assert.ok(
-    !wooBlock.includes("cp .env.website.ci .env.website"),
-    "woo job must not copy/use .env.website.ci"
-  );
+test("woo scheduler job uses the dedicated current Woo env template only", () => {
+  const yaml = readWorkflow();
+  const wooBlock = getWooBlock(yaml);
 
-  // Must use dedicated woo env template
-  assert.ok(wooBlock.includes(".env.woo.ci"), "woo job must use .env.woo.ci");
-  assert.ok(wooBlock.includes("cp .env.woo.ci .env.woo"), "woo job must copy woo env template");
+  assert.ok(!yaml.includes("GA4 Service Account JSON"), "workflow must not reference GA4 Service Account JSON");
+  assert.ok(!wooBlock.includes("config/env/website.op.env"), "woo job must not use the website env template");
+  assert.ok(!wooBlock.includes(".env.website"), "woo job must not materialize the website env file");
 
-  // Must use Node 22+ for the TypeScript-importing scripts.
+  assert.ok(wooBlock.includes("config/env/woo.op.env"), "woo job must use config/env/woo.op.env");
+  assert.ok(wooBlock.includes("cp config/env/woo.op.env .env.woo"), "woo job must materialize only the Woo runtime env file");
   assert.ok(wooBlock.includes("node-version: 22"), "woo job must run on node-version 22");
 });
 
-test("woo scheduler job includes production Supabase safety checks", () => {
+test("woo scheduler job fails closed unless Supabase matches the production project and host", () => {
   const yaml = readWorkflow();
+  const wooBlock = getWooBlock(yaml);
 
-  assert.ok(yaml.includes("ibjsjosplgbqevmnvvpf"), "workflow must validate production project_ref");
-  assert.ok(yaml.includes("ibjsjosplgbqevmnvvpf.supabase.co"), "workflow must validate production host");
-  assert.ok(
-    yaml.includes("tpgkyluovzhwvoajinra"),
-    "workflow must explicitly reject staging project_ref"
-  );
+  assert.ok(wooBlock.includes('PROJECT_REF="$(op read'), "woo job must resolve project_ref at runtime");
+  assert.ok(wooBlock.includes('SUPABASE_URL="$(op read'), "woo job must resolve Supabase URL at runtime");
+  assert.ok(wooBlock.includes('test "$PROJECT_REF" = "ibjsjosplgbqevmnvvpf"'), "woo job must allowlist the production project_ref");
+  assert.ok(wooBlock.includes('test "$HOST" = "ibjsjosplgbqevmnvvpf.supabase.co"'), "woo job must allowlist the production host");
+  assert.ok(wooBlock.includes("Unexpected Supabase project_ref"), "unexpected project_ref must fail closed");
+  assert.ok(wooBlock.includes("Unexpected Supabase host"), "unexpected host must fail closed");
 });

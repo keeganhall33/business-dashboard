@@ -152,6 +152,7 @@ export const AGENT_OPERATING_MODELS: Record<AgentKey, AgentOperatingModel> = {
     guardrails: [
       "Do not default to homepage rewrites when another bottleneck is more important",
       "Do not equate posting frequency with strategy",
+      "Do not substitute generic posting volume targets for an evidence-backed content system",
       "Do not manufacture prestige claims without proof",
       "Do not dilute the core artistic identity merely to chase reach"
     ]
