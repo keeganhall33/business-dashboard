@@ -17,18 +17,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      BASE_URL: ${{ vars.SCHEDULER_BASE_URL }}
+      BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL || vars.SCHEDULER_BASE_URL }}
       SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
     steps:
       - name: Validate scheduler target
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$BASE_URL" || { echo "SCHEDULER_BASE_URL repository variable is required" >&2; exit 1; }
+          test -n "$BASE_URL" || { echo "DASHBOARD_PRODUCTION_URL (preferred) or SCHEDULER_BASE_URL repository variable is required" >&2; exit 1; }
           test -n "$SCHEDULER_SECRET" || { echo "SCHEDULER_SECRET repository secret is required" >&2; exit 1; }
           case "$BASE_URL" in
             *fly.dev*|*fly.io*)
-              echo "Fly scheduler targets are retired. Point SCHEDULER_BASE_URL at the Vercel production dashboard." >&2
+              echo "Fly scheduler targets are retired. Point the production URL variable at the Vercel production dashboard." >&2
               exit 1
               ;;
           esac
