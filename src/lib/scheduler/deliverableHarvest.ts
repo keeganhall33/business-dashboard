@@ -1,4 +1,5 @@
 import { getRecentTasks, upsertSystemState } from "@/lib/supabase/queries";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { withJobRun } from "./jobLogger";
 
 type HarvestedDeliverable = {
@@ -28,19 +29,47 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+async function persistTaskOutcomeOnce(deliverable: HarvestedDeliverable) {
+  if (!deliverable.agentKey || !isNonEmptyString(deliverable.resultSummary)) return false;
+
+  const supabase = getSupabaseServerClient();
+  const existing = await supabase
+    .from("outcome_memory")
+    .select("id")
+    .eq("related_task_id", deliverable.taskId)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return false;
+
+  const inserted = await supabase.from("outcome_memory").insert({
+    agent_key: deliverable.agentKey,
+    outcome_type: "task",
+    title: `Task outcome: ${deliverable.title}`,
+    summary: deliverable.resultSummary,
+    related_task_id: deliverable.taskId,
+    happened_at: deliverable.completedAt ?? nowIso(),
+    metadata: {
+      source: "deliverable_harvest",
+      deliverable_link_count: deliverable.deliverableLinks.length
+    }
+  });
+  if (inserted.error) throw inserted.error;
+  return true;
+}
+
 /**
  * Deliverable harvest
  *
- * Goal: pull the most recent completed tasks that include deliverable proof
- * (result_summary + deliverable_links) and store a compact list in system_state
- * for dashboards/weekly summaries.
+ * Pull recent completed tasks with proof into a compact dashboard state and promote their actual
+ * result summaries into outcome_memory exactly once so subsequent agent cycles can learn from the
+ * work instead of seeing only that a task was completed.
  */
 export async function runDeliverableHarvest() {
   return withJobRun({
     jobKey: "deliverable-harvest",
     fn: async () => {
       const tasks = await getRecentTasks(250);
-
       const rows = tasks as unknown as TaskRow[];
 
       const harvested: HarvestedDeliverable[] = rows
@@ -59,18 +88,25 @@ export async function runDeliverableHarvest() {
           deliverableLinks: Array.isArray(task.deliverable_links) ? task.deliverable_links : []
         }));
 
+      let outcomesPersisted = 0;
+      for (const deliverable of harvested) {
+        if (await persistTaskOutcomeOnce(deliverable)) outcomesPersisted++;
+      }
+
       await upsertSystemState("deliverable_harvest_latest", {
         harvested,
         harvestedCount: harvested.length,
+        outcomesPersisted,
         updatedAt: nowIso()
       });
 
       return {
-        harvestedCount: harvested.length
+        harvestedCount: harvested.length,
+        outcomesPersisted
       };
     },
     summarize: (result) => ({
-      summary: `Harvested: ${result.harvestedCount}`,
+      summary: `Harvested ${result.harvestedCount} deliverables; persisted ${result.outcomesPersisted} new task outcomes`,
       detailsJson: result
     })
   });
