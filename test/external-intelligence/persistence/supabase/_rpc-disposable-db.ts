@@ -45,7 +45,7 @@ function startCluster(): Cluster {
     const port = 56000 + Math.floor(Math.random() * 2000);
     fs.appendFileSync(
       path.join(datadir, "postgresql.conf"),
-      `\nlisten_addresses = '127.0.0.1'\nport = ${port}\nfsync = off\nsynchronous_commit = off\nfull_page_writes = off\n`
+      `\nlisten_addresses = '127.0.0.1'\nport = ${port}\nunix_socket_directories = '${workdir}'\nfsync = off\nsynchronous_commit = off\nfull_page_writes = off\n`
     );
 
     try {
