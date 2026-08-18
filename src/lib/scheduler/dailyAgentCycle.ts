@@ -2,23 +2,20 @@ import { runSloan } from "@/lib/agents/sloan";
 import { runLyra } from "@/lib/agents/lyra";
 import { runNoah } from "@/lib/agents/noah";
 import { runAvery } from "@/lib/agents/avery";
+import { AGENT_EXECUTION_SEQUENCE } from "@/lib/agents/operating-model";
 import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 import type { AgentRunResult } from "@/lib/agents/shared";
+import type { AgentKey } from "@/lib/types/requests";
 import { withJobRun } from "./jobLogger";
 import { runAveryQuestionEscalations } from "./ceoQuestions";
 
-// Avery runs first so the specialists consume the current executive directive in the same cycle.
-// Avery still sees the specialists' persisted outputs from the prior cycle plus live metrics,
-// Career OS feedback, opportunities, and research when setting today's direction.
-const sequence = ["avery", "sloan", "lyra", "noah"] as const;
+const sequence = AGENT_EXECUTION_SEQUENCE;
 
-type SequenceKey = (typeof sequence)[number];
-
-const runners: Record<SequenceKey, () => Promise<AgentRunResult>> = {
+const runners: Record<AgentKey, () => Promise<AgentRunResult>> = {
+  avery: runAvery,
   sloan: runSloan,
   lyra: runLyra,
-  noah: runNoah,
-  avery: runAvery
+  noah: runNoah
 };
 
 export async function runDailyAgentCycle() {
@@ -26,7 +23,7 @@ export async function runDailyAgentCycle() {
     jobKey: "daily-agent-cycle",
     fn: async () => {
       const outputs: Array<{
-        agentKey: SequenceKey;
+        agentKey: AgentKey;
         updatesCreated: number;
         tasksCreated: number;
         opportunitiesCreated: number;

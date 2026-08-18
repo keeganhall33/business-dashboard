@@ -3,21 +3,23 @@ import { runAvery } from "@/lib/agents/avery";
 import { runLyra } from "@/lib/agents/lyra";
 import { runNoah } from "@/lib/agents/noah";
 import { runSloan } from "@/lib/agents/sloan";
+import { AGENT_EXECUTION_SEQUENCE } from "@/lib/agents/operating-model";
 import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 import type { AgentRunResult } from "@/lib/agents/shared";
+import type { AgentKey } from "@/lib/types/requests";
 
-const sequence = ["sloan", "lyra", "noah", "avery"] as const;
+const sequence = AGENT_EXECUTION_SEQUENCE;
 
-const runners: Record<(typeof sequence)[number], () => Promise<AgentRunResult>> = {
+const runners: Record<AgentKey, () => Promise<AgentRunResult>> = {
+  avery: runAvery,
   sloan: runSloan,
   lyra: runLyra,
-  noah: runNoah,
-  avery: runAvery
+  noah: runNoah
 };
 
 export async function POST() {
   const outputs: Array<{
-    agentKey: (typeof sequence)[number];
+    agentKey: AgentKey;
     runId: string;
     ok: boolean;
     result?: AgentRunResult;
