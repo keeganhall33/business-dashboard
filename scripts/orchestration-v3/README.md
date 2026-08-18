@@ -20,6 +20,7 @@ Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn
 - Model-authored descriptions are advisory. Git/process/GitHub/runtime evidence is authoritative.
 - `human_approval_required:false` can never create a synthetic human review gate.
 - A dead worker process releases its lease automatically on the next watcher poll.
+- `node scripts/orchestration-v3/liveness-report.mjs --github --pretty` is the read-only incident proof path for watcher PID, launchd status, worker leases, live PIDs, worker commands, running claims without live leases, and ready queue backfill candidates.
 
 ## Queue states
 
