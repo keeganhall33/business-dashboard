@@ -9,14 +9,33 @@ import {
   submitAgentPlanDraft,
   writeAgentOutputs
 } from "./shared";
+import { directiveSummary, getAgentDecisionContext, topResearchSummary } from "./decision-context";
 
 export async function runSloan(): Promise<AgentRunResult> {
-  const { metrics } = await getSharedAgentContextForAgent("sloan");
+  const [sharedContext, decisionContext] = await Promise.all([
+    getSharedAgentContextForAgent("sloan"),
+    getAgentDecisionContext("sloan", ["REVENUE"])
+  ]);
+  const { metrics } = sharedContext;
+  const { careerOs, laneMoves, latestDirective, relevantResearch, recentMeasuredOutcomes } = decisionContext;
+  const revenueMove = laneMoves[0] ?? null;
+  const executiveDirection = directiveSummary(latestDirective);
+  const researchSignal = topResearchSummary(relevantResearch);
+
   const aov = metricSnapshot(metrics, "aov");
   const conversion = metricSnapshot(metrics, "conversion_rate");
   const abandonment = metricSnapshot(metrics, "cart_abandonment_rate");
 
   const insights = [
+    {
+      title: "Current revenue work must stay aligned to the Career OS",
+      summary: revenueMove
+        ? `Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}: ${revenueMove.title}. Avery direction: ${executiveDirection}`
+        : `Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} has no ready revenue-lane move. Avery direction: ${executiveDirection}`,
+      detailMd: `Use the current phase gate as the strategic guardrail. Recent measured outcomes available: ${recentMeasuredOutcomes.length}. Cross-agent research signal: ${researchSignal}`,
+      priority: "critical" as const,
+      relatedMetricKeys: ["aov", "conversion_rate", "monthly_revenue"]
+    },
     {
       title: "Low AOV is the primary revenue bottleneck",
       summary: `30d avg AOV is ${formatUsd(aov?.average)} vs target ${formatUsd(aov?.target)} (latest ${formatUsd(
@@ -47,9 +66,19 @@ export async function runSloan(): Promise<AgentRunResult> {
   ];
 
   const actions = [
+    ...(revenueMove
+      ? [
+          {
+            title: "Advance the current Career OS revenue gate",
+            summary: `${revenueMove.title}: ${revenueMove.description}`,
+            priority: "critical" as const,
+            relatedMetricKeys: ["aov", "monthly_revenue"]
+          }
+        ]
+      : []),
     {
-      title: "Redesign pricing ladder",
-      summary: "Introduce stronger premium signed tiers and better offer architecture.",
+      title: "Redesign pricing ladder only when it serves the active gate",
+      summary: "Strengthen premium signed tiers and offer architecture without creating unnecessary price points or diluting the collector proposition.",
       priority: "critical" as const,
       relatedMetricKeys: ["aov"]
     },
@@ -69,8 +98,10 @@ export async function runSloan(): Promise<AgentRunResult> {
 
   const bigBet = {
     title: "Premium collector monetization sprint",
-    summary: "Rebuild the offer structure around scarcity, prestige, and premium collector tiers.",
-    detailMd: "This is the fastest path to lift AOV materially without diluting the brand.",
+    summary: revenueMove
+      ? `Use ${revenueMove.title.toLowerCase()} as the immediate revenue experiment while protecting scarcity, prestige, and collector clarity.`
+      : "Rebuild the offer structure around scarcity, prestige, and premium collector tiers only as current evidence warrants.",
+    detailMd: `Avery directive: ${executiveDirection}\n\nCurrent Career OS bottleneck: ${careerOs.primaryBottleneck}\n\nRecent research: ${researchSignal}`,
     priority: "critical" as const,
     relatedMetricKeys: ["aov", "monthly_revenue", "repeat_purchase_rate"]
   };
@@ -78,11 +109,13 @@ export async function runSloan(): Promise<AgentRunResult> {
   const tasks = [
     {
       title: "Design premium pricing architecture",
-      description: "Create a 3-tier premium signed edition structure and revised product positioning.",
+      description: revenueMove
+        ? `Build the pricing/offer recommendation around the active revenue gate: ${revenueMove.title}. Do not add tiers merely to fill a price gap.`
+        : "Create a premium offer recommendation using current sales evidence; do not add tiers merely to fill a price gap.",
       priority: "critical" as const,
-      expectedImpact: "Raise AOV materially within 30 to 60 days",
+      expectedImpact: "Raise AOV while protecting premium positioning",
       impactScore: 9.5,
-      whyThisMatters: "AOV is suppressing total revenue.",
+      whyThisMatters: "AOV is suppressing total revenue, but price architecture must remain consistent with the Career OS and collector proposition.",
       relatedMetricKeys: ["aov", "monthly_revenue"],
       requiresApproval: true,
       executionType: "pricing" as const,
@@ -90,7 +123,7 @@ export async function runSloan(): Promise<AgentRunResult> {
     },
     {
       title: "Audit checkout and recovery flow",
-      description: "Identify friction points in checkout and design recovery improvements.",
+      description: "Identify friction points in checkout and design recovery improvements using current conversion evidence.",
       priority: "high" as const,
       expectedImpact: "Recover abandoned revenue and improve purchase conversion",
       impactScore: 8.4,
@@ -107,13 +140,30 @@ export async function runSloan(): Promise<AgentRunResult> {
     insights,
     actions,
     bigBet,
-    tasks
+    tasks,
+    outcomes: [
+      {
+        outcomeType: "decision",
+        title: "Sloan strategy cycle",
+        summary: `Revenue strategy aligned to Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}${revenueMove ? ` and move '${revenueMove.title}'` : ""}.`,
+        impactWindow: "7d",
+        relatedMetricKeys: ["aov", "conversion_rate", "monthly_revenue"],
+        metadata: {
+          source: "agent_strategy_cycle",
+          careerOsPhase: careerOs.currentPhase.number,
+          careerOsMove: revenueMove?.id ?? null,
+          directiveAvailable: Boolean(latestDirective),
+          researchSignalsRead: relevantResearch.length,
+          measuredOutcomesRead: recentMeasuredOutcomes.length
+        }
+      }
+    ]
   });
 
   const plan = await submitAgentPlanDraft({
     agentKey: "sloan",
     planTitle: "Ecommerce revenue uplift plan",
-    summary: "Raise AOV, unclog purchase conversion, and recover abandoned revenue.",
+    summary: `Raise AOV and purchase conversion while advancing Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}.`,
     detailMd: bigBet.detailMd,
     payload: { insights, actions, bigBet, tasks }
   });
@@ -123,15 +173,16 @@ export async function runSloan(): Promise<AgentRunResult> {
   await ensureDailyIdeaAndKpis({
     agentKey: "sloan",
     metrics,
-    fallbackIdeaTitle: "Tighten premium pricing ladder to lift AOV",
-    fallbackIdeaSummary: "Rebuild offer tiers around scarcity + signed editions to raise AOV without dilution."
+    fallbackIdeaTitle: revenueMove ? `Revenue gate: ${revenueMove.title}` : "Tighten premium pricing ladder to lift AOV",
+    fallbackIdeaSummary: revenueMove?.description ?? "Rebuild offer tiers around scarcity + signed editions to raise AOV without dilution."
   });
 
   return {
-    summary: "Identified AOV, purchase conversion, and abandonment as the top ecommerce blockers.",
+    summary: `Aligned ecommerce strategy to the current Career OS revenue gate, Avery directive, and measured revenue signals.`,
     updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
     tasksCreated: outputResult.tasksCreated,
     opportunitiesCreated: outputResult.opportunitiesCreated,
-    planId: plan.planId
+    planId: plan.planId,
+    outcomesLogged: outputResult.outcomesLogged
   };
 }
