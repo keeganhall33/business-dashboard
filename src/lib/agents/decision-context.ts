@@ -1,5 +1,7 @@
 import { buildCareerOperatingSystem, type CareerLane, type CareerOutcomeRow } from "@/lib/career/career-operating-system";
 import { getAgentUpdates, getRecentOutcomeMemory, getRecentResearchMemory } from "@/lib/supabase/queries";
+import { getLatestAgentFusionContext, summarizeAgentFusionContext } from "./fusion-context";
+import { getAgentOperatingModel } from "./operating-model";
 
 type GenericRow = Record<string, unknown>;
 
@@ -19,18 +21,26 @@ function timestampValue(row: GenericRow) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export async function getAgentDecisionContext(agentKey: string, lanes: CareerLane[]) {
-  const [agentUpdates, researchMemory, outcomeMemory, careerOutcomeMemory] = await Promise.all([
+export async function getAgentDecisionContext(agentKey: string, lanes?: CareerLane[]) {
+  const operatingModel = getAgentOperatingModel(agentKey);
+  const resolvedLanes = lanes ?? operatingModel?.careerLanes ?? [];
+
+  const [agentUpdates, researchMemory, outcomeMemory, careerOutcomeMemory, fusionDecision] = await Promise.all([
     getAgentUpdates(agentKey, 20),
     getRecentResearchMemory({ limit: 40 }),
     getRecentOutcomeMemory({ includeExpired: false, limit: 40 }),
-    getRecentOutcomeMemory({ agentKey: "avery", includeExpired: true, limit: 500 })
+    getRecentOutcomeMemory({ agentKey: "avery", includeExpired: true, limit: 500 }),
+    getLatestAgentFusionContext()
   ]);
 
   const latestDirective = agentUpdates.find((row: GenericRow) => row.update_type === "directive") ?? null;
   const careerOs = buildCareerOperatingSystem(careerOutcomeMemory as CareerOutcomeRow[]);
-  const laneMoves = careerOs.todayMoves.filter((move) => lanes.includes(move.lane));
+  const laneMoves = careerOs.todayMoves.filter((move) => resolvedLanes.includes(move.lane));
 
+  // Legacy research_memory remains useful as supplemental internal context, but it is not
+  // a substitute for the evidence-gated Fusion decision surface. Agents may use these rows
+  // to form questions or research tasks; they must not treat unsupported research narratives
+  // as canonical external recommendations.
   const relevantResearch = [...(researchMemory as GenericRow[])]
     .sort((a, b) => {
       const importanceDelta = asNumber(b.importance_score) - asNumber(a.importance_score);
@@ -47,9 +57,12 @@ export async function getAgentDecisionContext(agentKey: string, lanes: CareerLan
     .slice(0, 12);
 
   return {
+    operatingModel,
     latestDirective,
     careerOs,
     laneMoves,
+    fusionDecision,
+    fusionSummary: summarizeAgentFusionContext(fusionDecision),
     relevantResearch,
     recentMeasuredOutcomes
   };
@@ -66,7 +79,7 @@ export function directiveSummary(directive: GenericRow | null) {
 
 export function topResearchSummary(rows: GenericRow[]) {
   const top = rows[0];
-  if (!top) return "No recent cross-agent research signal is available.";
+  if (!top) return "No recent supplemental research signal is available.";
   const subject = typeof top.subject === "string" ? top.subject : "Recent research";
   const summary = typeof top.summary === "string" ? top.summary : "No summary available.";
   return `${subject}: ${summary}`;
