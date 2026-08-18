@@ -44,14 +44,15 @@ Do not introduce another production runtime without an explicit architecture dec
 Application-level schedules have one control plane:
 
 1. `.github/workflows/autopilot.yml` wakes the application every five minutes.
-2. It calls `POST /api/scheduler/tick` on the configured `SCHEDULER_BASE_URL`.
+2. It calls `POST /api/scheduler/tick` on the configured production dashboard URL.
 3. `/api/scheduler/tick` reads Supabase `scheduled_jobs` and runs any due internal jobs.
 4. Job timing belongs in `scheduled_jobs`, not duplicated GitHub cron expressions.
 
 The scheduler workflow intentionally refuses Fly targets.
 
 Required GitHub configuration:
-- repository variable `SCHEDULER_BASE_URL` → canonical Vercel production dashboard URL
+- repository variable `DASHBOARD_PRODUCTION_URL` → canonical Vercel production dashboard URL (preferred)
+- legacy fallback repository variable `SCHEDULER_BASE_URL` may be used temporarily during migration
 - repository secret `SCHEDULER_SECRET`
 
 ## Evidence refresh jobs
