@@ -3,6 +3,10 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { snapshotToFusionCandidates } from "@/lib/fusion-v1/production/adapters/dashboard-snapshots";
 import { opportunityToFusionCandidate, type OpportunityRow } from "@/lib/fusion-v1/production/adapters/opportunities";
 import { trafficQualityChainToFusionCandidate, type TrafficQualityChain } from "@/lib/fusion-v1/production/adapters/traffic-quality";
+import {
+  canonicalExternalFusionContextToCandidates,
+  type CanonicalExternalFusionContextV1
+} from "@/lib/fusion-v1/production/adapters/external-knowledge";
 import type { FusionCandidate } from "@/lib/fusion-v1/contracts";
 import type { Finding, Hypothesis } from "@/lib/intelligence-v1/contracts";
 
@@ -19,6 +23,7 @@ export type ProductionCandidateLoadResult = {
 export async function loadProductionFusionCandidates(input: {
   nowIso: string;
   strategic_constraints_blocked_domains: string[];
+  external_fusion_contexts?: CanonicalExternalFusionContextV1[];
 }): Promise<ProductionCandidateLoadResult> {
   const sources_inspected: string[] = [];
   const sources_empty: string[] = [];
@@ -85,6 +90,35 @@ export async function loadProductionFusionCandidates(input: {
     const c = trafficQualityChainToFusionCandidate({ nowIso: input.nowIso, chain: tq });
     candidates.push(c);
     candidate_meta_by_id[c.candidate_id] = { source: "intelligence_v1_traffic_quality", freshness: "fresh" };
+  }
+
+  // 4) Canonical external FusionContext (synthesized + version-pinned only).
+  // Deliberately caller-supplied in v1: no raw articles/signals are fetched here.
+  sources_inspected.push("external_knowledge_synthesis");
+  const externalContexts = input.external_fusion_contexts ?? [];
+  if (!externalContexts.length) sources_empty.push("external_knowledge_synthesis");
+  for (const context of externalContexts) {
+    const res = canonicalExternalFusionContextToCandidates({ nowIso: input.nowIso, context });
+    freshness_notes.push({
+      source: "external_knowledge_synthesis",
+      fusion_context_id: context.fusion_context_id,
+      freshness: context.freshness_summary,
+      rejected: res.rejected
+    });
+    if (!res.candidates.length && res.rejected.length) {
+      sources_skipped.push({
+        source: `external_knowledge_synthesis:${context.fusion_context_id}`,
+        reason: res.rejected.map((item) => item.reason).join(",")
+      });
+      if (context.freshness_summary.status === "stale") sources_stale.push(`external_knowledge_synthesis:${context.fusion_context_id}`);
+    }
+    for (const candidate of res.candidates) {
+      candidates.push(candidate);
+      candidate_meta_by_id[candidate.candidate_id] = {
+        source: `external_knowledge_synthesis:${context.fusion_context_id}`,
+        freshness: context.freshness_summary.status === "fresh" ? "fresh" : "monitor_only"
+      };
+    }
   }
 
   return { candidates, candidate_meta_by_id, sources_inspected, sources_empty, sources_stale, sources_skipped, freshness_notes };
