@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import React from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -10,6 +11,7 @@ declare global {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 import { AgentAreaBoard } from "@/components/dashboard/AgentAreaBoard";
+import { AGENT_OPERATING_MODELS } from "@/lib/agents/operating-model";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentSlaSnapshot } from "@/lib/types/dashboard";
 
@@ -242,6 +244,51 @@ test("agent summaries follow config order despite severity", () => {
   assert.ok(ceoIndex > -1);
   assert.ok(productIndex > -1);
   assert.ok(ceoIndex < productIndex);
+});
+
+test("agent area board renders canonical operating-model area metadata", () => {
+  const { renderer } = renderBoard([
+    { overrides: { agent: { agentKey: "avery", displayName: "Avery", roleTitle: "CEO", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "sloan", displayName: "Sloan", roleTitle: "Product", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "lyra", displayName: "Lyra", roleTitle: "Brand", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "noah", displayName: "Noah", roleTitle: "Research", mandate: "", decisionScope: "" } } }
+  ]);
+  const snapshot = JSON.stringify(renderer.toJSON());
+
+  for (const model of Object.values(AGENT_OPERATING_MODELS)) {
+    assert.ok(snapshot.includes(model.area.title), `${model.key} area title should come from canonical model`);
+    assert.ok(snapshot.includes(model.area.subtitle), `${model.key} area subtitle should come from canonical model`);
+    assert.ok(snapshot.includes(model.roleTitle), `${model.key} role title should come from canonical model`);
+    assert.ok(snapshot.includes(model.mandate), `${model.key} mandate should come from canonical model`);
+  }
+
+  assert.equal(snapshot.includes("Product & Ecommerce"), false);
+  assert.equal(snapshot.includes("Research & Intelligence"), false);
+});
+
+test("agent area board keeps canonical order from the operating model", () => {
+  const { renderer } = renderBoard([
+    { overrides: { agent: { agentKey: "noah", displayName: "Noah", roleTitle: "Research", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "lyra", displayName: "Lyra", roleTitle: "Brand", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "sloan", displayName: "Sloan", roleTitle: "Product", mandate: "", decisionScope: "" } } },
+    { overrides: { agent: { agentKey: "avery", displayName: "Avery", roleTitle: "CEO", mandate: "", decisionScope: "" } } }
+  ]);
+  const snapshot = JSON.stringify(renderer.toJSON());
+  const areaIndexes = Object.values(AGENT_OPERATING_MODELS).map((model) => snapshot.indexOf(model.area.title));
+
+  assert.ok(areaIndexes.every((index) => index > -1));
+  assert.deepEqual([...areaIndexes].sort((a, b) => a - b), areaIndexes);
+});
+
+test("agent area board does not re-hardcode independent role metadata", () => {
+  const source = fs.readFileSync("src/components/dashboard/AgentAreaBoard.tsx", "utf8");
+
+  assert.doesNotMatch(source, /const\s+agentAreaConfig\s*:\s*AgentAreaDefinition\[\]\s*=\s*\[/);
+  assert.match(source, /AGENT_OPERATING_MODELS/);
+  assert.match(source, /AGENT_EXECUTION_SEQUENCE/);
+  assert.doesNotMatch(source, /title:\s*"CEO"/);
+  assert.doesNotMatch(source, /title:\s*"Product & Ecommerce"/);
+  assert.doesNotMatch(source, /title:\s*"Research & Intelligence"/);
 });
 
 test("collapse state persists for the current mount", () => {
