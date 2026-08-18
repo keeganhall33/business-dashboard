@@ -4,7 +4,7 @@ V3 is the canonical Jeeves development control plane. It exists to remove the ac
 
 ## Authoritative call graph
 
-`GitHub orch:ready -> watcher.mjs -> worker.mjs -> orchestration-run-issue-openclaw.mjs -> OpenClaw local worker -> Ollama qwen3.5:9b -> machine/result verification -> GitHub labels/result`
+`GitHub orch:ready -> watcher-host.mjs -> watcher.mjs -> worker.mjs -> orchestration-run-issue-openclaw.mjs -> OpenClaw local worker -> Ollama qwen3.5:9b -> machine/result verification -> GitHub labels/result`
 
 Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn. The existing runner is temporarily retained as the proven OpenClaw adapter while its useful parsing/evidence logic is migrated behind the V3 worker boundary.
 
@@ -20,7 +20,12 @@ Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn
 - Model-authored descriptions are advisory. Git/process/GitHub/runtime evidence is authoritative.
 - `human_approval_required:false` can never create a synthetic human review gate.
 - A dead worker process releases its lease automatically on the next watcher poll.
-- `node scripts/orchestration-v3/liveness-report.mjs --github --pretty` is the read-only incident proof path for watcher PID, launchd status, worker leases, live PIDs, worker commands, running claims without live leases, and ready queue backfill candidates.
+- On macOS, `watcher-host.mjs` holds `caffeinate -i -w <watcher-pid>` while V3 is active. This prevents idle system sleep without preventing display sleep, and the assertion ends automatically when the watcher exits.
+- launchd keeps the watcher host alive and restarts it after unexpected exit/login startup without creating a second queue owner.
+- The watcher host records 60-second continuity heartbeats under the V3 state root, including watcher state, idle-sleep guard state, and active worker leases.
+- `node scripts/orchestration-v3/liveness-report.mjs --github --pretty` is the read-only incident proof path for current watcher PID, launchd status, worker leases, live PIDs, worker commands, running claims without live leases, and ready queue backfill candidates.
+- `npm run orchestration:v3:overnight-report` summarizes the most recent 22:00-07:00 Pacific window and reports any continuity gap greater than five minutes.
+- Overnight operation should require no bedtime action once the host is activated: the display may sleep while V3 keeps the system awake only for the life of the watcher.
 
 ## Queue states
 
@@ -38,4 +43,4 @@ V3 is installed in parallel with the legacy runtime. Existing worker worktrees a
 
 ## Acceptance gate
 
-Do not call the system fixed until one machine-generated report proves all four workers active with distinct processes/worktrees, provider Ollama, model qwen3.5:9b, zero cloud invocations, zero stale locks, and continuous queue replenishment across more than one task cycle.
+Do not call the system fixed until one machine-generated report proves all four workers active with distinct processes/worktrees, provider Ollama, model qwen3.5:9b, zero cloud invocations, zero stale locks, continuous queue replenishment across more than one task cycle, and an overnight report can distinguish a healthy quiet queue from a sleeping or failed control plane.
