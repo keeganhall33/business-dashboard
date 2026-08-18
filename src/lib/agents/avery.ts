@@ -12,7 +12,7 @@ import {
   submitAgentPlanDraft,
   writeAgentOutputs
 } from "./shared";
-import { getAgentUpdates, getCommerceTelemetry } from "@/lib/supabase/queries";
+import { getAgentUpdates, getCommerceTelemetry, getRecentOutcomeMemory } from "@/lib/supabase/queries";
 import { buildCareerOperatingSystem, type CareerOutcomeRow } from "@/lib/career/career-operating-system";
 
 function formatDateOnly(date: Date) {
@@ -20,15 +20,19 @@ function formatDateOnly(date: Date) {
 }
 
 export async function runAvery(): Promise<AgentRunResult> {
-  const { metrics, opportunities, researchMemory, outcomeMemory } = await getSharedAgentContextForAgent("avery");
+  const [sharedContext, careerOutcomeMemory] = await Promise.all([
+    getSharedAgentContextForAgent("avery"),
+    getRecentOutcomeMemory({ agentKey: "avery", includeExpired: true, limit: 500 })
+  ]);
+  const { metrics, opportunities, researchMemory } = sharedContext;
   const [sloanUpdates, lyraUpdates, noahUpdates] = await Promise.all([
     getAgentUpdates("sloan", 5),
     getAgentUpdates("lyra", 5),
     getAgentUpdates("noah", 5)
   ]);
 
-  const careerOs = buildCareerOperatingSystem(outcomeMemory as CareerOutcomeRow[]);
-  const careerFeedbackCount = outcomeMemory.filter(
+  const careerOs = buildCareerOperatingSystem(careerOutcomeMemory as CareerOutcomeRow[]);
+  const careerFeedbackCount = careerOutcomeMemory.filter(
     (row: { metadata?: Record<string, unknown> | null }) => row.metadata?.source === "career_os_v1"
   ).length;
   const recentIntelCount = researchMemory.length;
