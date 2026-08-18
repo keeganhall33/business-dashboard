@@ -40,6 +40,15 @@ test("telemetry workflow does not run a parallel executive recommendation engine
   assert.equal(exists("scripts/run-executive-refresh.mjs"), false);
 });
 
+test("completed phase-specific disposable database validators stay historical", () => {
+  const scripts = fs.readdirSync(path.join(root, "scripts"));
+  assert.equal(
+    scripts.some((name) => name.startsWith("disposable-postgres-validate-")),
+    false,
+    "completed disposable phase validators should not remain in the active script tree"
+  );
+});
+
 test("committed 1Password templates are isolated from local env files", () => {
   const envDir = path.join(root, "config/env");
   const templates = fs.readdirSync(envDir).filter((name) => name.endsWith(".op.env"));
