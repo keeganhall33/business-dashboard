@@ -8,7 +8,6 @@ import type {
   DataSourceAccessEntry,
   WebsiteConversionSnapshot,
   MetaAdsSnapshot,
-  ExecutiveSummary,
   IndustryPulseSnapshot,
   SocialIntelligenceSnapshot,
   LeadIntelligenceSnapshot,
@@ -18,7 +17,6 @@ import type {
 const DASHBOARD_ROOT = path.resolve(process.cwd(), "..", "dashboard");
 const WEBSITE_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "website", "latest.json");
 const META_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "meta", "latest.json");
-const EXEC_SUMMARY_PATH = path.join(DASHBOARD_ROOT, "data", "executive", "latest.json");
 const INDUSTRY_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "industry", "latest.json");
 const SOCIAL_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "social", "latest.json");
 const LEAD_SNAPSHOT_PATH = path.join(DASHBOARD_ROOT, "data", "leads", "latest.json");
@@ -30,7 +28,7 @@ const DATA_SOURCE_MATRIX_PATH = path.join(DASHBOARD_ROOT, "data_source_access_ma
 export type LocalDashboardArtifacts = {
   websiteSnapshot: WebsiteConversionSnapshot | null;
   metaSnapshot: MetaAdsSnapshot | null;
-  executiveSummary: ExecutiveSummary | null;
+  executiveSummary: null;
   industrySnapshot: IndustryPulseSnapshot | null;
   socialSnapshot: SocialIntelligenceSnapshot | null;
   leadSnapshot: LeadIntelligenceSnapshot | null;
@@ -43,10 +41,9 @@ export type LocalDashboardArtifacts = {
 };
 
 export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtifacts> {
-  const [snapshot, meta, executive, industry, social, leads, cloudflare, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
+  const [snapshot, meta, industry, social, leads, cloudflare, agentStatusRows, automationRows, dataSourceRows] = await Promise.all([
     readJsonIfExists<WebsiteConversionSnapshot>(WEBSITE_SNAPSHOT_PATH),
     readJsonIfExists<MetaAdsSnapshot>(META_SNAPSHOT_PATH),
-    readJsonIfExists<ExecutiveSummary>(EXEC_SUMMARY_PATH),
     readJsonIfExists<IndustryPulseSnapshot>(INDUSTRY_SNAPSHOT_PATH),
     readJsonIfExists<SocialIntelligenceSnapshot>(SOCIAL_SNAPSHOT_PATH),
     readJsonIfExists<LeadIntelligenceSnapshot>(LEAD_SNAPSHOT_PATH),
@@ -59,13 +56,12 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
   const agentStatus = agentStatusRows.map(mapAgentStatusRow);
   const automationStatus = automationRows.map(mapAutomationRow);
   const dataSourceMatrix = dataSourceRows.map(mapDataSourceRow);
-  const topActions = buildTopActions(snapshot, agentStatus);
   const blockedItems = buildBlockedItems(snapshot, dataSourceMatrix);
 
   return {
     websiteSnapshot: snapshot,
     metaSnapshot: meta,
-    executiveSummary: executive,
+    executiveSummary: null,
     industrySnapshot: industry,
     socialSnapshot: social,
     leadSnapshot: leads,
@@ -73,7 +69,7 @@ export async function loadLocalDashboardArtifacts(): Promise<LocalDashboardArtif
     agentStatus,
     automationStatus,
     dataSourceMatrix,
-    topActions,
+    topActions: [],
     blockedItems
   };
 }
@@ -169,43 +165,6 @@ function sanitizeUrl(value: string | null) {
   }
 }
 
-const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-function buildTopActions(snapshot: WebsiteConversionSnapshot | null, agentStatus: AgentStatusPanelEntry[]): DashboardActionItem[] {
-  const items: DashboardActionItem[] = [];
-  const topProduct = snapshot?.wooCommerce?.topProducts?.[0];
-  if (topProduct) {
-    items.push({
-      title: `Lean into ${topProduct.name}`,
-      detail: `${topProduct.units} units / ${currency.format(topProduct.revenue ?? 0)} over the latest 50 orders`,
-      owner: "Website & Conversion",
-      tone: "success"
-    });
-  }
-
-  const mostRecentOrder = snapshot?.wooCommerce?.recentOrders?.[0];
-  if (mostRecentOrder) {
-    items.push({
-      title: `Follow up with ${mostRecentOrder.customer || "latest buyer"}`,
-      detail: `Closed ${currency.format(mostRecentOrder.total ?? 0)} on ${formatShortDate(mostRecentOrder.date)}`,
-      owner: "Collector Success",
-      tone: "info"
-    });
-  }
-
-  const websiteAgent = agentStatus.find((entry) => /website/i.test(entry.agentName));
-  if (websiteAgent) {
-    items.push({
-      title: `${websiteAgent.agentName}: prep weekly brief`,
-      detail: websiteAgent.nextRunAt ? `Next run ${formatRelativeLabel(websiteAgent.nextRunAt)}` : "Next run not scheduled",
-      owner: "Automation",
-      tone: "info"
-    });
-  }
-
-  return items.slice(0, 3);
-}
-
 function buildBlockedItems(
   snapshot: WebsiteConversionSnapshot | null,
   dataSources: DataSourceAccessEntry[]
@@ -233,26 +192,4 @@ function buildBlockedItems(
     });
 
   return items.slice(0, 4);
-}
-
-function formatRelativeLabel(value: string | null) {
-  if (!value) return "unscheduled";
-  try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return value;
-  }
-}
-
-function formatShortDate(value: string | null | undefined) {
-  if (!value) return "recently";
-  try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } catch {
-    return value;
-  }
 }

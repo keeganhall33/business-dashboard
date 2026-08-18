@@ -4,6 +4,12 @@ import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { buildStagingFixtureOverview } from "@/lib/dashboard/staging-fixtures";
 import {
+  buildCareerOperatingSystem,
+  type CareerOperatingSystemSnapshot,
+  type CareerOutcomeRow
+} from "@/lib/career/career-operating-system";
+import { getLatestAgentFusionContext, summarizeAgentFusionContext, type AgentFusionContext } from "@/lib/agents/fusion-context";
+import {
   getActiveOpportunities,
   getAgentHealth,
   getLatestAgentDirective,
@@ -28,6 +34,7 @@ import {
   getRecentIdeaComments,
   getCeoQuestions,
   getRecentCeoQuestionComments,
+  getRecentOutcomeMemory,
   getDashboardSnapshots,
   getDashboardSnapshotHistoryForKey,
   type DashboardSnapshotRecord
@@ -44,7 +51,8 @@ import {
   type WebsiteConversionSnapshot,
   type CloudflareTelemetrySnapshot,
   type MetaAdsSnapshot,
-  type SocialIntelligenceSnapshot
+  type SocialIntelligenceSnapshot,
+  type ExecutiveCommand
 } from "@/lib/types/dashboard";
 import { agentKeys, agentDisplayNames } from "@/lib/types/requests";
 import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
@@ -412,20 +420,6 @@ const numberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0
 });
 
-const DEFAULT_EXECUTIVE_DIRECTIVE =
-  "Shift focus to pricing power, conversion lift, and partnership pipeline expansion immediately.";
-const DEFAULT_EXECUTIVE_PRIORITIES = [
-  "Increase AOV via premium tiered pricing",
-  "Fix homepage and product page conversion bottlenecks",
-  "Expand active partnership conversations"
-];
-const DEFAULT_EXECUTIVE_BOTTLENECKS = [
-  "AOV is far below target",
-  "Conversion rate is underperforming",
-  "Pipeline is too thin"
-];
-const DEFAULT_EXECUTIVE_RECOMMENDATION =
-  "Do not chase volume. Increase pricing power, strengthen luxury messaging, and build the partnership machine.";
 const SURVIVAL_STALE_DAYS = 7;
 const DEFAULT_BRAND_POWER_WINS = [
   "Authority-based storytelling performs better than generic art promotion.",
@@ -436,6 +430,90 @@ const DEFAULT_BRAND_POWER_ACTIONS = [
   "Create a collector-status narrative series."
 ];
 const REVENUE_DIAG_METRICS = ["monthly_revenue", "aov", "purchase_conversion_rate", "revenue_per_visitor"];
+const AVERY_DIRECTIVE_STALE_DAYS = 14;
+const FUSION_STALE_DAYS = 7;
+
+type DirectiveLike = {
+  title?: string | null;
+  summary?: string | null;
+  detail_md?: string | null;
+  created_at?: string | null;
+  related_metric_keys?: unknown;
+};
+
+function textOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function ageDays(value: string | null | undefined, now = new Date()) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor((now.getTime() - parsed) / 86_400_000));
+}
+
+function isOlderThanDays(value: string | null | undefined, days: number) {
+  const age = ageDays(value);
+  return age == null || age > days;
+}
+
+function buildGovernedExecutiveCommand(input: {
+  directive: DirectiveLike | null;
+  careerOs: CareerOperatingSystemSnapshot;
+  fusionDecision: AgentFusionContext | null;
+}): ExecutiveCommand {
+  const directiveSummary = textOrNull(input.directive?.summary) ?? textOrNull(input.directive?.title);
+  const directiveDetail = textOrNull(input.directive?.detail_md);
+  const directiveStale = input.directive ? isOlderThanDays(input.directive.created_at, AVERY_DIRECTIVE_STALE_DAYS) : false;
+  const fusionStale = input.fusionDecision ? isOlderThanDays(input.fusionDecision.generatedAt, FUSION_STALE_DAYS) : false;
+  const careerPhase = `Career OS phase ${input.careerOs.currentPhase.number}: ${input.careerOs.currentPhase.title}`;
+  const fusionSummary = summarizeAgentFusionContext(input.fusionDecision);
+
+  if (!input.directive || directiveStale) {
+    return {
+      weeklyDirective: input.directive
+        ? `Avery directive is stale (${ageDays(input.directive.created_at) ?? "unknown"} days old).`
+        : "No current Avery directive is available.",
+      topPriorities: [
+        `${careerPhase}; current bottleneck: ${input.careerOs.primaryBottleneck}`,
+        input.fusionDecision
+          ? fusionStale
+            ? `Fusion state is stale (${ageDays(input.fusionDecision.generatedAt) ?? "unknown"} days old); do not treat it as a fresh recommendation.`
+            : fusionSummary
+          : "Fusion state unavailable; do not infer recommendations from raw telemetry."
+      ],
+      biggestBottlenecks: [
+        input.careerOs.primaryBottleneck,
+        input.fusionDecision
+          ? fusionStale
+            ? "Fusion decision freshness is stale."
+            : "Executive allocation needs Avery confirmation before converting evidence into action."
+          : "No persisted Fusion decision is available."
+      ],
+      ceoRecommendation:
+        "INSUFFICIENT_EXECUTIVE_EVIDENCE: wait for a current Avery directive and eligible Fusion state before presenting an operating recommendation."
+    };
+  }
+
+  return {
+    weeklyDirective: directiveSummary ?? "Avery directive exists but has no summary text.",
+    topPriorities: [
+      `${careerPhase}; current bottleneck: ${input.careerOs.primaryBottleneck}`,
+      input.fusionDecision
+        ? fusionStale
+          ? `Fusion state is stale (${ageDays(input.fusionDecision.generatedAt) ?? "unknown"} days old); use only as context.`
+          : fusionSummary
+        : "Fusion state unavailable; use Career OS and Avery directive without inventing external recommendations."
+    ].filter((item): item is string => Boolean(item)),
+    biggestBottlenecks: [
+      input.careerOs.primaryBottleneck,
+      ...(input.fusionDecision?.missingEvidence.length ? input.fusionDecision.missingEvidence.slice(0, 2) : [])
+    ],
+    ceoRecommendation:
+      directiveDetail ??
+      "Avery has not supplied recommendation detail. Keep this as executive context only; do not convert telemetry into a shadow recommendation."
+  };
+}
 
 function formatMetricValue(value: number | null | undefined, unit: string | null | undefined) {
   if (value == null || Number.isNaN(value)) return null;
@@ -448,25 +526,15 @@ function formatMetricValue(value: number | null | undefined, unit: string | null
   return numberFormatter.format(value);
 }
 
-function metricSeverity(metric: ScoreboardMetricRow) {
-  const current = toNumber(metric.current_value);
-  const target = toNumber(metric.target_value);
-  if (current == null || target == null || target === 0) return 0;
-  return (target - current) / Math.abs(target);
-}
-
-function describePriority(metric: ScoreboardMetricRow) {
-  const name = metric.metric_name ?? metric.metric_key;
-  const current =
-    formatMetricValue(toNumber(metric.current_value), metric.unit) ?? (toNumber(metric.current_value)?.toString() ?? "n/a");
-  const target =
-    formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
-  const status = statusFromGap(toNumber(metric.current_value), toNumber(metric.target_value));
-  const statusLabel = status === "critical" ? "critical" : status === "warning" ? "off track" : "healthy";
-  if (status === "healthy") {
-    return `${name}: ${statusLabel}. Maintain ${current} (target ${target}).`;
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
   }
-  return `${name}: ${statusLabel}. Move from ${current} toward ${target}.`;
+  return result;
 }
 
 function describeBottleneck(metric: ScoreboardMetricRow) {
@@ -478,17 +546,6 @@ function describeBottleneck(metric: ScoreboardMetricRow) {
   const target =
     formatMetricValue(toNumber(metric.target_value), metric.unit) ?? (toNumber(metric.target_value)?.toString() ?? "n/a");
   return `${name} is ${status === "critical" ? "far below" : "below"} target (${current} vs ${target}).`;
-}
-
-function dedupeStrings(values: string[]) {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
-  }
-  return result;
 }
 
 function isMetricOffTrack(metric: ScoreboardMetricRow) {
@@ -567,34 +624,6 @@ function formatDueDate(iso: string) {
     return formatter.format(diffDays, "day");
   }
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function getPriorityMetrics(
-  preferredKeys: string[],
-  metricByKey: Map<string, ScoreboardMetricRow>,
-  count = 3
-) {
-  const selected: ScoreboardMetricRow[] = [];
-  for (const key of preferredKeys) {
-    const metric = metricByKey.get(key);
-    if (isScoreboardMetricRow(metric) && !selected.some((m) => m.metric_key === metric.metric_key)) {
-      selected.push(metric);
-    }
-  }
-  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
-  if (selected.length >= count) {
-    return selected.slice(0, count);
-  }
-  const sorted = Array.from(metricByKey.values())
-    .filter(isScoreboardMetricRow)
-    .sort((a, b) => metricSeverity(b) - metricSeverity(a));
-  for (const metric of sorted) {
-    if (selected.some((m) => m.metric_key === metric.metric_key)) continue;
-    selected.push(metric);
-    if (selected.length >= count) break;
-  }
-  selected.sort((a, b) => metricSeverity(b) - metricSeverity(a));
-  return selected.slice(0, count);
 }
 
 function hoursSince(iso: string | null | undefined) {
@@ -688,15 +717,18 @@ export async function GET(request: Request) {
   if (authResponse) return authResponse;
 
   try {
-    // Staging fixture mode: safe read-only rendering on keegan-dashboard-preview.
+    // Staging fixture mode: safe read-only rendering for explicit Vercel/test fixture environments.
     // Guardrails:
     // - Disabled by default.
-    // - Only allowed on Fly staging app.
+    // - Only allowed in non-production or Vercel preview/test contexts.
     // - Produces sanitized, non-PII fixture data.
     const stagingEnabled = process.env.DASHBOARD_STAGING_FIXTURES === "1";
-    const flyApp = process.env.FLY_APP_NAME ?? "";
-    const isStagingApp = flyApp === "keegan-dashboard-preview";
-    if (stagingEnabled && isStagingApp) {
+    const fixtureGate =
+      process.env.NODE_ENV !== "production" ||
+      process.env.E2E_TEST === "1" ||
+      process.env.VERCEL_ENV === "preview" ||
+      process.env.DASHBOARD_FIXTURE_ENV === "test";
+    if (stagingEnabled && fixtureGate) {
       const url = new URL(request.url);
       const responseRange = resolveRange(url.searchParams.get("range"), url.searchParams.get("start"), url.searchParams.get("end"));
       const fixture = buildStagingFixtureOverview({ range: responseRange });
@@ -1022,7 +1054,9 @@ export async function GET(request: Request) {
       recentCeoComments,
       industryPulseResult,
       localArtifacts,
-      dashboardSnapshotRows
+      dashboardSnapshotRows,
+      careerOutcomeMemory,
+      fusionDecision
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
@@ -1047,7 +1081,9 @@ export async function GET(request: Request) {
       getRecentCeoQuestionComments(30) as Promise<CeoQuestionCommentRow[]>,
       getIndustryPulseSnapshot({ day: range.endDate, days: 14, limit: 5 }),
       loadLocalDashboardArtifacts(),
-      getDashboardSnapshots(["website", "cloudflare", "meta", "social"])
+      getDashboardSnapshots(["website", "cloudflare", "meta", "social"]),
+      getRecentOutcomeMemory({ agentKey: "avery", includeExpired: true, limit: 500 }),
+      getLatestAgentFusionContext()
     ]);
 
     const snapshotRows = dashboardSnapshotRows as DashboardSnapshotRecord[];
@@ -1333,45 +1369,12 @@ export async function GET(request: Request) {
     });
 
     const operatingModeJson = (operatingMode?.value_json as Record<string, unknown> | undefined) ?? {};
-    const directiveMetricKeys = Array.isArray(directive?.related_metric_keys)
-      ? (directive?.related_metric_keys as string[])
-      : [];
-    const priorityMetrics = getPriorityMetrics(directiveMetricKeys, metricByKey);
-    const offTrackPriorityMetrics = priorityMetrics.filter(isMetricOffTrack);
-    const prioritySourceMetrics = offTrackPriorityMetrics.length ? offTrackPriorityMetrics : priorityMetrics;
-    const topPriorities = dedupeStrings(prioritySourceMetrics.map((metric) => describePriority(metric)).filter(Boolean)).slice(
-      0,
-      3
-    );
-
-    const bottleneckMetrics: ScoreboardMetricRow[] = [...offTrackPriorityMetrics];
-    if (bottleneckMetrics.length < 2) {
-      const additional = Array.from(metricByKey.values())
-        .filter(isScoreboardMetricRow)
-        .sort((a, b) => metricSeverity(b) - metricSeverity(a));
-      for (const metric of additional) {
-        if (bottleneckMetrics.some((m) => m.metric_key === metric.metric_key)) continue;
-        if (!isMetricOffTrack(metric)) continue;
-        bottleneckMetrics.push(metric);
-        if (bottleneckMetrics.length >= 3) break;
-      }
-    }
-
-    const bottleneckStatements = dedupeStrings(
-      [
-        typeof operatingModeJson.reason === "string" ? (operatingModeJson.reason as string) : null,
-        ...bottleneckMetrics
-          .map((metric) => describeBottleneck(metric))
-          .filter((statement): statement is string => Boolean(statement))
-      ].filter(Boolean) as string[]
-    ).slice(0, 3);
-
-    const executiveCommand = {
-      weeklyDirective: directive?.summary?.trim() || DEFAULT_EXECUTIVE_DIRECTIVE,
-      topPriorities: topPriorities.length ? topPriorities : DEFAULT_EXECUTIVE_PRIORITIES,
-      biggestBottlenecks: bottleneckStatements.length ? bottleneckStatements : DEFAULT_EXECUTIVE_BOTTLENECKS,
-      ceoRecommendation: directive?.detail_md?.trim() || DEFAULT_EXECUTIVE_RECOMMENDATION
-    };
+    const careerOs = buildCareerOperatingSystem(careerOutcomeMemory as CareerOutcomeRow[]);
+    const executiveCommand = buildGovernedExecutiveCommand({
+      directive: directive as DirectiveLike | null,
+      careerOs,
+      fusionDecision
+    });
 
     const revenueEngineMetrics = buildRevenueEngineMetrics({ metricByKey, commerceTelemetry: commerceTelemetry });
 
