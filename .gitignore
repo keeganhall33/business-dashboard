@@ -31,9 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# Local/resolved env files are never committed.
 .env*
-!.env.*.ci
+
+# Committed 1Password reference templates live under config/env/*.op.env.
 
 # vercel
 .vercel
