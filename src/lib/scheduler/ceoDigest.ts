@@ -4,6 +4,7 @@ import {
   getUnresolvedAlerts,
   upsertSystemState
 } from "@/lib/supabase/queries";
+import { getAgentDecisionContext } from "@/lib/agents/decision-context";
 import { withJobRun } from "./jobLogger";
 
 function nowIso() {
@@ -14,6 +15,10 @@ export type CeoDigestResult = {
   pendingApprovals: number;
   unresolvedAlerts: number;
   taskCountsByStatus: Record<string, number>;
+  careerPhase: string;
+  phaseCompletionPercent: number;
+  primaryBottleneck: string;
+  awaitingResults: number;
   digestMd: string;
 };
 
@@ -24,21 +29,24 @@ type AlertSummary = {
 };
 
 /**
- * CEO digest: a small, durable summary the dashboard (and Keegan) can read quickly.
+ * CEO digest: strategic orientation first, operational queue second.
  * Stores to `system_state.ceo_digest_latest` for UI consumption.
  */
 export async function runCeoDigest(): Promise<CeoDigestResult> {
   return withJobRun({
     jobKey: "ceo-digest",
     fn: async () => {
-      const [awaitingApproval, alerts, counts] = await Promise.all([
+      const [awaitingApproval, alerts, counts, decisionContext] = await Promise.all([
         getTasksAwaitingApproval(50),
         getUnresolvedAlerts(25),
-        getTaskCountsByStatus()
+        getTaskCountsByStatus(),
+        getAgentDecisionContext("avery")
       ]);
 
       const pendingApprovals = awaitingApproval.length;
       const unresolvedAlerts = alerts.length;
+      const { careerOs, fusionSummary } = decisionContext;
+      const topMoves = careerOs.todayMoves.slice(0, 5);
 
       const topAlerts = alerts
         .slice(0, 10)
@@ -48,11 +56,25 @@ export async function runCeoDigest(): Promise<CeoDigestResult> {
         })
         .join("\n");
 
+      const moveLines = topMoves.length
+        ? topMoves.map((move) => `- **${move.lane}**: ${move.title} — ${move.description}`).join("\n")
+        : "- No ready Career OS moves. Review blocked/waiting gates before adding work.";
+
       const digestMd = [
         `# CEO Digest`,
         `Generated: ${nowIso()}`,
         "",
-        `## Snapshot`,
+        `## Strategic Position`,
+        `- Career OS: **Phase ${careerOs.currentPhase.number} — ${careerOs.currentPhase.title}**`,
+        `- Phase completion: **${careerOs.phaseCompletionPercent}%**`,
+        `- Binding bottleneck: **${careerOs.primaryBottleneck}**`,
+        `- Awaiting real-world results: **${careerOs.awaitingResults.length}**`,
+        `- Fusion: ${fusionSummary}`,
+        "",
+        `## Today's Highest-Leverage Moves`,
+        moveLines,
+        "",
+        `## Operator Queue`,
         `- Pending approvals: **${pendingApprovals}**`,
         `- Unresolved alerts: **${unresolvedAlerts}**`,
         "",
@@ -68,6 +90,16 @@ export async function runCeoDigest(): Promise<CeoDigestResult> {
         pendingApprovals,
         unresolvedAlerts,
         taskCountsByStatus: counts,
+        careerPhase: {
+          number: careerOs.currentPhase.number,
+          id: careerOs.currentPhase.id,
+          title: careerOs.currentPhase.title,
+          completionPercent: careerOs.phaseCompletionPercent,
+          primaryBottleneck: careerOs.primaryBottleneck,
+          awaitingResults: careerOs.awaitingResults.length
+        },
+        todayMoves: topMoves.map((move) => ({ id: move.id, lane: move.lane, title: move.title, status: move.status })),
+        fusion: decisionContext.fusionDecision,
         digestMd,
         updatedAt: nowIso()
       });
@@ -76,11 +108,15 @@ export async function runCeoDigest(): Promise<CeoDigestResult> {
         pendingApprovals,
         unresolvedAlerts,
         taskCountsByStatus: counts,
+        careerPhase: `${careerOs.currentPhase.number} ${careerOs.currentPhase.title}`,
+        phaseCompletionPercent: careerOs.phaseCompletionPercent,
+        primaryBottleneck: careerOs.primaryBottleneck,
+        awaitingResults: careerOs.awaitingResults.length,
         digestMd
       };
     },
     summarize: (result) => ({
-      summary: `${result.pendingApprovals} approvals · ${result.unresolvedAlerts} alerts`,
+      summary: `Phase ${result.careerPhase} · ${result.phaseCompletionPercent}% · ${result.pendingApprovals} approvals · ${result.unresolvedAlerts} alerts`,
       detailsJson: result
     })
   });
