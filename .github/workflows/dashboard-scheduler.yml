@@ -1,21 +1,33 @@
-name: Dashboard Scheduler
+name: Telemetry & Evidence Refresh
 
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which job to run (website|meta|woo|industry|cloudflare|leads|social|executive)"
+        description: "Evidence job to run"
         required: true
-        default: "website"
+        type: choice
+        default: website
+        options:
+          - website
+          - woo
+          - meta
+          - industry
+          - cloudflare
+          - leads
+          - social
+          - scheduler
   schedule:
-    - cron: "0 10 * * *" # Website agent at 02:00 PT (10:00 UTC)
-    - cron: "5 10 * * *" # Woo telemetry ingestion at 02:05 PT (10:05 UTC)
-    - cron: "0 11 * * *" # Meta agent at 03:00 PT (11:00 UTC)
-    - cron: "0 12 * * *" # Industry Pulse at 04:00 PT (12:00 UTC)
-    - cron: "30 12 * * *" # Cloudflare telemetry at 04:30 PT (12:30 UTC)
-    - cron: "0 13 * * MON" # Lead Intelligence Monday 06:00 PT (13:00 UTC)
-    - cron: "0 4 * * MON" # Social Intelligence Sunday 20:00 PT (Monday 04:00 UTC)
-    - cron: "0 13 * * *" # Executive Command refresh at 05:00 PT (13:00 UTC)
+    - cron: "0 10 * * *"      # Website evidence, 02:00 PT
+    - cron: "5 10 * * *"      # Woo telemetry, 02:05 PT
+    - cron: "0 11 * * *"      # Meta evidence, 03:00 PT
+    - cron: "0 12 * * *"      # Industry evidence, 04:00 PT
+    - cron: "30 12 * * *"     # Cloudflare telemetry, 04:30 PT
+    - cron: "0 13 * * MON"    # Lead intelligence, Monday 06:00 PT
+    - cron: "0 4 * * MON"     # Social intelligence, Sunday 20:00 PT
+
+permissions:
+  contents: read
 
 jobs:
   woo:
@@ -25,27 +37,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Needs Node 22+ for TypeScript strip-types support used by our *.mjs scripts importing *.ts.
           node-version: 22
-      - name: Install dependencies
-        run: npm ci
-      - name: Install 1Password CLI
-        uses: 1Password/install-cli-action@v1
-      - name: Run Woo Telemetry Ingestion
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run Woo telemetry ingestion
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
-          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-            echo "OP service account token present"
-          else
-            echo "OP service account token missing" && exit 1
-          fi
-
-          # Woo job must not inherit GA4/.env.website.* injection.
-          # Use a dedicated Woo-only env template.
-          cp .env.woo.ci .env.woo
-
-          # Safety: verify we are targeting production Supabase project and not staging.
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/woo.op.env .env.woo
           op run --env-file .env.woo -- bash -lc '
             set -euo pipefail
             PROJECT_REF="$(op read "op://OpenClaw/Supabase Production API/project_ref")"
@@ -53,22 +54,8 @@ jobs:
             HOST="${SUPABASE_URL#https://}"
             HOST="${HOST#http://}"
             HOST="${HOST%%/*}"
-
-            if [ "$PROJECT_REF" != "ibjsjosplgbqevmnvvpf" ]; then
-              echo "Unexpected Supabase project_ref" >&2
-              exit 1
-            fi
-
-            if [ "$HOST" != "ibjsjosplgbqevmnvvpf.supabase.co" ]; then
-              echo "Unexpected Supabase host" >&2
-              exit 1
-            fi
-
-            if [ "$PROJECT_REF" = "tpgkyluovzhwvoajinra" ] || [ "$HOST" = "tpgkyluovzhwvoajinra.supabase.co" ]; then
-              echo "Staging Supabase targeted" >&2
-              exit 1
-            fi
-
+            test "$PROJECT_REF" = "ibjsjosplgbqevmnvvpf" || { echo "Unexpected Supabase project_ref" >&2; exit 1; }
+            test "$HOST" = "ibjsjosplgbqevmnvvpf.supabase.co" || { echo "Unexpected Supabase host" >&2; exit 1; }
             npm run woo:ingest
           '
 
@@ -79,28 +66,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Install 1Password CLI
-        uses: 1Password/install-cli-action@v1
-      - name: Run Website Agent
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run website evidence refresh
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
-          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-            echo "OP service account token present"
-            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
-          else
-            echo "OP service account token missing" && exit 1
-          fi
-          cp .env.website.ci .env.website
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/website.op.env .env.website
           op run --env-file .env.website -- npm run website:run
-      - name: Upload Website Snapshot Artifact
+      - name: Upload website evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -117,28 +94,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Install 1Password CLI
-        uses: 1Password/install-cli-action@v1
-      - name: Run Meta Agent
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run Meta evidence refresh
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
-          SCHEDULER_ALERT_URL: ${{ secrets.SCHEDULER_ALERT_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-            echo "OP service account token present"
-            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
-          else
-            echo "OP service account token missing" && exit 1
-          fi
-          cp .env.meta.ci .env.meta
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/meta.op.env .env.meta
           op run --env-file .env.meta -- npm run meta:run
-      - name: Upload Meta Snapshot Artifact
+      - name: Upload Meta evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -155,10 +122,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Run Industry Pulse
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run industry evidence refresh
         run: npm run industry:run
 
   cloudflare:
@@ -168,52 +135,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Install 1Password CLI
-        uses: 1Password/install-cli-action@v1
-      - name: Run Cloudflare Telemetry
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run Cloudflare telemetry refresh
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-            echo "OP service account token present"
-            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
-          else
-            echo "OP service account token missing" && exit 1
-          fi
-          cp .env.cloudflare.ci .env.cloudflare
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/cloudflare.op.env .env.cloudflare
           op run --env-file .env.cloudflare -- npm run cloudflare:run
-      - name: Resolve dashboard artifact path
-        run: echo "DASHBOARD_PATH=$(realpath ../dashboard)" >> "$GITHUB_ENV"
-      - name: Upload Cloudflare Snapshot Artifact
+      - name: Upload Cloudflare evidence artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cloudflare-latest-json
           path: |
-            ${{ env.DASHBOARD_PATH }}/data/cloudflare/latest.json
-            ${{ env.DASHBOARD_PATH }}/logs/cloudflare_telemetry.log
+            dashboard/data/cloudflare/latest.json
+            dashboard/logs/cloudflare_telemetry.log
           retention-days: 7
-
-  scheduler:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'scheduler'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Record scheduler telemetry snapshot
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          npm run scheduler:status
 
   leads:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'leads' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * MON'
@@ -222,23 +163,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Install 1Password CLI
-        uses: 1Password/install-cli-action@v1
-      - name: Run Lead Intelligence
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run lead evidence refresh
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
         run: |
-          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-            echo "OP service account token present"
-            echo "OP token length: ${#OP_SERVICE_ACCOUNT_TOKEN}"
-          else
-            echo "OP service account token missing" && exit 1
-          fi
-          cp .env.leads.ci .env.leads
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/leads.op.env .env.leads
           op run --env-file .env.leads -- npm run leads:run
 
   social:
@@ -248,15 +182,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Run Social Intelligence
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run social evidence refresh
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npm run social:run
-      - name: Upload Social Snapshot Artifact
+      - name: Upload social evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -266,15 +200,21 @@ jobs:
             dashboard/logs/social_intelligence.log
           retention-days: 7
 
-  executive:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'executive' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * *'
+  scheduler:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'scheduler'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Run Executive Refresh
-        run: npm run executive:refresh
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Record scheduler telemetry snapshot
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run scheduler:status
+
+# This workflow collects evidence only. It must not create executive recommendations.
+# Career OS + Fusion + Avery own operating decisions.

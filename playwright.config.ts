@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
-// Playwright loads the config via a TS loader that can change __dirname (compiled temp dir).
-// In `pnpm -C business-dashboard test:e2e`, process.cwd() is the package root.
+
+// Playwright loads the config via a TS loader that can change __dirname.
+// process.cwd() is the repository/package root in the supported test commands.
 const packageRoot = process.cwd();
 
 export default defineConfig({
@@ -16,31 +17,13 @@ export default defineConfig({
     video: "retain-on-failure"
   },
   webServer: {
-    // NOTE: Turbopack chunk-load errors can flake E2E in CI; force webpack dev server.
-    // Run from this package root so Next resolves workspace-local deps correctly under pnpm.
     cwd: packageRoot,
-    // Run a prod server to avoid dev hot-reloader / Turbopack instability during E2E.
-    // This app uses `output: 'standalone'`. Start the standalone server without hardcoding
-    // the checkout directory name.
-    command:
-      "bash -lc 'set -euo pipefail; " +
-      "pnpm exec next build; " +
-      "servers=$(find .next/standalone -maxdepth 4 -type f -name server.js -print); " +
-      "count=$(printf \"%s\\n\" $servers | sed \"/^$/d\" | wc -l | tr -d \" \" ); " +
-      "if [ \"$count\" -eq 0 ]; then echo \"No standalone server.js found under .next/standalone\" >&2; exit 1; fi; " +
-      "if [ \"$count\" -ne 1 ]; then echo \"Multiple standalone server.js files found under .next/standalone:\" >&2; printf \" - %s\\n\" $servers >&2; exit 1; fi; " +
-      "server=$(printf \"%s\\n\" $servers | head -n 1); " +
-      "dir=$(cd \"$(dirname \"$server\")\" && pwd); " +
-      "repo=$(pwd); " +
-      "ln -sfn \"$repo/public\" \"$dir/public\"; " +
-      "mkdir -p \"$dir/.next\"; " +
-      "ln -sfn \"$repo/.next/static\" \"$dir/.next/static\"; " +
-      "cd \"$dir\"; " +
-      "node server.js'",
+    // Use the same standard Next.js production build/start model as the Vercel-oriented app.
+    // Do not depend on the retired container-specific `output: standalone` artifact.
+    command: "bash -lc 'set -euo pipefail; npm run build; npm run start -- -p 3100'",
     env: {
       ...process.env,
       E2E_TEST: "1",
-      NEXT_DISABLE_TURBOPACK: "1",
       NEXT_PUBLIC_APP_URL: "http://localhost:3100",
       PORT: "3100",
       DASHBOARD_ADMIN_TOKEN: "dev-dashboard-secret"

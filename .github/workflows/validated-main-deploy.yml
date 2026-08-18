@@ -1,4 +1,4 @@
-name: Validated Main Deploy
+name: Validated Main
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: production-dashboard-deploy
+  group: validated-main
   cancel-in-progress: false
 
 permissions:
@@ -54,57 +54,21 @@ jobs:
       - name: Diff hygiene
         run: git diff --check
 
-  deploy:
-    name: Deploy validated commit
+  production-smoke:
+    name: Smoke check Vercel production
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ vars.DASHBOARD_PRODUCTION_URL != '' }}
     env:
-      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
-      SMOKE_BASE_URL: https://keegan-dashboard.fly.dev
+      SMOKE_BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL }}
     steps:
       - name: Checkout exact validated commit
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Require Fly production credential
+      - name: Smoke check configured production URL
         shell: bash
-        run: |
-          if [ -z "${FLY_API_TOKEN:-}" ]; then
-            echo "::error::Missing repository secret FLY_API_TOKEN. Automatic production deployment is configured but cannot run until this secret is present."
-            exit 1
-          fi
+        run: ./scripts/smoke-check.sh
 
-      - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy exact validated commit to Fly
-        run: flyctl deploy --remote-only --strategy rolling
-
-      - name: Trigger Vercel publish for same main commit
-        if: ${{ env.VERCEL_DEPLOY_HOOK_URL != '' }}
-        shell: bash
-        run: |
-          curl --fail --silent --show-error \
-            --retry 3 --retry-all-errors --retry-delay 2 \
-            -X POST "$VERCEL_DEPLOY_HOOK_URL" >/dev/null
-          echo "Vercel deploy hook triggered."
-
-      - name: Note missing optional Vercel hook
-        if: ${{ env.VERCEL_DEPLOY_HOOK_URL == '' }}
-        run: echo "VERCEL_DEPLOY_HOOK_URL is not configured; Fly deployed successfully but Vercel publish was skipped."
-
-      - name: Smoke check production
-        shell: bash
-        run: |
-          for attempt in 1 2 3 4 5 6; do
-            if ./scripts/smoke-check.sh; then
-              exit 0
-            fi
-            echo "Production not healthy yet; retrying smoke check in 15s (attempt $attempt/6)."
-            sleep 15
-          done
-          echo "::error::Production smoke check failed after deployment."
-          exit 1
+# Deployment policy:
+# - Vercel Git integration is the only production deployment path.
+# - This workflow validates main and optionally smoke-checks the configured Vercel production URL.
+# - Fly deployment credentials, flyctl, and Vercel deploy hooks are intentionally not used here.
