@@ -1,166 +1,122 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Business Dashboard
 
-## Deploying
+A Next.js + Supabase decision and intelligence system for running the business and career operating system.
 
-`./scripts/deploy.sh` wraps our release flow so Fly and Vercel stay in sync:
+The product is not intended to be a collection of independent dashboards or autonomous recommendation bots. Its core question is:
 
-1. Create `.env.deploy` (ignored by git) with `VERCEL_DEPLOY_HOOK_URL=<hook>` – the production hook currently lives at `https://api.vercel.com/v1/integrations/deploy/prj_iGgUAjo6mRCpljpVtXoaY3FM8kgz/hYd64J3o6f`.
-2. Run `./scripts/deploy.sh` (pass any `fly deploy` flags you need). The script deploys to Fly and, if `VERCEL_DEPLOY_HOOK_URL` is set, immediately POSTs to that hook so Vercel publishes the same commit.
+> **What should Keegan do next?**
 
-> Note: `.npmrc` pins `legacy-peer-deps=true` so `npm install` behaves consistently between Fly (Docker) and Vercel. Keep the file committed so CI/CD matches local installs.
+Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current system map and canonical source hierarchy.
 
-Post-deploy: run `./scripts/smoke-check.sh` and follow the full runbook in `docs/deploy-runbook.md`.
+## Core decision flow
 
-## Getting Started
-
-### Environment variables
-
-Create a local `.env` (or copy `.env.example`) with the Supabase project settings:
-
-```
-NEXT_PUBLIC_APP_URL=http://localhost:3000          # optional, server-side fetch base
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Optional: use JSON seeds when you do not have Supabase access
-DASHBOARD_DATA_SOURCE=seed
-
-# Optional: shared-secret scheduler auth (for local cron)
-SCHEDULER_SECRET=dev-secret
-
-# Optional: allow GitHub Actions autopilot to authenticate via $GITHUB_TOKEN
-SCHEDULER_GITHUB_REPO=keeganhall33/business-dashboard
-
-# Optional: override the seed JSON path (repo-relative or absolute)
-# DASHBOARD_SEED_PATH=./data/dashboard-seed.json
-
-# Optional: E2E harness fixture mode (returns a fully static payload for Playwright/Cypress)
-# E2E_TEST=1
+```text
+Business + external evidence
+→ normalized knowledge
+→ Fusion
+→ Avery
+→ Sloan / Lyra / Noah
+→ prioritized moves
+→ execution
+→ measured outcomes
+→ learning
 ```
 
-`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are required for live data. When `DASHBOARD_DATA_SOURCE=seed`,
-the API falls back to `data/dashboard-seed.json` so the UI can render offline.
+See:
+- [`docs/intelligence/AI_DECISION_CONSTITUTION.md`](docs/intelligence/AI_DECISION_CONSTITUTION.md)
+- [`docs/intelligence/AGENT_OPERATING_MODEL.md`](docs/intelligence/AGENT_OPERATING_MODEL.md)
+- [`docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md`](docs/intelligence/EXTERNAL_INTELLIGENCE_ARCHITECTURE.md)
+- [`docs/intelligence/ROADMAP.md`](docs/intelligence/ROADMAP.md)
 
-### Dashboard data source (Supabase vs seed JSON)
+## Production deployment
 
-By default, the dashboard overview endpoint (`GET /api/dashboard/overview`) reads from Supabase.
+**Vercel is the only production application runtime.**
 
-If you want to run the UI without Supabase env/network (or you have a Prefect JSON export), you can switch the overview endpoint into **seed mode**:
+- Vercel Git integration deploys the application from GitHub.
+- `.github/workflows/validated-main-deploy.yml` validates integrated `main` with typecheck, tests, and a production build.
+- The workflow can optionally smoke-check the configured production URL through the `DASHBOARD_PRODUCTION_URL` repository variable.
+- Fly and Docker deployment paths are retired.
+
+Do not introduce another production runtime without an explicit architecture decision.
+
+## Application scheduler
+
+Application-level schedules have one control plane:
+
+1. `.github/workflows/autopilot.yml` wakes the application every five minutes.
+2. It calls `POST /api/scheduler/tick` on the configured `SCHEDULER_BASE_URL`.
+3. `/api/scheduler/tick` reads Supabase `scheduled_jobs` and runs any due internal jobs.
+4. Job timing belongs in `scheduled_jobs`, not duplicated GitHub cron expressions.
+
+The scheduler workflow intentionally refuses Fly targets.
+
+Required GitHub configuration:
+- repository variable `SCHEDULER_BASE_URL` → canonical Vercel production dashboard URL
+- repository secret `SCHEDULER_SECRET`
+
+## Evidence refresh jobs
+
+`.github/workflows/dashboard-scheduler.yml` runs external/internal telemetry collection that must execute in GitHub Actions, including website, WooCommerce, Meta, Cloudflare, lead, social, and industry refreshes.
+
+These jobs **collect evidence**. They do not own executive strategy. Operating recommendations flow through the canonical intelligence/Fusion/agent system.
+
+Committed 1Password templates live in `config/env/*.op.env`. They may contain only `op://` references or non-secret constants. Resolved/local `.env*` files are ignored by Git.
+
+## Local development
+
+Install and run:
 
 ```bash
-# from business-dashboard/
-export DASHBOARD_DATA_SOURCE=seed
-# optional: point at a different JSON export (Prefect, etc.)
-export DASHBOARD_SEED_PATH=./data/dashboard-seed.json
-```
-
-Seed mode can load either:
-- a full `DashboardOverviewResponse` payload (exact match for `GET /api/dashboard/overview`), or
-- a smaller “snapshot” export (currently: `headerMetrics` + `pipelinePanel.collectors`).
-
-First, run the development server:
-
-```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Useful validation commands:
 
-## Scheduler jobs (Supabase Scheduled Functions / cron)
-
-The app exposes scheduler endpoints under `POST /api/scheduler/*`.
-
-All scheduler routes require one of the following:
-
-- Shared secret header: `x-scheduler-secret: <SCHEDULER_SECRET>`
-- **or** a GitHub Actions token when `SCHEDULER_GITHUB_REPO` is set on the server. Send `Authorization: Bearer $GITHUB_TOKEN` from the workflow and the API will verify it against the repo allowlist.
-
-`SCHEDULER_SECRET` is still recommended for local cron / launchd jobs. GitHub Actions uses the token path by default, so you no longer need to store the secret in repo settings to keep the workflow green.
-
-Jobs:
-
-- `POST /api/scheduler/daily-agent-cycle`
-- `POST /api/scheduler/daily-health-check`
-- `POST /api/scheduler/proof-enforcement`
-- `POST /api/scheduler/deliverable-harvest`
-- `POST /api/scheduler/ceo-digest`
-- `POST /api/scheduler/evening-closeout`
-- `POST /api/scheduler/weekly-command-cycle`
-- `POST /api/scheduler/weekly-summary`
-- `POST /api/scheduler/midweek-opportunity-pulse`
-- `POST /api/scheduler/industry-news-pulse`
-
-### Single-entry cron (recommended)
-
-Instead of scheduling 9 separate cron entries, schedule **one** job that hits:
-
-- `POST /api/scheduler/tick`
-
-every minute. The tick endpoint reads `scheduled_jobs`, runs any due jobs, and updates `next_run_at`.
-
-## Manual data entry (metric readings)
-
-When upstream telemetry isn't wired yet, you can post manual readings into `scoreboard_metric_readings`:
-
-`POST /api/metrics/readings`
-
-Body:
-
-```json
-{
-  "metricKey": "monthly_revenue",
-  "currentValue": 28500,
-  "measuredAt": "2026-05-16T03:10:00.000Z",
-  "source": "manual"
-}
+```bash
+npx tsc --noEmit
+npm test
+npm run build
+npm run lint
 ```
 
-## Agent run handshake (checkpoints) + nudges
+### Environment
 
-To surface progress in the dashboard (and enable resume/hand-off workflows), runs can write checkpoints:
+Create a local `.env` from `.env.example` and provide the development values you need. At minimum, live Supabase-backed operation typically needs:
 
-- `GET /api/agents/runs/:runId/checkpoints`
-- `POST /api/agents/runs/:runId/checkpoints`
-
-Body:
-
-```json
-{
-  "agentKey": "noah",
-  "checkpointKey": "pipeline_scan",
-  "status": "started",
-  "detailMd": "Scanning recent opportunities for staleness",
-  "metadata": { "limit": 200 }
-}
+```text
+NEXT_PUBLIC_SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-You can also "nudge" an agent to activate approved/auto-runnable tasks and publish a status snapshot:
+Never commit resolved credentials.
 
-- `POST /api/agents/nudge/:agentKey`
+## Seed and test modes
 
-To run from Supabase Scheduled Functions (or any cron runner), schedule an HTTP request to the route and include `x-scheduler-secret`.
+Non-production seed and fixture modes exist for local/E2E validation. They must remain explicitly labeled and must never silently replace production data.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `DASHBOARD_DATA_SOURCE=seed` enables seed mode intentionally.
+- `E2E_TEST=1` enables the static test harness.
+- staging fixtures are for explicit preview/testing environments only.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Repository conventions
 
-## Learn More
+- Canonical architecture belongs under `docs/` and `docs/intelligence/`.
+- Historical Supabase migrations remain in the repository even when later migrations retire a feature.
+- Do not create a parallel scheduler, recommendation engine, agent definition, deployment runtime, or memory system when a canonical owner already exists.
+- `AGENTS.md` contains coding-agent/worktree safety rules. Product-agent roles live in `src/lib/agents/operating-model.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+## Key directories
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```text
+src/app/                       Next.js routes and UI
+src/lib/agents/                Avery, Sloan, Lyra, Noah + canonical operating model
+src/lib/career/                Career OS
+src/lib/intelligence-v1/       Internal intelligence
+src/lib/external-intelligence/ External knowledge/intelligence
+src/lib/fusion-v1/             Evidence-gated decision fusion
+src/lib/scheduler/             Internal job orchestration
+supabase/migrations/           Immutable database history
+docs/intelligence/             Canonical intelligence architecture
+config/env/                    Safe-to-commit 1Password reference templates
+```
