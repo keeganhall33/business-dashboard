@@ -23,7 +23,7 @@ jobs:
   run-scheduler:
     runs-on: ubuntu-latest
     env:
-      BASE_URL: ${{ vars.SCHEDULER_BASE_URL || 'https://keegan-dashboard.fly.dev' }}
+      BASE_URL: ${{ vars.SCHEDULER_BASE_URL || vars.PRODUCTION_BASE_URL }}
       SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
     steps:
       - name: Determine target job
@@ -44,12 +44,23 @@ jobs:
           fi
           echo "target_job=$TARGET" >> "$GITHUB_OUTPUT"
 
-      - name: Log target endpoint
+      - name: Validate scheduler target
+        shell: bash
         run: |
           if [ -z "$SCHEDULER_SECRET" ]; then
             echo "SCHEDULER_SECRET must be configured" >&2
             exit 1
           fi
+          if [ -z "$BASE_URL" ]; then
+            echo "PRODUCTION_BASE_URL or SCHEDULER_BASE_URL must be configured" >&2
+            exit 1
+          fi
+          case "$BASE_URL" in
+            *fly.dev*)
+              echo "Scheduler target still points at Fly.io: $BASE_URL" >&2
+              exit 1
+              ;;
+          esac
           echo "Scheduler target: $BASE_URL"
           echo "Running job: ${{ steps.pick.outputs.target_job }}"
 
