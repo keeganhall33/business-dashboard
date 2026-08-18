@@ -3,6 +3,12 @@
 import { Children, useEffect, useMemo, useState, useTransition } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import {
+  AGENT_EXECUTION_SEQUENCE,
+  AGENT_OPERATING_MODELS,
+  getAgentOperatingModel,
+  type AgentOperatingModel
+} from "@/lib/agents/operating-model";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import type { AgentKey } from "@/lib/types/requests";
 import type { AgentSlaSnapshot } from "@/lib/types/dashboard";
@@ -15,43 +21,12 @@ import { requestDashboardRefresh } from "@/lib/dashboard/events";
 import { publishDashboardToast } from "@/lib/dashboard/toast";
 import { extractResponseError } from "@/lib/dashboard/http";
 
-const agentAreaConfig: AgentAreaDefinition[] = [
-  {
-    key: "ceo",
-    title: "CEO",
-    subtitle: "Executive direction, approvals, and cross-agent enforcement",
-    agentKeys: ["avery"],
-    kpiMetricKeys: ["monthly_revenue", "aov", "conversion_rate"]
-  },
-  {
-    key: "product",
-    title: "Product & Ecommerce",
-    subtitle: "Offer architecture, conversion, and digital commerce operations",
-    agentKeys: ["sloan"],
-    kpiMetricKeys: ["aov", "conversion_rate", "cart_abandonment_rate"]
-  },
-  {
-    key: "brand",
-    title: "Brand Strategy",
-    subtitle: "Positioning, storytelling, and premium demand generation",
-    agentKeys: ["lyra"],
-    kpiMetricKeys: ["engagement_rate", "cultural_relevance_score", "conversion_rate"]
-  },
-  {
-    key: "research",
-    title: "Research & Intelligence",
-    subtitle: "Market reconnaissance, collector intel, and partner diligence",
-    agentKeys: ["noah"],
-    kpiMetricKeys: ["tier1_brand_collabs"]
-  }
-];
-
 type AgentAreaDefinition = {
   key: string;
   title: string;
   subtitle: string;
-  agentKeys: AgentKey[];
-  kpiMetricKeys?: string[];
+  agentKey: AgentKey;
+  kpiMetricKeys: string[];
 };
 
 type RouterLike = {
@@ -67,14 +42,13 @@ type Props = {
 export function AgentAreaBoard({ agents, agentSla = [], router: injectedRouter }: Props) {
   const agentMap = useMemo(() => new Map(agents.map((agent) => [agent.agent.agentKey, agent])), [agents]);
   const slaMap = useMemo(() => new Map(agentSla.map((snapshot) => [snapshot.agentKey, snapshot])), [agentSla]);
+  const agentAreaConfig = useMemo(() => buildAgentAreaConfig(agentMap), [agentMap]);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   return (
     <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
       {agentAreaConfig.map((area) => {
-        const areaAgents = area.agentKeys
-          .map((key) => agentMap.get(key))
-          .filter((agent): agent is AgentDashboardResponse => Boolean(agent));
+        const areaAgents = [agentMap.get(area.agentKey)].filter((agent): agent is AgentDashboardResponse => Boolean(agent));
         if (areaAgents.length === 0) return null;
         const areaMetrics = buildAreaMetrics(areaAgents, area.kpiMetricKeys);
         return (
@@ -95,6 +69,7 @@ export function AgentAreaBoard({ agents, agentSla = [], router: injectedRouter }
                 <AgentDetailCard
                   key={agent.agent.agentKey}
                   agent={agent}
+                  operatingModel={getAgentOperatingModel(agent.agent.agentKey)}
                   expanded={expandedAgent === agent.agent.agentKey}
                   sla={slaMap.get(agent.agent.agentKey)}
                   router={injectedRouter}
@@ -113,13 +88,14 @@ export function AgentAreaBoard({ agents, agentSla = [], router: injectedRouter }
 
 type AgentCardProps = {
   agent: AgentDashboardResponse;
+  operatingModel: AgentOperatingModel | null;
   expanded: boolean;
   sla?: AgentSlaSnapshot;
   router?: RouterLike;
   onToggle: () => void;
 };
 
-function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggle }: AgentCardProps) {
+function AgentDetailCard({ agent, operatingModel, expanded, sla, router: injectedRouter, onToggle }: AgentCardProps) {
   const safeRouter = useSafeRouter();
   const router = injectedRouter ?? safeRouter;
   const [isPending, startTransition] = useTransition();
@@ -186,6 +162,9 @@ function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggl
   });
   const planPreview = buildPlanPreview(pendingPlan, lastPlan, autoPlan);
   const slaLabel = pausedLabel ?? "Run cadence unknown";
+  const displayName = operatingModel?.displayName ?? agent.agent.displayName;
+  const roleTitle = operatingModel?.roleTitle ?? agent.agent.roleTitle;
+  const mandate = operatingModel?.mandate ?? agent.agent.mandate;
 
   useEffect(() => {
     setDecisionStatus({ state: "idle" });
@@ -232,9 +211,9 @@ function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggl
     <div className="rounded-3xl border border-zinc-900 bg-zinc-950/90 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.3em] text-zinc-500">{agent.agent.roleTitle}</div>
-          <div className="text-2xl font-semibold text-zinc-50">{agent.agent.displayName}</div>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-400">{agent.agent.mandate}</p>
+          <div className="text-xs uppercase tracking-[0.3em] text-zinc-500">{roleTitle}</div>
+          <div className="text-2xl font-semibold text-zinc-50">{displayName}</div>
+          <p className="mt-1 max-w-3xl text-sm text-zinc-400">{mandate}</p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           <StatusChip label={severity.label} tone={severity.tone} />
@@ -392,7 +371,7 @@ function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggl
               {filteredInsights.map((insight) => (
                 <InsightCard
                   key={`insight-${insight.id}`}
-                  insight={agentUpdateToInsight(insight, agent.agent.displayName)}
+                  insight={agentUpdateToInsight(insight, displayName)}
                 />
               ))}
             </Subsection>
@@ -401,7 +380,7 @@ function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggl
               {filteredActions.map((action) => (
                 <InsightCard
                   key={`action-${action.id}`}
-                  insight={agentUpdateToInsight(action, agent.agent.displayName)}
+                  insight={agentUpdateToInsight(action, displayName)}
                 />
               ))}
             </Subsection>
@@ -470,7 +449,7 @@ function AgentDetailCard({ agent, expanded, sla, router: injectedRouter, onToggl
         <div className="mt-4 space-y-3">
           {conversationMessages.length === 0 && <p className="text-xs text-zinc-500">No conversation activity yet.</p>}
           {conversationMessages.map((message) => (
-            <ConversationMessage key={message.id} message={message} agentName={agent.agent.displayName} />
+            <ConversationMessage key={message.id} message={message} agentName={displayName} />
           ))}
         </div>
       )}
@@ -484,6 +463,19 @@ function useSafeRouter() {
   } catch {
     return null;
   }
+}
+
+function buildAgentAreaConfig(agentMap: Map<string, AgentDashboardResponse>): AgentAreaDefinition[] {
+  return AGENT_EXECUTION_SEQUENCE.map((agentKey) => {
+    const operatingModel = AGENT_OPERATING_MODELS[agentKey];
+    return {
+      key: operatingModel.area.key,
+      title: operatingModel.area.title,
+      subtitle: operatingModel.area.subtitle,
+      agentKey,
+      kpiMetricKeys: operatingModel.ownedMetricKeys
+    };
+  }).filter((area) => agentMap.has(area.agentKey));
 }
 
 type CollapsedSummaryProps = {
