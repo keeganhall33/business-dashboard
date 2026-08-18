@@ -228,11 +228,6 @@ async function main() {
     return { executionClass: "AUTO_CONTINUE", reason: "default" };
   }
 
-  function safeTrunc(text, max) {
-    const t = String(text ?? "");
-    return t.length <= max ? t : `${t.slice(0, max)}\n…(truncated)`;
-  }
-
   function buildCompactAgentPrompt({ repo, issueNumber, title, body, comments, executionClass }) {
     const s = extractReferenceDelta(body);
     const approvedDecision = latestApprovedArchitectDecision(comments);
@@ -279,6 +274,11 @@ async function main() {
     return [header, "", reference, "", delta, constraints ? `\n${constraints}` : "", acceptance ? `\n${acceptance}` : "", decision ? `\n${decision}` : "", "", outputContract].join("\n\n");
   }
 
+  function safeTrunc(text, max) {
+    const t = String(text ?? "");
+    return t.length <= max ? t : `${t.slice(0, max)}\n…(truncated)`;
+  }
+
   function resultBase(taskId) {
     return {
       TASK_ID: taskId,
@@ -304,11 +304,16 @@ async function main() {
   function parseOrchestrationResult(text, fallbackTaskId = null) {
     const fenced = String(text ?? "").match(/```json\n([\s\S]*?)```/i);
     const candidate = fenced ? fenced[1] : String(text ?? "");
-    if (!candidate.trim()) return { kind: "invalid", error: "OpenClaw envelope contained no renderable final text" };
+    if (!candidate.trim()) {
+      return { kind: "invalid", error: "OpenClaw envelope contained no renderable final text; result.payloads was empty or contained no text payloads" };
+    }
     const obj = JSON.parse(candidate.trim());
     if (obj && typeof obj === "object") {
       const resolvedTaskId = typeof obj.TASK_ID === "string" && obj.TASK_ID.trim() ? obj.TASK_ID.trim() : (fallbackTaskId ? String(fallbackTaskId) : null);
-      if (resolvedTaskId && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") return { kind: "result", value: { ...resultBase(resolvedTaskId), ...obj, TASK_ID: resolvedTaskId } };
+      if (resolvedTaskId && typeof obj.STATUS === "string" && typeof obj.SUMMARY === "string") {
+        if (!fallbackTaskId) return { kind: "result", value: obj };
+        return { kind: "result", value: { ...resultBase(resolvedTaskId), ...obj, TASK_ID: resolvedTaskId } };
+      }
       if (resolvedTaskId && typeof obj.CHECKPOINT_ID === "string" && typeof obj.QUESTION_OR_DECISION === "string") return { kind: "checkpoint", value: { ...obj, TASK_ID: resolvedTaskId } };
     }
     return { kind: "invalid", error: "JSON parsed but did not match known contracts" };
@@ -341,7 +346,8 @@ async function main() {
     const rootKeys = envelope && typeof envelope === "object" ? Object.keys(envelope).sort() : [];
     const result = envelope?.result;
     const resultType = Array.isArray(result) ? "array" : result === null ? "null" : typeof result;
-    return `envelopeKeys=${rootKeys.join(",")};resultType=${resultType}`;
+    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+    return `envelopeKeys=${rootKeys.join(",")};resultType=${resultType};resultKeys=${resultKeys.join(",")};attemptedAgents=${attemptedAgents.join(",")}`;
   }
 
   function finishAwaitingReview() {
@@ -377,23 +383,24 @@ async function main() {
   let escalationReason = null;
 
   function buildStrictJsonRetryPrompt(basePrompt, opts) {
-    const proofGuard = opts?.isProof337 && opts?.proofNonce
+    const proofGuard = opts && opts.isProof337 && opts.proofNonce
       ? ["PROOF_GUARD (AUTHORITATIVE):", "CLOUD_FORBIDDEN=true", `FRESHNESS_NONCE=${String(opts.proofNonce)} (MUST be included verbatim inside SESSION_CONTEXT)`]
       : [];
     return [
       "STRICT_JSON_ONLY_RETRY:",
       ...proofGuard,
       "The full task context follows below. Execute that task; do not ask the user to restate it.",
-      "Return ONLY one OrchestrationResultContractV1 JSON object and nothing else.",
+      "Return ONLY OrchestrationResultContractV1 as strict JSON and nothing else.",
       "No prose. No code fences. No DECISION-only object. No ArchitectCheckpointV1.",
       `TASK_ID MUST BE \"${String(taskId)}\". Never use placeholders such as \"issue-or-task-id\", \"task-id\", or \"unknown\".`,
       "Use EXACT uppercase keys. Minimum valid complete shape:",
       `{"TASK_ID":"${String(taskId)}","STATUS":"PASS|BLOCKED|FAILED","SUMMARY":"concise outcome","CHANGES":[],"FILES_CHANGED":[],"DB_CHANGES":"NO","MIGRATION":null,"TESTS":"command/results","PR":null,"MERGE_STATUS":"N/A","PRODUCTION_CHANGE":"NO","UNEXPECTED_RESULTS":[],"DECISIONS_REQUIRED":[],"BLOCKERS":[],"NEXT_RECOMMENDED_TASK":null,"SESSION_HEALTH":"GOOD","SESSION_CONTEXT":"branch/session"}`,
+      `{"TASK_ID":"issue-or-task-id","STATUS":"PASS|BLOCKED|FAILED","SUMMARY":"concise outcome","FILES_CHANGED":[]}`,
       "If implementation succeeded, report the actual files/tests/PR. If it failed, use BLOCKED or FAILED and state the blocker.",
       "Your entire response must be a single JSON object starting with '{' and ending with '}'.",
       "",
       "### FULL TASK CONTEXT",
-      String(basePrompt ?? "")
+      safeTrunc(String(basePrompt ?? ""), 1400)
     ].join("\n");
   }
 
@@ -404,7 +411,7 @@ async function main() {
 
   function applyProofGuardForLocalStrictJson(message, opts) {
     const text = String(message ?? "");
-    if (!(opts?.isProof337 && opts?.proofNonce)) return text;
+    if (!(opts && opts.isProof337 && opts.proofNonce)) return text;
     if (text.includes("CLOUD_FORBIDDEN=true") && text.includes(String(opts.proofNonce))) return text;
     return [`### PROOF_GUARD (AUTHORITATIVE)`, `CLOUD_FORBIDDEN=true`, `FRESHNESS_NONCE=${String(opts.proofNonce)}`, "", text].join("\n");
   }
@@ -431,30 +438,50 @@ async function main() {
   }
 
   function runOpenclawWithPrompt(agentId, message) {
-    const useEphemeralLocal = String(agentId).startsWith("local-") || agentId === "local";
-    if (useEphemeralLocal) {
-      attemptedAgents.push(agentId);
-      localAttempted = true;
-    } else {
-      attemptedAgents.push(agentId);
-    }
+    const useEmbeddedLocal = String(agentId).startsWith("local-") || agentId === "local";
+    attemptedAgents.push(agentId);
+    if (useEmbeddedLocal) localAttempted = true;
+
     const proofOpts = { isProof337: isProof337Run, proofNonce: proofNonceRun };
-    const messageWithGuard = useEphemeralLocal ? applyProofGuardForLocalStrictJson(message, proofOpts) : String(message ?? "");
-    const effectiveMessage = String(messageWithGuard ?? "");
-    const effectiveTimeout = useEphemeralLocal ? Math.max(Number(timeoutSeconds) || 0, 360) : Number(timeoutSeconds);
-    const args = useEphemeralLocal
-      ? ["agent", "exec", effectiveMessage, "--isolated", "--auth-env-only", "--model", ORCH_LOCAL_MODEL, "--code-mode", "code", "--local-model-lean", "--cwd", ORCH_AGENT_WORKSPACE, "--json", "--timeout", String(effectiveTimeout)]
+    let effectiveMessage = useEmbeddedLocal && shouldEnforceStrictJsonForLocal(message)
+      ? buildStrictJsonRetryPrompt(message, proofOpts)
+      : String(message ?? "");
+    if (useEmbeddedLocal) effectiveMessage = applyProofGuardForLocalStrictJson(effectiveMessage, proofOpts);
+
+    const effectiveTimeout = useEmbeddedLocal ? Math.max(Number(timeoutSeconds), 180) : Number(timeoutSeconds);
+    const sessionId = `orch-${String(agentId).replace(/[^A-Za-z0-9_-]/g, "-")}-issue-${String(issue)}-${process.pid}`;
+    const args = useEmbeddedLocal
+      ? ["agent", "--local", "--agent", agentId, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout), "--session-id", sessionId]
       : ["agent", "--agent", agentId, "--message", effectiveMessage, "--json", "--timeout", String(effectiveTimeout)];
-    const childEnv = useEphemeralLocal ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "" } : process.env;
-    const res = spawnSync("/opt/homebrew/bin/openclaw", args, { env: childEnv, encoding: "utf8", timeout: (effectiveTimeout + 60) * 1000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
-    if (res.error) throw res.error;
-    if (res.status !== 0) {
-      const err = new Error(`openclaw exited with code ${String(res.status)}`);
-      err.stdout = res.stdout;
-      err.stderr = res.stderr;
-      throw err;
+
+    const stateDir = useEmbeddedLocal ? fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-orch-state-")) : null;
+    const childEnv = useEmbeddedLocal
+      ? { ...process.env, OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || "ollama-local", OPENCLAW_MODEL: ORCH_LOCAL_MODEL, OPENCLAW_FALLBACK_MODELS: "", OPENCLAW_STATE_DIR: stateDir }
+      : process.env;
+
+    // Cloud path cleanup margin contract: timeout: (timeoutSeconds + 60) * 1000
+    const processTimeoutMs = useEmbeddedLocal ? (effectiveTimeout + 60) * 1000 : (timeoutSeconds + 60) * 1000;
+    try {
+      const res = spawnSync("/opt/homebrew/bin/openclaw", args, { env: childEnv, encoding: "utf8", timeout: processTimeoutMs, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+      if (res.error) throw res.error;
+      if (res.status !== 0) {
+        const err = new Error(`openclaw exited with code ${String(res.status)}`);
+        err.stdout = res.stdout;
+        err.stderr = res.stderr;
+        throw err;
+      }
+      return extractOpenclawJson(res.stdout, res.stderr);
+    } finally {
+      if (stateDir) {
+        try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch {}
+      }
     }
-    return extractOpenclawJson(res.stdout, res.stderr);
+  }
+
+  function runOpenclaw(agentId) {
+    const isLocal = String(agentId).startsWith("local-") || agentId === "local";
+    if (isLocal) return runOpenclawWithPrompt(agentId, prompt);
+    return runOpenclawWithPrompt(agentId, prompt);
   }
 
   try {
@@ -467,7 +494,7 @@ async function main() {
         localRoutingEnabled: ORCH_LOCAL_ROUTING_ENABLED,
         localAgentId: ORCH_LOCAL_AGENT_ID,
         cloudAgentId: ORCH_CLOUD_AGENT_ID,
-        cloudForbidden: true,
+        cloudForbidden: isProof337Run,
         verifyStructuredResult: ({ parsed, envelope }) => {
           if (!parsed || parsed.kind !== "result") return { ok: false, kind: "INVALID_STRUCTURED_OUTPUT" };
           if (isProof337Run) {
@@ -483,6 +510,7 @@ async function main() {
         deltaDemandsPass: (body) => deltaDemandsPass(body),
         coerceLooseJsonToResultContract: (obj, id) => coerceLooseJsonToResultContract(obj, id)
       });
+      // AUTO_CONTINUE already performed its bounded local retry; do not add a second cloud escalation here.
       attemptedAgents.splice(0, attemptedAgents.length, ...(wrapped.routingState.attemptedAgents ?? attemptedAgents));
       localAttempted = wrapped.routingState.localAttempted ?? localAttempted;
       localResult = wrapped.routingState.localResult ?? localResult;
@@ -490,7 +518,15 @@ async function main() {
       escalationReason = wrapped.routingState.escalationReason ?? null;
       out = wrapped.exec.final.raw;
     } else {
-      out = runOpenclawWithPrompt(ORCH_CLOUD_AGENT_ID, prompt);
+      try {
+        out = runOpenclaw(ORCH_CLOUD_AGENT_ID);
+      } catch (primaryErr) {
+        if (classified.executionClass !== "AUTO_CONTINUE" && ORCH_CLOUD_AGENT_ID === "main") {
+          out = runOpenclaw("coding");
+        } else {
+          throw primaryErr;
+        }
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
