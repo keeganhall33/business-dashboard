@@ -27,6 +27,10 @@ test("application scheduler has one GitHub wake-up path", () => {
   assert.match(scheduler, /\/api\/scheduler\/tick/);
   assert.doesNotMatch(scheduler, /deliverable-harvest|ceo-digest|weekly-summary/);
   assert.match(scheduler, /Fly scheduler targets are retired/);
+
+  // The pre-migration Phase 4 bootstrap seeded old schedules/idea-pulse behavior
+  // and pointed at the deleted SCHEDULER_SPEC.md. It must remain retired.
+  assert.equal(exists("supabase/phase4_scheduler.sql"), false);
 });
 
 test("telemetry workflow does not run a parallel executive recommendation engine", () => {
