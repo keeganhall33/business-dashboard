@@ -7,7 +7,10 @@ import type { AgentRunResult } from "@/lib/agents/shared";
 import { withJobRun } from "./jobLogger";
 import { runAveryQuestionEscalations } from "./ceoQuestions";
 
-const sequence = ["sloan", "lyra", "noah", "avery"] as const;
+// Avery runs first so the specialists consume the current executive directive in the same cycle.
+// Avery still sees the specialists' persisted outputs from the prior cycle plus live metrics,
+// Career OS feedback, opportunities, and research when setting today's direction.
+const sequence = ["avery", "sloan", "lyra", "noah"] as const;
 
 type SequenceKey = (typeof sequence)[number];
 
