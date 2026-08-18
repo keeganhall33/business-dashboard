@@ -18,6 +18,7 @@ export type FusionCandidateType =
   | "internal_finding_package"
   | "external_opportunity_fixture"
   | "competitive_signal_fixture"
+  | "canonical_external_knowledge"
   | "lower_priority_internal"
   | "blocked_recommendation"
   | "do_nothing_hold";
@@ -26,6 +27,7 @@ export type FusionSourceEngine =
   | "intelligence_v1_detector"
   | "dashboard_snapshots"
   | "opportunity_pipeline"
+  | "external_knowledge_synthesis"
   | "manual_fixture";
 
 export type FusionUrgency = "low" | "medium" | "high";
