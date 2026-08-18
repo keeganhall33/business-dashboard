@@ -3,14 +3,20 @@ import { runAvery } from "@/lib/agents/avery";
 import { runLyra } from "@/lib/agents/lyra";
 import { runNoah } from "@/lib/agents/noah";
 import { runSloan } from "@/lib/agents/sloan";
-import {
-  createSystemRun,
-  finishSystemRun,
-  getLatestAgentDirective
-} from "@/lib/supabase/queries";
+import { AGENT_EXECUTION_SEQUENCE } from "@/lib/agents/operating-model";
+import { createSystemRun, finishSystemRun, getLatestAgentDirective } from "@/lib/supabase/queries";
+import type { AgentRunResult } from "@/lib/agents/shared";
+import type { AgentKey } from "@/lib/types/requests";
 import { withJobRun } from "./jobLogger";
 import { writeLatestDirectiveState, writeWeeklySummaryState, writeDashboardSnapshotMeta } from "./stateWriters";
 import { evaluateWarRoomMode } from "./warRoom";
+
+const runners: Record<AgentKey, () => Promise<AgentRunResult>> = {
+  avery: runAvery,
+  sloan: runSloan,
+  lyra: runLyra,
+  noah: runNoah
+};
 
 export async function runWeeklyCommandCycle() {
   return withJobRun({
@@ -18,10 +24,9 @@ export async function runWeeklyCommandCycle() {
     fn: async () => {
       await evaluateRules();
 
-      // Executive direction is established first, then the specialists consume it in the same cycle.
-      const sequence = ["avery", "sloan", "lyra", "noah"] as const;
+      const sequence = AGENT_EXECUTION_SEQUENCE;
       const outputs: Array<{
-        agentKey: string;
+        agentKey: AgentKey;
         updatesCreated: number;
         tasksCreated: number;
         opportunitiesCreated: number;
@@ -32,18 +37,9 @@ export async function runWeeklyCommandCycle() {
       for (const agentKey of sequence) {
         const run = await createSystemRun({ agentKey, runType: "weekly" });
         try {
-          const result =
-            agentKey === "avery"
-              ? await runAvery()
-              : agentKey === "sloan"
-                ? await runSloan()
-                : agentKey === "lyra"
-                  ? await runLyra()
-                  : await runNoah();
+          const result = await runners[agentKey]();
 
           if (agentKey === "avery") {
-            // Capture the directive produced in this exact run. The older getLatestAgentDirective()
-            // lookup only sees Avery-owned directive update rows and can lag the broadcast directive.
             currentAveryDirective = result.summary ?? "";
           }
 
