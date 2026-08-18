@@ -87,6 +87,19 @@ function postResult(value, meta = null) {
 function humanApprovalRequired(body) {
   return /\*\*human_approval_required:\*\*\s*true/i.test(String(body ?? ""));
 }
+function taskField(body, name) {
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(body ?? "").match(new RegExp(`\\*\\*${escaped}:\\*\\*\\s*([^\\n]+)`, "i"));
+  return match ? match[1].trim() : null;
+}
+function requiresArchitectureGrounding(snapshot) {
+  const body = String(snapshot?.body ?? "");
+  const stream = String(taskField(body, "stream") ?? "").trim().toUpperCase();
+  if (stream && stream !== "AGENT_ORCHESTRATION" && stream !== "ORCHESTRATION_SYSTEMS") return true;
+
+  const text = `${snapshot?.title ?? ""}\n${body}`.toLowerCase();
+  return /\b(product|dashboard|decision room|fusion|intelligence|architecture|canonical|source[- ]of[- ]truth|recommendation|evidence|strategy|financial|learning|external knowledge|scheduler|memory store|agent role)\b/.test(text);
+}
 function resultBase(status, summary) {
   return {
     TASK_ID: `issue-${issue}`,
@@ -148,6 +161,18 @@ if (humanApprovalRequired(snapshot.body)) {
   editLabels({ remove: [ORCHESTRATION_V3.queue.running, ORCHESTRATION_V3.queue.ready].filter((x) => current.has(x)), add: [ORCHESTRATION_V3.queue.humanApproval] });
   process.exit(0);
 }
+const architectureGroundingRequired = requiresArchitectureGrounding(snapshot);
+const architectureGroundingInstructions = architectureGroundingRequired
+  ? [
+      "CANONICAL PRODUCT ARCHITECTURE GROUNDING REQUIRED.",
+      "Before planning or editing product/system behavior, read docs/ARCHITECTURE.md from the protected repository.",
+      "Follow its canonical source hierarchy when older docs, local workspace files, memories, or generated AGENTS.md content conflict.",
+      "Do not create a parallel recommendation engine, scheduler, memory store, deployment path, agent role, or source-of-truth boundary without first checking the canonical owner in docs/ARCHITECTURE.md."
+    ]
+  : [
+      "CANONICAL PRODUCT ARCHITECTURE GROUNDING NOT REQUIRED FOR THIS TASK.",
+      "This deterministic exemption applies only to narrow orchestration/control-plane work that does not change product or system architecture."
+    ];
 
 const beforeHead = git(["rev-parse", "HEAD"], repoRoot);
 const beforePrs = openPrSnapshot();
@@ -166,7 +191,8 @@ fs.writeFileSync(path.join(controlWorkspace, "AGENTS.md"), [
   `Protected repository: ${repoRoot}`,
   "Use only the explicitly supplied observed command wrappers for git/package-manager commands.",
   "Never initialize, delete, clean, or reseed the protected repository.",
-  `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`
+  `Model: ${ORCHESTRATION_V3.model.id}. Cloud fallback forbidden.`,
+  ...architectureGroundingInstructions
 ].join("\n") + "\n", "utf8");
 
 const baseEnv = sanitizeCloudEnv(process.env);
@@ -212,6 +238,7 @@ const prompt = [
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
   "This is a real implementation run. Do not merely review or narrate commands.",
+  ...architectureGroundingInstructions,
   shellExecutionInstruction,
   firstToolInstruction,
   "Do not substitute /usr/bin/git, /opt/homebrew/bin/git, or plain git for the observed git wrapper.",
