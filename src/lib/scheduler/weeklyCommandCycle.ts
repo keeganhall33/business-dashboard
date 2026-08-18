@@ -1,67 +1,52 @@
 import { evaluateRules } from "@/lib/automation/evaluateRules";
 import { runAvery } from "@/lib/agents/avery";
-import { runLyra } from "@/lib/agents/lyra";
-import { runNoah } from "@/lib/agents/noah";
-import { runSloan } from "@/lib/agents/sloan";
-import { AGENT_EXECUTION_SEQUENCE } from "@/lib/agents/operating-model";
 import { createSystemRun, finishSystemRun, getLatestAgentDirective } from "@/lib/supabase/queries";
-import type { AgentRunResult } from "@/lib/agents/shared";
-import type { AgentKey } from "@/lib/types/requests";
 import { withJobRun } from "./jobLogger";
 import { writeLatestDirectiveState, writeWeeklySummaryState, writeDashboardSnapshotMeta } from "./stateWriters";
 import { evaluateWarRoomMode } from "./warRoom";
 
-const runners: Record<AgentKey, () => Promise<AgentRunResult>> = {
-  avery: runAvery,
-  sloan: runSloan,
-  lyra: runLyra,
-  noah: runNoah
-};
-
+/**
+ * Weekly executive second pass.
+ *
+ * The normal daily cycle already runs Avery -> Sloan -> Lyra -> Noah. Re-running all four agents
+ * again on Monday creates duplicate analysis and recommendation noise. The weekly command therefore
+ * runs after Monday's daily specialist cycle and lets Avery synthesize the specialists' fresh output
+ * into the weekly executive directive.
+ */
 export async function runWeeklyCommandCycle() {
   return withJobRun({
     jobKey: "weekly-command-cycle",
     fn: async () => {
       await evaluateRules();
 
-      const sequence = AGENT_EXECUTION_SEQUENCE;
-      const outputs: Array<{
-        agentKey: AgentKey;
+      const sequence = ["avery"] as const;
+      const run = await createSystemRun({ agentKey: "avery", runType: "weekly" });
+      let currentAveryDirective = "";
+      let output: {
+        agentKey: "avery";
         updatesCreated: number;
         tasksCreated: number;
         opportunitiesCreated: number;
         planId?: string | null;
-      }> = [];
-      let currentAveryDirective = "";
+      };
 
-      for (const agentKey of sequence) {
-        const run = await createSystemRun({ agentKey, runType: "weekly" });
-        try {
-          const result = await runners[agentKey]();
-
-          if (agentKey === "avery") {
-            currentAveryDirective = result.summary ?? "";
-          }
-
-          await finishSystemRun(run.id, {
-            status: "completed",
-            outputsJson: result
-          });
-
-          outputs.push({
-            agentKey,
-            updatesCreated: result.updatesCreated,
-            tasksCreated: result.tasksCreated,
-            opportunitiesCreated: result.opportunitiesCreated,
-            planId: result.planId ?? null
-          });
-        } catch (error) {
-          await finishSystemRun(run.id, {
-            status: "failed",
-            errorsMd: error instanceof Error ? error.stack ?? error.message : JSON.stringify(error)
-          });
-          throw error;
-        }
+      try {
+        const result = await runAvery();
+        currentAveryDirective = result.summary ?? "";
+        await finishSystemRun(run.id, { status: "completed", outputsJson: result });
+        output = {
+          agentKey: "avery",
+          updatesCreated: result.updatesCreated,
+          tasksCreated: result.tasksCreated,
+          opportunitiesCreated: result.opportunitiesCreated,
+          planId: result.planId ?? null
+        };
+      } catch (error) {
+        await finishSystemRun(run.id, {
+          status: "failed",
+          errorsMd: error instanceof Error ? error.stack ?? error.message : JSON.stringify(error)
+        });
+        throw error;
       }
 
       const storedDirective = currentAveryDirective ? null : await getLatestAgentDirective();
@@ -75,11 +60,8 @@ export async function runWeeklyCommandCycle() {
         });
       }
 
-      await writeWeeklySummaryState({
-        sequence,
-        outputs,
-        weeklyDirective: directiveText
-      });
+      const outputs = [output];
+      await writeWeeklySummaryState({ sequence, outputs, weeklyDirective: directiveText });
 
       const warRoom = await evaluateWarRoomMode();
       await writeDashboardSnapshotMeta({
@@ -95,7 +77,7 @@ export async function runWeeklyCommandCycle() {
       };
     },
     summarize: (result) => ({
-      summary: `Completed weekly cycle: ${result.sequence.join("→")}`,
+      summary: "Completed weekly executive synthesis after the current specialist cycle.",
       detailsJson: result
     })
   });
