@@ -1,7 +1,6 @@
 import { withJobRun } from "./jobLogger";
 import { getTasksAwaitingApproval, getRecentTasks } from "@/lib/supabase/queries";
 import { runStaleChecks } from "./staleChecks";
-import { enforceDailyIdeaQuotas } from "./ideaQuota";
 import { createOrUpdateAlert, makeAlertDedupeKey, resolveAlertByKey } from "./alerting";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -35,7 +34,6 @@ export async function runEveningCloseout() {
       );
 
       const stale = await runStaleChecks();
-      const ideaQuota = await enforceDailyIdeaQuotas({ source: "evening-closeout" });
 
       // Enforcement alerts
       const approvalsKey = makeAlertDedupeKey(["evening_closeout", "pending_approvals"]);
@@ -70,8 +68,6 @@ export async function runEveningCloseout() {
         pendingApprovals: awaitingApproval.length,
         criticalTasksStale: criticalTasksStale.length,
         alertsCreated: stale.alertsCreatedOrUpdated,
-        ideaQuotaMissingAgents: ideaQuota.missingAgents,
-        ideaQuotaAlertsCreated: ideaQuota.alertsCreatedOrUpdated,
         summary
       };
     },

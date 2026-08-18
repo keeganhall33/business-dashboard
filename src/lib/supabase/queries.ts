@@ -25,17 +25,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function startOfUtcDayIso(date = new Date()) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  return d.toISOString();
-}
-
-function addDaysIso(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString();
-}
-
 function coerceNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -1498,72 +1487,6 @@ export async function getLatestAgentDirective() {
     .limit(1);
   if (error) throw error;
   return data?.[0] ?? null;
-}
-
-// -----------------------------
-// Agent ideas
-// -----------------------------
-
-export async function createAgentIdea(input: {
-  agentKey: AgentKey | string;
-  ideaType: "minor" | "major";
-  title: string;
-  summary?: string;
-  expectedImpact?: number | null;
-  status?:
-    | "proposed"
-    | "in_review"
-    | "approved"
-    | "rejected"
-    | "in_progress"
-    | "shipped"
-    | "archived";
-  requiresCeoApproval?: boolean;
-  linkedTaskId?: string | null;
-}) {
-  const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("agent_ideas")
-    .insert({
-      agent_key: input.agentKey,
-      idea_type: input.ideaType,
-      title: input.title,
-      summary: input.summary ?? null,
-      expected_impact: input.expectedImpact ?? null,
-      status: input.status ?? "proposed",
-      requires_ceo_approval: input.requiresCeoApproval ?? false,
-      linked_task_id: input.linkedTaskId ?? null
-    })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-export type AgentDailyIdeaQuotaRow = {
-  agent_key: string;
-  idea_date: string;
-  ideas_logged: number;
-  required_ideas: number;
-  met_quota: boolean;
-};
-
-export async function getAgentDailyIdeaQuotaForDate(input?: { agentKey?: string; date?: Date }) {
-  const supabase = getSupabaseServerClient();
-  const dayStart = startOfUtcDayIso(input?.date);
-  const dayEnd = addDaysIso(dayStart, 1);
-
-  let query = supabase
-    .from("agent_daily_idea_quota")
-    .select("*")
-    .gte("idea_date", dayStart)
-    .lt("idea_date", dayEnd);
-
-  if (input?.agentKey) query = query.eq("agent_key", input.agentKey);
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as AgentDailyIdeaQuotaRow[];
 }
 
 // -----------------------------
