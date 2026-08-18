@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 import { DashboardShell } from "./DashboardShell";
+import { CareerOperatingSystemPanel } from "./CareerOperatingSystemPanel";
 import { DASHBOARD_REFRESH_EVENT } from "@/lib/dashboard/events";
 import { DashboardToastHost } from "./ui/DashboardToastHost";
 
@@ -97,6 +98,7 @@ export function DashboardPageClient({ initialData, agents, websiteIntel }: Props
   return (
     <>
       <DashboardToastHost />
+      <CareerOperatingSystemPanel />
       <DashboardShell data={overview} agents={agents} websiteIntel={websiteIntel ?? null} />
     </>
   );
