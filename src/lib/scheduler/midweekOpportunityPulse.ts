@@ -1,5 +1,6 @@
 import { runNoah } from "@/lib/agents/noah";
 import {
+  createAgentUpdate,
   createSystemRun,
   finishSystemRun,
   findOpenTaskByTitle,
@@ -17,6 +18,12 @@ function daysSince(dateString?: string | null) {
   return (Date.now() - new Date(dateString).getTime()) / DAY_MS;
 }
 
+function isFollowUpDue(nextStepDueAt?: string | null) {
+  if (!nextStepDueAt) return true;
+  const due = new Date(nextStepDueAt).getTime();
+  return Number.isFinite(due) && due <= Date.now();
+}
+
 export async function runMidweekOpportunityPulse() {
   return withJobRun({
     jobKey: "midweek-opportunity-pulse",
@@ -31,25 +38,28 @@ export async function runMidweekOpportunityPulse() {
         updated_at?: string | null;
         name: string;
         next_step?: string | null;
+        next_step_due_at?: string | null;
       };
 
       const active = (opps as OpportunityRow[]).filter((o) => !["won", "lost", "parked"].includes(o.status));
-      const stalled = active.filter((o) => daysSince(o.updated_at) > 10);
+      const stalled = active.filter(
+        (o) => daysSince(o.updated_at) > 10 && isFollowUpDue(o.next_step_due_at)
+      );
 
       let newTasksCreated = 0;
       for (const opp of stalled.slice(0, 10)) {
-        const title = `Follow up stalled opportunity: ${opp.name}`;
+        const title = `Review stalled opportunity: ${opp.name}`;
         const existing = await findOpenTaskByTitle("noah", title);
         if (existing) continue;
 
         await createTask({
           title,
-          description: `Opportunity appears stalled (>10 days). Next step: ${opp.next_step ?? "define next step"}.`,
+          description: `Opportunity has had no meaningful update for >10 days and its next-step date is due. Current next step: ${opp.next_step ?? "define the correct next step"}. Review relationship context before recommending outreach.`,
           agentKey: "noah",
           priority: "high",
-          expectedImpact: "Restart conversation momentum or decide to park",
+          expectedImpact: "Restart justified momentum, update timing, or deliberately park the opportunity",
           impactScore: 7.8,
-          whyThisMatters: "Stalled opportunities rot pipeline health.",
+          whyThisMatters: "A stale pipeline should be resolved, but intentional waiting should not be mistaken for neglect.",
           relatedMetricKeys: [],
           requiresApproval: true,
           executionType: "outreach_prep",
@@ -69,18 +79,30 @@ export async function runMidweekOpportunityPulse() {
       });
 
       const pipelineCount = active.length;
-      const escalatedToAvery = pipelineCount < 5 || ready.length === 0;
+      const shouldEscalate = pipelineCount < 5 || ready.length === 0;
+      if (shouldEscalate) {
+        await createAgentUpdate({
+          agentKey: "avery",
+          updateType: "insight",
+          title: "Opportunity pipeline requires executive review",
+          summary: `Midweek pipeline check: ${pipelineCount} active opportunities, ${ready.length} ready for outreach, ${stalled.length} due/stalled. Review whether the issue is pipeline quantity, access-path quality, timing, or the current Career OS phase before demanding more outreach.`,
+          detailMd:
+            "This is an escalation signal, not an automatic instruction to add names. Noah should qualify access paths and current external evidence; Avery decides whether pipeline expansion is a binding priority.",
+          priority: pipelineCount < 5 ? "critical" : "high",
+          relatedMetricKeys: []
+        });
+      }
 
       return {
         pipelineCount,
         stalledOpportunities: stalled.length,
         newTasksCreated,
         newOpportunitiesCreated: result.opportunitiesCreated,
-        escalatedToAvery
+        escalatedToAvery: shouldEscalate
       };
     },
     summarize: (result) => ({
-      summary: `Pipeline ${result.pipelineCount}, stalled ${result.stalledOpportunities}, tasks ${result.newTasksCreated}`,
+      summary: `Pipeline ${result.pipelineCount}, due/stalled ${result.stalledOpportunities}, tasks ${result.newTasksCreated}, executive escalation ${result.escalatedToAvery ? "yes" : "no"}`,
       detailsJson: result
     })
   });
