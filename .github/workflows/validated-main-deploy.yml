@@ -1,25 +1,28 @@
 name: Validated Main
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
   workflow_dispatch:
 
 concurrency:
-  group: validated-main
-  cancel-in-progress: false
+  group: validated-main-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    name: Validate integrated main
+    name: Validate integrated code
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout exact main commit
+      - name: Checkout exact commit
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -58,7 +61,7 @@ jobs:
     name: Smoke check Vercel production
     needs: validate
     runs-on: ubuntu-latest
-    if: ${{ vars.DASHBOARD_PRODUCTION_URL != '' }}
+    if: ${{ github.event_name == 'push' && vars.DASHBOARD_PRODUCTION_URL != '' }}
     env:
       SMOKE_BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL }}
     steps:
@@ -70,5 +73,6 @@ jobs:
 
 # Deployment policy:
 # - Vercel Git integration is the only production deployment path.
-# - This workflow validates main and optionally smoke-checks the configured Vercel production URL.
+# - Pull requests and main both receive the same GitHub-native typecheck/test/build validation.
+# - Production smoke checks run only after a validated push to main.
 # - Fly deployment credentials, flyctl, and Vercel deploy hooks are intentionally not used here.
