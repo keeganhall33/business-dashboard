@@ -1,4 +1,3 @@
-import { evaluateRules } from "@/lib/automation/evaluateRules";
 import { runAvery } from "@/lib/agents/avery";
 import { createSystemRun, finishSystemRun, getLatestAgentDirective } from "@/lib/supabase/queries";
 import { withJobRun } from "./jobLogger";
@@ -12,13 +11,14 @@ import { evaluateWarRoomMode } from "./warRoom";
  * again on Monday creates duplicate analysis and recommendation noise. The weekly command therefore
  * runs after Monday's daily specialist cycle and lets Avery synthesize the specialists' fresh output
  * into the weekly executive directive.
+ *
+ * Metric thresholds are evidence, not a parallel strategy engine. This cycle intentionally does not
+ * auto-create strategic tasks from the legacy metric-rule system before Avery reasons.
  */
 export async function runWeeklyCommandCycle() {
   return withJobRun({
     jobKey: "weekly-command-cycle",
     fn: async () => {
-      await evaluateRules();
-
       const sequence = ["avery"] as const;
       const run = await createSystemRun({ agentKey: "avery", runType: "weekly" });
       let currentAveryDirective = "";
