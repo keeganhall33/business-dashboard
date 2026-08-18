@@ -1,6 +1,5 @@
 import {
   AgentRunResult,
-  ensureDailyIdeaAndKpis,
   formatNumberValue,
   formatPercent,
   getSharedAgentContextForAgent,
@@ -10,16 +9,25 @@ import {
   writeAgentOutputs
 } from "./shared";
 import { directiveSummary, getAgentDecisionContext, topResearchSummary } from "./decision-context";
+import { recordDailyAgentKpis } from "./kpi-pulse";
 
 export async function runLyra(): Promise<AgentRunResult> {
   const [sharedContext, decisionContext] = await Promise.all([
     getSharedAgentContextForAgent("lyra"),
-    getAgentDecisionContext("lyra", ["AUDIENCE", "CAREER"])
+    getAgentDecisionContext("lyra")
   ]);
   const { metrics } = sharedContext;
-  const { careerOs, laneMoves, latestDirective, relevantResearch, recentMeasuredOutcomes } = decisionContext;
+  const {
+    careerOs,
+    laneMoves,
+    latestDirective,
+    fusionDecision,
+    fusionSummary,
+    relevantResearch,
+    recentMeasuredOutcomes
+  } = decisionContext;
   const audienceMove = laneMoves.find((move) => move.lane === "AUDIENCE") ?? null;
-  const careerMove = laneMoves.find((move) => move.lane === "CAREER") ?? null;
+  const ownedFutureMove = laneMoves.find((move) => move.lane === "OWNED_FUTURE") ?? null;
   const executiveDirection = directiveSummary(latestDirective);
   const researchSignal = topResearchSummary(relevantResearch);
 
@@ -28,40 +36,45 @@ export async function runLyra(): Promise<AgentRunResult> {
 
   const insights = [
     {
-      title: "Brand strategy must follow the active Career OS narrative gate",
+      title: "Brand and audience strategy must follow the active authorship gate",
       summary: audienceMove
         ? `Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}: ${audienceMove.title}. Avery direction: ${executiveDirection}`
         : `Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} has no ready audience move. Avery direction: ${executiveDirection}`,
-      detailMd: `Do not default to generic luxury copy. The current phase objective and real audience outcomes determine what story needs to be told next. Recent measured outcomes available: ${recentMeasuredOutcomes.length}. Research signal: ${researchSignal}`,
+      detailMd: `Do not default to generic luxury copy or posting volume. Use the current phase, owned-future work, real audience outcomes, and evidence-gated external context. Fusion: ${fusionSummary} Supplemental research: ${researchSignal}`,
       priority: "critical" as const,
       relatedMetricKeys: ["engagement_rate", "cultural_relevance_score", "conversion_rate"]
     },
     {
-      title: "Brand engagement is too soft",
+      title: "Audience attention is a continuity problem, not only an engagement-rate problem",
       summary: `Engagement 30d avg is ${formatPercent(engagement?.average)} vs target ${formatPercent(
         engagement?.target
       )} (latest ${formatPercent(engagement?.current)}, Δ ${formatPercent(engagement?.changePercent)}).`,
       detailMd:
-        "The brand likely needs sharper authority-based storytelling and stronger emotional positioning.",
+        "Evaluate cadence, content mix, cultural proof, subject relevance, and narrative continuity before assuming the solution is copy optimization.",
       priority: "high" as const,
       relatedMetricKeys: ["engagement_rate"]
     },
     {
-      title: "Cultural relevance has room to rise",
+      title: "Cultural relevance must compound between tentpoles",
       summary: `Cultural relevance 30d avg is ${formatNumberValue(cultural?.average)} (latest ${formatNumberValue(
         cultural?.current
       )}, Δ ${formatPercent(cultural?.changePercent)}).`,
-      detailMd: "The brand ceiling is high, but narrative pressure needs to increase through repeatable cultural proof rather than isolated spikes.",
+      detailMd: "The objective is sustained recognition and cultural proof, not isolated spikes around major projects.",
       priority: "high" as const,
       relatedMetricKeys: ["cultural_relevance_score"]
     },
-    {
-      title: "Message clarity is likely affecting purchase conversion",
-      summary: "Brand and ecommerce are linked at the homepage and product-story level.",
-      detailMd: "Luxury clarity and authority cues matter, but messaging should also make the active product and career proposition unmistakable.",
-      priority: "critical" as const,
-      relatedMetricKeys: ["conversion_rate", "cultural_relevance_score"]
-    }
+    ...(ownedFutureMove
+      ? [
+          {
+            title: "Owned visual language is a brand system, not a side experiment",
+            summary: `${ownedFutureMove.title}: ${ownedFutureMove.description}`,
+            detailMd:
+              "Lyra should help define how the audience learns the new visual mechanism, what proof establishes authorship, and how it remains connected to Keegan's sports/cultural advantage.",
+            priority: "critical" as const,
+            relatedMetricKeys: ["cultural_relevance_score"]
+          }
+        ]
+      : [])
   ];
 
   const actions = [
@@ -75,55 +88,66 @@ export async function runLyra(): Promise<AgentRunResult> {
           }
         ]
       : []),
-    ...(careerMove
+    ...(ownedFutureMove
       ? [
           {
-            title: "Support the active career-positioning gate",
-            summary: `${careerMove.title}: make the story, proof, and presentation consistent with this move.`,
+            title: "Make the owned-future work legible to the audience",
+            summary: `${ownedFutureMove.title}: define the story, visual cue, process proof, and feedback signal that will test whether the language is becoming identifiable.`,
             priority: "high" as const,
             relatedMetricKeys: ["cultural_relevance_score"]
           }
         ]
       : []),
     {
-      title: "Sharpen homepage narrative around current proof",
-      summary: "Anchor messaging around authority, precision, cultural significance, and the specific collector/career proposition now being advanced.",
-      priority: "critical" as const,
-      relatedMetricKeys: ["conversion_rate", "cultural_relevance_score"]
-    },
-    {
-      title: "Build collector-status narrative",
-      summary: "Position ownership as identity, taste, scarcity, and cultural participation without inventing prestige that the evidence does not support.",
+      title: "Protect the content heartbeat",
+      summary:
+        "Maintain a sustainable repeatable system across process, impossible detail, story, cultural proof, archive, reveal, and commerce. Increase frequency only when the production system can support quality.",
       priority: "high" as const,
-      relatedMetricKeys: ["repeat_purchase_rate"]
+      relatedMetricKeys: ["engagement_rate"]
     }
   ];
 
   const bigBet = {
-    title: "Adaptive Impossible in Pencil brand campaign",
+    title: "Identifiable authorship and sustained attention",
     summary: audienceMove
-      ? `Turn '${audienceMove.title}' into a repeatable content and brand system rather than a one-off campaign.`
-      : "Develop a cohesive storytelling system that adapts to the active Career OS phase and measured audience response.",
-    detailMd: `Avery directive: ${executiveDirection}\n\nCareer OS bottleneck: ${careerOs.primaryBottleneck}\n\nRecent research: ${researchSignal}`,
+      ? `Turn '${audienceMove.title}' into a repeatable content and recognition system rather than a one-off campaign.`
+      : "Build sustained awareness around recognizable Keegan authorship, cultural proof, and a dependable content system.",
+    detailMd: `Avery directive: ${executiveDirection}\n\nCareer OS bottleneck: ${careerOs.primaryBottleneck}\n\nFusion: ${fusionSummary}\n\nSupplemental research: ${researchSignal}`,
     priority: "critical" as const,
     relatedMetricKeys: ["cultural_relevance_score", "engagement_rate", "conversion_rate"]
   };
 
-  const tasks = [
-    {
-      title: "Rewrite homepage narrative hierarchy",
-      description: audienceMove
-        ? `Strengthen hero, supporting copy, and authority language so the site supports the active audience gate '${audienceMove.title}' and the current collector proposition.`
-        : "Strengthen hero, supporting copy, and authority language using the current Career OS phase and measured audience evidence.",
-      priority: "critical" as const,
-      expectedImpact: "Increase desire, clarity, and conversion quality",
-      impactScore: 8.9,
-      whyThisMatters: "The brand message must pull harder at first impression without drifting away from the active strategic phase.",
-      relatedMetricKeys: ["conversion_rate", "cultural_relevance_score"],
-      requiresApproval: true,
-      executionType: "content" as const
-    }
-  ];
+  const activeMove = audienceMove ?? ownedFutureMove;
+  const tasks = activeMove
+    ? [
+        {
+          title: `Brand gate: ${activeMove.title}`,
+          description: `${activeMove.description} Build the smallest useful narrative/content system that advances this gate and specify how audience response will be measured.`,
+          priority: "critical" as const,
+          expectedImpact: "Advance sustained awareness and identifiable authorship",
+          impactScore: 9.0,
+          whyThisMatters: activeMove.why,
+          relatedMetricKeys: ["engagement_rate", "cultural_relevance_score"],
+          requiresApproval: true,
+          executionType: "content" as const,
+          expectedDurationDays: Math.max(1, activeMove.reviewAfterDays || 3)
+        }
+      ]
+    : [
+        {
+          title: "Diagnose the current audience continuity gap",
+          description:
+            "Review recent content cadence, formats, cultural proof, audience outcomes, and Fusion context. Recommend one next narrative/content experiment with a measurement window.",
+          priority: "high" as const,
+          expectedImpact: "Prevent generic brand work and restore sustained attention",
+          impactScore: 8.3,
+          whyThisMatters: "Low engagement can have multiple causes and should not default to a homepage rewrite.",
+          relatedMetricKeys: ["engagement_rate", "cultural_relevance_score"],
+          requiresApproval: false,
+          executionType: "analysis" as const,
+          expectedDurationDays: 2
+        }
+      ];
 
   const outputResult = await writeAgentOutputs({
     agentKey: "lyra",
@@ -135,15 +159,17 @@ export async function runLyra(): Promise<AgentRunResult> {
       {
         outcomeType: "decision",
         title: "Lyra strategy cycle",
-        summary: `Brand strategy aligned to Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}${audienceMove ? ` and audience move '${audienceMove.title}'` : ""}.`,
+        summary: `Brand and audience strategy aligned to Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title}${activeMove ? ` and move '${activeMove.title}'` : ""}.`,
         impactWindow: "7d",
         relatedMetricKeys: ["engagement_rate", "cultural_relevance_score", "conversion_rate"],
         metadata: {
           source: "agent_strategy_cycle",
           careerOsPhase: careerOs.currentPhase.number,
           audienceMove: audienceMove?.id ?? null,
-          careerMove: careerMove?.id ?? null,
+          ownedFutureMove: ownedFutureMove?.id ?? null,
           directiveAvailable: Boolean(latestDirective),
+          fusionRunId: fusionDecision?.runId ?? null,
+          fusionDecisionAvailable: Boolean(fusionDecision?.isDecision),
           researchSignalsRead: relevantResearch.length,
           measuredOutcomesRead: recentMeasuredOutcomes.length
         }
@@ -153,23 +179,17 @@ export async function runLyra(): Promise<AgentRunResult> {
 
   const plan = await submitAgentPlanDraft({
     agentKey: "lyra",
-    planTitle: "Brand narrative reinforcement plan",
-    summary: `Use current evidence and Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} to drive the next brand and audience moves.`,
+    planTitle: "Brand, audience, and cultural intelligence plan",
+    summary: `Use current evidence and Phase ${careerOs.currentPhase.number} ${careerOs.currentPhase.title} to drive the next audience and authorship move.`,
     detailMd: bigBet.detailMd,
     payload: { insights, actions, bigBet, tasks }
   });
 
   const status = await publishAgentStatusSnapshot("lyra");
-
-  await ensureDailyIdeaAndKpis({
-    agentKey: "lyra",
-    metrics,
-    fallbackIdeaTitle: audienceMove ? `Audience gate: ${audienceMove.title}` : "Sharpen homepage narrative to increase authority + purchase conversion",
-    fallbackIdeaSummary: audienceMove?.description ?? "Tighten the Impossible in Pencil story hierarchy and prestige cues to lift purchase conversion."
-  });
+  await recordDailyAgentKpis({ agentKey: "lyra", metrics });
 
   return {
-    summary: "Aligned brand and content strategy to Avery's directive, the active Career OS gates, current research, and measured audience signals.",
+    summary: "Aligned brand and audience strategy to Avery, Career OS, canonical Fusion context, owned visual-language work, and measured audience outcomes.",
     updatesCreated: outputResult.updatesCreated + (status.published ? 1 : 0),
     tasksCreated: outputResult.tasksCreated,
     opportunitiesCreated: outputResult.opportunitiesCreated,
