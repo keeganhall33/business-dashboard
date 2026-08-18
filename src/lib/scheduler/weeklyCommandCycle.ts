@@ -18,7 +18,8 @@ export async function runWeeklyCommandCycle() {
     fn: async () => {
       await evaluateRules();
 
-      const sequence = ["sloan", "lyra", "noah", "avery"] as const;
+      // Executive direction is established first, then the specialists consume it in the same cycle.
+      const sequence = ["avery", "sloan", "lyra", "noah"] as const;
       const outputs: Array<{
         agentKey: string;
         updatesCreated: number;
@@ -31,13 +32,13 @@ export async function runWeeklyCommandCycle() {
         const run = await createSystemRun({ agentKey, runType: "weekly" });
         try {
           const result =
-            agentKey === "sloan"
-              ? await runSloan()
-              : agentKey === "lyra"
-                ? await runLyra()
-                : agentKey === "noah"
-                  ? await runNoah()
-                  : await runAvery();
+            agentKey === "avery"
+              ? await runAvery()
+              : agentKey === "sloan"
+                ? await runSloan()
+                : agentKey === "lyra"
+                  ? await runLyra()
+                  : await runNoah();
 
           await finishSystemRun(run.id, {
             status: "completed",
