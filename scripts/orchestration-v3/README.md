@@ -25,6 +25,7 @@ Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn
 - The watcher host records 60-second continuity heartbeats under the V3 state root, including watcher state, idle-sleep guard state, and active worker leases.
 - `node scripts/orchestration-v3/liveness-report.mjs --github --pretty` is the read-only incident proof path for current watcher PID, launchd status, worker leases, live PIDs, worker commands, running claims without live leases, and ready queue backfill candidates.
 - `npm run orchestration:v3:overnight-report` summarizes the most recent 22:00-07:00 Pacific window and reports any continuity gap greater than five minutes.
+- Overnight operation should require no bedtime action once the host is activated: the display may sleep while V3 keeps the system awake only for the life of the watcher.
 
 ## Queue states
 
