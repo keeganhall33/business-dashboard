@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   run-scheduler:
@@ -47,10 +48,6 @@ jobs:
       - name: Validate scheduler target
         shell: bash
         run: |
-          if [ -z "$SCHEDULER_SECRET" ]; then
-            echo "SCHEDULER_SECRET must be configured" >&2
-            exit 1
-          fi
           if [ -z "$BASE_URL" ]; then
             echo "PRODUCTION_BASE_URL or SCHEDULER_BASE_URL must be configured" >&2
             exit 1
@@ -65,6 +62,7 @@ jobs:
           echo "Running job: ${{ steps.pick.outputs.target_job }}"
 
       - name: Call scheduler endpoint
+        shell: bash
         run: |
           case "${{ steps.pick.outputs.target_job }}" in
             deliverable-harvest)
@@ -82,6 +80,20 @@ jobs:
               ;;
           esac
 
+          OIDC_RESPONSE="$(curl -sS --fail \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=business-dashboard-scheduler")"
+          OIDC_TOKEN="$(printf '%s' "$OIDC_RESPONSE" | jq -r '.value')"
+          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
+            echo "Unable to obtain GitHub Actions OIDC token" >&2
+            exit 1
+          fi
+
+          CURL_HEADERS=(-H "Authorization: Bearer $OIDC_TOKEN")
+          if [ -n "${SCHEDULER_SECRET:-}" ]; then
+            CURL_HEADERS+=(-H "x-scheduler-secret: $SCHEDULER_SECRET")
+          fi
+
           curl -sS --fail -X POST \
-            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            "${CURL_HEADERS[@]}" \
             "$BASE_URL$ENDPOINT"
