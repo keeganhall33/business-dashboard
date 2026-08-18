@@ -18,7 +18,8 @@ export async function runWeeklyCommandCycle() {
     fn: async () => {
       await evaluateRules();
 
-      const sequence = ["sloan", "lyra", "noah", "avery"] as const;
+      // Executive direction is established first, then the specialists consume it in the same cycle.
+      const sequence = ["avery", "sloan", "lyra", "noah"] as const;
       const outputs: Array<{
         agentKey: string;
         updatesCreated: number;
@@ -26,18 +27,25 @@ export async function runWeeklyCommandCycle() {
         opportunitiesCreated: number;
         planId?: string | null;
       }> = [];
+      let currentAveryDirective = "";
 
       for (const agentKey of sequence) {
         const run = await createSystemRun({ agentKey, runType: "weekly" });
         try {
           const result =
-            agentKey === "sloan"
-              ? await runSloan()
-              : agentKey === "lyra"
-                ? await runLyra()
-                : agentKey === "noah"
-                  ? await runNoah()
-                  : await runAvery();
+            agentKey === "avery"
+              ? await runAvery()
+              : agentKey === "sloan"
+                ? await runSloan()
+                : agentKey === "lyra"
+                  ? await runLyra()
+                  : await runNoah();
+
+          if (agentKey === "avery") {
+            // Capture the directive produced in this exact run. The older getLatestAgentDirective()
+            // lookup only sees Avery-owned directive update rows and can lag the broadcast directive.
+            currentAveryDirective = result.summary ?? "";
+          }
 
           await finishSystemRun(run.id, {
             status: "completed",
@@ -60,14 +68,14 @@ export async function runWeeklyCommandCycle() {
         }
       }
 
-      const directive = await getLatestAgentDirective();
-      const directiveText = directive?.summary ?? "";
+      const storedDirective = currentAveryDirective ? null : await getLatestAgentDirective();
+      const directiveText = currentAveryDirective || storedDirective?.summary || "";
 
       if (directiveText) {
         await writeLatestDirectiveState({
           directive: directiveText,
           source: "weekly-command-cycle",
-          generatedAt: directive?.created_at
+          generatedAt: currentAveryDirective ? new Date().toISOString() : storedDirective?.created_at
         });
       }
 
