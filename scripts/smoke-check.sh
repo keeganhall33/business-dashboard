@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simple post-deploy smoke check for Fly/Vercel.
+# Simple smoke check for the configured Vercel production dashboard or a local server.
 #
 # Usage:
 #   SMOKE_BASE_URL="https://<your-domain>" ./scripts/smoke-check.sh

@@ -1,76 +1,49 @@
-name: Autopilot Scheduler
+name: Application Scheduler Tick
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # deliverable-harvest (05:00 PT)
-    - cron: '0 13 * * *'  # ceo-digest (06:00 PT)
-    - cron: '10 13 * * *' # weekly-summary (06:10 PT)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
-    inputs:
-      job:
-        description: "Which low-risk job to run"
-        required: true
-        type: choice
-        options:
-          - deliverable-harvest
-          - ceo-digest
-          - weekly-summary
 
 permissions:
   contents: read
 
+concurrency:
+  group: application-scheduler-tick
+  cancel-in-progress: true
+
 jobs:
-  run-scheduler:
+  tick:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
-      BASE_URL: ${{ vars.SCHEDULER_BASE_URL || 'https://keegan-dashboard.fly.dev' }}
+      BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL || vars.SCHEDULER_BASE_URL }}
       SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
     steps:
-      - name: Determine target job
-        id: pick
+      - name: Validate scheduler target
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TARGET="${{ github.event.inputs.job }}"
-          else
-            case "${{ github.event.schedule }}" in
-              '0 12 * * *') TARGET="deliverable-harvest" ;;
-              '0 13 * * *') TARGET="ceo-digest" ;;
-              '10 13 * * *') TARGET="weekly-summary" ;;
-              *)
-                echo "Unknown schedule ${{ github.event.schedule }}" >&2
-                exit 1
-                ;;
-            esac
-          fi
-          echo "target_job=$TARGET" >> "$GITHUB_OUTPUT"
-
-      - name: Log target endpoint
-        run: |
-          if [ -z "$SCHEDULER_SECRET" ]; then
-            echo "SCHEDULER_SECRET must be configured" >&2
-            exit 1
-          fi
-          echo "Scheduler target: $BASE_URL"
-          echo "Running job: ${{ steps.pick.outputs.target_job }}"
-
-      - name: Call scheduler endpoint
-        run: |
-          case "${{ steps.pick.outputs.target_job }}" in
-            deliverable-harvest)
-              ENDPOINT="/api/scheduler/deliverable-harvest"
-              ;;
-            ceo-digest)
-              ENDPOINT="/api/scheduler/ceo-digest"
-              ;;
-            weekly-summary)
-              ENDPOINT="/api/scheduler/weekly-summary"
-              ;;
-            *)
-              echo "Unknown job ${{ steps.pick.outputs.target_job }}" >&2
+          set -euo pipefail
+          test -n "$BASE_URL" || { echo "DASHBOARD_PRODUCTION_URL (preferred) or SCHEDULER_BASE_URL repository variable is required" >&2; exit 1; }
+          test -n "$SCHEDULER_SECRET" || { echo "SCHEDULER_SECRET repository secret is required" >&2; exit 1; }
+          case "$BASE_URL" in
+            *fly.dev*|*fly.io*)
+              echo "Fly scheduler targets are retired. Point the production URL variable at the Vercel production dashboard." >&2
               exit 1
               ;;
           esac
 
-          curl -sS --fail -X POST \
+      - name: Run central scheduler tick
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${BASE_URL%/}"
+          curl --fail --silent --show-error \
+            --retry 2 --retry-all-errors --retry-delay 2 \
+            -X POST \
             -H "x-scheduler-secret: $SCHEDULER_SECRET" \
-            "$BASE_URL$ENDPOINT"
+            "$BASE_URL/api/scheduler/tick" >/dev/null
+
+# This is the only GitHub cron for application-level scheduled_jobs.
+# `/api/scheduler/tick` reads the database schedule and runs due jobs.
+# Evidence ingestion has its own workflow because those jobs execute inside GitHub Actions.

@@ -1,9 +1,0 @@
-node_modules
-npm-debug.log
-.next
-out
-legacy-business-dashboard
-legacy-cra
-*.log
-Dockerfile
-fly.toml
