@@ -1,0 +1,70 @@
+import type { ActionLevel } from "@/lib/actions/action-contract";
+import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contract";
+
+export type DecisionRoomTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "CONFLICTED";
+export type DecisionRoomEvidenceProvenanceV1 = "STRATEGY_FIXTURE" | "EVIDENCE_TRUST_FIXTURE" | "LEARNING_FIXTURE" | "FINANCIAL_FIXTURE" | "MANUAL_FIXTURE";
+export type DecisionRoomSpecialistV1 = "STRATEGY" | "DATA_EVIDENCE" | "LEARNING" | "FINANCIAL";
+
+export type DecisionRoomEvidenceRefV1 = {
+  ref_id: string;
+  label: string;
+  provenance: DecisionRoomEvidenceProvenanceV1;
+  truth_state: DecisionRoomTruthStateV1;
+  detail: string;
+};
+
+export type DecisionRoomAssumptionV1 = {
+  assumption_id: string;
+  label: string;
+  truth_state: DecisionRoomTruthStateV1;
+  evidence_refs: string[];
+  why_it_matters: string;
+};
+
+export type DecisionRoomAlternativeV1 = {
+  alternative_id: string;
+  label: string;
+  tradeoff: string;
+  evidence_refs: string[];
+};
+
+export type DecisionRoomSpecialistDisagreementV1 = {
+  specialist: DecisionRoomSpecialistV1;
+  stance: "SUPPORTS" | "CHALLENGES" | "NEEDS_MORE_EVIDENCE";
+  summary: string;
+  evidence_refs: string[];
+  visible_in_dashboard: true;
+};
+
+export type DecisionRoomRecommendationV1 = {
+  recommendation_id: string;
+  title: string;
+  summary: string;
+  next_action: string;
+};
+
+export type DecisionRoomViewModelV1 = {
+  contract_version: "decision_room_view_model_v1";
+  decision_id: string;
+  generated_at: string;
+  source_mode: "DETERMINISTIC_FIXTURE";
+  breadcrumb: string[];
+  current_recommendation: DecisionRoomRecommendationV1;
+  confidence: ExplanationConfidence;
+  evidence_refs: DecisionRoomEvidenceRefV1[];
+  assumptions_unknowns: DecisionRoomAssumptionV1[];
+  alternatives: DecisionRoomAlternativeV1[];
+  opportunity_cost_note: string;
+  specialist_disagreement: DecisionRoomSpecialistDisagreementV1[];
+  strongest_argument_against: string;
+  weakest_assumption: DecisionRoomAssumptionV1;
+  WHAT_WOULD_CHANGE_MY_MIND: string[];
+  next_action: string;
+  approval_class: ActionLevel;
+  challenge: {
+    active: boolean;
+    red_team_summary: string;
+    recommendation_overwritten: false;
+    disagreement_visible: true;
+  };
+};
