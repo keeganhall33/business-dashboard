@@ -18,11 +18,14 @@ const BACKGROUND_OLLAMA_PROOF_ISSUE = 337;
 let wakeResolver = null;
 let wakePending = false;
 let wakeReason = "STARTUP";
+let pollInFlight = false;
+let pollWakePending = false;
 
 function requestWake(reason, details = {}) {
+  if (pollInFlight) pollWakePending = true;
   wakePending = true;
   wakeReason = reason;
-  console.log(JSON.stringify({ event: "WATCHER_WAKE_REQUESTED", reason, ...details }));
+  console.log(JSON.stringify({ event: "WATCHER_WAKE_REQUESTED", reason, coalescedWithInFlightPoll: pollInFlight, ...details }));
   if (!wakeResolver) return;
   const resolve = wakeResolver;
   wakeResolver = null;
@@ -191,6 +194,7 @@ async function poll() {
   }
 
   reconcileRunningClaims();
+  const claimedWorkersThisPass = new Set();
   const ready = readyIssues().sort((left, right) => {
     const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
     const rightRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(right.number));
@@ -214,12 +218,14 @@ async function poll() {
         console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: snapshot.number, stream }));
         continue;
       }
-      const workerId = workerCandidates.find((candidateWorkerId) => !reconcileLease(candidateWorkerId));
+      const workerId = workerCandidates.find((candidateWorkerId) => !claimedWorkersThisPass.has(candidateWorkerId) && !reconcileLease(candidateWorkerId));
       if (!workerId) continue;
+      claimedWorkersThisPass.add(workerId);
       claim(snapshot.number);
       try {
         launch(workerId, snapshot.number);
       } catch (err) {
+        claimedWorkersThisPass.delete(workerId);
         gh(["issue", "edit", String(snapshot.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
         console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: snapshot.number, error: err instanceof Error ? err.message : String(err) }));
       }
@@ -233,9 +239,36 @@ async function poll() {
   }
 }
 
+async function runSerializedPoll(reason) {
+  if (pollInFlight) {
+    pollWakePending = true;
+    console.log(JSON.stringify({ event: "POLL_WAKE_COALESCED", reason }));
+    return;
+  }
+  pollInFlight = true;
+  try {
+    let passReason = reason;
+    do {
+      pollWakePending = false;
+      try {
+        await poll();
+      } catch (err) {
+        console.error(JSON.stringify({ event: "POLL_FAILED", reason: passReason, error: err instanceof Error ? err.message : String(err) }));
+      }
+      if (pollWakePending) {
+        console.log(JSON.stringify({ event: "POLL_COALESCED_WAKE_DRAINED", reason: wakeReason }));
+        passReason = wakeReason;
+      }
+    } while (pollWakePending);
+  } finally {
+    pollInFlight = false;
+  }
+}
+
 console.log(JSON.stringify({ event: "WATCHER_START", version: 3, runtime: ORCHESTRATION_V3.runtime.root, model: ORCHESTRATION_V3.model.id, intervalSeconds }));
+let nextPollReason = "STARTUP";
 for (;;) {
-  try { await poll(); } catch (err) { console.error(JSON.stringify({ event: "POLL_FAILED", error: err instanceof Error ? err.message : String(err) })); }
-  const reason = await waitForWakeOrTimeout(intervalSeconds * 1000);
-  console.log(JSON.stringify({ event: "WATCHER_WAKE", reason }));
+  await runSerializedPoll(nextPollReason);
+  nextPollReason = await waitForWakeOrTimeout(intervalSeconds * 1000);
+  console.log(JSON.stringify({ event: "WATCHER_WAKE", reason: nextPollReason }));
 }
