@@ -81,7 +81,7 @@ function issue(number) {
   return JSON.parse(gh(["issue", "view", String(number), "--repo", ORCHESTRATION_V3.repo, "--json", "number,body,labels,title"]));
 }
 function readyIssues() {
-  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title"]));
+  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title,body"]));
 }
 function runningIssues() {
   return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.running, "--limit", "100", "--json", "number,title"]));
@@ -191,7 +191,7 @@ async function poll() {
   }
 
   reconcileRunningClaims();
-  const ready = readyIssues().map((candidate) => issue(candidate.number)).sort((left, right) => {
+  const ready = readyIssues().sort((left, right) => {
     const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
     const rightRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(right.number));
     if (leftRecovery !== undefined || rightRecovery !== undefined) {
