@@ -40,3 +40,24 @@ No watcher restart was performed because launchd, host PID, watcher PID, heartbe
 No lease or lock was manually reconciled because each active lease had a live PID. The controller's normal reconciler had already requeued earlier stale claims that lacked authoritative live leases.
 
 The controller was left running for normal immediate backfill.
+
+## 2026-08-19 Follow-up Recovery Evidence
+
+Recovery check timestamp: 2026-08-19T20:00:46Z.
+
+The watcher remained launchd-owned and alive from the current V3 host configuration:
+
+- LaunchAgent `com.keegan.jeeves.orchestration-v3` was loaded.
+- Watcher host PID `39911` was alive and running `/Users/keeganhall/.openclaw/runtime-v3/business-dashboard/scripts/orchestration-v3/watcher-host.mjs --interval 20`.
+- Latest heartbeat was fresh at `2026-08-19T20:00:45.522Z` with `watcher_alive: true`.
+
+The incident was narrowed to worker worktree health, not a stopped watcher. `local-a` had no live owner and failed preflight with `MASS_TRACKED_DELETION`, preventing CORE_INTELLIGENCE ready-lane claims. The stale `local-a` lease was removed only after runtime ownership checks showed no live worker process, and the disposable `local-a` worktree was rebuilt from `origin/main`.
+
+Post-repair liveness evidence showed:
+
+| Worker | Issue | PID | Started At | Worktree |
+| --- | ---: | ---: | --- | --- |
+| local-a | 654 | 850 | 2026-08-19T19:59:06.830Z | `/Users/keeganhall/.openclaw/worktrees/local-a` |
+| local-d | 448 | 90945 | 2026-08-19T19:44:50.613Z | `/Users/keeganhall/.openclaw/worktrees/local-d` |
+
+GitHub `orch:running` claims were #654 and #448, and `running_claims_without_live_lease` was empty. Ready items #653 and #287 remained mapped to `local-a` for normal backfill when the active CORE_INTELLIGENCE worker slot exits; #337 remained unmapped by stream ownership. No production or business action was performed.
