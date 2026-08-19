@@ -53,6 +53,25 @@ test("Home recommendation opens Decision Room with grounded why evidence unknown
   assert.match(html, /Back to Executive Home/);
 });
 
+test("grounded drill-down anchor also opens the Decision Room before navigation", () => {
+  let renderer: TestRenderer.ReactTestRenderer;
+
+  act(() => {
+    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+  });
+
+  const root = renderer!.root;
+  const jumpLink = root.findAllByType("a").find((link) => link.children.includes("Jump to grounded drill-down"));
+  assert.ok(jumpLink, "expected grounded drill-down jump link");
+  assert.equal(jumpLink.props.href, "#decision-private-collector-room");
+
+  act(() => {
+    jumpLink.props.onClick();
+  });
+
+  assert.match(renderedText(renderer!), /Private collector room access validation/);
+});
+
 test("contextual Ask Jeeves grounded follow-up answer survives the same Home to Decision Room flow", () => {
   let renderer: TestRenderer.ReactTestRenderer;
 

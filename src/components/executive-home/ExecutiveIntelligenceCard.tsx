@@ -45,7 +45,12 @@ export function ExecutiveIntelligenceCard({
           >
             Open Decision Room
           </button>
-          <a href={`#${decisionRoomId}`} className="text-sm font-semibold text-stone-700 underline decoration-stone-300 underline-offset-4">
+          <a
+            href={`#${decisionRoomId}`}
+            onClick={onOpenDecisionRoom}
+            className="text-sm font-semibold text-stone-700 underline decoration-stone-300 underline-offset-4"
+            aria-controls={decisionRoomId}
+          >
             Jump to grounded drill-down
           </a>
         </div>
