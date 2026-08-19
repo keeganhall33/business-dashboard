@@ -1,5 +1,6 @@
 import type { DecisionRoomViewModelV1 } from "@/lib/decision-room/contracts";
 import { DECISION_ROOM_FIXTURE_V1 } from "@/lib/decision-room/fixtures";
+import { withDecisionRoomStrategicContextV1 } from "@/lib/decision-room/trajectory-data-context";
 import type { AskJeevesControlV1 } from "@/lib/intelligence-ux/responsive-shell-fixtures";
 import { answerConversationalDecisionTurnV1 } from "@/lib/conversational-decision/engine";
 import { CONVERSATIONAL_DECISION_FIXTURE_V1 } from "@/lib/conversational-decision/fixtures";
@@ -15,7 +16,7 @@ const answer = answerConversationalDecisionTurnV1({
 });
 
 export const EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1: ExecutiveHomeDecisionRoomDrilldownV1 = {
-  ...DECISION_ROOM_FIXTURE_V1,
+  ...withDecisionRoomStrategicContextV1(DECISION_ROOM_FIXTURE_V1),
   source_card_id: "matters-now-premium-scarcity",
   contextual_ask: {
     id: `contextual-ask-${CONVERSATIONAL_DECISION_FIXTURE_V1.decision_id}`,

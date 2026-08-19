@@ -43,6 +43,49 @@ export type DecisionRoomRecommendationV1 = {
   next_action: string;
 };
 
+export type DecisionRoomStrategicContextV1 = {
+  trajectory: {
+    trajectory_id: string;
+    target_state: string;
+    preferred_path: {
+      path_id: string;
+      label: string;
+      why_preferred: string;
+    };
+    current_bottleneck: string;
+    next_high_leverage_move: string;
+    what_to_ignore: string[];
+    fog_of_war: string[];
+    scouting_action: string;
+  };
+  acquisition: {
+    map_id: string;
+    decision_or_capability: string;
+    coverage_state: string;
+    source_health: string;
+    freshness: string;
+    approval_class: string;
+    critical_gap: {
+      fact_id: string;
+      materiality: string;
+      coverage_state: string;
+      truth_state: string;
+      why_it_matters: string;
+    } | null;
+    next_best_acquisition_action: {
+      action_id: string;
+      label: string;
+      safety: string;
+      rationale: string;
+    };
+    conflicts: Array<{
+      conflict_id: string;
+      summary: string;
+      resolution_action: string;
+    }>;
+  };
+};
+
 export type DecisionRoomViewModelV1 = {
   contract_version: "decision_room_view_model_v1";
   decision_id: string;
@@ -61,6 +104,7 @@ export type DecisionRoomViewModelV1 = {
   WHAT_WOULD_CHANGE_MY_MIND: string[];
   next_action: string;
   approval_class: ActionLevel;
+  strategic_context?: DecisionRoomStrategicContextV1;
   challenge: {
     active: boolean;
     red_team_summary: string;

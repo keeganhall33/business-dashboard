@@ -29,6 +29,53 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
         </div>
         <aside className="space-y-4">
           {"contextual_ask" in decision ? <AskJeevesControl control={decision.contextual_ask} /> : null}
+          {viewModel.strategic_context ? (
+            <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open>
+              <summary className="cursor-pointer text-sm font-semibold text-stone-950">Trajectory and acquisition context</summary>
+              <div className="mt-3 space-y-3 text-sm">
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Target / preferred path</div>
+                  <p className="mt-2 font-semibold text-stone-950">{viewModel.strategic_context.trajectory.target_state}</p>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.preferred_path.label}: {viewModel.strategic_context.trajectory.preferred_path.why_preferred}</p>
+                </div>
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Bottleneck</div>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.current_bottleneck}</p>
+                </div>
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Next high-leverage move</div>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.next_high_leverage_move}</p>
+                </div>
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">What to ignore</div>
+                  <ul className="mt-2 space-y-1 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.what_to_ignore.map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Fog-of-war / scouting action</div>
+                  <ul className="mt-2 space-y-1 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.fog_of_war.map((item) => <li key={item}>{item}</li>)}</ul>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.trajectory.scouting_action}</p>
+                </div>
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Coverage state</div>
+                  <p className="mt-2 font-semibold text-stone-950">{viewModel.strategic_context.acquisition.coverage_state} | {viewModel.strategic_context.acquisition.source_health} | {viewModel.strategic_context.acquisition.freshness} | {viewModel.strategic_context.acquisition.approval_class}</p>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.acquisition.decision_or_capability}</p>
+                </div>
+                {viewModel.strategic_context.acquisition.critical_gap ? (
+                  <div className="rounded-xl bg-white p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Critical gap</div>
+                    <p className="mt-2 font-semibold text-stone-950">{viewModel.strategic_context.acquisition.critical_gap.fact_id}</p>
+                    <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.acquisition.critical_gap.materiality} | {viewModel.strategic_context.acquisition.critical_gap.coverage_state} | {viewModel.strategic_context.acquisition.critical_gap.truth_state}</p>
+                    <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.acquisition.critical_gap.why_it_matters}</p>
+                  </div>
+                ) : null}
+                <div className="rounded-xl bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Next best acquisition action</div>
+                  <p className="mt-2 font-semibold text-stone-950">{viewModel.strategic_context.acquisition.next_best_acquisition_action.label}</p>
+                  <p className="mt-2 leading-6 text-stone-700">{viewModel.strategic_context.acquisition.next_best_acquisition_action.safety}: {viewModel.strategic_context.acquisition.next_best_acquisition_action.rationale}</p>
+                </div>
+              </div>
+            </details>
+          ) : null}
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Evidence</summary><div className="mt-3 space-y-3">{viewModel.evidence_refs.map((item) => <div key={item.ref_id} className="rounded-xl bg-white p-3 text-sm"><div className="font-semibold text-stone-950">{item.label}</div><div className="mt-1 leading-6 text-stone-700">{item.truth_state} | {item.provenance} | {item.detail}</div></div>)}</div></details>
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Disagreement</summary><div className="mt-3 space-y-2">{viewModel.specialist_disagreement.map((item) => <div key={`${item.specialist}-${item.stance}-${item.summary}`} className="rounded-xl bg-white p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-stone-950">{item.specialist}</span><span className="rounded-full border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-700">{item.stance}</span></div><p className="mt-2 leading-6 text-stone-700">{item.summary}</p></div>)}</div></details>
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Assumptions / unknowns</summary><div className="mt-3 space-y-2">{viewModel.assumptions_unknowns.map((item) => <div key={item.assumption_id} className="rounded-xl bg-white p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="text-stone-800">{item.label}</span><span className="rounded-full border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-700">{item.truth_state}</span></div><p className="mt-2 leading-6 text-stone-600">{item.why_it_matters}</p></div>)}</div></details>
