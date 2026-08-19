@@ -10,6 +10,11 @@ test("V3 liveness report proves watcher and worker runtime evidence without muta
   assert.match(source, /process\.kill\(pid, 0\)/);
   assert.match(source, /ps", \["-p", String\(pid\), "-o", "command="\]/);
   assert.match(source, /running_claims_without_live_lease/);
+  assert.match(source, /latestHeartbeatSnapshot/);
+  assert.match(source, /watcher-heartbeats\.ndjson/);
+  assert.match(source, /ready_backfill_candidates/);
+  assert.match(source, /ready_unmapped_issue_numbers/);
+  assert.match(source, /workerCandidatesForStream/);
   assert.match(source, /live_worker_count/);
   assert.match(source, /ORCHESTRATION_V3\.queue\.running, "--json"/);
   assert.match(source, /ORCHESTRATION_V3\.queue\.ready, "--json"/);
