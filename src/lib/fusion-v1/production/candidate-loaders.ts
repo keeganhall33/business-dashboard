@@ -7,6 +7,7 @@ import {
   canonicalExternalFusionContextToCandidates,
   type CanonicalExternalFusionContextV1
 } from "@/lib/fusion-v1/production/adapters/external-knowledge";
+import { loadLatestCanonicalExternalFusionContexts } from "@/lib/fusion-v1/production/external-fusion-context-loader";
 import type { FusionCandidate } from "@/lib/fusion-v1/contracts";
 import type { Finding, Hypothesis } from "@/lib/intelligence-v1/contracts";
 
@@ -24,6 +25,12 @@ export async function loadProductionFusionCandidates(input: {
   nowIso: string;
   strategic_constraints_blocked_domains: string[];
   external_fusion_contexts?: CanonicalExternalFusionContextV1[];
+  loaders?: {
+    dashboardSnapshots?: typeof getDashboardSnapshots;
+    activeOpportunities?: typeof getActiveOpportunities;
+    trafficQualityMismatchChain?: typeof loadTrafficQualityMismatchChain;
+    externalFusionContexts?: typeof loadLatestCanonicalExternalFusionContexts;
+  };
 }): Promise<ProductionCandidateLoadResult> {
   const sources_inspected: string[] = [];
   const sources_empty: string[] = [];
@@ -37,7 +44,7 @@ export async function loadProductionFusionCandidates(input: {
   // 1) Dashboard snapshots (whitelist)
   sources_inspected.push("dashboard_snapshots");
   const snapshotKeys = ["product_conversion", "website", "marketing_command"];
-  const snapshots = await getDashboardSnapshots(snapshotKeys);
+  const snapshots = await (input.loaders?.dashboardSnapshots ?? getDashboardSnapshots)(snapshotKeys);
   if (!snapshots.length) sources_empty.push("dashboard_snapshots");
   for (const snap of snapshots) {
     const res = snapshotToFusionCandidates({
@@ -62,7 +69,7 @@ export async function loadProductionFusionCandidates(input: {
 
   // 2) Opportunity pipeline (long-horizon)
   sources_inspected.push("opportunity_pipeline");
-  const opps = (await getActiveOpportunities(25)) as unknown as OpportunityRow[];
+  const opps = (await (input.loaders?.activeOpportunities ?? getActiveOpportunities)(25)) as unknown as OpportunityRow[];
   if (!opps.length) sources_empty.push("opportunity_pipeline");
   for (const row of opps) {
     const res = opportunityToFusionCandidate({ nowIso: input.nowIso, row });
@@ -83,7 +90,7 @@ export async function loadProductionFusionCandidates(input: {
 
   // 3) Traffic quality mismatch chain (intelligence v1)
   sources_inspected.push("intelligence_v1_traffic_quality");
-  const tq = await loadTrafficQualityMismatchChain();
+  const tq = await (input.loaders?.trafficQualityMismatchChain ?? loadTrafficQualityMismatchChain)();
   if (!tq) {
     sources_empty.push("intelligence_v1_traffic_quality");
   } else {
@@ -93,9 +100,10 @@ export async function loadProductionFusionCandidates(input: {
   }
 
   // 4) Canonical external FusionContext (synthesized + version-pinned only).
-  // Deliberately caller-supplied in v1: no raw articles/signals are fetched here.
+  // When no caller override is supplied, production reads the latest persisted
+  // synthesized FusionContext. Raw articles/signals are never queried here.
   sources_inspected.push("external_knowledge_synthesis");
-  const externalContexts = input.external_fusion_contexts ?? [];
+  const externalContexts = input.external_fusion_contexts ?? await (input.loaders?.externalFusionContexts ?? loadLatestCanonicalExternalFusionContexts)();
   if (!externalContexts.length) sources_empty.push("external_knowledge_synthesis");
   for (const context of externalContexts) {
     const res = canonicalExternalFusionContextToCandidates({ nowIso: input.nowIso, context });
