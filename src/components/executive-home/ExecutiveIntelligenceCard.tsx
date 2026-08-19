@@ -1,9 +1,17 @@
 import type { ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
 import { LightBadge, approvalTone, confidenceTone, domainTone, freshnessTone, priorityTone, stateTone } from "./IntelligencePrimitives";
 
-export function ExecutiveIntelligenceCard({ card }: { card: ExecutiveIntelligenceCardV1 }) {
+export function ExecutiveIntelligenceCard({
+  card,
+  decisionRoomId,
+  onOpenDecisionRoom
+}: {
+  card: ExecutiveIntelligenceCardV1;
+  decisionRoomId?: string;
+  onOpenDecisionRoom?: () => void;
+}) {
   return (
-    <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-300 hover:shadow-md focus-within:border-stone-400">
+    <article id={card.id} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-300 hover:shadow-md focus-within:border-stone-400">
       <div className="flex flex-wrap gap-2">
         <LightBadge label={card.state} tone={stateTone(card.state)} />
         <LightBadge label={card.priority} tone={priorityTone(card.priority)} />
@@ -27,6 +35,26 @@ export function ExecutiveIntelligenceCard({ card }: { card: ExecutiveIntelligenc
           <p><strong className="text-stone-950">Next action:</strong> {card.next_action}</p>
         </div>
       </details>
+      {decisionRoomId && onOpenDecisionRoom ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onOpenDecisionRoom}
+            className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+            aria-controls={decisionRoomId}
+          >
+            Open Decision Room
+          </button>
+          <a
+            href={`#${decisionRoomId}`}
+            onClick={onOpenDecisionRoom}
+            className="text-sm font-semibold text-stone-700 underline decoration-stone-300 underline-offset-4"
+            aria-controls={decisionRoomId}
+          >
+            Jump to grounded drill-down
+          </a>
+        </div>
+      ) : null}
     </article>
   );
 }
