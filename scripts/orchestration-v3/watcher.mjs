@@ -191,8 +191,7 @@ async function poll() {
   }
 
   reconcileRunningClaims();
-  const readySnapshots = readyIssues().map((candidate) => issue(candidate.number));
-  const ready = readySnapshots.sort((left, right) => {
+  const ready = readyIssues().map((candidate) => issue(candidate.number)).sort((left, right) => {
     const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
     const rightRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(right.number));
     if (leftRecovery !== undefined || rightRecovery !== undefined) {
@@ -206,8 +205,9 @@ async function poll() {
     return Number(left.number) - Number(right.number);
   });
 
-  for (const snapshot of ready) {
+  for (const candidate of ready) {
     try {
+      const snapshot = candidate;
       const stream = field(snapshot.body, "stream");
       const workerCandidates = workerCandidatesForStream(stream);
       if (workerCandidates.length === 0) {
@@ -225,7 +225,7 @@ async function poll() {
       }
     } catch (err) {
       if (isTransientGhError(err)) {
-        console.error(JSON.stringify({ event: "CANDIDATE_DEFERRED_GITHUB_TRANSIENT", issueNumber: snapshot.number, error: err instanceof Error ? err.message : String(err) }));
+        console.error(JSON.stringify({ event: "CANDIDATE_DEFERRED_GITHUB_TRANSIENT", issueNumber: candidate.number, error: err instanceof Error ? err.message : String(err) }));
         continue;
       }
       throw err;
