@@ -73,7 +73,7 @@ const retiredLegacyProcesses = {
 };
 const archivedLegacyPlist = archiveLegacyPlist(oldPlist);
 
-const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${newLabel}</string>\n<key>ProgramArguments</key><array><string>${process.execPath}</string><string>${path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-v3", "watcher-host.mjs")}</string><string>--interval</string><string>60</string></array>\n<key>WorkingDirectory</key><string>${ORCHESTRATION_V3.runtime.root}</string>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n<key>ThrottleInterval</key><integer>10</integer>\n<key>StandardOutPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.out.log")}</string>\n<key>StandardErrorPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.err.log")}</string>\n<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>\n</dict></plist>\n`;
+const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${newLabel}</string>\n<key>ProgramArguments</key><array><string>${process.execPath}</string><string>${path.join(ORCHESTRATION_V3.runtime.root, "scripts", "orchestration-v3", "watcher-host.mjs")}</string><string>--interval</string><string>20</string></array>\n<key>WorkingDirectory</key><string>${ORCHESTRATION_V3.runtime.root}</string>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n<key>ThrottleInterval</key><integer>10</integer>\n<key>StandardOutPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.out.log")}</string>\n<key>StandardErrorPath</key><string>${path.join(ORCHESTRATION_V3.runtime.logRoot, "jeeves-orchestration-v3.err.log")}</string>\n<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>\n</dict></plist>\n`;
 fs.writeFileSync(plist, xml);
 run("plutil", ["-lint", plist]);
 run("launchctl", ["bootstrap", `gui/${uid}`, plist]);
@@ -100,8 +100,9 @@ fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "activated.json")
   label: newLabel,
   plist,
   hostEntrypoint: "scripts/orchestration-v3/watcher-host.mjs",
+  safetyPollSeconds: 20,
   idleSleepGuard: process.platform === "darwin" ? "caffeinate -i -w <watcher-pid>" : "unsupported-platform",
   archivedLegacyPlist,
   retiredLegacyProcesses
 }, null, 2) + "\n");
-console.log(JSON.stringify({ status: "ACTIVATED", launchAgent: newLabel, plist, hostEntrypoint: "watcher-host.mjs", idleSleepGuard: process.platform === "darwin", archivedLegacyPlist, retiredLegacyProcesses }));
+console.log(JSON.stringify({ status: "ACTIVATED", launchAgent: newLabel, plist, hostEntrypoint: "watcher-host.mjs", safetyPollSeconds: 20, idleSleepGuard: process.platform === "darwin", archivedLegacyPlist, retiredLegacyProcesses }));

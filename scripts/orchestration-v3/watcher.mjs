@@ -9,9 +9,51 @@ function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
-const intervalSeconds = Number(arg("--interval", "60"));
+const intervalSeconds = Number(arg("--interval", "20"));
 if (!Number.isFinite(intervalSeconds) || intervalSeconds < 20) throw new Error("--interval must be >=20");
 const RECOVERY_PRIORITY_ISSUES = new Map([537, 535, 536, 538, 416, 542].map((issueNumber, index) => [issueNumber, index]));
+const PRIORITY_RANK = Object.freeze({ P0: 0, P1: 1, P2: 2, P3: 3 });
+const BACKGROUND_OLLAMA_PROOF_ISSUE = 337;
+
+let wakeResolver = null;
+let wakePending = false;
+let wakeReason = "STARTUP";
+
+function requestWake(reason, details = {}) {
+  wakePending = true;
+  wakeReason = reason;
+  console.log(JSON.stringify({ event: "WATCHER_WAKE_REQUESTED", reason, ...details }));
+  if (!wakeResolver) return;
+  const resolve = wakeResolver;
+  wakeResolver = null;
+  resolve();
+}
+
+function waitForWakeOrTimeout(ms) {
+  if (wakePending) {
+    const reason = wakeReason;
+    wakePending = false;
+    return Promise.resolve(reason);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      wakeResolver = null;
+      resolve("SAFETY_TIMER");
+    }, ms);
+    wakeResolver = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      wakeResolver = null;
+      const reason = wakeReason;
+      wakePending = false;
+      resolve(reason);
+    };
+  });
+}
 
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -39,7 +81,7 @@ function issue(number) {
   return JSON.parse(gh(["issue", "view", String(number), "--repo", ORCHESTRATION_V3.repo, "--json", "number,body,labels,title"]));
 }
 function readyIssues() {
-  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title"]));
+  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title,body"]));
 }
 function runningIssues() {
   return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.running, "--limit", "100", "--json", "number,title"]));
@@ -47,6 +89,10 @@ function runningIssues() {
 function field(body, name) {
   const m = String(body ?? "").match(new RegExp(`\\*\\*${name}:\\*\\*\\s*([^\\n]+)`, "i"));
   return m ? m[1].trim() : null;
+}
+function priorityRank(body, issueNumber) {
+  if (Number(issueNumber) === BACKGROUND_OLLAMA_PROOF_ISSUE) return Number.MAX_SAFE_INTEGER;
+  return PRIORITY_RANK[String(field(body, "priority") ?? "P2").toUpperCase()] ?? PRIORITY_RANK.P2;
 }
 function alive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -126,6 +172,7 @@ function launch(workerId, issueNumber) {
   });
   if (!Number.isInteger(child.pid) || child.pid <= 0) throw new Error(`NO_WORKER_PID:${workerId}:${issueNumber}`);
   fs.writeFileSync(leasePath(workerId), JSON.stringify({ workerId, issueNumber, pid: child.pid, startedAt: new Date().toISOString(), logPath }, null, 2) + "\n");
+  child.on("exit", (code, signal) => requestWake("WORKER_EXIT", { workerId, issueNumber, pid: child.pid, code, signal }));
   child.unref();
   fs.closeSync(fd);
   console.log(JSON.stringify({ event: "CLAIMED", workerId, issueNumber, pid: child.pid, logPath }));
@@ -142,30 +189,39 @@ async function poll() {
     if (isTransientGhError(err)) console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
     else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
   }
+
   reconcileRunningClaims();
   const ready = readyIssues().sort((left, right) => {
-    const leftPriority = RECOVERY_PRIORITY_ISSUES.get(Number(left.number)) ?? Number.MAX_SAFE_INTEGER;
-    const rightPriority = RECOVERY_PRIORITY_ISSUES.get(Number(right.number)) ?? Number.MAX_SAFE_INTEGER;
+    const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
+    const rightRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(right.number));
+    if (leftRecovery !== undefined || rightRecovery !== undefined) {
+      if (leftRecovery === undefined) return 1;
+      if (rightRecovery === undefined) return -1;
+      if (leftRecovery !== rightRecovery) return leftRecovery - rightRecovery;
+    }
+    const leftPriority = priorityRank(left.body, left.number);
+    const rightPriority = priorityRank(right.body, right.number);
     if (leftPriority !== rightPriority) return leftPriority - rightPriority;
     return Number(left.number) - Number(right.number);
   });
+
   for (const candidate of ready) {
     try {
-      const snapshot = issue(candidate.number);
+      const snapshot = candidate;
       const stream = field(snapshot.body, "stream");
       const workerCandidates = workerCandidatesForStream(stream);
       if (workerCandidates.length === 0) {
-        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: candidate.number, stream }));
+        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: snapshot.number, stream }));
         continue;
       }
       const workerId = workerCandidates.find((candidateWorkerId) => !reconcileLease(candidateWorkerId));
       if (!workerId) continue;
-      claim(candidate.number);
+      claim(snapshot.number);
       try {
-        launch(workerId, candidate.number);
+        launch(workerId, snapshot.number);
       } catch (err) {
-        gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
-        console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: candidate.number, error: err instanceof Error ? err.message : String(err) }));
+        gh(["issue", "edit", String(snapshot.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
+        console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: snapshot.number, error: err instanceof Error ? err.message : String(err) }));
       }
     } catch (err) {
       if (isTransientGhError(err)) {
@@ -177,8 +233,9 @@ async function poll() {
   }
 }
 
-console.log(JSON.stringify({ event: "WATCHER_START", version: 3, runtime: ORCHESTRATION_V3.runtime.root, model: ORCHESTRATION_V3.model.id }));
+console.log(JSON.stringify({ event: "WATCHER_START", version: 3, runtime: ORCHESTRATION_V3.runtime.root, model: ORCHESTRATION_V3.model.id, intervalSeconds }));
 for (;;) {
   try { await poll(); } catch (err) { console.error(JSON.stringify({ event: "POLL_FAILED", error: err instanceof Error ? err.message : String(err) })); }
-  await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
+  const reason = await waitForWakeOrTimeout(intervalSeconds * 1000);
+  console.log(JSON.stringify({ event: "WATCHER_WAKE", reason }));
 }
