@@ -4,9 +4,10 @@ import { snapshotToFusionCandidates } from "@/lib/fusion-v1/production/adapters/
 import { opportunityToFusionCandidate, type OpportunityRow } from "@/lib/fusion-v1/production/adapters/opportunities";
 import { trafficQualityChainToFusionCandidate, type TrafficQualityChain } from "@/lib/fusion-v1/production/adapters/traffic-quality";
 import {
-  canonicalExternalFusionContextToCandidates,
   type CanonicalExternalFusionContextV1
 } from "@/lib/fusion-v1/production/adapters/external-knowledge";
+import { type ExternalFusionContextLoadResult } from "@/lib/fusion-v1/production/external-fusion-context-loader";
+import { loadExternalKnowledgeSynthesisCandidates } from "@/lib/fusion-v1/production/external-knowledge-synthesis-candidates";
 import type { FusionCandidate } from "@/lib/fusion-v1/contracts";
 import type { Finding, Hypothesis } from "@/lib/intelligence-v1/contracts";
 
@@ -24,6 +25,7 @@ export async function loadProductionFusionCandidates(input: {
   nowIso: string;
   strategic_constraints_blocked_domains: string[];
   external_fusion_contexts?: CanonicalExternalFusionContextV1[];
+  external_fusion_context_loader?: (input: { nowIso: string }) => Promise<ExternalFusionContextLoadResult>;
 }): Promise<ProductionCandidateLoadResult> {
   const sources_inspected: string[] = [];
   const sources_empty: string[] = [];
@@ -92,34 +94,18 @@ export async function loadProductionFusionCandidates(input: {
     candidate_meta_by_id[c.candidate_id] = { source: "intelligence_v1_traffic_quality", freshness: "fresh" };
   }
 
-  // 4) Canonical external FusionContext (synthesized + version-pinned only).
-  // Deliberately caller-supplied in v1: no raw articles/signals are fetched here.
-  sources_inspected.push("external_knowledge_synthesis");
-  const externalContexts = input.external_fusion_contexts ?? [];
-  if (!externalContexts.length) sources_empty.push("external_knowledge_synthesis");
-  for (const context of externalContexts) {
-    const res = canonicalExternalFusionContextToCandidates({ nowIso: input.nowIso, context });
-    freshness_notes.push({
-      source: "external_knowledge_synthesis",
-      fusion_context_id: context.fusion_context_id,
-      freshness: context.freshness_summary,
-      rejected: res.rejected
-    });
-    if (!res.candidates.length && res.rejected.length) {
-      sources_skipped.push({
-        source: `external_knowledge_synthesis:${context.fusion_context_id}`,
-        reason: res.rejected.map((item) => item.reason).join(",")
-      });
-      if (context.freshness_summary.status === "stale") sources_stale.push(`external_knowledge_synthesis:${context.fusion_context_id}`);
-    }
-    for (const candidate of res.candidates) {
-      candidates.push(candidate);
-      candidate_meta_by_id[candidate.candidate_id] = {
-        source: `external_knowledge_synthesis:${context.fusion_context_id}`,
-        freshness: context.freshness_summary.status === "fresh" ? "fresh" : "monitor_only"
-      };
-    }
-  }
+  const external = await loadExternalKnowledgeSynthesisCandidates({
+    nowIso: input.nowIso,
+    external_fusion_contexts: input.external_fusion_contexts,
+    external_fusion_context_loader: input.external_fusion_context_loader
+  });
+  candidates.push(...external.candidates);
+  Object.assign(candidate_meta_by_id, external.candidate_meta_by_id);
+  sources_inspected.push(...external.sources_inspected);
+  sources_empty.push(...external.sources_empty);
+  sources_stale.push(...external.sources_stale);
+  sources_skipped.push(...external.sources_skipped);
+  freshness_notes.push(...external.freshness_notes);
 
   return { candidates, candidate_meta_by_id, sources_inspected, sources_empty, sources_stale, sources_skipped, freshness_notes };
 }
