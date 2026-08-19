@@ -7,7 +7,9 @@ import {
   classifyIntegrationCandidate,
   hasHumanOrProductionGate,
   hasRequiredValidationEvidence,
-  orderIntegrationCandidates
+  isNonAuthoritativeVercelQuotaFailure,
+  orderIntegrationCandidates,
+  successfulIntegrationLabelEdits
 } from "../scripts/orchestration-v3/integration-queue.mjs";
 
 const validationBody = [
@@ -90,6 +92,41 @@ test("status rollup distinguishes green pending and failed checks", () => {
   assert.equal(checkRollupState([{ __typename: "StatusContext", state: "SUCCESS" }]), "GREEN");
   assert.equal(checkRollupState([{ __typename: "StatusContext", state: "PENDING" }]), "PENDING");
   assert.equal(checkRollupState([{ __typename: "CheckRun", status: "COMPLETED", conclusion: "FAILURE" }]), "FAILED");
+});
+
+test("successful validated PR integration removes stale terminal queue labels", () => {
+  assert.deepEqual(
+    successfulIntegrationLabelEdits(new Set(["agent-orchestration", "orch:blocked", "orch:running", "orch:ready"])),
+    ["orch:ready", "orch:running", "orch:blocked"]
+  );
+  assert.deepEqual(successfulIntegrationLabelEdits(new Set(["agent-orchestration"])), []);
+});
+
+test("non-authoritative Vercel quota failures do not block otherwise green validated PRs", () => {
+  const candidate = classifyIntegrationCandidate(pr({
+    statusCheckRollup: [
+      { __typename: "StatusContext", context: "GitHub Actions", state: "SUCCESS" },
+      { __typename: "CheckRun", name: "Vercel Preview Comments quota exceeded", status: "COMPLETED", conclusion: "FAILURE" }
+    ]
+  }));
+
+  assert.equal(isNonAuthoritativeVercelQuotaFailure({ name: "Vercel Preview Comments quota exceeded", conclusion: "FAILURE" }), true);
+  assert.equal(candidate.checkState, "GREEN");
+  assert.equal(candidate.eligible, true);
+  assert.deepEqual(candidate.reasons, []);
+});
+
+test("real technical check failures still block integration with machine evidence", () => {
+  const candidate = classifyIntegrationCandidate(pr({
+    statusCheckRollup: [
+      { __typename: "StatusContext", context: "GitHub Actions", state: "SUCCESS" },
+      { __typename: "CheckRun", name: "unit tests", status: "COMPLETED", conclusion: "FAILURE" }
+    ]
+  }));
+
+  assert.equal(candidate.checkState, "FAILED");
+  assert.equal(candidate.eligible, false);
+  assert.ok(candidate.reasons.includes("CHECKS_FAILED"));
 });
 
 test("eligible candidates are ordered dependency-safely by issue number", () => {

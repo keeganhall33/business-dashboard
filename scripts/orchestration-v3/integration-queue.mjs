@@ -6,6 +6,12 @@ import { ORCHESTRATION_V3 } from "./config.mjs";
 export const CURRENT_AUTOMATION_CUTOFF_ISO = "2026-08-17T00:00:00.000Z";
 const LOCK_PATH = path.join(ORCHESTRATION_V3.runtime.stateRoot, "integration-queue.lock");
 const VALIDATED_BRANCH = /^issue-\d+[a-z0-9-]*$/i;
+const STALE_QUEUE_TERMINAL_LABELS = Object.freeze([
+  ORCHESTRATION_V3.queue.ready,
+  ORCHESTRATION_V3.queue.running,
+  ORCHESTRATION_V3.queue.awaitingReview,
+  ORCHESTRATION_V3.queue.blocked
+]);
 
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -45,10 +51,26 @@ export function checkRollupState(statusCheckRollup = []) {
       const status = String(check.status ?? "").toUpperCase();
       const conclusion = String(check.conclusion ?? "").toUpperCase();
       if (status !== "COMPLETED") return "PENDING";
+      if (isNonAuthoritativeVercelQuotaFailure(check)) continue;
       if (!["SUCCESS", "SKIPPED", "NEUTRAL"].includes(conclusion)) return "FAILED";
     }
   }
   return "GREEN";
+}
+
+export function isNonAuthoritativeVercelQuotaFailure(check) {
+  const haystack = [
+    check.name,
+    check.context,
+    check.title,
+    check.summary,
+    check.text,
+    check.detailsUrl,
+    check.conclusion
+  ].filter(Boolean).join(" ");
+
+  return /vercel/i.test(haystack) &&
+    /(quota|rate[\s_-]*limit|limit exceeded|usage limit|resource limited)/i.test(haystack);
 }
 
 export function hasRequiredValidationEvidence(text) {
@@ -125,11 +147,30 @@ function openPullRequests() {
   ]) || "[]");
 }
 
+function issueLabels(issueNumber) {
+  const snapshot = JSON.parse(gh(["issue", "view", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--json", "labels"]) || "{}");
+  return new Set((snapshot.labels ?? []).map((label) => label.name));
+}
+
+export function successfulIntegrationLabelEdits(labels) {
+  const present = labels instanceof Set ? labels : new Set(labels ?? []);
+  return STALE_QUEUE_TERMINAL_LABELS.filter((label) => present.has(label));
+}
+
+function finalizeSuccessfulIntegrationIssue(candidate) {
+  if (!candidate.issueNumber) return;
+  const removeLabels = successfulIntegrationLabelEdits(issueLabels(candidate.issueNumber));
+  if (removeLabels.length > 0) {
+    const args = ["issue", "edit", String(candidate.issueNumber), "--repo", ORCHESTRATION_V3.repo];
+    for (const label of removeLabels) args.push("--remove-label", label);
+    gh(args);
+  }
+  gh(["issue", "close", String(candidate.issueNumber), "--repo", ORCHESTRATION_V3.repo, "--comment", `Integrated by V3 validated PR queue via PR #${candidate.prNumber}.`]);
+}
+
 function mergePr(candidate) {
   gh(["pr", "merge", String(candidate.prNumber), "--repo", ORCHESTRATION_V3.repo, "--squash", "--delete-branch"]);
-  if (candidate.issueNumber) {
-    gh(["issue", "close", String(candidate.issueNumber), "--repo", ORCHESTRATION_V3.repo, "--comment", `Integrated by V3 validated PR queue via PR #${candidate.prNumber}.`]);
-  }
+  finalizeSuccessfulIntegrationIssue(candidate);
 }
 
 function withLock(fn) {
