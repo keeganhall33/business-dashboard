@@ -10,10 +10,12 @@ test("V3 uses one fixed four-worker map", () => {
   assert.deepEqual(Object.keys(ORCHESTRATION_V3.workers), ["local-a", "local-b", "local-c", "local-d"]);
   assert.equal(workerForStream("CORE_INTELLIGENCE"), "local-a");
   assert.equal(workerForStream("DISCOVERY_INTELLIGENCE"), "local-b");
+  assert.equal(workerForStream("DATA_EVIDENCE_LEARNING"), "local-b");
   assert.equal(workerForStream("INTELLIGENCE_UX"), "local-c");
   assert.equal(workerForStream("PRODUCTION_VALUE"), "local-c");
   assert.equal(workerForStream("AGENT_ORCHESTRATION"), "local-d");
   assert.equal(workerForStream("ORCHESTRATION_SYSTEMS"), "local-d");
+  assert.equal(workerForStream("HIGHEST_VALUE_SPECIALIST"), "local-d");
 });
 
 test("V3 acceptance runtime is Ollama-only Qwen 3.5", () => {
