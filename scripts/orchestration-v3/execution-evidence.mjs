@@ -335,6 +335,7 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     evidence.hostVerification = hostVerification;
     if (hostVerification.attempted && hostVerification.verified) {
       evidence.repoToolExecutionObserved = true;
+      evidence.repoPreflightObserved = true;
       evidence.testExecutionObserved = true;
       evidence.gitDiffObserved = true;
       evidence.gitDiffCheckObserved = true;
