@@ -71,6 +71,29 @@ export type StrategicTrajectoryRevisionV1 = {
   evidence_refs: string[];
 };
 
+export type StrategicTrajectoryOpportunityCostV1 = {
+  summary: string;
+  capacity_tradeoff: string;
+  strategic_tradeoff: string;
+  evidence_refs: string[];
+};
+
+export type StrategicTrajectoryCriticalUnknownV1 = {
+  unknown_id: string;
+  label: string;
+  why_it_matters: string;
+  scouting_action: string;
+  evidence_refs: string[];
+};
+
+export type StrategicTrajectoryIgnoreItemV1 = {
+  item_id: string;
+  label: string;
+  rationale: string;
+  reconsideration_trigger: string;
+  evidence_refs: string[];
+};
+
 export type StrategicTrajectorySnapshotV1 = {
   contract_version: typeof STRATEGIC_TRAJECTORY_CONTRACT_VERSION_V1;
   trajectory_id: string;
@@ -83,9 +106,12 @@ export type StrategicTrajectorySnapshotV1 = {
   PATHS: StrategicTrajectoryPathV1[];
   NEXT_HIGH_LEVERAGE_MOVE: string;
   COMPOUNDING_ASSET_CREATED: string;
+  OPPORTUNITY_COST: StrategicTrajectoryOpportunityCostV1;
+  CRITICAL_UNKNOWN: StrategicTrajectoryCriticalUnknownV1;
   FOG_OF_WAR: string[];
   SCOUTING_ACTION: string;
   WHAT_TO_IGNORE: string[];
+  IGNORE_OR_DEPRIORITIZE: StrategicTrajectoryIgnoreItemV1[];
   REVISION_TRIGGER: string;
   PATH_REVISION_HISTORY: StrategicTrajectoryRevisionV1[];
   evidence_refs: StrategicTrajectoryEvidenceRefV1[];
@@ -103,9 +129,12 @@ export type StrategicTrajectoryViewModelV1 = {
   viable_paths: StrategicTrajectoryPathV1[];
   next_high_leverage_move: string;
   compounding_asset_created: string;
+  opportunity_cost: StrategicTrajectoryOpportunityCostV1;
+  critical_unknown: StrategicTrajectoryCriticalUnknownV1;
   fog_of_war: string[];
   scouting_action: string;
   what_to_ignore: string[];
+  ignore_or_deprioritize: StrategicTrajectoryIgnoreItemV1[];
   revision_trigger: string;
   path_revision_history: StrategicTrajectoryRevisionV1[];
   keegan_action_required: "NO";

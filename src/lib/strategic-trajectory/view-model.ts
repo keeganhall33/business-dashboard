@@ -75,9 +75,15 @@ export function toStrategicTrajectoryViewModelV1(
     viable_paths: snapshot.PATHS.filter((path) => path.status !== "REJECTED").sort((a, b) => a.path_id.localeCompare(b.path_id)),
     next_high_leverage_move: snapshot.NEXT_HIGH_LEVERAGE_MOVE,
     compounding_asset_created: snapshot.COMPOUNDING_ASSET_CREATED,
+    opportunity_cost: { ...snapshot.OPPORTUNITY_COST, evidence_refs: [...snapshot.OPPORTUNITY_COST.evidence_refs].sort() },
+    critical_unknown: { ...snapshot.CRITICAL_UNKNOWN, evidence_refs: [...snapshot.CRITICAL_UNKNOWN.evidence_refs].sort() },
     fog_of_war: [...snapshot.FOG_OF_WAR],
     scouting_action: snapshot.SCOUTING_ACTION,
     what_to_ignore: [...snapshot.WHAT_TO_IGNORE],
+    ignore_or_deprioritize: snapshot.IGNORE_OR_DEPRIORITIZE.map((item) => ({
+      ...item,
+      evidence_refs: [...item.evidence_refs].sort()
+    })).sort((a, b) => a.item_id.localeCompare(b.item_id)),
     revision_trigger: snapshot.REVISION_TRIGGER,
     path_revision_history: [...snapshot.PATH_REVISION_HISTORY].sort((a, b) => a.revision_id.localeCompare(b.revision_id)),
     keegan_action_required: "NO",
