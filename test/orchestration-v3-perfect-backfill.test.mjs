@@ -36,6 +36,8 @@ test("V3 backfill can claim all four dependency-safe workers in one pass without
   assert.match(config, /"local-b"[\s\S]*DISCOVERY_INTELLIGENCE/);
   assert.match(config, /"local-c"[\s\S]*INTELLIGENCE_UX/);
   assert.match(config, /"local-d"[\s\S]*AGENT_ORCHESTRATION/);
+  assert.match(config, /"local-b"[\s\S]*DATA_EVIDENCE_LEARNING/);
+  assert.match(config, /"local-d"[\s\S]*HIGHEST_VALUE_SPECIALIST/);
   assert.match(watcher, /for \(const candidate of ready\)/);
   assert.match(watcher, /workerCandidatesForStream\(stream\)/);
   assert.match(watcher, /claimedWorkersThisPass\.has\(candidateWorkerId\)/);
