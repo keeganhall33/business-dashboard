@@ -18,9 +18,15 @@ test("base strategic trajectory exposes target state, bottleneck, paths, fog, sc
   assert.equal(view.preferred_path.path_id, "path-collector-room-proof");
   assert.equal(view.viable_paths.length, 2);
   assert.ok(view.required_assets.some((asset) => asset.present_state === "UNKNOWN"));
+  assert.match(view.opportunity_cost.summary, /uses bounded strategy\/studio time/);
+  assert.equal(view.critical_unknown.unknown_id, "unknown-institutional-access-route");
+  assert.equal(view.critical_unknown.scouting_action, view.scouting_action);
   assert.match(view.fog_of_war.join(" "), /UNKNOWN/);
   assert.match(view.scouting_action, /decision-maker/);
   assert.deepEqual(view.what_to_ignore, ["Follower-count applause", "Low-ticket volume drop pressure", "Public discount mechanics"]);
+  assert.equal(view.ignore_or_deprioritize[0]?.label, "Public volume drop pressure");
+  assert.match(view.ignore_or_deprioritize[0]?.rationale ?? "", /scarcity/);
+  assert.match(view.ignore_or_deprioritize[0]?.reconsideration_trigger ?? "", /tightly controlled/);
   assert.equal(view.keegan_action_required, "NO");
 });
 
@@ -57,7 +63,17 @@ test("distraction suppression remains explicit and is not collapsed into generic
   assert.ok(view.what_to_ignore.includes("Follower-count applause"));
   assert.ok(view.what_to_ignore.includes("Low-ticket volume drop pressure"));
   assert.ok(view.what_to_ignore.includes("Public discount mechanics"));
+  assert.ok(view.ignore_or_deprioritize.some((item) => item.item_id === "ignore-public-volume-drop"));
+  assert.ok(view.ignore_or_deprioritize.every((item) => item.rationale.length > 0 && item.reconsideration_trigger.length > 0));
   assert.doesNotMatch(view.next_high_leverage_move, /follower|discount|volume drop/i);
+});
+
+test("paths are alternatives rather than deterministic destiny language", () => {
+  const view = toStrategicTrajectoryViewModelV1(STRATEGIC_TRAJECTORY_BASE_FIXTURE_V1);
+
+  assert.ok(view.viable_paths.length >= 2);
+  assert.ok(view.viable_paths.every((path) => !/destined|inevitable|guaranteed|certain/i.test(`${path.strategy} ${path.why_preferred_or_not}`)));
+  assert.match(view.next_high_leverage_move, /Run the private collector-room proof/);
 });
 
 test("unbounded downside cannot become the preferred path", () => {

@@ -117,12 +117,34 @@ export const STRATEGIC_TRAJECTORY_BASE_FIXTURE_V1: StrategicTrajectorySnapshotV1
   ] satisfies StrategicTrajectoryPathV1[]).sort((a, b) => a.path_id.localeCompare(b.path_id)),
   NEXT_HIGH_LEVERAGE_MOVE: "Run the private collector-room proof while scouting one warm institutional access route.",
   COMPOUNDING_ASSET_CREATED: "A reusable map of credible premium access routes and scarcity-safe proof assets.",
+  OPPORTUNITY_COST: {
+    summary: "Choosing the collector-room proof uses bounded strategy/studio time that cannot also be spent building a broader public drop.",
+    capacity_tradeoff: "Keep the next move to a small proof asset and access map so it does not crowd out flagship original production.",
+    strategic_tradeoff: "Prioritizes proprietary elite signal over near-term public attention.",
+    evidence_refs: ["trajectory-fixture-strategy", "trajectory-fixture-capacity"]
+  },
+  CRITICAL_UNKNOWN: {
+    unknown_id: "unknown-institutional-access-route",
+    label: "Institutional access route",
+    why_it_matters: "If a real curator/sponsor decision-maker route exists, the institutional prestige wedge may dominate the collector-room proof path.",
+    scouting_action: "Ask one trusted relationship for a specific curator/sponsor route and qualify whether they can reach a decision-maker.",
+    evidence_refs: ["trajectory-fixture-scouting"]
+  },
   FOG_OF_WAR: [
     "UNKNOWN whether institutional access is real enough to justify proposal capacity.",
     "UNKNOWN direct dollars for prestige/network paths; qualitative value is not monetized."
   ],
   SCOUTING_ACTION: "Ask one trusted relationship for a specific curator/sponsor route and qualify whether they can reach a decision-maker.",
   WHAT_TO_IGNORE: ["Follower-count applause", "Low-ticket volume drop pressure", "Public discount mechanics"],
+  IGNORE_OR_DEPRIORITIZE: [
+    {
+      item_id: "ignore-public-volume-drop",
+      label: "Public volume drop pressure",
+      rationale: "It may create attention or short-term transactions, but it fights scarcity and has unbounded brand-positioning downside in this fixture.",
+      reconsideration_trigger: "Reconsider only if the offer is reframed as a tightly controlled elite-distribution edition with bounded scarcity risk.",
+      evidence_refs: ["trajectory-fixture-strategy"]
+    }
+  ],
   REVISION_TRIGGER: "Revise preferred path only when a new fact verifies elite institutional access or disproves private collector intent.",
   PATH_REVISION_HISTORY: [],
   evidence_refs: evidenceRefs,
