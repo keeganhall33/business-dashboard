@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { ORCHESTRATION_V3 } from "./config.mjs";
+import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -102,16 +102,62 @@ function ghJson(args) {
   }
 }
 
+function taskField(body, name) {
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(body ?? "").match(new RegExp(`\\*\\*${escaped}:\\*\\*\\s*([^\\n]+)`, "i"));
+  return match ? match[1].trim() : null;
+}
+
 function githubQueueSnapshot(enabled) {
   if (!enabled) return { checked: false, running: [], ready: [], error: null };
   const common = ["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--limit", "100"];
   const running = ghJson([...common, "--label", ORCHESTRATION_V3.queue.running, "--json", "number,title,labels"]);
-  const ready = ghJson([...common, "--label", ORCHESTRATION_V3.queue.ready, "--json", "number,title,labels"]);
+  const ready = ghJson([...common, "--label", ORCHESTRATION_V3.queue.ready, "--json", "number,title,body,labels"]);
   return {
     checked: true,
     running: running.data.map((item) => ({ number: Number(item.number), title: item.title })),
-    ready: ready.data.map((item) => ({ number: Number(item.number), title: item.title })),
+    ready: ready.data.map((item) => {
+      const stream = taskField(item.body, "stream");
+      return {
+        number: Number(item.number),
+        title: item.title,
+        stream,
+        worker_candidates: workerCandidatesForStream(stream)
+      };
+    }),
     error: running.error ?? ready.error ?? null
+  };
+}
+
+function latestHeartbeatSnapshot(now = new Date()) {
+  const heartbeatPath = path.join(ORCHESTRATION_V3.runtime.stateRoot, "health", "watcher-heartbeats.ndjson");
+  let raw = "";
+  try {
+    raw = fs.readFileSync(heartbeatPath, "utf8").trim();
+  } catch {
+    return {
+      path: heartbeatPath,
+      present: false,
+      latest_generated_at: null,
+      age_seconds: null,
+      watcher_alive: null,
+      active_worker_count: null
+    };
+  }
+  const line = raw.split("\n").filter(Boolean).at(-1);
+  let latest = null;
+  try {
+    latest = JSON.parse(line ?? "{}");
+  } catch {}
+  const generatedAt = latest?.generated_at ?? null;
+  const ageSeconds = generatedAt ? Math.max(0, Math.round((now.getTime() - new Date(generatedAt).getTime()) / 1000)) : null;
+  return {
+    path: heartbeatPath,
+    present: Boolean(latest),
+    latest_generated_at: generatedAt,
+    age_seconds: Number.isFinite(ageSeconds) ? ageSeconds : null,
+    watcher_alive: typeof latest?.watcher_alive === "boolean" ? latest.watcher_alive : null,
+    active_worker_count: Number.isInteger(latest?.active_worker_count) ? latest.active_worker_count : null
   };
 }
 
@@ -120,12 +166,14 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
   const liveWorkers = workers.filter((worker) => worker.pid_alive);
   const github = githubQueueSnapshot(includeGithub);
   const runningIssuesWithLiveLease = new Set(workers.filter((worker) => worker.pid_alive && worker.issue_number).map((worker) => worker.issue_number));
+  const heartbeat = latestHeartbeatSnapshot();
   return {
     generated_at: new Date().toISOString(),
     runtime_root: ORCHESTRATION_V3.runtime.root,
     state_root: ORCHESTRATION_V3.runtime.stateRoot,
     model: ORCHESTRATION_V3.model,
     watcher: launchdSnapshot(launchdLabel),
+    heartbeat,
     workers,
     github,
     summary: {
@@ -135,7 +183,11 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
       running_claims_without_live_lease: github.checked
         ? github.running.map((item) => item.number).filter((issueNumber) => !runningIssuesWithLiveLease.has(issueNumber))
         : [],
-      ready_issue_numbers: github.checked ? github.ready.map((item) => item.number) : []
+      ready_issue_numbers: github.checked ? github.ready.map((item) => item.number) : [],
+      ready_backfill_candidates: github.checked
+        ? github.ready.filter((item) => item.worker_candidates.length > 0).map((item) => ({ number: item.number, stream: item.stream, worker_candidates: item.worker_candidates }))
+        : [],
+      ready_unmapped_issue_numbers: github.checked ? github.ready.filter((item) => item.worker_candidates.length === 0).map((item) => item.number) : []
     }
   };
 }
