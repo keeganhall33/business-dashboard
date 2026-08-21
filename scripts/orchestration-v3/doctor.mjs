@@ -19,9 +19,16 @@ function command(name, args, options = {}) {
 }
 
 function issueList(label) {
-  const res = command("gh", ["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,labels"]);
+  const res = command("gh", [
+    "api", "--method", "GET",
+    `repos/${ORCHESTRATION_V3.repo}/issues`,
+    "-f", "state=open",
+    "-f", `labels=${ORCHESTRATION_V3.queue.base},${label}`,
+    "-f", "per_page=100"
+  ]);
   if (!res.ok) return { ok: false, issues: [], error: res.error };
-  return { ok: true, issues: JSON.parse(res.stdout || "[]") };
+  const rows = JSON.parse(res.stdout || "[]").filter((row) => !row.pull_request);
+  return { ok: true, issues: rows.map((row) => ({ number: row.number, title: row.title, body: row.body, labels: row.labels ?? [] })) };
 }
 
 function processList(pattern) {
@@ -30,9 +37,23 @@ function processList(pattern) {
   return res.stdout ? res.stdout.split("\n") : [];
 }
 
+function taskField(body, name) {
+  const text = String(body ?? "");
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`^\\s*\\*\\*${escaped}:\\*\\*\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*${escaped}:\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$\\s*^\\s*([^#\\n][^\\n]*)`, "im")
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 function extractStream(body) {
-  const match = String(body ?? "").match(/\*\*stream:\*\*\s*([^\n\r]+)/i);
-  return match ? match[1].trim() : null;
+  return taskField(body, "stream");
 }
 
 function activeWorkerIds(runningIssues) {
