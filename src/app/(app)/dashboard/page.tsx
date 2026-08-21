@@ -1,9 +1,8 @@
-import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
+import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
-import type { AgentDashboardResponse } from "@/lib/types/agent";
+import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
 import { headers } from "next/headers";
-import { getDashboardWebsiteIntelV1 } from "@/lib/website-intelligence/dashboard-website-intel-v1";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,12 +32,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie });
-  const agents: AgentDashboardResponse[] = [];
-  const websiteIntel = await getDashboardWebsiteIntelV1();
+  const executiveHome = buildExecutiveHomeFromDashboardOverviewV1(overview);
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
-  const sanitizedOverview = sanitizeDashboardPayloadForHtml(overview);
-  const sanitizedAgents = agents.map((agent) => sanitizeDashboardPayloadForHtml(agent));
+  const sanitizedHome = sanitizeDashboardPayloadForHtml(executiveHome.home);
+  const sanitizedDecisionRoom = sanitizeDashboardPayloadForHtml(executiveHome.decisionRoom);
 
-  return <DashboardPageClient initialData={sanitizedOverview} agents={sanitizedAgents} websiteIntel={websiteIntel} />;
+  return <ExecutiveHomeShell data={sanitizedHome} decisionRoom={sanitizedDecisionRoom} />;
 }
