@@ -41,7 +41,7 @@ function sleepSync(ms) {
 }
 function isTransientGhError(err) {
   const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
-  return /\b(502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable/i.test(text);
+  return /\b(429|502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
 }
 function gh(args, { attempts = 3 } = {}) {
   let lastError;
@@ -68,29 +68,43 @@ function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
 }
 function issueSnapshot() {
-  return JSON.parse(gh(["issue", "view", String(issue), "--repo", ORCHESTRATION_V3.repo, "--json", "number,title,body,labels"]));
+  const row = JSON.parse(gh(["api", "--method", "GET", `repos/${ORCHESTRATION_V3.repo}/issues/${issue}`]));
+  return { number: row.number, title: row.title, body: row.body, labels: row.labels ?? [] };
 }
 function labelsOf(snapshot) {
-  return new Set((snapshot.labels ?? []).map((x) => x.name));
+  return new Set((snapshot.labels ?? []).map((x) => typeof x === "string" ? x : x.name).filter(Boolean));
+}
+function setIssueLabels(labels) {
+  const args = ["api", "--method", "PATCH", `repos/${ORCHESTRATION_V3.repo}/issues/${issue}`];
+  for (const label of [...new Set(labels.filter(Boolean))]) args.push("-f", `labels[]=${label}`);
+  gh(args);
 }
 function editLabels({ remove = [], add = [] }) {
-  const args = ["issue", "edit", String(issue), "--repo", ORCHESTRATION_V3.repo];
-  for (const label of remove) args.push("--remove-label", label);
-  for (const label of add) args.push("--add-label", label);
-  if (args.length > 6) gh(args);
+  const current = [...labelsOf(issueSnapshot())];
+  const removeSet = new Set(remove);
+  setIssueLabels([...current.filter((label) => !removeSet.has(label)), ...add]);
 }
 function postResult(value, meta = null) {
   const lines = ["## OrchestrationResultContractV1", "", "```json", JSON.stringify(value, null, 2), "```"];
   if (meta) lines.push("", `<!-- agentMeta: ${JSON.stringify(meta)} -->`);
-  gh(["issue", "comment", String(issue), "--repo", ORCHESTRATION_V3.repo, "--body", lines.join("\n")]);
-}
-function humanApprovalRequired(body) {
-  return /\*\*human_approval_required:\*\*\s*true/i.test(String(body ?? ""));
+  gh(["api", "--method", "POST", `repos/${ORCHESTRATION_V3.repo}/issues/${issue}/comments`, "-f", `body=${lines.join("\n")}`]);
 }
 function taskField(body, name) {
+  const text = String(body ?? "");
   const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = String(body ?? "").match(new RegExp(`\\*\\*${escaped}:\\*\\*\\s*([^\\n]+)`, "i"));
-  return match ? match[1].trim() : null;
+  const patterns = [
+    new RegExp(`^\\s*\\*\\*${escaped}:\\*\\*\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*${escaped}:\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$\\s*^\\s*([^#\\n][^\\n]*)`, "im")
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+function humanApprovalRequired(body) {
+  return String(taskField(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
 }
 function requiresArchitectureGrounding(snapshot) {
   const body = String(snapshot?.body ?? "");
@@ -130,7 +144,8 @@ function resultBase(status, summary) {
   };
 }
 function openPrSnapshot() {
-  return JSON.parse(gh(["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--limit", "100", "--json", "number,headRefName,headRefOid,updatedAt"]) || "[]");
+  const rows = JSON.parse(gh(["api", "--method", "GET", `repos/${ORCHESTRATION_V3.repo}/pulls`, "-f", "state=open", "-f", "per_page=100"]) || "[]");
+  return rows.map((pr) => ({ number: pr.number, headRefName: pr.head?.ref ?? null, headRefOid: pr.head?.sha ?? null, updatedAt: pr.updated_at ?? null }));
 }
 function mapPrs(prs) {
   return new Map((prs ?? []).map((pr) => [Number(pr.number), pr]));
