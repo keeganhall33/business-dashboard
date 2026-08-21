@@ -28,7 +28,7 @@ export function ExecutiveHomeShell({
   const isDecisionRoomOpen = activeDecisionRoomId === decisionRoom.decision_id;
 
   return (
-    <main className="min-h-screen bg-[#f7f2ea] px-4 py-6 text-stone-950 md:px-8">
+    <main className="min-h-screen bg-[#f7f2ea] py-6 text-stone-950">
       <div className="mx-auto max-w-7xl">
         <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Light-first intelligence dashboard</p>
@@ -41,7 +41,7 @@ export function ExecutiveHomeShell({
           </div>
         </header>
 
-        <nav aria-label="Executive Home sections" className="mt-5 flex gap-2 overflow-x-auto pb-2">
+        <nav aria-label="Executive Home sections" className="mt-5 flex w-full max-w-full flex-wrap gap-2 pb-2">
           {sections.map((section) => (
             <a key={section.id} href={`#${section.id}`} className="whitespace-nowrap rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-800 shadow-sm">
               {section.label}

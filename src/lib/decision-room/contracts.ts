@@ -2,7 +2,15 @@ import type { ActionLevel } from "@/lib/actions/action-contract";
 import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contract";
 
 export type DecisionRoomTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "CONFLICTED";
-export type DecisionRoomEvidenceProvenanceV1 = "STRATEGY_FIXTURE" | "EVIDENCE_TRUST_FIXTURE" | "LEARNING_FIXTURE" | "FINANCIAL_FIXTURE" | "MANUAL_FIXTURE";
+export type DecisionRoomEvidenceProvenanceV1 =
+  | "STRATEGY_FIXTURE"
+  | "EVIDENCE_TRUST_FIXTURE"
+  | "LEARNING_FIXTURE"
+  | "FINANCIAL_FIXTURE"
+  | "MANUAL_FIXTURE"
+  | "DASHBOARD_OVERVIEW"
+  | "FUSION_GOVERNED_COMMAND"
+  | "DATA_CONFIDENCE";
 export type DecisionRoomSpecialistV1 = "STRATEGY" | "DATA_EVIDENCE" | "LEARNING" | "FINANCIAL";
 
 export type DecisionRoomEvidenceRefV1 = {
@@ -90,7 +98,7 @@ export type DecisionRoomViewModelV1 = {
   contract_version: "decision_room_view_model_v1";
   decision_id: string;
   generated_at: string;
-  source_mode: "DETERMINISTIC_FIXTURE";
+  source_mode: "DETERMINISTIC_FIXTURE" | "LIVE_DASHBOARD_OVERVIEW";
   breadcrumb: string[];
   current_recommendation: DecisionRoomRecommendationV1;
   confidence: ExplanationConfidence;
