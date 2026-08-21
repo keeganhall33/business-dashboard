@@ -63,7 +63,7 @@ function sleepSync(ms) {
 }
 function isTransientGhError(err) {
   const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
-  return /\b(502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable/i.test(text);
+  return /\b(429|502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
 }
 function gh(args, { attempts = 3 } = {}) {
   let lastError;
@@ -80,18 +80,56 @@ function gh(args, { attempts = 3 } = {}) {
   }
   throw lastError;
 }
+function restIssue(number) {
+  return JSON.parse(gh(["api", "--method", "GET", `repos/${ORCHESTRATION_V3.repo}/issues/${number}`]));
+}
 function issue(number) {
-  return JSON.parse(gh(["issue", "view", String(number), "--repo", ORCHESTRATION_V3.repo, "--json", "number,body,labels,title"]));
+  const row = restIssue(number);
+  return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title };
+}
+function issuesWithLabels(...labels) {
+  const rows = JSON.parse(gh([
+    "api", "--method", "GET",
+    `repos/${ORCHESTRATION_V3.repo}/issues`,
+    "-f", "state=open",
+    "-f", `labels=${labels.join(",")}`,
+    "-f", "per_page=100"
+  ]));
+  return rows.filter((row) => !row.pull_request);
 }
 function readyIssues() {
-  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.ready, "--limit", "100", "--json", "number,title,body"]));
+  return issuesWithLabels(ORCHESTRATION_V3.queue.base, ORCHESTRATION_V3.queue.ready)
+    .map((row) => ({ number: row.number, title: row.title, body: row.body }));
 }
 function runningIssues() {
-  return JSON.parse(gh(["issue", "list", "--repo", ORCHESTRATION_V3.repo, "--state", "open", "--label", ORCHESTRATION_V3.queue.base, "--label", ORCHESTRATION_V3.queue.running, "--limit", "100", "--json", "number,title"]));
+  return issuesWithLabels(ORCHESTRATION_V3.queue.base, ORCHESTRATION_V3.queue.running)
+    .map((row) => ({ number: row.number, title: row.title }));
+}
+function setIssueLabels(issueNumber, labels) {
+  const unique = [...new Set(labels.filter(Boolean))];
+  const args = ["api", "--method", "PATCH", `repos/${ORCHESTRATION_V3.repo}/issues/${issueNumber}`];
+  for (const label of unique) args.push("-f", `labels[]=${label}`);
+  gh(args);
+}
+function transitionLabels(issueNumber, { remove = [], add = [] }) {
+  const snapshot = restIssue(issueNumber);
+  const current = (snapshot.labels ?? []).map((label) => typeof label === "string" ? label : label.name).filter(Boolean);
+  const removeSet = new Set(remove);
+  setIssueLabels(issueNumber, [...current.filter((label) => !removeSet.has(label)), ...add]);
 }
 function field(body, name) {
-  const m = String(body ?? "").match(new RegExp(`\\*\\*${name}:\\*\\*\\s*([^\\n]+)`, "i"));
-  return m ? m[1].trim() : null;
+  const text = String(body ?? "");
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`^\\s*\\*\\*${escaped}:\\*\\*\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*${escaped}:\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$\\s*^\\s*([^#\\n][^\\n]*)`, "im")
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
 }
 function priorityRank(body, issueNumber) {
   if (Number(issueNumber) === BACKGROUND_OLLAMA_PROOF_ISSUE) return Number.MAX_SAFE_INTEGER;
@@ -111,7 +149,7 @@ function issueIsRunning(issueNumber) {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
   try {
     const snapshot = issue(issueNumber);
-    return (snapshot.labels ?? []).some((label) => label.name === ORCHESTRATION_V3.queue.running);
+    return (snapshot.labels ?? []).some((label) => (typeof label === "string" ? label : label.name) === ORCHESTRATION_V3.queue.running);
   } catch (err) {
     if (isTransientGhError(err)) {
       console.error(JSON.stringify({ event: "ISSUE_RUNNING_STATE_UNKNOWN", issueNumber, reason: "GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
@@ -151,7 +189,7 @@ function reconcileRunningClaims() {
   const candidates = runningIssues();
   for (const candidate of candidates) {
     if (activeIssues.has(Number(candidate.number))) continue;
-    gh(["issue", "edit", String(candidate.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.ready]);
+    transitionLabels(candidate.number, { remove: [ORCHESTRATION_V3.queue.running], add: [ORCHESTRATION_V3.queue.ready] });
     console.log(JSON.stringify({
       event: "STALE_RUNNING_REQUEUED",
       issueNumber: Number(candidate.number),
@@ -160,7 +198,7 @@ function reconcileRunningClaims() {
   }
 }
 function claim(issueNumber) {
-  gh(["issue", "edit", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.ready, "--add-label", ORCHESTRATION_V3.queue.running]);
+  transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.running] });
 }
 function launch(workerId, issueNumber) {
   fs.mkdirSync(path.dirname(leasePath(workerId)), { recursive: true });
@@ -226,7 +264,7 @@ async function poll() {
         launch(workerId, snapshot.number);
       } catch (err) {
         claimedWorkersThisPass.delete(workerId);
-        gh(["issue", "edit", String(snapshot.number), "--repo", ORCHESTRATION_V3.repo, "--remove-label", ORCHESTRATION_V3.queue.running, "--add-label", ORCHESTRATION_V3.queue.blocked]);
+        transitionLabels(snapshot.number, { remove: [ORCHESTRATION_V3.queue.running], add: [ORCHESTRATION_V3.queue.blocked] });
         console.error(JSON.stringify({ event: "LAUNCH_FAILED", workerId, issueNumber: snapshot.number, error: err instanceof Error ? err.message : String(err) }));
       }
     } catch (err) {
