@@ -29,7 +29,7 @@ export function ExecutiveHomeShell({
 
   return (
     <main className="min-h-screen bg-[#f7f2ea] py-6 text-stone-950">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Light-first intelligence dashboard</p>
           <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-normal text-stone-950 md:text-5xl">{data.hero.title}</h1>
