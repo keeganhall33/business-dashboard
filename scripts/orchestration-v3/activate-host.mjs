@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
-import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
+import { inspectAllWorkers, inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 
 function run(exe, args, options = {}) {
   return execFileSync(exe, args, { encoding: "utf8", timeout: 120_000, ...options }).trim();
@@ -14,6 +14,22 @@ function bestEffort(exe, args, options = {}) {
 function requirePrepared() {
   const marker = path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json");
   if (!fs.existsSync(marker)) throw new Error("V3_NOT_PREPARED");
+}
+function repairDisposableWorkers() {
+  const repairs = [];
+  for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
+    const result = recoverIdleWorker(workerId);
+    repairs.push({
+      workerId,
+      recovered: result.recovered,
+      recoverable: result.recoverable,
+      beforeErrors: result.before?.errors ?? [],
+      afterErrors: result.after?.errors ?? [],
+      error: result.error ?? null
+    });
+  }
+  console.log(JSON.stringify({ event: "ACTIVATION_WORKTREE_RECOVERY", repairs }));
+  return repairs;
 }
 function requireHealthyFilesystems() {
   const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
@@ -48,6 +64,7 @@ function archiveLegacyPlist(plist) {
 }
 
 requirePrepared();
+repairDisposableWorkers();
 requireHealthyFilesystems();
 run(process.execPath, ["--check", "scripts/orchestration-v3/watcher-host.mjs"], { cwd: ORCHESTRATION_V3.runtime.root });
 run(process.execPath, ["--check", "scripts/orchestration-v3/watcher.mjs"], { cwd: ORCHESTRATION_V3.runtime.root });
