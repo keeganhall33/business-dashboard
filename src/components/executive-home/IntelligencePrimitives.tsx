@@ -15,6 +15,39 @@ export function LightBadge({ label, tone = "stone" }: { label: string; tone?: Ba
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass[tone]}`}>{label}</span>;
 }
 
+export function VisualSignalPill({ label, value, tone = "stone" }: { label: string; value: string; tone?: BadgeTone }) {
+  return (
+    <div className={`rounded-2xl border p-3 ${toneClass[tone]}`}>
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+export function EvidenceBar({ label, tone = "stone", emphasis = "medium" }: { label: string; tone?: BadgeTone; emphasis?: "low" | "medium" | "high" }) {
+  const width = emphasis === "high" ? "w-full" : emphasis === "medium" ? "w-2/3" : "w-1/3";
+  const fill = {
+    stone: "bg-stone-400",
+    emerald: "bg-emerald-500",
+    amber: "bg-amber-500",
+    rose: "bg-rose-500",
+    sky: "bg-sky-500",
+    violet: "bg-violet-500"
+  }[tone];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-stone-600">
+        <span>{label}</span>
+        <span>{emphasis.toUpperCase()}</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+        <div className={`h-full rounded-full ${fill} ${width}`} />
+      </div>
+    </div>
+  );
+}
+
 export function stateTone(state: IntelligenceStateV1): BadgeTone {
   if (state === "FACT" || state === "ACTION") return "emerald";
   if (state === "RECOMMENDATION" || state === "INFERENCE" || state === "HYPOTHESIS") return "sky";
@@ -54,4 +87,16 @@ export function domainTone(domain: SpecialistDomainV1): BadgeTone {
   if (domain === "CREATIVE") return "sky";
   if (domain === "EVIDENCE") return "amber";
   return "stone";
+}
+
+export function confidenceEmphasis(confidence: ConfidenceV1): "low" | "medium" | "high" {
+  if (confidence === "HIGH") return "high";
+  if (confidence === "MEDIUM") return "medium";
+  return "low";
+}
+
+export function priorityEmphasis(priority: IntelligencePriorityV1): "low" | "medium" | "high" {
+  if (priority === "DO_NOW") return "high";
+  if (priority === "PREPARE") return "medium";
+  return "low";
 }

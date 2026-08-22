@@ -1,5 +1,5 @@
 import type { ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
-import { LightBadge, approvalTone, confidenceTone, domainTone, freshnessTone, priorityTone, stateTone } from "./IntelligencePrimitives";
+import { EvidenceBar, LightBadge, VisualSignalPill, approvalTone, confidenceEmphasis, confidenceTone, domainTone, freshnessTone, priorityEmphasis, priorityTone, stateTone } from "./IntelligencePrimitives";
 
 export function ExecutiveIntelligenceCard({
   card,
@@ -20,8 +20,20 @@ export function ExecutiveIntelligenceCard({
         <LightBadge label={card.approval_state} tone={approvalTone(card.approval_state)} />
         <LightBadge label={card.specialist_domain} tone={domainTone(card.specialist_domain)} />
       </div>
-      <h3 className="mt-4 text-lg font-semibold tracking-normal text-stone-950">{card.title}</h3>
-      <p className="mt-2 text-sm leading-6 text-stone-700">{card.summary}</p>
+      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_190px]">
+        <div>
+          <h3 className="text-lg font-semibold tracking-normal text-stone-950">{card.title}</h3>
+          <p className="mt-2 text-sm leading-6 text-stone-700">{card.summary}</p>
+        </div>
+        <div className="grid gap-2">
+          <VisualSignalPill label="Priority" value={card.priority.replaceAll("_", " ")} tone={priorityTone(card.priority)} />
+          <VisualSignalPill label="Evidence state" value={card.state} tone={stateTone(card.state)} />
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-2xl border border-stone-200 bg-[#fffdf8] p-3 md:grid-cols-2">
+        <EvidenceBar label="Confidence" tone={confidenceTone(card.confidence)} emphasis={confidenceEmphasis(card.confidence)} />
+        <EvidenceBar label="Urgency" tone={priorityTone(card.priority)} emphasis={priorityEmphasis(card.priority)} />
+      </div>
       <details className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
         <summary className="cursor-pointer text-sm font-semibold text-stone-950">WHY / EVIDENCE / NEXT ACTION</summary>
         <div className="mt-3 space-y-3 text-sm leading-6 text-stone-700">
@@ -40,7 +52,7 @@ export function ExecutiveIntelligenceCard({
           <button
             type="button"
             onClick={onOpenDecisionRoom}
-            className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-900 shadow-sm"
             aria-controls={decisionRoomId}
           >
             Open Decision Room
