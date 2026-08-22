@@ -61,9 +61,12 @@ const BASE_DASHBOARD = {
 
 test("/dashboard page is wired to Executive Home instead of the legacy Operator Command client", () => {
   const dashboardPage = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+  const rootLayout = fs.readFileSync("src/app/layout.tsx", "utf8");
   assert.match(dashboardPage, /ExecutiveHomeShell/);
   assert.match(dashboardPage, /buildExecutiveHomeFromDashboardOverviewV1/);
   assert.doesNotMatch(dashboardPage, /DashboardPageClient/);
+  assert.match(rootLayout, /title: "Executive Home"/);
+  assert.doesNotMatch(rootLayout, /Operator Command/);
 });
 
 test("live adapter preserves unavailable evidence instead of fixture-only conclusions", () => {
