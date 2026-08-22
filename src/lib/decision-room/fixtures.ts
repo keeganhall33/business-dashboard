@@ -1,4 +1,5 @@
 import type { DecisionRoomViewModelV1 } from "./contracts";
+import { withDecisionRoomConversationRevisionV1 } from "./conversation-revision";
 
 export const DECISION_ROOM_FIXTURE_V1: DecisionRoomViewModelV1 = {
   contract_version: "decision_room_view_model_v1",
@@ -149,3 +150,6 @@ export const DECISION_ROOM_CHALLENGE_FIXTURE_V1: DecisionRoomViewModelV1 = {
     disagreement_visible: true
   }
 };
+
+export const DECISION_ROOM_CONVERSATION_REVISION_FIXTURE_V1: DecisionRoomViewModelV1 =
+  withDecisionRoomConversationRevisionV1(DECISION_ROOM_FIXTURE_V1);
