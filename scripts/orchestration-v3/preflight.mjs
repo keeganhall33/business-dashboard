@@ -13,6 +13,12 @@ const ALLOWED_OPENCLAW_UNTRACKED = new Set([
   "openclaw-workspace-state.json"
 ]);
 
+const RECOVERABLE_IDLE_ERRORS = new Set([
+  "MASS_TRACKED_DELETION",
+  "TRACKED_WORKTREE_DIRTY",
+  "UNEXPECTED_UNTRACKED_FILES"
+]);
+
 function run(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
 }
@@ -57,6 +63,37 @@ export function inspectGitRoot(cwd) {
     result.errors.push(`GIT_PREFLIGHT_FAILED:${err instanceof Error ? err.message : String(err)}`);
   }
   return result;
+}
+
+export function recoverIdleWorker(workerId) {
+  const cfg = ORCHESTRATION_V3.workers[workerId];
+  if (!cfg) throw new Error(`UNKNOWN_WORKER:${workerId}`);
+
+  const before = inspectGitRoot(cfg.worktree);
+  if (before.healthy) return { workerId, recovered: false, recoverable: true, before, after: before };
+
+  const recoverable = before.errors.length > 0 && before.errors.every((error) => RECOVERABLE_IDLE_ERRORS.has(error));
+  if (!recoverable) return { workerId, recovered: false, recoverable: false, before, after: before };
+
+  try {
+    try { run(cfg.worktree, ["fetch", "origin", "main"]); } catch {}
+    run(cfg.worktree, ["reset", "--hard", ORCHESTRATION_V3.runtime.canonicalRef]);
+    run(cfg.worktree, ["clean", "-fd"]);
+    run(cfg.worktree, ["checkout", "--detach", "-f", ORCHESTRATION_V3.runtime.canonicalRef]);
+  } catch (err) {
+    const after = inspectGitRoot(cfg.worktree);
+    return {
+      workerId,
+      recovered: false,
+      recoverable: true,
+      before,
+      after,
+      error: err instanceof Error ? err.message : String(err)
+    };
+  }
+
+  const after = inspectGitRoot(cfg.worktree);
+  return { workerId, recovered: after.healthy, recoverable: true, before, after };
 }
 
 export function inspectAllWorkers() {
