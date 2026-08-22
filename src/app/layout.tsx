@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Operator Command",
-  description: "Executive dashboard view",
+  title: "Executive Home",
+  description: "Evidence-aware executive intelligence dashboard",
 };
 
 export const viewport: Viewport = {
