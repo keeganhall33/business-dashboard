@@ -105,7 +105,22 @@ export function inspectAllWorkers() {
 export function requireHealthyWorker(workerId) {
   const cfg = ORCHESTRATION_V3.workers[workerId];
   if (!cfg) throw new Error(`UNKNOWN_WORKER:${workerId}`);
-  const inspection = inspectGitRoot(cfg.worktree);
+
+  let inspection = inspectGitRoot(cfg.worktree);
+  if (!inspection.healthy) {
+    const recovery = recoverIdleWorker(workerId);
+    inspection = recovery.after;
+    if (recovery.recovered) {
+      console.error(JSON.stringify({
+        event: "WORKTREE_AUTO_RECOVERED",
+        workerId,
+        previousErrors: recovery.before.errors,
+        trackedChangeCount: recovery.before.trackedChangeCount,
+        trackedDeletionCount: recovery.before.trackedDeletionCount
+      }));
+    }
+  }
+
   if (!inspection.healthy) {
     throw new Error(`WORKTREE_PREFLIGHT_FAILED:${workerId}:${inspection.errors.join(",")}`);
   }
