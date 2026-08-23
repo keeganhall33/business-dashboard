@@ -135,6 +135,7 @@ export function buildDecisionAlternativesComparisonViewModelV1(input: Uncertaint
     opportunity_cost_summary: preferred ? preferred.opportunity_cost : "No preferred alternative selected; preserve all explicit uncertainty.",
     strongest_downside,
     what_would_change_my_mind: [...input.what_would_change_my_mind],
+    revision_triggers: [...input.what_would_change_my_mind],
     dashboard_flags: {
       dashboard_consumable: true,
       missing_data_remains_unknown:

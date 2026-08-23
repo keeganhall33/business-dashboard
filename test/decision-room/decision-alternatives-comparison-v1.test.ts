@@ -23,6 +23,7 @@ test("sparse evidence makes low-risk experiment-first preferred without hiding u
   assert.deepEqual(comparison.critical_unknowns, ["Warm intro conversion to serious collector meeting"]);
   assert.match(comparison.opportunity_cost_summary, /smallest credible attention block/);
   assert.ok(comparison.what_would_change_my_mind.length > 0);
+  assert.deepEqual(comparison.revision_triggers, comparison.what_would_change_my_mind);
 });
 
 test("unbounded downside forces defer-for-safety and leaves rejected alternatives visible", () => {
@@ -58,6 +59,7 @@ test("missing money ranges remain UNKNOWN/null rather than becoming zero or fals
   assert.notEqual(comparison.downside_bound.estimated_loss_range.low_cents, 0);
   assert.equal(comparison.dashboard_flags.missing_data_remains_unknown, true);
   assert.equal(comparison.dashboard_flags.keegan_action_required, false);
+  assert.ok(comparison.revision_triggers.some((trigger) => /Direct economics/.test(trigger)));
 });
 
 test("dashboard fixture exports are deterministic and comparison-consumable", () => {

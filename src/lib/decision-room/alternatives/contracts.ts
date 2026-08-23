@@ -50,6 +50,7 @@ export type DecisionAlternativesComparisonViewModelV1 = {
   opportunity_cost_summary: string;
   strongest_downside: string;
   what_would_change_my_mind: string[];
+  revision_triggers: string[];
   dashboard_flags: {
     dashboard_consumable: true;
     missing_data_remains_unknown: boolean;
