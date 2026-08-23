@@ -1,4 +1,5 @@
 import { toDecisionRoomViewModelV1, type DecisionRoomDashboardModelV1 } from "@/lib/decision-room/shell-adapter";
+import { DecisionRoomConversationRevision } from "@/components/decision-room/DecisionRoomConversationRevision";
 import { AskJeevesControl } from "./AskJeevesControl";
 
 export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardModelV1 }) {
@@ -26,6 +27,7 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
             {viewModel.challenge.active ? <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4"><h3 className="text-sm font-semibold text-rose-950">Red-team challenge</h3><p className="mt-2 text-sm leading-6 text-rose-900">{viewModel.challenge.red_team_summary}</p><p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Recommendation overwritten: {String(viewModel.challenge.recommendation_overwritten)}</p></article> : null}
           </div>
           <div className="mt-5 rounded-2xl bg-stone-950 p-4 text-white"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-300">Next high-leverage move</div><p className="mt-2 text-sm leading-6">{viewModel.next_action}</p></div>
+          <DecisionRoomConversationRevision />
         </div>
         <aside className="space-y-4">
           {"contextual_ask" in decision ? <AskJeevesControl control={decision.contextual_ask} /> : null}
