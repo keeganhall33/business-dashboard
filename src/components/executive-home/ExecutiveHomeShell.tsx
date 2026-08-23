@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DecisionRoom } from "@/components/intelligence-ux/DecisionRoom";
 import { EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1, type ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
+import { ExecutiveCommandCenter } from "./ExecutiveCommandCenter";
 import { ExecutiveIntelligenceCard } from "./ExecutiveIntelligenceCard";
 
 const sections: Array<{ id: ExecutiveIntelligenceCardV1["section"]; label: string; description: string }> = [
@@ -28,7 +29,8 @@ export function ExecutiveHomeShell({
   const isDecisionRoomOpen = activeDecisionRoomId === decisionRoom.decision_id;
 
   return (
-    <main className="min-h-screen bg-[#f7f2ea] py-6 text-stone-950">
+    <main className="min-h-screen bg-[#f8f4ec] text-stone-950">
+      <ExecutiveCommandCenter data={data.command_center} />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Light-first intelligence dashboard</p>
