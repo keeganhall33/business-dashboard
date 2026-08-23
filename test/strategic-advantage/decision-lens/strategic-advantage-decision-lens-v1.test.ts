@@ -25,6 +25,8 @@ test("reversible compounding bet shows what compounds, what is hard to copy, tra
   assert.equal(lens.what_is_hard_to_copy.information_advantage.level, "VERY_HIGH");
   assert.ok(lens.what_the_decision_gives_up.advantage_tradeoffs.some((item) => /reporting cleanup/i.test(item)));
   assert.match(lens.next_smallest_high_leverage_move, /private signal test/);
+  assert.equal(lens.dashboard_flags.dashboard_consumable, true);
+  assert.equal(lens.dashboard_flags.no_scoring_engine_added, true);
   assert.equal(lens.keegan_action_required, "NO");
 });
 
@@ -68,6 +70,7 @@ test("component disagreement remains visible rather than collapsing to a single 
   const challenging = lens.component_signals.filter((signal) => !signal.supports_recommendation);
 
   assert.equal(lens.component_disagreement_visible, true);
+  assert.equal(lens.dashboard_flags.component_disagreement_visible, true);
   assert.ok(supportive.length > 0);
   assert.ok(challenging.length > 0);
   assert.equal(lens.component_signals.some((signal) => signal.component === "DEFENSIBILITY" && signal.level === "LOW"), true);

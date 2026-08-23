@@ -74,5 +74,10 @@ export type StrategicAdvantageDecisionLensV1 = {
     preserves_prior_rationale: boolean;
   };
   what_would_change_my_mind: string[];
+  dashboard_flags: {
+    dashboard_consumable: true;
+    no_scoring_engine_added: true;
+    component_disagreement_visible: true;
+  };
   keegan_action_required: "NO";
 };

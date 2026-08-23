@@ -138,6 +138,11 @@ export function buildStrategicAdvantageDecisionLensV1(input: {
       preserves_prior_rationale: preservesPriorRationale(trajectory)
     },
     what_would_change_my_mind: [...assessment.what_would_change_my_mind],
+    dashboard_flags: {
+      dashboard_consumable: true,
+      no_scoring_engine_added: true,
+      component_disagreement_visible: true
+    },
     keegan_action_required: "NO"
   };
 }
