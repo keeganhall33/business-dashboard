@@ -1,5 +1,62 @@
 import { toDecisionRoomViewModelV1, type DecisionRoomDashboardModelV1 } from "@/lib/decision-room/shell-adapter";
+import { DecisionConversationPanel } from "@/components/intelligence/conversation/DecisionConversationPanel";
 import { AskJeevesControl } from "./AskJeevesControl";
+
+function RevisionDiff({ revision }: { revision: NonNullable<ReturnType<typeof toDecisionRoomViewModelV1>["conversation_revision"]>["recommendation_revision"] }) {
+  const diff = revision.diff;
+
+  if (!diff) {
+    return (
+      <section className="border border-amber-200 bg-amber-50 p-4">
+        <h3 className="text-sm font-semibold text-amber-950">New information preview</h3>
+        <p className="mt-2 text-sm leading-6 text-amber-900">No recommendation version changed. Hypothetical input remains scenario-only and cannot appear as fact.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="border border-stone-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">WHY_CHANGED</p>
+          <h3 className="mt-2 text-base font-semibold text-stone-950">Recommendation {diff.previous_version} to {diff.next_version}</h3>
+        </div>
+        <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900">Confidence {diff.confidence_delta.before} to {diff.confidence_delta.after} ({diff.confidence_delta.direction})</span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <article className="border border-stone-200 bg-stone-50 p-3">
+          <h4 className="text-sm font-semibold text-stone-950">Before v{diff.previous_version}</h4>
+          <p className="mt-2 text-sm leading-6 text-stone-700">{diff.before.recommendation_summary}</p>
+          <p className="mt-2 text-sm font-semibold text-stone-950">{diff.before.recommended_action}</p>
+          <p className="mt-2 text-xs font-semibold text-stone-600">UNKNOWN: {diff.before.unknowns.join(", ") || "none"}</p>
+        </article>
+        <article className="border border-stone-200 bg-stone-50 p-3">
+          <h4 className="text-sm font-semibold text-stone-950">After v{diff.next_version}</h4>
+          <p className="mt-2 text-sm leading-6 text-stone-700">{diff.after.recommendation_summary}</p>
+          <p className="mt-2 text-sm font-semibold text-stone-950">{diff.after.recommended_action}</p>
+          <p className="mt-2 text-xs font-semibold text-stone-600">UNKNOWN: {diff.after.unknowns.join(", ") || "none"}</p>
+        </article>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="border border-stone-200 bg-stone-50 p-3 text-sm leading-6 text-stone-700">
+          <div className="font-semibold text-stone-950">Changed evidence / assumptions</div>
+          <p>Added evidence: {diff.added_evidence_ids.join(", ") || "none"}</p>
+          <p>Changed assumptions: {diff.changed_assumption_ids.join(", ") || "none"}</p>
+          <p>Preserved evidence: {diff.preserved_evidence_ids.join(", ") || "none"}</p>
+        </div>
+        <div className="border border-stone-200 bg-stone-50 p-3 text-sm leading-6 text-stone-700">
+          <div className="font-semibold text-stone-950">Version audit</div>
+          <p>Old recommendation remains inspectable as v{revision.old_recommendation.version}.</p>
+          <p>Facts mutated: {String(revision.facts_mutated)}. Memory mutated: {String(revision.memory_mutated)}.</p>
+          <p>UNKNOWN explicit: {String(revision.unknowns_explicit)}. CONFLICTED explicit: {String(revision.conflicted_evidence_explicit)}.</p>
+        </div>
+      </div>
+      <ul className="mt-4 space-y-2 text-sm leading-6 text-stone-700">
+        {diff.why_changed.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </section>
+  );
+}
 
 export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardModelV1 }) {
   const viewModel = toDecisionRoomViewModelV1(decision);
@@ -26,6 +83,17 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
             {viewModel.challenge.active ? <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4"><h3 className="text-sm font-semibold text-rose-950">Red-team challenge</h3><p className="mt-2 text-sm leading-6 text-rose-900">{viewModel.challenge.red_team_summary}</p><p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Recommendation overwritten: {String(viewModel.challenge.recommendation_overwritten)}</p></article> : null}
           </div>
           <div className="mt-5 rounded-2xl bg-stone-950 p-4 text-white"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-300">Next high-leverage move</div><p className="mt-2 text-sm leading-6">{viewModel.next_action}</p></div>
+          {viewModel.conversation_revision ? (
+            <div className="mt-5 space-y-4">
+              <DecisionConversationPanel viewModel={viewModel.conversation_revision.conversation} />
+              <section className="border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Fixture-backed new information preview</p>
+                <p className="mt-2 text-sm leading-6 text-stone-700">{viewModel.conversation_revision.new_information_preview.input.transcript}</p>
+                <p className="mt-2 text-xs font-semibold text-stone-600">Canonical payload: {viewModel.conversation_revision.new_information_preview.input.classification} / {viewModel.conversation_revision.new_information_preview.input.mode} / read_only_fixture={String(viewModel.conversation_revision.new_information_preview.input.read_only_fixture)}</p>
+              </section>
+              <RevisionDiff revision={viewModel.conversation_revision.recommendation_revision} />
+            </div>
+          ) : null}
         </div>
         <aside className="space-y-4">
           {"contextual_ask" in decision ? <AskJeevesControl control={decision.contextual_ask} /> : null}
