@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+import { buildReleaseTrainSnapshot } from "./release-train.mjs";
 
 export const CURRENT_AUTOMATION_CUTOFF_ISO = "2026-08-17T00:00:00.000Z";
 const LOCK_PATH = path.join(ORCHESTRATION_V3.runtime.stateRoot, "integration-queue.lock");
@@ -265,7 +266,14 @@ export function integrateValidatedPrQueue({ dryRun = false, maxMerges = 1 } = {}
       merged.push(candidate);
     }
     const skipped = evaluated.filter((candidate) => !candidate.eligible);
-    return { event: "INTEGRATION_QUEUE_RESULT", dryRun, merged, skipped, followupWork: integrationFollowupWork(skipped) };
+    return {
+      event: "INTEGRATION_QUEUE_RESULT",
+      dryRun,
+      merged,
+      skipped,
+      followupWork: integrationFollowupWork(skipped),
+      releaseTrain: buildReleaseTrainSnapshot({ evaluatedCandidates: evaluated, mergedCandidates: merged })
+    };
   });
 }
 
