@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DecisionRoom } from "@/components/intelligence-ux/DecisionRoom";
 import { EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1, type ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
+import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { ExecutiveCommandCenter } from "./ExecutiveCommandCenter";
 import { ExecutiveIntelligenceCard } from "./ExecutiveIntelligenceCard";
 
@@ -50,6 +51,24 @@ export function ExecutiveHomeShell({
             </a>
           ))}
         </nav>
+
+        <section className="mt-5 rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm" aria-label="Workspace shortcuts">
+          <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Go deeper</p>
+              <h2 className="mt-1 text-xl font-semibold tracking-normal text-stone-950">Owning workspaces</h2>
+            </div>
+            <p className="max-w-2xl text-sm leading-6 text-stone-600">Executive Home stays concise; specialist detail, evidence, action history, and entity records live in purpose-built pages.</p>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {EXECUTIVE_WORKSPACE_NAV_V1.filter((item) => item.id !== "EXECUTIVE_HOME").map((item) => (
+              <a key={item.href} href={item.href} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm hover:border-stone-300">
+                <div className="text-sm font-semibold text-stone-950">{item.label}</div>
+                <div className="mt-1 line-clamp-2 text-xs leading-5 text-stone-600">{item.summary}</div>
+              </a>
+            ))}
+          </div>
+        </section>
 
         <div className="mt-6 space-y-8">
           {sections.map((section) => {
