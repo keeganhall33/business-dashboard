@@ -164,6 +164,7 @@ function latestHeartbeatSnapshot(now = new Date()) {
 export function buildLivenessReport({ includeGithub = false, launchdLabel = "com.keegan.jeeves.orchestration-v3" } = {}) {
   const workers = Object.keys(ORCHESTRATION_V3.workers).map(workerLeaseSnapshot);
   const liveWorkers = workers.filter((worker) => worker.pid_alive);
+  const liveWorkerIds = new Set(liveWorkers.map((worker) => worker.worker_id));
   const github = githubQueueSnapshot(includeGithub);
   const runningIssuesWithLiveLease = new Set(workers.filter((worker) => worker.pid_alive && worker.issue_number).map((worker) => worker.issue_number));
   const heartbeat = latestHeartbeatSnapshot();
@@ -178,6 +179,13 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
     github,
     summary: {
       live_worker_count: liveWorkers.length,
+      capacity_acceptance_proof: `${workers.length}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+      utilization_label: `${liveWorkers.length}/${ORCHESTRATION_V3.capacity.totalWorkers} capacity`,
+      role_utilization: {
+        product: `${ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.productWorkers.length}`,
+        integration_release: `${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.length}`,
+        qa_evaluation: `${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.length}`
+      },
       live_worker_ids: liveWorkers.map((worker) => worker.worker_id),
       live_issue_numbers: liveWorkers.map((worker) => worker.issue_number).filter(Boolean),
       running_claims_without_live_lease: github.checked

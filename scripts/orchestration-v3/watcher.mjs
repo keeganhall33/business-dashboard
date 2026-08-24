@@ -63,7 +63,7 @@ function sleepSync(ms) {
 }
 function isTransientGhError(err) {
   const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
-  return /\b(429|502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
+  return /\b(429|502|503|504)\b|ECONNRESET|ECONNABORTED|ETIMEDOUT|socket hang up|TLS handshake timeout|connection reset|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
 }
 function gh(args, { attempts = 3 } = {}) {
   let lastError;
@@ -200,6 +200,10 @@ function reconcileRunningClaims() {
 function claim(issueNumber) {
   transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.running] });
 }
+function quarantineUnmappedIssue(issueNumber, stream) {
+  transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.blocked] });
+  gh(["issue", "comment", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--body", `V3 quarantined this task because stream \`${stream ?? "UNKNOWN"}\` has no mapped worker. Valid mapped streams must be added to scripts/orchestration-v3/config.mjs before this can re-enter orch:ready.`], { attempts: 2 });
+}
 function launch(workerId, issueNumber) {
   fs.mkdirSync(path.dirname(leasePath(workerId)), { recursive: true });
   const logPath = path.join(ORCHESTRATION_V3.runtime.logRoot, `jeeves-orchestration-v3-${workerId}-${issueNumber}.log`);
@@ -226,6 +230,9 @@ async function poll() {
   try {
     const integration = integrateValidatedPrQueue({ maxMerges: 1 });
     console.log(JSON.stringify(integration));
+    for (const work of integration.followupWork ?? []) {
+      console.log(JSON.stringify({ event: "INTEGRATION_FOLLOWUP_WORK_READY", ...work }));
+    }
   } catch (err) {
     if (isTransientGhError(err)) console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
     else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
@@ -253,7 +260,8 @@ async function poll() {
       const stream = field(snapshot.body, "stream");
       const workerCandidates = workerCandidatesForStream(stream);
       if (workerCandidates.length === 0) {
-        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: snapshot.number, stream }));
+        console.error(JSON.stringify({ event: "UNMAPPED_STREAM_QUARANTINED", issueNumber: snapshot.number, stream }));
+        quarantineUnmappedIssue(snapshot.number, stream);
         continue;
       }
       const workerId = workerCandidates.find((candidateWorkerId) => !claimedWorkersThisPass.has(candidateWorkerId) && !reconcileLease(candidateWorkerId));
