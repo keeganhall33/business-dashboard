@@ -12,3 +12,6 @@
 export * from "./contracts";
 export * from "./fixtures";
 export * from "./types";
+export * from "./next-best-move/adapter";
+export * from "./next-best-move/contracts";
+export * from "./next-best-move/fixtures";
