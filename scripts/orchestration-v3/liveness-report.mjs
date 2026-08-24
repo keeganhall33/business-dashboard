@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
+import { inspectGitRoot } from "./preflight.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -80,6 +81,9 @@ function workerLeaseSnapshot(workerId) {
   const lease = readJson(leasePath);
   const pid = Number(lease?.pid);
   const pidAlive = alive(pid);
+  const cfg = ORCHESTRATION_V3.workers[workerId];
+  let integrity = null;
+  try { integrity = cfg ? inspectGitRoot(cfg.worktree) : null; } catch {}
   return {
     worker_id: workerId,
     issue_number: Number(lease?.issueNumber) || null,
@@ -88,7 +92,17 @@ function workerLeaseSnapshot(workerId) {
     started_at: lease?.startedAt ?? null,
     log_path: lease?.logPath ?? null,
     process_command: pidAlive ? processCommand(pid) : null,
-    lease_path: fs.existsSync(leasePath) ? leasePath : null
+    lease_path: fs.existsSync(leasePath) ? leasePath : null,
+    health: integrity ? {
+      healthy: integrity.healthy,
+      classification: integrity.classification,
+      recovery_policy: integrity.recoveryPolicy,
+      errors: integrity.errors,
+      deletion_count: integrity.trackedDeletionCount,
+      deletion_ratio: integrity.deletionRatio,
+      branch: integrity.branch,
+      head: integrity.head
+    } : null
   };
 }
 
@@ -187,6 +201,7 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
         qa_evaluation: `${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.length}`
       },
       live_worker_ids: liveWorkers.map((worker) => worker.worker_id),
+      unhealthy_worker_ids: workers.filter((worker) => worker.health && !worker.health.healthy).map((worker) => worker.worker_id),
       live_issue_numbers: liveWorkers.map((worker) => worker.issue_number).filter(Boolean),
       running_claims_without_live_lease: github.checked
         ? github.running.map((item) => item.number).filter((issueNumber) => !runningIssuesWithLiveLease.has(issueNumber))

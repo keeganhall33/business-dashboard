@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+import { inspectGitRoot } from "./preflight.mjs";
 
 function alive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -52,7 +53,38 @@ function leaseSummary() {
       }
     } catch {}
   }
-  return active;
+
+  // Check health status of all configured workers, not just active leases
+  const workerHealth = {};
+  for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
+    try {
+      const inspection = inspectGitRoot(cfg.worktree);
+      workerHealth[workerId] = {
+        healthy: inspection.healthy,
+        gitRoot: inspection.gitRoot,
+        branch: inspection.branch,
+        head: inspection.head,
+        trackedChanges: inspection.trackedChangeCount,
+        trackedDeletions: inspection.trackedDeletionCount,
+        deletionRatio: inspection.deletionRatio,
+        classification: inspection.classification,
+        recoveryPolicy: inspection.recoveryPolicy,
+        untracked: inspection.unexpectedUntracked.length
+      };
+    } catch (err) {
+      workerHealth[workerId] = { healthy: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // Include health in lease summary for all configured workers
+  const healthReport = Object.entries(workerHealth).map(([id, h]) => ({ id, ...h }));
+
+  return {
+    active,
+    workerCount: Object.keys(ORCHESTRATION_V3.workers).length,
+    allWorkersHealthy: healthReport.every((h) => h.healthy),
+    workerHealth
+  };
 }
 
 function heartbeatPath() {
@@ -64,7 +96,11 @@ function appendHeartbeat({ watcherPid, caffeinatePid, caffeinateEnabled, event =
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const now = new Date();
   const pacific = pacificParts(now);
-  const workers = leaseSummary();
+  const leaseInfo = leaseSummary();
+
+  // Include worker health snapshot in heartbeat
+  const healthSnapshot = Object.entries(leaseInfo.workerHealth).map(([id, h]) => ({ id, healthy: h.healthy, classification: h.classification }));
+
   fs.appendFileSync(file, JSON.stringify({
     event,
     generated_at: now.toISOString(),
@@ -80,8 +116,10 @@ function appendHeartbeat({ watcherPid, caffeinatePid, caffeinateEnabled, event =
       alive: caffeinateEnabled ? alive(caffeinatePid) : null,
       mode: caffeinateEnabled ? "caffeinate -i -w watcher_pid" : "not-required-on-this-platform"
     },
-    active_worker_count: workers.length,
-    active_workers: workers
+    active_worker_count: leaseInfo.active.length,
+    workerCount: leaseInfo.workerCount,
+    allWorkersHealthy: leaseInfo.allWorkersHealthy,
+    healthSnapshot
   }) + "\n");
 }
 
