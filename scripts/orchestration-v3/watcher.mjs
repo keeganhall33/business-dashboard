@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
-import { inspectGitRoot } from "./preflight.mjs";
+import { inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 import { integrateValidatedPrQueue } from "./integration-queue.mjs";
 
 function arg(name, fallback = null) {
@@ -165,6 +165,24 @@ function reconcileLease(workerId) {
   const issueRunning = issueIsRunning(Number(lease.issueNumber));
   if (pidAlive && issueRunning !== false) return lease;
   if (issueRunning === null) return lease;
+  const recovery = recoverIdleWorker(workerId);
+  if (!recovery.after?.healthy) {
+    console.error(JSON.stringify({
+      event: "WORKER_LANE_QUARANTINED",
+      workerId,
+      issueNumber: Number(lease.issueNumber) || null,
+      pid: Number(lease.pid) || null,
+      classification: recovery.after?.classification ?? recovery.before?.classification ?? null,
+      deletionCount: recovery.before?.trackedDeletionCount ?? null,
+      deletionRatio: recovery.before?.deletionRatio ?? null,
+      branch: recovery.before?.branch ?? null,
+      head: recovery.before?.head ?? null,
+      recoveryAttempted: recovery.recoverable,
+      recoveryResult: recovery.error ? "FAILED" : "REFUSED",
+      quarantineResult: "QUARANTINED"
+    }));
+    return lease;
+  }
   try { fs.unlinkSync(leasePath(workerId)); } catch {}
   console.log(JSON.stringify({
     event: "STALE_LEASE_RECLAIMED",
@@ -205,6 +223,10 @@ function quarantineUnmappedIssue(issueNumber, stream) {
   gh(["issue", "comment", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--body", `V3 quarantined this task because stream \`${stream ?? "UNKNOWN"}\` has no mapped worker. Valid mapped streams must be added to scripts/orchestration-v3/config.mjs before this can re-enter orch:ready.`], { attempts: 2 });
 }
 function launch(workerId, issueNumber) {
+  const recovery = recoverIdleWorker(workerId);
+  if (!recovery.after?.healthy) {
+    throw new Error(`WORKER_LANE_UNHEALTHY:${workerId}:${recovery.after?.errors?.join(",") ?? recovery.before?.errors?.join(",") ?? "UNKNOWN"}`);
+  }
   fs.mkdirSync(path.dirname(leasePath(workerId)), { recursive: true });
   const logPath = path.join(ORCHESTRATION_V3.runtime.logRoot, `jeeves-orchestration-v3-${workerId}-${issueNumber}.log`);
   fs.mkdirSync(ORCHESTRATION_V3.runtime.logRoot, { recursive: true });

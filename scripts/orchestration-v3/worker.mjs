@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { extractOrchestrationResult } from "./result-contract.mjs";
-import { requireHealthyWorker } from "./preflight.mjs";
+import { requireHealthyWorker, recoverIdleWorker } from "./preflight.mjs";
 import {
   createObservedExecutionHarness,
   readObservedExecutionEvidence,
@@ -295,6 +295,7 @@ const run = spawnSync(openclaw, invocation.args, {
   stdio: ["ignore", "pipe", "pipe"]
 });
 
+const postModelIntegrity = recoverIdleWorker(workerId);
 const executionEvidence = readObservedExecutionEvidence(harness.journalPath);
 const machine = parseMachineEnvelope(run.stdout);
 const afterHead = git(["rev-parse", "HEAD"], repoRoot);
@@ -318,6 +319,7 @@ try {
 const evidenceErrors = [];
 if (run.error?.code === "ETIMEDOUT") evidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
 else if (run.status !== 0) evidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${run.status}`);
+if (!postModelIntegrity.after?.healthy) evidenceErrors.push(`POST_MODEL_WORKTREE_INTEGRITY_FAILED:${postModelIntegrity.after?.errors?.join(",") ?? postModelIntegrity.before?.errors?.join(",") ?? "UNKNOWN"}`);
 if (!providerOk) evidenceErrors.push(`PROVIDER_MISMATCH:${machine.provider}`);
 if (!modelOk) evidenceErrors.push(`MODEL_MISMATCH:${machine.model}`);
 if (!fallbackOk) evidenceErrors.push(`FALLBACK_NOT_PROVEN_FALSE:${machine.fallbackUsed}`);
@@ -406,6 +408,7 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
     }
   );
 
+  const postCloudIntegrity = recoverIdleWorker(workerId);
   const cloudExecutionEvidence =
     readObservedExecutionEvidence(harness.journalPath);
   const cloudMachine = parseMachineEnvelope(cloudRun.stdout);
@@ -445,6 +448,9 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
     cloudEvidenceErrors.push("CLOUD_OPENCLAW_PROCESS_TIMEOUT");
   } else if (cloudRun.status !== 0) {
     cloudEvidenceErrors.push(`CLOUD_OPENCLAW_PROCESS_FAILED:${cloudRun.status}`);
+  }
+  if (!postCloudIntegrity.after?.healthy) {
+    cloudEvidenceErrors.push(`POST_CLOUD_WORKTREE_INTEGRITY_FAILED:${postCloudIntegrity.after?.errors?.join(",") ?? postCloudIntegrity.before?.errors?.join(",") ?? "UNKNOWN"}`);
   }
 
   if (!cloudExecutionEvidence.repoPreflightObserved) {

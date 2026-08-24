@@ -37,7 +37,7 @@ function runChecked(command, args, cwd, timeout = 180_000) {
 }
 
 function parseHarnessIdentity(journalPath) {
-  const match = String(journalPath ?? "").match(/jeeves-v3-evidence-(\d+)-(local-[abcd])-/);
+  const match = String(journalPath ?? "").match(/jeeves-v3-evidence-(\d+)-(local-[abcdef])-/);
   if (!match) return null;
   return { issue: Number(match[1]), workerId: match[2] };
 }

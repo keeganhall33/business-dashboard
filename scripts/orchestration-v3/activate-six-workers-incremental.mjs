@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { ORCHESTRATION_V3 } from "./config.mjs";
+import { recoverDisposableWorktree } from "./worktree-integrity.mjs";
 
 const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
 const RUNTIME = path.join(OPENCLAW_ROOT, "runtime-v3", "business-dashboard");
@@ -9,18 +11,13 @@ const STATE_ROOT = path.join(OPENCLAW_ROOT, "state", "orchestration-v3");
 const MODEL = "ollama/qwen3.5:9b";
 const SERVICE = "com.keegan.jeeves.orchestration-v3";
 const PLIST = path.join(os.homedir(), "Library", "LaunchAgents", `${SERVICE}.plist`);
-const TARGETS = {
-  "local-e": {
-    stream: "INTEGRATION_RELEASE",
-    worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-e"),
-    workspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-e")
-  },
-  "local-f": {
-    stream: "QA_EVALUATION",
-    worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-f"),
-    workspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-f")
-  }
-};
+const TARGETS = Object.fromEntries(
+  [...ORCHESTRATION_V3.capacity.integrationReleaseWorkers, ...ORCHESTRATION_V3.capacity.qaEvaluationWorkers]
+    .map((workerId) => {
+      const cfg = ORCHESTRATION_V3.workers[workerId];
+      return [workerId, { stream: cfg.stream, worktree: cfg.worktree, workspace: cfg.agentWorkspace }];
+    })
+);
 
 function run(exe, args, options = {}) {
   return execFileSync(exe, args, { encoding: "utf8", timeout: 180_000, ...options }).trim();
@@ -61,7 +58,10 @@ function ensureTargetWorktree(sourceRoot, workerId, cfg) {
     try { root = repoRoot(cfg.worktree); } catch { throw new Error(`REFUSE_NON_GIT_WORKTREE:${workerId}:${cfg.worktree}`); }
     if (path.resolve(root) !== path.resolve(cfg.worktree)) throw new Error(`REFUSE_NESTED_WORKTREE:${workerId}:${root}`);
     const dirty = git(cfg.worktree, ["status", "--porcelain"]);
-    if (dirty) throw new Error(`REFUSE_DIRTY_TARGET_WORKTREE:${workerId}`);
+    if (dirty) {
+      const recovery = recoverDisposableWorktree(workerId, { reason: "SIX_WORKER_INCREMENTAL_ACTIVATION" });
+      if (!recovery.after?.healthy) throw new Error(`REFUSE_DIRTY_TARGET_WORKTREE:${workerId}:${recovery.after?.classification ?? recovery.before?.classification ?? "UNKNOWN"}`);
+    }
     git(cfg.worktree, ["reset", "--hard", "origin/main"]);
     git(cfg.worktree, ["clean", "-fd"]);
   } else {

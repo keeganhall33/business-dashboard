@@ -51,6 +51,7 @@ test("changed test file classification is deterministic", () => {
 test("source preserves strict local gate and adds host-verification requirements", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/execution-evidence.mjs", "utf8");
   assert.match(source, /evidenceReadCounts/);
+  assert.match(source, /local-\[abcdef\]/);
   assert.match(source, /HOST_VERIFY_MATCHING_PR_REQUIRED/);
   assert.match(source, /git.*diff.*--check/si);
   assert.match(source, /HOST_VERIFY_FOCUSED_TEST_FAILED/);
