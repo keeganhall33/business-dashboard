@@ -10,5 +10,5 @@ test("V3 watcher reconciles stale running labels from authoritative live leases"
   assert.match(source, /NO_AUTHORITATIVE_LIVE_LEASE/);
   assert.match(source, /STALE_RUNNING_REQUEUED/);
   assert.match(source, /reconcileRunningClaims\(\);[\s\S]*const ready = readyIssues\(\)/);
-  assert.match(source, /--remove-label[\s\S]*queue\.running[\s\S]*--add-label[\s\S]*queue\.ready/);
+  assert.match(source, /transitionLabels\(candidate\.number, \{ remove: \[ORCHESTRATION_V3\.queue\.running\], add: \[ORCHESTRATION_V3\.queue\.ready\] \}\)/);
 });
