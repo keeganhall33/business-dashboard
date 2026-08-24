@@ -8,10 +8,12 @@ import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type {
   ApprovalStateV1,
   ConfidenceV1,
+  ExecutiveCommandCenterV1,
   ExecutiveHomeFixtureV1,
   ExecutiveIntelligenceCardV1,
   FreshnessV1,
-  IntelligenceStateV1
+  IntelligenceStateV1,
+  ExecutiveCommandCenterTruthStateV1
 } from "./fixtures";
 import type { ExecutiveHomeDecisionRoomDrilldownV1 } from "./decision-room-drilldown";
 
@@ -302,6 +304,195 @@ function doNowCard(action: ExecutiveActionPlan | undefined): ExecutiveIntelligen
   };
 }
 
+function truthStateFromConfidence(entry: ConfidenceEntry | null | undefined): ExecutiveCommandCenterTruthStateV1 {
+  if (!entry) return "UNKNOWN";
+  if (entry.state === "trusted") return "KNOWN";
+  if (entry.state === "stale") return "STALE";
+  if (entry.state === "conflicting") return "CONFLICTED";
+  if (entry.state === "unavailable" || entry.state === "insufficient_evidence") return "UNKNOWN";
+  return "INFERRED";
+}
+
+function compactTrend(metric: { history?: Array<{ value: number | null }> | null } | undefined): Array<number | null> {
+  const history = metric?.history?.map((entry) => entry.value ?? null).filter((value, index, values) => index >= Math.max(0, values.length - 6));
+  return history && history.length > 1 ? history : [null, null, null];
+}
+
+function buildCommandCenter(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[], confidence: ConfidenceSummary): ExecutiveCommandCenterV1 {
+  const topAction = actions[0];
+  const material = buildExecutiveSummary(data);
+  const movement = material ? getMaterialMovements(material)[0] : undefined;
+  const topOpportunity = data.opportunityRadar?.topOpportunities?.[0];
+  const approvalCount = data.actionQueue?.needsApprovalTasks?.count ?? data.approvalBottlenecks?.pendingCount ?? 0;
+  const trustedCount = confidence.entries.filter((entry) => entry.state === "trusted").length;
+  const caveatCount = confidence.entries.length - trustedCount;
+  const primaryMetric = data.revenueEngine?.metrics?.[0];
+  const strategyStepLabel = topAction?.title ?? confidence.topRisk?.recommendedAction ?? "Inspect Data & Evidence";
+
+  return {
+    generated_at: data.timestamp,
+    kpis: [
+      {
+        id: "material-change",
+        label: "What changed",
+        value: movement ? `${movement.label} moved` : "No verified movement",
+        detail: movement ? `${movement.label} changed versus ${material?.comparisonLabel ?? "the comparison period"}.` : "No material before/after movement is available for this range.",
+        trend: compactTrend(primaryMetric),
+        truth_state: movement ? "KNOWN" : "UNKNOWN",
+        last_updated: data.timestamp,
+        source: "dashboard executive summary"
+      },
+      {
+        id: "automation-health",
+        label: "Automation health",
+        value: topAction ? "Keep automation on track" : "Needs evidence",
+        detail: topAction?.confidenceDetail ?? confidence.overall.rationale,
+        trend: [trustedCount, trustedCount, confidence.entries.length],
+        truth_state: topAction ? "INFERRED" : truthStateFromConfidence(confidence.topRisk),
+        last_updated: confidence.overall.lastRefresh ?? data.timestamp,
+        source: "dashboard action/confidence model"
+      },
+      {
+        id: "keegan-review",
+        label: "Keegan review",
+        value: approvalCount > 0 ? `${approvalCount} to review` : "None required",
+        detail: approvalCount > 0 ? "Approval-gated work is separated from awareness items." : "No live approval-gated action is queued.",
+        trend: [approvalCount, approvalCount],
+        truth_state: "KNOWN",
+        last_updated: data.timestamp,
+        source: "action queue"
+      },
+      {
+        id: "highest-value-opportunity",
+        label: "Best opportunity",
+        value: topOpportunity?.name ?? "UNKNOWN",
+        detail: topOpportunity?.nextStep ?? "No verified opportunity is available.",
+        trend: [topOpportunity?.prestigeScore ?? null, topOpportunity?.probabilityScore ?? null],
+        truth_state: topOpportunity ? "INFERRED" : "UNKNOWN",
+        last_updated: topOpportunity?.lastVerifiedAt ?? null,
+        source: "opportunity radar"
+      },
+      {
+        id: "data-health",
+        label: "Data health",
+        value: caveatCount > 0 ? `${caveatCount} caveat${caveatCount === 1 ? "" : "s"}` : "Usable",
+        detail: confidence.topRisk?.executiveImpact ?? "Current sources do not expose a top caveat.",
+        trend: [trustedCount, caveatCount],
+        truth_state: truthStateFromConfidence(confidence.topRisk),
+        last_updated: confidence.overall.lastRefresh ?? null,
+        source: "data confidence"
+      },
+      {
+        id: "engine-state",
+        label: "Intelligence engine",
+        value: "4 lanes visible",
+        detail: "Strategy, execution, evidence, and learning signals stay separated instead of one fake score.",
+        trend: [4, 4, 4, 4],
+        truth_state: "KNOWN",
+        last_updated: data.timestamp,
+        source: "Executive Home adapter"
+      }
+    ],
+    what_changed: [
+      {
+        id: "material-movement",
+        label: movement ? `${movement.label} changed` : "No material movement verified",
+        value: movement ? `${Math.round(movement.deltaPercent * 100)}%` : "UNKNOWN",
+        why_it_matters: movement ? "A material movement may change the next executive decision." : "Unavailable change evidence stays UNKNOWN rather than zero.",
+        trend: compactTrend(primaryMetric),
+        truth_state: movement ? "KNOWN" : "UNKNOWN"
+      },
+      {
+        id: "confidence-caveat",
+        label: confidence.topRisk?.label ?? "Source coverage",
+        value: confidence.topRisk ? confidence.topRisk.state.replaceAll("_", " ") : "UNKNOWN",
+        why_it_matters: confidence.topRisk?.decisionImpact ?? "Source caveats determine whether the dashboard can recommend action.",
+        trend: [trustedCount, caveatCount],
+        truth_state: truthStateFromConfidence(confidence.topRisk)
+      }
+    ],
+    strategy_path: {
+      title: strategyStepLabel,
+      current_step_id: "step-current-recommendation",
+      next_step_id: "step-verify-outcome",
+      dependency_note: "Current step unlocks verification; the dashboard does not auto-complete inferred work.",
+      steps: [
+        {
+          id: "step-current-recommendation",
+          label: strategyStepLabel,
+          why_it_matters: topAction?.impact ?? confidence.overall.rationale,
+          state: "IN_PROGRESS",
+          dependency_ids: [],
+          unlocks_step_id: "step-verify-outcome",
+          requires_verification: false,
+          completed_at: null,
+          provenance: "DASHBOARD_OVERVIEW"
+        },
+        {
+          id: "step-verify-outcome",
+          label: "Verify the result before reranking",
+          why_it_matters: "Recommendations should update after meaningful completion or new evidence, not from a static checklist.",
+          state: "WAITING",
+          dependency_ids: ["step-current-recommendation"],
+          unlocks_step_id: "step-next-recommendation",
+          requires_verification: true,
+          completed_at: null,
+          provenance: "DASHBOARD_OVERVIEW"
+        },
+        {
+          id: "step-next-recommendation",
+          label: "Surface the next best move",
+          why_it_matters: "The next step becomes visible only after the prior step is explicitly completed and verified.",
+          state: "NOT_STARTED",
+          dependency_ids: ["step-verify-outcome"],
+          unlocks_step_id: null,
+          requires_verification: true,
+          completed_at: null,
+          provenance: "DASHBOARD_OVERVIEW"
+        }
+      ],
+      history: []
+    },
+    do_now: [
+      { id: "do-access-check", label: strategyStepLabel, state: "IN_PROGRESS", progress: topAction ? 50 : null, detail: topAction?.evidence ?? "No eligible action has source confidence yet." },
+      { id: "do-source-caveat", label: confidence.topRisk?.recommendedAction ?? "Keep source caveats visible", state: confidence.topRisk ? "WAITING" : "NOT_STARTED", progress: null, detail: confidence.topRisk?.executiveImpact ?? "No top caveat currently prioritized." }
+    ],
+    keegan_actions: [
+      {
+        id: "approval-queue",
+        label: approvalCount > 0 ? `${approvalCount} approval item${approvalCount === 1 ? "" : "s"}` : "No Keegan approval required",
+        approval_state: approvalState(approvalCount),
+        detail: approvalCount > 0 ? "Review before any external or irreversible action." : "No external action, pricing, publishing, or purchase approval is queued."
+      }
+    ],
+    opportunities: [
+      {
+        id: topOpportunity?.id ?? "unknown-opportunity",
+        title: topOpportunity?.name ?? "No verified opportunity",
+        upside: topOpportunity?.valueEstimate == null ? "UNKNOWN" : `$${Math.round(topOpportunity.valueEstimate).toLocaleString()}`,
+        fit: topOpportunity?.prestigeScore == null ? "UNKNOWN" : `${Math.round(topOpportunity.prestigeScore * 100)}% prestige fit`,
+        timing: topOpportunity?.nextStepDueAt ? "Prepare" : "UNKNOWN",
+        effort: topOpportunity?.nextStep ? "Next step known" : "UNKNOWN",
+        evidence: topOpportunity ? "INFERRED" : "UNKNOWN",
+        next_move: topOpportunity?.nextStep ?? "Wait for opportunity evidence.",
+        detail_href: "#decision-live-dashboard-top-priority"
+      }
+    ],
+    system_glance: [
+      { id: "projects", label: "Projects", value: data.pipelinePanel?.deals?.length == null ? "UNKNOWN" : String(data.pipelinePanel.deals.length), truth_state: data.pipelinePanel ? "KNOWN" : "UNKNOWN", source: "pipeline panel" },
+      { id: "insights", label: "Insights", value: data.changeInsights?.insights?.length == null ? "UNKNOWN" : String(data.changeInsights.insights.length), truth_state: data.changeInsights ? "KNOWN" : "UNKNOWN", source: "change insights" },
+      { id: "decisions", label: "Decisions", value: "1 drill-down", truth_state: "KNOWN", source: "Decision Room adapter" },
+      { id: "sources", label: "Sources", value: `${trustedCount} trusted`, truth_state: caveatCount > 0 ? "STALE" : "KNOWN", source: "data confidence" }
+    ],
+    intelligence_engine: [
+      { id: "strategy", lane: "Strategy", status: topAction ? "Recommendation ready" : "Needs evidence", truth_state: topAction ? "INFERRED" : "UNKNOWN" },
+      { id: "execution", lane: "Execution", status: approvalCount > 0 ? "Review needed" : "No approval block", truth_state: "KNOWN" },
+      { id: "evidence", lane: "Evidence", status: confidence.topRisk?.state.replaceAll("_", " ") ?? "No top caveat", truth_state: truthStateFromConfidence(confidence.topRisk) },
+      { id: "learning", lane: "Learning", status: data.changeInsights?.insights?.length ? "Change visible" : "No verified delta", truth_state: data.changeInsights?.insights?.length ? "KNOWN" : "UNKNOWN" }
+    ]
+  };
+}
+
 function evidenceRefsForDecisionRoom(action: ExecutiveActionPlan | undefined, confidence: ConfidenceSummary): DecisionRoomEvidenceRefV1[] {
   const refs: DecisionRoomEvidenceRefV1[] = [];
   if (action) {
@@ -399,6 +590,7 @@ export function buildExecutiveHomeFromDashboardOverviewV1(data: DashboardOvervie
         title: "Executive Home",
         summary: `Live dashboard intelligence for ${data.range.startDate} to ${data.range.endDate}. UNKNOWN, STALE, CONFLICTED, and unavailable evidence remain explicit.`
       },
+      command_center: buildCommandCenter(data, actions, confidence),
       cards: [
         actionCard(topAction, confidence),
         changeCard(data),
