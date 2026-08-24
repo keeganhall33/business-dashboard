@@ -105,6 +105,26 @@ function validateWorkerRepairTarget(workerId, beforeReport) {
   return { ok: true, reason: null };
 }
 
+function doctorSnapshot() {
+  const res = bestEffort(process.execPath, ["scripts/orchestration-v3/doctor.mjs"], {
+    cwd: ORCHESTRATION_V3.runtime.root,
+    timeout: 90_000
+  });
+  let parsed = null;
+  try {
+    parsed = JSON.parse(res.stdout || "{}");
+  } catch {}
+  return {
+    ok: res.ok,
+    control_plane: parsed?.CONTROL_PLANE ?? null,
+    capacity: parsed?.CAPACITY ?? null,
+    queue: parsed?.QUEUE ?? null,
+    active_workers: parsed?.ACTIVE_WORKERS ?? null,
+    error: res.ok ? null : res.stderr || res.error,
+    raw_available: Boolean(res.stdout)
+  };
+}
+
 export function runBoundedHostRecovery(input = {}, deps = {}) {
   const operation = String(input.operation ?? "status");
   if (!ALLOWED_OPERATIONS.has(operation)) {
@@ -123,6 +143,7 @@ export function runBoundedHostRecovery(input = {}, deps = {}) {
   const recoverLock = deps.recoverStaleIntegrationLock ?? recoverStaleIntegrationLock;
   const repairWorker = deps.recoverIdleWorker ?? recoverIdleWorker;
   const inspectRoot = deps.inspectGitRoot ?? inspectGitRoot;
+  const doctor = deps.doctorSnapshot ?? doctorSnapshot;
   const commandDeps = {
     bestEffort: deps.bestEffort ?? bestEffort
   };
@@ -189,6 +210,8 @@ export function runBoundedHostRecovery(input = {}, deps = {}) {
 
   const after = liveness({ includeGithub, launchdLabel: LAUNCHD_LABEL });
   const afterState = summarizeLiveness(after);
+  const doctorAfter = doctor();
+  if (!doctorAfter.ok) status = worstStatus(status, "DEGRADED");
   status = worstStatus(status, statusFromReport(after) === "HEALTHY" && status === "DEGRADED" ? "DEGRADED" : status);
   const audit = {
     contract_version: "jeeves_v3_bounded_host_recovery_v1",
@@ -201,6 +224,7 @@ export function runBoundedHostRecovery(input = {}, deps = {}) {
     before_state: beforeState,
     actions,
     after_state: afterState,
+    doctor_after: doctorAfter,
     safety: {
       no_general_command_execution: true,
       active_workers_preserved: assertActiveWorkersPreserved(before, after),

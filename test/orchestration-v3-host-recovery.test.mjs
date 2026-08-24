@@ -43,6 +43,15 @@ function depsWithReports(reports, extra = {}) {
       nowIso: () => "2026-08-23T12:00:00.000Z",
       auditPath: (operation) => path.join(dir, `${operation}.json`),
       liveness: () => reports[Math.min(index++, reports.length - 1)],
+      doctorSnapshot: () => ({
+        ok: true,
+        control_plane: "HEALTHY",
+        capacity: { ACCEPTANCE_PROOF: "6/6", LIVE_UTILIZATION: "2/6" },
+        queue: { READY: [], RUNNING: [] },
+        active_workers: ["local-e", "local-f"],
+        error: null,
+        raw_available: true
+      }),
       inspectGitRoot: () => ({ healthy: true, errors: [] }),
       bestEffort: (exe, args) => ({ ok: true, exe, args, stdout: "", stderr: "" }),
       ...extra
@@ -66,6 +75,8 @@ test("bounded host recovery reloads unloaded watcher and preserves active local-
   assert.deepEqual(result.after_state.active_workers, ["local-e", "local-f"]);
   assert.equal(result.safety.active_workers_preserved.ok, true);
   assert.equal(result.safety.no_general_command_execution, true);
+  assert.equal(result.doctor_after.ok, true);
+  assert.equal(result.doctor_after.capacity.ACCEPTANCE_PROOF, "6/6");
   assert.ok(result.actions.some((action) => action.action === "launchctl_kickstart_v3_watcher"));
   assert.ok(fs.existsSync(path.join(dir, "restart-watcher.json")));
   fs.rmSync(dir, { recursive: true, force: true });
@@ -146,5 +157,18 @@ test("bounded host recovery exposes predefined operations instead of general com
   assert.equal(result.result, "INVALID_OPERATION");
   assert.deepEqual(result.allowed_operations, ["recover-stale-integration-lock", "repair-idle-worker", "restart-watcher", "status"]);
   assert.equal(fs.existsSync(path.join(dir, "rm -rf /.json")), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("bounded host recovery degrades when post-recovery doctor evidence is unavailable", () => {
+  const current = report();
+  const { dir, deps } = depsWithReports([current, current], {
+    doctorSnapshot: () => ({ ok: false, control_plane: null, capacity: null, queue: null, active_workers: null, error: "doctor failed", raw_available: false })
+  });
+  const result = runBoundedHostRecovery({ operation: "status" }, deps);
+
+  assert.equal(result.status, "DEGRADED");
+  assert.equal(result.doctor_after.ok, false);
+  assert.equal(result.doctor_after.error, "doctor failed");
   fs.rmSync(dir, { recursive: true, force: true });
 });
