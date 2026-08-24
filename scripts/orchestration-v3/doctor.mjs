@@ -85,6 +85,10 @@ const legacyProcessCount = Object.values(legacyProcesses).reduce((sum, values) =
 const workerEffectiveHealth = Object.fromEntries(
   Object.entries(workers).map(([workerId, inspection]) => [workerId, workerHealthyForControlPlane(workerId, inspection, activeWorkers)])
 );
+const liveWorkerCount = activeWorkers.size;
+const productLiveWorkerCount = ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const integrationReleaseLiveWorkerCount = ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const qaEvaluationLiveWorkerCount = ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
 
 const report = {
   CONTROL_PLANE: "UNKNOWN",
@@ -95,6 +99,20 @@ const report = {
   RUNTIME: runtime,
   WORKERS: workers,
   ACTIVE_WORKERS: [...activeWorkers],
+  CAPACITY: {
+    ACCEPTANCE_PROOF: `${Object.keys(ORCHESTRATION_V3.workers).length}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+    TOTAL_WORKERS: ORCHESTRATION_V3.capacity.totalWorkers,
+    DEFINED_WORKERS: Object.keys(ORCHESTRATION_V3.workers).length,
+    PRODUCT_WORKERS: ORCHESTRATION_V3.capacity.productWorkers,
+    INTEGRATION_RELEASE_WORKERS: ORCHESTRATION_V3.capacity.integrationReleaseWorkers,
+    QA_EVALUATION_WORKERS: ORCHESTRATION_V3.capacity.qaEvaluationWorkers,
+    LIVE_UTILIZATION: `${liveWorkerCount}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+    LIVE_BY_ROLE: {
+      PRODUCT: `${productLiveWorkerCount}/${ORCHESTRATION_V3.capacity.productWorkers.length}`,
+      INTEGRATION_RELEASE: `${integrationReleaseLiveWorkerCount}/${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.length}`,
+      QA_EVALUATION: `${qaEvaluationLiveWorkerCount}/${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.length}`
+    }
+  },
   WORKER_EFFECTIVE_HEALTH: workerEffectiveHealth,
   QUEUE: {
     READY: ready.issues.map((i) => i.number),

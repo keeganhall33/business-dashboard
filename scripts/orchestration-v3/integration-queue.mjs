@@ -5,6 +5,7 @@ import { ORCHESTRATION_V3 } from "./config.mjs";
 
 export const CURRENT_AUTOMATION_CUTOFF_ISO = "2026-08-17T00:00:00.000Z";
 const LOCK_PATH = path.join(ORCHESTRATION_V3.runtime.stateRoot, "integration-queue.lock");
+const LOCK_STALE_MS = 20 * 60 * 1000;
 const VALIDATED_BRANCH = /^issue-\d+[a-z0-9-]*$/i;
 const STALE_QUEUE_TERMINAL_LABELS = Object.freeze([
   ORCHESTRATION_V3.queue.ready,
@@ -19,7 +20,7 @@ function sleepSync(ms) {
 
 export function isTransientGhError(err) {
   const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
-  return /\b(502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable/i.test(text);
+  return /\b(429|502|503|504)\b|ECONNRESET|ECONNABORTED|ETIMEDOUT|socket hang up|TLS handshake timeout|connection reset|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
 }
 
 export function gh(args, { attempts = 3 } = {}) {
@@ -36,6 +37,15 @@ export function gh(args, { attempts = 3 } = {}) {
     }
   }
   throw lastError;
+}
+
+function alive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === "EPERM"; }
+}
+
+function readJson(filePath) {
+  try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return null; }
 }
 
 export function checkRollupState(statusCheckRollup = []) {
@@ -128,6 +138,44 @@ export function classifyIntegrationCandidate(pr, nowIso = new Date().toISOString
   };
 }
 
+export function reconciliationWorkForCandidate(candidate) {
+  if (!candidate.issueNumber) return null;
+  if (candidate.reasons.some((reason) => reason === "NOT_MERGEABLE:CONFLICTING")) {
+    return {
+      issueNumber: candidate.issueNumber,
+      stream: "INTEGRATION_RELEASE",
+      reason: "MERGE_CONFLICT_RECONCILIATION_REQUIRED",
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      title: `Reconcile merge conflict for PR #${candidate.prNumber}`
+    };
+  }
+  if (candidate.reasons.includes("MISSING_VALIDATION_EVIDENCE")) {
+    return {
+      issueNumber: candidate.issueNumber,
+      stream: "QA_EVALUATION",
+      reason: "MISSING_VALIDATION_EVIDENCE",
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      title: `Collect validation evidence for PR #${candidate.prNumber}`
+    };
+  }
+  return null;
+}
+
+export function integrationFollowupWork(candidates) {
+  const workByKey = new Map();
+  for (const candidate of candidates) {
+    const work = reconciliationWorkForCandidate(candidate);
+    if (!work) continue;
+    workByKey.set(`${work.reason}:${work.prNumber}`, work);
+  }
+  return [...workByKey.values()].sort((a, b) => {
+    if (a.issueNumber !== b.issueNumber) return a.issueNumber - b.issueNumber;
+    return a.prNumber - b.prNumber;
+  });
+}
+
 export function orderIntegrationCandidates(candidates) {
   return [...candidates].sort((a, b) => {
     const left = a.issueNumber ?? Number.MAX_SAFE_INTEGER;
@@ -173,6 +221,23 @@ function mergePr(candidate) {
   finalizeSuccessfulIntegrationIssue(candidate);
 }
 
+export function inspectIntegrationLock(now = new Date()) {
+  const lock = readJson(LOCK_PATH);
+  if (!lock) return { exists: false, stale: false, pidAlive: false, ageMs: null, lock: null };
+  const pid = Number(lock.pid);
+  const startedAtMs = Date.parse(lock.startedAt);
+  const ageMs = Number.isFinite(startedAtMs) ? Math.max(0, now.getTime() - startedAtMs) : Number.POSITIVE_INFINITY;
+  const pidAlive = alive(pid);
+  return { exists: true, stale: !pidAlive && ageMs >= LOCK_STALE_MS, pidAlive, ageMs, lock };
+}
+
+export function recoverStaleIntegrationLock(now = new Date()) {
+  const inspection = inspectIntegrationLock(now);
+  if (!inspection.exists || !inspection.stale) return { recovered: false, inspection };
+  fs.rmSync(LOCK_PATH, { force: true });
+  return { recovered: true, inspection };
+}
+
 function withLock(fn) {
   fs.mkdirSync(path.dirname(LOCK_PATH), { recursive: true });
   try {
@@ -180,7 +245,11 @@ function withLock(fn) {
     fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
     try { return fn(); } finally { fs.closeSync(fd); fs.rmSync(LOCK_PATH, { force: true }); }
   } catch (err) {
-    if (err?.code === "EEXIST") return { event: "INTEGRATION_QUEUE_SKIPPED", reason: "LOCK_HELD", merged: [], skipped: [] };
+    if (err?.code === "EEXIST") {
+      const recovered = recoverStaleIntegrationLock();
+      if (recovered.recovered) return withLock(fn);
+      return { event: "INTEGRATION_QUEUE_SKIPPED", reason: "LOCK_HELD", lock: recovered.inspection, merged: [], skipped: [], followupWork: [] };
+    }
     throw err;
   }
 }
@@ -196,7 +265,7 @@ export function integrateValidatedPrQueue({ dryRun = false, maxMerges = 1 } = {}
       merged.push(candidate);
     }
     const skipped = evaluated.filter((candidate) => !candidate.eligible);
-    return { event: "INTEGRATION_QUEUE_RESULT", dryRun, merged, skipped };
+    return { event: "INTEGRATION_QUEUE_RESULT", dryRun, merged, skipped, followupWork: integrationFollowupWork(skipped) };
   });
 }
 
