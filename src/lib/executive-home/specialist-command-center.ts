@@ -7,6 +7,17 @@ import { RELATIONSHIP_INTELLIGENCE_FIXTURES_V1 } from "@/lib/relationship-intell
 import { toRelationshipOpportunityViewModelV1 } from "@/lib/relationship-intelligence/view-model";
 
 export type SpecialistCommandCenterTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
+export type SpecialistCommandCenterFreshnessV1 = "CURRENT" | "STALE" | "CONFLICTED" | "UNKNOWN";
+
+export function toSpecialistEvidenceFreshnessV1(
+  truthState: SpecialistCommandCenterTruthStateV1,
+  freshnessKnownCurrent = true
+): SpecialistCommandCenterFreshnessV1 {
+  if (truthState === "CONFLICTED") return "CONFLICTED";
+  if (truthState === "STALE") return "STALE";
+  if (truthState === "UNKNOWN" || !freshnessKnownCurrent) return "UNKNOWN";
+  return "CURRENT";
+}
 
 export type SpecialistCommandCenterCardV1 = {
   id: "financial" | "goals-capacity" | "relationships";
@@ -16,6 +27,13 @@ export type SpecialistCommandCenterCardV1 = {
   next_best_action: string;
   confidence: "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | ExplanationConfidence;
   truth_state: SpecialistCommandCenterTruthStateV1;
+  evidence_freshness: SpecialistCommandCenterFreshnessV1;
+  evidence_context: {
+    source_label: string;
+    freshness_detail: string;
+    truth_detail: string;
+    last_updated: string | null;
+  };
   material_gap_or_risk: string;
   detail_href: string;
   evidence: string;
@@ -48,6 +66,13 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       next_best_action: financialRecommendation?.next_step ?? financialSnapshot.next_best_action,
       confidence: financialSnapshot.confidence.level,
       truth_state: financialSnapshot.coverage_state === "COMPLETE" ? "KNOWN" : "UNKNOWN",
+      evidence_freshness: toSpecialistEvidenceFreshnessV1(financialSnapshot.coverage_state === "COMPLETE" ? "KNOWN" : "UNKNOWN"),
+      evidence_context: {
+        source_label: financialSnapshot.source,
+        freshness_detail: "Direct financial evidence remains incomplete; freshness is UNKNOWN rather than assumed current.",
+        truth_detail: financialSnapshot.key_uncertainty,
+        last_updated: null
+      },
       material_gap_or_risk: financialSnapshot.key_uncertainty,
       detail_href: "/specialists/financial",
       evidence: DECISION_ROOM_FIXTURE_V1.evidence_refs.find((ref) => ref.provenance === "FINANCIAL_FIXTURE")?.label ?? financialSnapshot.source,
@@ -63,6 +88,13 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       next_best_action: goalsView.next_portfolio_action,
       confidence: goalsView.active_bets[0]?.confidence ?? "UNKNOWN",
       truth_state: goalsView.portfolio_state === "UNKNOWN" ? "UNKNOWN" : goalsView.overload_or_conflict.visible ? "INFERRED" : "KNOWN",
+      evidence_freshness: toSpecialistEvidenceFreshnessV1(goalsView.portfolio_state === "UNKNOWN" ? "UNKNOWN" : "KNOWN"),
+      evidence_context: {
+        source_label: goalsSnapshot.source,
+        freshness_detail: goalsView.portfolio_state === "UNKNOWN" ? "Capacity evidence has UNKNOWN inputs." : "Portfolio pressure fixture is current for this read-only view.",
+        truth_detail: goalsSnapshot.unknown_resource_inputs.join("; ") || goalsView.overload_or_conflict.summary,
+        last_updated: null
+      },
       material_gap_or_risk: goalsSnapshot.unknown_resource_inputs[0] ?? goalsView.overload_or_conflict.summary,
       detail_href: "/specialists/goals-capacity",
       evidence: `Goals fixture: ${goalsSnapshot.source}`,
@@ -76,6 +108,13 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       next_best_action: relationshipView.next_safe_action,
       confidence: relationshipView.likely_champion.confidence,
       truth_state: relationshipBrief.ACCESS_PATH.truth_state,
+      evidence_freshness: toSpecialistEvidenceFreshnessV1(relationshipBrief.ACCESS_PATH.truth_state),
+      evidence_context: {
+        source_label: relationshipBrief.source_mode,
+        freshness_detail: relationshipBrief.ACCESS_PATH.truth_state === "UNKNOWN" ? "Warm path freshness is UNKNOWN until a direct source confirms it." : "Relationship fixture source is current for this preview.",
+        truth_detail: relationshipBrief.ACCESS_PATH.summary,
+        last_updated: null
+      },
       material_gap_or_risk: relationshipBrief.ACCESS_PATH.summary,
       detail_href: "/relationships",
       evidence: `Relationship fixture: ${relationshipBrief.source_mode}`,

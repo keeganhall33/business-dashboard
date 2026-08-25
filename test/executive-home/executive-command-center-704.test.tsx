@@ -87,6 +87,39 @@ test("command center cards expose drill-down controls for metrics and actions", 
   assert.match(html, /Unknowns \/ conflicts/);
 });
 
+test("specialist freshness badge opens evidence source drill-down", () => {
+  let renderer: TestRenderer.ReactTestRenderer;
+
+  act(() => {
+    renderer = TestRenderer.create(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+  });
+
+  const freshnessButton = renderer!.root.findAllByType("button").find((button) => String(button.props["aria-label"] ?? "").includes("Financial evidence freshness"));
+  assert.ok(freshnessButton, "expected specialist freshness badge button");
+
+  act(() => {
+    freshnessButton.props.onClick();
+  });
+
+  const html = renderedText(renderer!);
+  assert.match(html, /Financial evidence freshness/);
+  assert.match(html, /Source \/ provenance/);
+  assert.match(html, /Last updated/);
+  assert.match(html, /Truth state/);
+  assert.match(html, /Direct financial evidence remains incomplete/);
+  assert.match(html, /UNKNOWN is preserved and not converted to zero or false/);
+});
+
+test("command center keeps freshness badges light and mobile-compatible", () => {
+  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+
+  assert.match(html, /grid gap-3 lg:grid-cols-3/);
+  assert.match(html, /bg-\[#f8f4ec\]/);
+  assert.match(html, /bg-amber-50/);
+  assert.match(html, /text-amber-900/);
+  assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950|text-zinc-50/);
+});
+
 test("strategy step completion is explicit and preserves auditable history", () => {
   const next = advanceExecutiveStrategyStepV1(
     EXECUTIVE_HOME_FIXTURE_V1.command_center,

@@ -9,7 +9,12 @@ import {
   type ExecutiveCommandCenterV1,
   type ExecutiveExecutionStepV1
 } from "@/lib/executive-home/fixtures";
-import { getSpecialistCommandCenterCardsV1, type SpecialistCommandCenterTruthStateV1 } from "@/lib/executive-home/specialist-command-center";
+import {
+  getSpecialistCommandCenterCardsV1,
+  type SpecialistCommandCenterCardV1,
+  type SpecialistCommandCenterFreshnessV1,
+  type SpecialistCommandCenterTruthStateV1
+} from "@/lib/executive-home/specialist-command-center";
 
 const truthStyles: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -20,6 +25,12 @@ const truthStyles: Record<ExecutiveCommandCenterTruthStateV1, string> = {
 };
 
 const specialistTruthStyles: Record<SpecialistCommandCenterTruthStateV1, string> = truthStyles;
+const freshnessStyles: Record<SpecialistCommandCenterFreshnessV1, string> = {
+  CURRENT: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  STALE: "border-orange-200 bg-orange-50 text-orange-900",
+  CONFLICTED: "border-rose-200 bg-rose-50 text-rose-900",
+  UNKNOWN: "border-amber-200 bg-amber-50 text-amber-900"
+};
 
 export function ExecutiveCommandCenter({
   data,
@@ -30,8 +41,8 @@ export function ExecutiveCommandCenter({
 }) {
   const [commandCenter, setCommandCenter] = useState(data);
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
-  const activeDetail = useMemo(() => detailFor(commandCenter, activeDetailId), [commandCenter, activeDetailId]);
   const specialistCards = useMemo(() => getSpecialistCommandCenterCardsV1(), []);
+  const activeDetail = useMemo(() => detailFor(commandCenter, activeDetailId, specialistCards), [commandCenter, activeDetailId, specialistCards]);
 
   function completeCurrentStep() {
     setCommandCenter((current) =>
@@ -141,13 +152,24 @@ export function ExecutiveCommandCenter({
               <article key={card.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="text-base font-semibold text-stone-950">{card.title}</h3>
-                  <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${specialistTruthStyles[card.truth_state]}`}>{card.truth_state}</span>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${specialistTruthStyles[card.truth_state]}`}>{card.truth_state}</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveDetailId(`specialist-evidence:${card.id}`)}
+                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${freshnessStyles[card.evidence_freshness]}`}
+                      aria-label={`${card.title} evidence freshness ${card.evidence_freshness}`}
+                    >
+                      {card.evidence_freshness}
+                    </button>
+                  </div>
                 </div>
                 <dl className="mt-4 space-y-3 text-sm leading-6">
                   <SpecialistDetail label="WHAT_CHANGED" value={card.what_changed} />
                   <SpecialistDetail label="WHY_IT_MATTERS" value={card.why_it_matters} />
                   <SpecialistDetail label="NEXT_BEST_ACTION" value={card.next_best_action} />
                   <SpecialistDetail label="EVIDENCE" value={card.evidence} />
+                  <SpecialistDetail label="FRESHNESS" value={card.evidence_context.freshness_detail} />
                   {card.approval_class ? <SpecialistDetail label="Approval class" value={card.approval_class} /> : null}
                   <SpecialistDetail label="Confidence" value={card.confidence} />
                   <SpecialistDetail label="Gap / risk" value={card.material_gap_or_risk} />
@@ -344,8 +366,22 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function detailFor(data: ExecutiveCommandCenterV1, id: string | null) {
+function detailFor(data: ExecutiveCommandCenterV1, id: string | null, specialistCards: SpecialistCommandCenterCardV1[] = []) {
   if (!id) return null;
+  if (id.startsWith("specialist-evidence:")) {
+    const specialistId = id.replace("specialist-evidence:", "");
+    const card = specialistCards.find((item) => item.id === specialistId);
+    if (card) {
+      return {
+        label: `${card.title} evidence freshness`,
+        value: card.evidence_freshness,
+        source: card.evidence_context.source_label,
+        lastUpdated: card.evidence_context.last_updated,
+        truthState: card.truth_state,
+        detail: `${card.evidence_context.freshness_detail} ${card.evidence_context.truth_detail}`
+      };
+    }
+  }
   const kpi = data.kpis.find((item) => item.id === id);
   if (kpi) return detailFromKpi(kpi);
   const changed = data.what_changed.find((item) => item.id === id);
