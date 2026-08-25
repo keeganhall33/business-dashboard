@@ -1,6 +1,105 @@
 import { toDecisionRoomViewModelV1, type DecisionRoomDashboardModelV1 } from "@/lib/decision-room/shell-adapter";
+import type { DecisionRoomAlternativeV1, DecisionRoomEvidenceRefV1, DecisionRoomTruthStateV1 } from "@/lib/decision-room/contracts";
 import { DecisionConversationPanel } from "@/components/intelligence/conversation/DecisionConversationPanel";
 import { AskJeevesControl } from "./AskJeevesControl";
+
+const truthStatePriority: Record<DecisionRoomTruthStateV1 | "STALE", number> = {
+  CONFLICTED: 4,
+  STALE: 3,
+  UNKNOWN: 2,
+  INFERRED: 1,
+  KNOWN: 0,
+};
+
+const truthStateTone: Record<DecisionRoomTruthStateV1 | "STALE", string> = {
+  KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  INFERRED: "border-sky-200 bg-sky-50 text-sky-900",
+  UNKNOWN: "border-amber-200 bg-amber-50 text-amber-900",
+  STALE: "border-orange-200 bg-orange-50 text-orange-900",
+  CONFLICTED: "border-rose-200 bg-rose-50 text-rose-900",
+};
+
+const decisionSignalTone: Record<DecisionRoomTruthStateV1 | "STALE", string> = {
+  KNOWN: "bg-emerald-500",
+  INFERRED: "bg-sky-500",
+  UNKNOWN: "border border-dashed border-amber-400 bg-amber-50",
+  STALE: "border border-dashed border-orange-400 bg-orange-50",
+  CONFLICTED: "border border-dashed border-rose-400 bg-rose-50",
+};
+
+function resolveAlternativeTruthState(alternative: DecisionRoomAlternativeV1, evidenceRefs: DecisionRoomEvidenceRefV1[]) {
+  const refs = alternative.evidence_refs
+    .map((refId) => evidenceRefs.find((evidence) => evidence.ref_id === refId))
+    .filter((evidence): evidence is DecisionRoomEvidenceRefV1 => Boolean(evidence));
+
+  if (refs.length === 0) {
+    return { truthState: "UNKNOWN" as const, refs };
+  }
+
+  return refs.reduce(
+    (current, evidence) => {
+      const evidenceState = evidence.truth_state as DecisionRoomTruthStateV1 | "STALE";
+      return truthStatePriority[evidenceState] > truthStatePriority[current.truthState]
+        ? { truthState: evidenceState, refs }
+        : current;
+    },
+    { truthState: refs[0].truth_state as DecisionRoomTruthStateV1 | "STALE", refs },
+  );
+}
+
+function DecisionOptionComparison({ viewModel }: { viewModel: ReturnType<typeof toDecisionRoomViewModelV1> }) {
+  const options = viewModel.alternatives.slice(0, 4).map((alternative) => ({
+    ...alternative,
+    ...resolveAlternativeTruthState(alternative, viewModel.evidence_refs),
+  }));
+
+  if (options.length < 2) {
+    return null;
+  }
+
+  return (
+    <section data-testid="decision-option-comparison" className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Option comparison</p>
+          <h3 className="mt-1 text-sm font-semibold text-stone-950">Competing paths at a glance</h3>
+        </div>
+        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-700">{options.length} options</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {options.map((option) => {
+          const isUnprovenState = option.truthState === "UNKNOWN" || option.truthState === "STALE" || option.truthState === "CONFLICTED";
+
+          return (
+            <article key={option.alternative_id} data-testid="decision-option-card" className="rounded-xl border border-stone-200 bg-white p-3">
+              <div className="flex min-h-12 items-start justify-between gap-3">
+                <h4 className="text-sm font-semibold leading-5 text-stone-950">{option.label}</h4>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${truthStateTone[option.truthState]}`}>{option.truthState}</span>
+              </div>
+              <div aria-label={`Evidence signal for ${option.label}`} className="mt-3 h-2 rounded-full bg-stone-200">
+                {isUnprovenState ? (
+                  <div className={`h-2 w-full rounded-full ${decisionSignalTone[option.truthState]}`} />
+                ) : (
+                  <div className={`h-2 rounded-full ${option.truthState === "KNOWN" ? "w-full" : "w-2/3"} ${decisionSignalTone[option.truthState]}`} />
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-600">
+                {option.refs.length > 0 ? option.refs.map((evidence) => (
+                  <span key={evidence.ref_id} className="rounded-full border border-stone-200 bg-stone-50 px-2 py-1">{evidence.provenance}</span>
+                )) : <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900">UNKNOWN evidence</span>}
+              </div>
+              <details data-testid="decision-option-detail" className="mt-3">
+                <summary className="cursor-pointer text-xs font-semibold text-stone-700">Tradeoff and proof</summary>
+                <p className="mt-2 text-sm leading-6 text-stone-700">{option.tradeoff}</p>
+                <p className="mt-2 text-xs leading-5 text-stone-500">{option.refs.map((evidence) => evidence.label).join(" / ") || "No supporting evidence ref in the current view model."}</p>
+              </details>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function RevisionDiff({ revision }: { revision: NonNullable<ReturnType<typeof toDecisionRoomViewModelV1>["conversation_revision"]>["recommendation_revision"] }) {
   const diff = revision.diff;
@@ -76,6 +175,7 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Approval</div><p className="mt-2 text-sm font-semibold text-stone-950">{viewModel.approval_class}</p></div>
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Challenge</div><p className="mt-2 text-sm font-semibold text-stone-950">{viewModel.challenge.active ? "VISIBLE" : "None active"}</p></div>
           </div>
+          <DecisionOptionComparison viewModel={viewModel} />
           <div className="mt-5 space-y-3">
             <article className="rounded-2xl border border-stone-200 bg-white p-4"><h3 className="text-sm font-semibold text-stone-950">Strongest argument against</h3><p className="mt-2 text-sm leading-6 text-stone-700">{viewModel.strongest_argument_against}</p></article>
             <article className="rounded-2xl border border-stone-200 bg-white p-4"><h3 className="text-sm font-semibold text-stone-950">Weakest assumption</h3><p className="mt-2 text-sm leading-6 text-stone-700">{viewModel.weakest_assumption.label}: {viewModel.weakest_assumption.why_it_matters}</p></article>
