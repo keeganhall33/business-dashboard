@@ -22,8 +22,9 @@ test("V3 worker retries transient GitHub failures with bounded backoff", () => {
 test("V3 never converts unknown GitHub running state into a stale live lease", () => {
   assert.match(watcherSource, /ISSUE_RUNNING_STATE_UNKNOWN/);
   assert.match(watcherSource, /return null;/);
-  assert.match(watcherSource, /if \(pidAlive && issueRunning !== false\) return lease;/);
-  assert.match(watcherSource, /if \(issueRunning === null\) return lease;/);
+  assert.match(watcherSource, /if \(issueRunning === null\) return currentLease;/);
+  assert.match(watcherSource, /reconcileLeaseState\(workerId, \{ recoverIdleWorker \}\)/);
+  assert.match(watcherSource, /if \(inspection\.reconciliation_decision === "LIVE_LEASE_PRESERVED"\) return result\.lease;/);
 });
 
 test("V3 defers one candidate on transient GitHub failure instead of aborting the whole ready queue", () => {

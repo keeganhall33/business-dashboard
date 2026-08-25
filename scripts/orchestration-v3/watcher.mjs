@@ -5,6 +5,7 @@ import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 import { integrateValidatedPrQueue } from "./integration-queue.mjs";
 import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";
+import { alive, readLease, reconcileLeaseState, writeLease } from "./lease-reconciliation.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -136,16 +137,6 @@ function priorityRank(body, issueNumber) {
   if (Number(issueNumber) === BACKGROUND_OLLAMA_PROOF_ISSUE) return Number.MAX_SAFE_INTEGER;
   return PRIORITY_RANK[String(field(body, "priority") ?? "P2").toUpperCase()] ?? PRIORITY_RANK.P2;
 }
-function alive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === "EPERM"; }
-}
-function leasePath(workerId) {
-  return path.join(ORCHESTRATION_V3.runtime.stateRoot, "leases", `${workerId}.json`);
-}
-function readLease(workerId) {
-  try { return JSON.parse(fs.readFileSync(leasePath(workerId), "utf8")); } catch { return null; }
-}
 function issueIsRunning(issueNumber) {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
   try {
@@ -160,19 +151,20 @@ function issueIsRunning(issueNumber) {
   }
 }
 function reconcileLease(workerId) {
-  const lease = readLease(workerId);
-  if (!lease) return null;
-  const pidAlive = alive(Number(lease.pid));
-  const issueRunning = issueIsRunning(Number(lease.issueNumber));
-  if (pidAlive && issueRunning !== false) return lease;
-  if (issueRunning === null) return lease;
-  const recovery = recoverIdleWorker(workerId);
-  if (!recovery.after?.healthy) {
+  const currentLease = readLease(workerId);
+  if (!currentLease) return null;
+  const issueRunning = issueIsRunning(Number(currentLease.issueNumber));
+  if (issueRunning === null) return currentLease;
+  const result = reconcileLeaseState(workerId, { recoverIdleWorker });
+  const { inspection, recovery } = result;
+  if (inspection.reconciliation_decision === "LIVE_LEASE_PRESERVED") return result.lease;
+  if (inspection.reconciliation_decision === "INSUFFICIENT_EVIDENCE_PRESERVE") return result.lease;
+  if (inspection.reconciliation_decision === "STALE_RECLAIM_BLOCKED_UNHEALTHY_WORKTREE") {
     console.error(JSON.stringify({
       event: "WORKER_LANE_QUARANTINED",
       workerId,
-      issueNumber: Number(lease.issueNumber) || null,
-      pid: Number(lease.pid) || null,
+      issueNumber: inspection.issue_number,
+      pid: inspection.pid,
       classification: recovery.after?.classification ?? recovery.before?.classification ?? null,
       deletionCount: recovery.before?.trackedDeletionCount ?? null,
       deletionRatio: recovery.before?.deletionRatio ?? null,
@@ -182,17 +174,9 @@ function reconcileLease(workerId) {
       recoveryResult: recovery.error ? "FAILED" : "REFUSED",
       quarantineResult: "QUARANTINED"
     }));
-    return lease;
+    return result.lease;
   }
-  try { fs.unlinkSync(leasePath(workerId)); } catch {}
-  console.log(JSON.stringify({
-    event: "STALE_LEASE_RECLAIMED",
-    workerId,
-    issueNumber: Number(lease.issueNumber) || null,
-    pid: Number(lease.pid) || null,
-    pidAlive,
-    issueRunning
-  }));
+  if (result.reclaimed) console.log(JSON.stringify({ event: "STALE_LEASE_RECLAIMED", workerId, issueNumber: inspection.issue_number, pid: inspection.pid, issueRunning, evidence: inspection.evidence, heartbeatAgeSeconds: inspection.heartbeat_age_seconds, leaseAgeSeconds: inspection.lease_age_seconds, reconciliationDecision: inspection.reconciliation_decision }));
   return null;
 }
 function activeLeaseIssueNumbers() {
@@ -228,7 +212,6 @@ function launch(workerId, issueNumber) {
   if (!recovery.after?.healthy) {
     throw new Error(`WORKER_LANE_UNHEALTHY:${workerId}:${recovery.after?.errors?.join(",") ?? recovery.before?.errors?.join(",") ?? "UNKNOWN"}`);
   }
-  fs.mkdirSync(path.dirname(leasePath(workerId)), { recursive: true });
   const logPath = path.join(ORCHESTRATION_V3.runtime.logRoot, `jeeves-orchestration-v3-${workerId}-${issueNumber}.log`);
   fs.mkdirSync(ORCHESTRATION_V3.runtime.logRoot, { recursive: true });
   const fd = fs.openSync(logPath, "a");
@@ -239,7 +222,7 @@ function launch(workerId, issueNumber) {
     env: { ...process.env }
   });
   if (!Number.isInteger(child.pid) || child.pid <= 0) throw new Error(`NO_WORKER_PID:${workerId}:${issueNumber}`);
-  fs.writeFileSync(leasePath(workerId), JSON.stringify({ workerId, issueNumber, pid: child.pid, startedAt: new Date().toISOString(), logPath }, null, 2) + "\n");
+  writeLease(workerId, { issueNumber, pid: child.pid, logPath, worktree: ORCHESTRATION_V3.workers[workerId]?.worktree ?? null });
   child.on("exit", (code, signal) => requestWake("WORKER_EXIT", { workerId, issueNumber, pid: child.pid, code, signal }));
   child.unref();
   fs.closeSync(fd);

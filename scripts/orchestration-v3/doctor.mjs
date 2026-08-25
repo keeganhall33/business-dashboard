@@ -5,10 +5,18 @@ import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerForStream } from "./config.mjs";
 import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
 import { readQueueWatermarkState } from "./queue-watermarks.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
 
 const TOLERATED_ACTIVE_WORKER_ERRORS = new Set([
   "TRACKED_WORKTREE_DIRTY",
   "UNEXPECTED_UNTRACKED_FILES"
+]);
+const LEASE_RECONCILIATION_FIELDS = Object.freeze([
+  "lease_age_seconds",
+  "heartbeat_age_seconds",
+  "pid_alive",
+  "worktree_matches",
+  "reconciliation_decision"
 ]);
 
 function command(name, args, options = {}) {
@@ -86,6 +94,9 @@ const legacyProcessCount = Object.values(legacyProcesses).reduce((sum, values) =
 const workerEffectiveHealth = Object.fromEntries(
   Object.entries(workers).map(([workerId, inspection]) => [workerId, workerHealthyForControlPlane(workerId, inspection, activeWorkers)])
 );
+const workerLeaseReconciliation = Object.fromEntries(
+  Object.keys(ORCHESTRATION_V3.workers).map((workerId) => [workerId, inspectLease(workerId)])
+);
 const liveWorkerCount = activeWorkers.size;
 const productLiveWorkerCount = ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
 const integrationReleaseLiveWorkerCount = ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
@@ -116,6 +127,8 @@ const report = {
     }
   },
   WORKER_EFFECTIVE_HEALTH: workerEffectiveHealth,
+  LEASE_RECONCILIATION_FIELDS,
+  WORKER_LEASE_RECONCILIATION: workerLeaseReconciliation,
   QUEUE: {
     READY: ready.issues.map((i) => i.number),
     RUNNING: running.issues.map((i) => i.number),
