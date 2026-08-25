@@ -360,9 +360,10 @@ let resultChangedPrs = changedPrs;
  *
  * #337 remains strict Ollama-only acceptance.
  * Every other non-human task may use the approved stronger coding path after
- * one bounded local failure.
+ * one bounded local failure, but only when the central model policy explicitly
+ * permits cloud fallback. The production default is false/$0 autonomous spend.
  */
-if (finalValue.STATUS !== "PASS" && issue !== 337) {
+if (finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.cloudFallbackAllowed) {
   const localFailureReason =
     (finalValue.BLOCKERS ?? [])[0] ??
     (run.error?.code === "ETIMEDOUT" ? "OPENCLAW_PROCESS_TIMEOUT" : null) ??
