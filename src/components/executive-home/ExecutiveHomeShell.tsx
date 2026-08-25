@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecisionRoom } from "@/components/intelligence-ux/DecisionRoom";
+import { toDecisionRoomViewModelV1 } from "@/lib/decision-room/shell-adapter";
 import { EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1, type ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
@@ -112,7 +113,10 @@ export function ExecutiveHomeShell({
             )}
           </div>
           {isDecisionRoomOpen ? (
-            <DecisionRoom decision={decisionRoom} />
+            <>
+              <RecommendationComparisonContinuity decisionRoom={decisionRoom} />
+              <DecisionRoom decision={decisionRoom} />
+            </>
           ) : (
             <div className="rounded-3xl border border-dashed border-stone-300 bg-white p-5 text-sm leading-6 text-stone-700">
               No Decision Room is open. Use the Home recommendation card or Financial specialist signal to drill down without losing Executive Home orientation.
@@ -121,6 +125,61 @@ export function ExecutiveHomeShell({
         </section>
       </div>
     </main>
+  );
+}
+
+function RecommendationComparisonContinuity({ decisionRoom }: { decisionRoom: ExecutiveHomeDecisionRoomDrilldownV1 }) {
+  const viewModel = toDecisionRoomViewModelV1(decisionRoom);
+  const options = viewModel.alternatives.slice(0, 4);
+  const truthStates = ["KNOWN", "INFERRED", "UNKNOWN", "CONFLICTED"] as const;
+  const truthCounts = truthStates.map((truthState) => ({
+    truthState,
+    count: viewModel.evidence_refs.filter((ref) => ref.truth_state === truthState).length
+  }));
+  const explicitRiskStates = truthCounts.filter((item) => item.truthState === "UNKNOWN" || item.truthState === "CONFLICTED" || item.count > 0);
+
+  return (
+    <section data-testid="executive-comparison-continuity" className="mb-4 rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm" aria-label="Recommendation comparison continuity">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Comparison continuity</p>
+          <h3 className="mt-1 text-lg font-semibold tracking-normal text-stone-950">{viewModel.current_recommendation.title}</h3>
+          <p className="mt-1 text-sm leading-6 text-stone-700">
+            Confidence {viewModel.confidence} · {viewModel.approval_class}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-3 text-sm leading-6 text-stone-700 lg:max-w-md">
+          <span className="font-semibold text-stone-950">Next action:</span> {viewModel.next_action}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Options carried forward</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {options.map((option) => (
+              <div key={option.alternative_id} data-testid="executive-comparison-continuity-option" className="rounded-2xl border border-stone-200 bg-white p-3">
+                <p className="text-sm font-semibold text-stone-950">{option.label}</p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-600">{option.tradeoff}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Evidence state</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {explicitRiskStates.map((item) => (
+              <span key={item.truthState} className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-700">
+                {item.truthState} {item.count}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs leading-5 text-stone-600">
+            Source drill-down remains in Decision Room; UNKNOWN and CONFLICTED evidence stays explicit during navigation.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
