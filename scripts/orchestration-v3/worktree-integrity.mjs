@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+import { hydrateDependencies } from "./hydrate-dependencies.mjs";
 
 export const INTEGRITY_CLASSIFICATION = Object.freeze({
   CLEAN: "CLEAN",
@@ -205,6 +206,34 @@ export function recoverCorruptedWorktree({ workerId, cwd, disposableWorktrees, r
   }
 
   const after = inspectWorktreeIntegrity(cwd);
+  if (fs.existsSync(path.join(cwd, "package-lock.json"))) {
+    emitWorktreeIntegrityEvent("DEPENDENCY_HYDRATION_AFTER_RECOVERY", {
+      workerId,
+      cwd,
+      method: "npm ci",
+      note: "lockfile-exact hydration"
+    });
+
+    try {
+      const hydration = hydrateDependencies(cwd);
+      emitWorktreeIntegrityEvent("DEPENDENCY_HYDRATION_COMPLETE", {
+        workerId,
+        ...hydration
+      });
+    } catch (hydrErr) {
+      emitWorktreeIntegrityEvent("DEPENDENCY_HYDRATION_FAILED", {
+        workerId,
+        error: hydrErr instanceof Error ? hydrErr.message : String(hydrErr)
+      });
+      throw hydrErr;
+    }
+  } else {
+    emitWorktreeIntegrityEvent("DEPENDENCY_HYDRATION_SKIPPED", {
+      workerId,
+      cwd,
+      reason: "PACKAGE_LOCK_MISSING"
+    });
+  }
   const recovered = !recoveryError && after.healthy && after.head === before.head;
   emitWorktreeIntegrityEvent("WORKTREE_RECOVERY_RESULT", {
     workerId,

@@ -10,6 +10,7 @@ import {
   recoverCorruptedWorktree,
   INTEGRITY_CLASSIFICATION
 } from "../scripts/orchestration-v3/worktree-integrity.mjs";
+import { hydrateDependencies } from "../scripts/orchestration-v3/hydrate-dependencies.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
@@ -91,4 +92,62 @@ test("all six configured workers receive parity coverage from canonical config",
   assert.equal(ORCHESTRATION_V3.capacity.totalWorkers, 6);
   assert.deepEqual(ORCHESTRATION_V3.capacity.integrationReleaseWorkers, ["local-e"]);
   assert.deepEqual(ORCHESTRATION_V3.capacity.qaEvaluationWorkers, ["local-f"]);
+});
+
+test("dependency hydration uses lockfile-exact npm ci and ignores generated runtime outputs", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "orch-v3-hydrate-"));
+  fs.writeFileSync(path.join(root, "package-lock.json"), "{}\n");
+  fs.mkdirSync(path.join(root, "node_modules"), { recursive: true });
+  fs.mkdirSync(path.join(root, ".next"), { recursive: true });
+
+  const calls = [];
+  const result = hydrateDependencies(root, {
+    runCommand(command, args) {
+      calls.push([command, ...args].join(" "));
+      if (command === "git") return "";
+      return "ok";
+    }
+  });
+
+  assert.equal(result.method, "npm ci");
+  assert.deepEqual(calls, ["npm ci", "git status --porcelain=v1 --untracked-files=normal"]);
+});
+
+test("dependency hydration verify mode runs typecheck and build", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "orch-v3-hydrate-verify-"));
+  fs.writeFileSync(path.join(root, "package-lock.json"), "{}\n");
+
+  const calls = [];
+  const result = hydrateDependencies(root, {
+    verify: true,
+    runCommand(command, args) {
+      calls.push([command, ...args].join(" "));
+      if (command === "git") return "";
+      return "ok";
+    }
+  });
+
+  assert.equal(result.verified, true);
+  assert.deepEqual(calls, [
+    "npm ci",
+    "git status --porcelain=v1 --untracked-files=normal",
+    "npx tsc --noEmit",
+    "npm run build",
+    "git status --porcelain=v1 --untracked-files=normal"
+  ]);
+});
+
+test("dependency hydration fails closed when npm ci mutates package files", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "orch-v3-hydrate-dirty-"));
+  fs.writeFileSync(path.join(root, "package-lock.json"), "{}\n");
+
+  assert.throws(
+    () => hydrateDependencies(root, {
+      runCommand(command) {
+        if (command === "git") return " M package-lock.json\n";
+        return "ok";
+      }
+    }),
+    /DIRTY_AFTER_HYDRATION:M package-lock\.json/
+  );
 });
