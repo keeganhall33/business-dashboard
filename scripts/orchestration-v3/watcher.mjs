@@ -4,6 +4,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 import { integrateValidatedPrQueue } from "./integration-queue.mjs";
+import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -248,7 +249,7 @@ function launch(workerId, issueNumber) {
 const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
 if (!runtime.healthy) throw new Error(`CANONICAL_RUNTIME_UNHEALTHY:${runtime.errors.join(",")}`);
 
-async function poll() {
+async function poll(reason = "UNKNOWN") {
   try {
     const integration = integrateValidatedPrQueue({ maxMerges: 1 });
     console.log(JSON.stringify(integration));
@@ -275,6 +276,13 @@ async function poll() {
     if (leftPriority !== rightPriority) return leftPriority - rightPriority;
     return Number(left.number) - Number(right.number);
   });
+  const watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
+    readyIssues: ready,
+    runningIssues: runningIssues(),
+    activeLeaseIssueNumbers: [...activeLeaseIssueNumbers()],
+    lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason
+  }));
+  console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));
 
   for (const candidate of ready) {
     try {
@@ -319,7 +327,7 @@ async function runSerializedPoll(reason) {
     do {
       pollWakePending = false;
       try {
-        await poll();
+        await poll(passReason);
       } catch (err) {
         console.error(JSON.stringify({ event: "POLL_FAILED", reason: passReason, error: err instanceof Error ? err.message : String(err) }));
       }

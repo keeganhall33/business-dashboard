@@ -26,7 +26,7 @@ test("V3 backfill reconciles stale leases before ready selection and never overl
   assert.match(watcher, /function reconcileRunningClaims\(\)/);
   assert.match(watcher, /reconcileRunningClaims\(\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)/);
   assert.match(watcher, /if \(pollInFlight\) \{[\s\S]*pollWakePending = true;[\s\S]*return;[\s\S]*\}/);
-  assert.match(watcher, /do \{[\s\S]*await poll\(\);[\s\S]*\} while \(pollWakePending\);/);
+  assert.match(watcher, /do \{[\s\S]*await poll\(passReason\);[\s\S]*\} while \(pollWakePending\);/);
 });
 
 test("V3 backfill can claim all six dependency-safe workers in one pass without double-claiming", () => {
