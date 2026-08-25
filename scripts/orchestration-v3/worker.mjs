@@ -17,6 +17,7 @@ import {
   buildWorkerExecInvocation,
   codeModeShellInstruction
 } from "./worker-exec-invocation.mjs";
+import { LEASE_TTL_CONTRACT, touchLeaseHeartbeat } from "./lease-reconciliation.mjs";
 
 const CLOUD_CREDENTIAL_PREFIXES = [
   "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
@@ -167,6 +168,11 @@ const repoRoot = path.resolve(cfg.worktree);
 const controlWorkspace = path.resolve(cfg.agentWorkspace);
 if (repoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
 fs.mkdirSync(controlWorkspace, { recursive: true });
+touchLeaseHeartbeat(workerId);
+const leaseHeartbeatTimer = setInterval(() => {
+  touchLeaseHeartbeat(workerId);
+}, LEASE_TTL_CONTRACT.workerHeartbeatIntervalMs);
+leaseHeartbeatTimer.unref();
 
 const snapshot = issueSnapshot();
 if (humanApprovalRequired(snapshot.body)) {

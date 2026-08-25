@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot } from "./preflight.mjs";
 import { readQueueWatermarkState } from "./queue-watermarks.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -80,19 +81,28 @@ function launchdSnapshot(label) {
 function workerLeaseSnapshot(workerId) {
   const leasePath = path.join(ORCHESTRATION_V3.runtime.stateRoot, "leases", `${workerId}.json`);
   const lease = readJson(leasePath);
-  const pid = Number(lease?.pid);
-  const pidAlive = alive(pid);
+  const leaseInspection = inspectLease(workerId, { lease });
+  const pidAlive = leaseInspection.pid_alive;
   const cfg = ORCHESTRATION_V3.workers[workerId];
   let integrity = null;
   try { integrity = cfg ? inspectGitRoot(cfg.worktree) : null; } catch {}
   return {
     worker_id: workerId,
     issue_number: Number(lease?.issueNumber) || null,
-    pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+    pid: leaseInspection.pid,
     pid_alive: pidAlive,
     started_at: lease?.startedAt ?? null,
+    heartbeat_at: leaseInspection.heartbeat_at,
+    lease_age_seconds: leaseInspection.lease_age_seconds,
+    heartbeat_age_seconds: leaseInspection.heartbeat_age_seconds,
+    worktree_identity: leaseInspection.worktree,
+    expected_worktree: leaseInspection.expected_worktree,
+    worktree_matches: leaseInspection.worktree_matches,
+    command_matches_lease: leaseInspection.command_matches_lease,
+    reconciliation_decision: leaseInspection.reconciliation_decision,
+    reconciliation_evidence: leaseInspection.evidence,
     log_path: lease?.logPath ?? null,
-    process_command: pidAlive ? processCommand(pid) : null,
+    process_command: leaseInspection.process_command,
     lease_path: fs.existsSync(leasePath) ? leasePath : null,
     health: integrity ? {
       healthy: integrity.healthy,
