@@ -67,6 +67,34 @@ test("contradiction, disagreement, and UNKNOWN survive rendering", () => {
   assert.match(html, /What would change my mind/);
 });
 
+test("Decision Room renders compact option comparison with explicit truth states", () => {
+  const html = renderToString(<DecisionRoom decision={DECISION_ROOM_FIXTURE_V1} />);
+
+  assert.match(html, /data-testid="decision-option-comparison"/);
+  assert.match(html, /Competing paths at a glance/);
+  assert.match(html, /Build the full private collector room concept now/);
+  assert.match(html, /Ignore the event path and keep studio focus only/);
+  assert.match(html, /UNKNOWN/);
+  assert.match(html, /INFERRED/);
+  assert.match(html, /FINANCIAL_FIXTURE/);
+  assert.match(html, /STRATEGY_FIXTURE/);
+  assert.match(html, /data-testid="decision-option-detail"/);
+});
+
+test("Decision Room option comparison preserves mobile and light-mode layout without fake zero values", () => {
+  const html = renderToString(<DecisionRoom decision={DECISION_ROOM_FIXTURE_V1} />);
+  const comparisonStart = html.indexOf('data-testid="decision-option-comparison"');
+  const comparisonEnd = html.indexOf("Strongest argument against");
+  const comparisonHtml = html.slice(comparisonStart, comparisonEnd);
+
+  assert.ok(comparisonStart >= 0);
+  assert.match(comparisonHtml, /bg-stone-50/);
+  assert.match(comparisonHtml, /bg-white/);
+  assert.match(comparisonHtml, /sm:grid-cols-2/);
+  assert.match(comparisonHtml, /border-dashed/);
+  assert.doesNotMatch(comparisonHtml, /0%|\$0|score[^<]*0/i);
+});
+
 test("Decision Room integrates conversation panel and recommendation revision history", () => {
   const room = DECISION_ROOM_CONVERSATION_REVISION_FIXTURE_V1;
   const html = renderToString(<DecisionRoom decision={room} />);
