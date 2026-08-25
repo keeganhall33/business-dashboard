@@ -4,11 +4,14 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 const REPO = "keeganhall33/business-dashboard";
-const REQUEUE = [413, 414, 416, 337];
+const REQUEUE = [844, 845, 846, 852, 847, 848, 837, 838, 839];
+const WORKER_IDS = ["local-a", "local-b", "local-c", "local-d", "local-e", "local-f"];
 const LEGACY_TERMINAL_LABELS = ["orch:awaiting_review", "orch:blocked", "orch:running", "orch:awaiting_human_approval"];
 const V3_LABEL = "com.keegan.jeeves.orchestration-v3";
 const LEGACY_LABEL = "com.keegan.jeeves.orchestration-watch";
-const RUNTIME = path.join(os.homedir(), ".openclaw", "runtime-v3", "business-dashboard");
+const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
+const RUNTIME = path.join(OPENCLAW_ROOT, "runtime-v3", "business-dashboard");
+const WORKTREE_ROOT = path.join(OPENCLAW_ROOT, "worktrees");
 const LEGACY_PROCESS_PATTERNS = [
   "scripts/orchestration-watch.mjs",
   "scripts/launch-orchestration-nl-detached.mjs",
@@ -58,6 +61,17 @@ function terminatePattern(pattern) {
   return initial;
 }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function hydrateWorkerToolchain(workerId) {
+  const worktree = path.join(WORKTREE_ROOT, workerId);
+  const lockfile = path.join(worktree, "package-lock.json");
+  if (!fs.existsSync(lockfile)) throw new Error(`PACKAGE_LOCK_MISSING:${workerId}:${lockfile}`);
+  runLive("npm", ["ci", "--no-audit", "--no-fund", "--prefer-offline"], { cwd: worktree });
+  const nextBin = path.join(worktree, "node_modules", ".bin", "next");
+  if (!fs.existsSync(nextBin)) throw new Error(`NEXT_BINARY_MISSING_AFTER_NPM_CI:${workerId}:${nextBin}`);
+  const status = git(worktree, ["status", "--short"]);
+  if (status) throw new Error(`TOOLCHAIN_HYDRATION_DIRTIED_WORKTREE:${workerId}:${status}`);
+  console.log(JSON.stringify({ status: "TOOLCHAIN_HYDRATED", workerId, worktree, nextBin }));
+}
 
 const sourceRoot = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
 if (path.resolve(sourceRoot) !== path.resolve(process.cwd())) throw new Error(`RUN_FROM_REPO_ROOT:${sourceRoot}`);
@@ -104,7 +118,10 @@ try {
   console.log("=== V3 BOOTSTRAP: SAFE PREPARE ===");
   runLive(process.execPath, ["scripts/orchestration-v3/prepare-host.mjs"], { cwd: tempRoot });
 
-  console.log("=== V3 BOOTSTRAP: RELEASE FOUR LANES BEFORE WATCHER START ===");
+  console.log("=== V3 BOOTSTRAP: HYDRATE SIX LOCAL TOOLCHAINS ===");
+  for (const workerId of WORKER_IDS) hydrateWorkerToolchain(workerId);
+
+  console.log("=== V3 BOOTSTRAP: RELEASE SIX LANES + READY RESERVE BEFORE WATCHER START ===");
   const requeued = REQUEUE.filter((issueNumber) => requeue(issueNumber));
 
   console.log("=== V3 BOOTSTRAP: ACTIVATE SINGLE WATCHER AGAINST POPULATED QUEUE ===");
@@ -136,7 +153,7 @@ try {
     runningIssues: running.map((item) => item.number),
     stillReady,
     initialClaimObservation,
-    note: "4/4 acceptance remains evidence-gated until provider/model/cloud/worktree proof completes."
+    note: "Six-worker local-only execution remains evidence-gated until provider/model/cloud/worktree proof completes."
   }, null, 2));
 } finally {
   try { git(sourceRoot, ["worktree", "remove", "--force", tempRoot]); } catch {}
