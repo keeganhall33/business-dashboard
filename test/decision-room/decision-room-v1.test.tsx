@@ -95,6 +95,43 @@ test("Decision Room option comparison preserves mobile and light-mode layout wit
   assert.doesNotMatch(comparisonHtml, /0%|\$0|score[^<]*0/i);
 });
 
+test("Decision Room renders compact evidence summary with explicit risk states and source drill-down", () => {
+  const html = renderToString(<DecisionRoom decision={DECISION_ROOM_CHALLENGE_FIXTURE_V1} />);
+  const evidenceStart = html.indexOf('data-testid="decision-evidence-summary"');
+  const evidenceEnd = html.indexOf("Specialist disagreement");
+  const evidenceHtml = html.slice(evidenceStart, evidenceEnd);
+
+  assert.ok(evidenceStart >= 0);
+  assert.match(evidenceHtml, /Evidence/);
+  assert.match(evidenceHtml, /sources/);
+  assert.match(evidenceHtml, /KNOWN[\s\S]*0/);
+  assert.match(evidenceHtml, /UNKNOWN[\s\S]*2/);
+  assert.match(evidenceHtml, /CONFLICTED[\s\S]*1/);
+  assert.match(evidenceHtml, /data-testid="decision-evidence-risk-strip"/);
+  assert.match(evidenceHtml, /data-testid="decision-evidence-source-drilldown"/);
+  assert.match(evidenceHtml, /FINANCIAL_FIXTURE/);
+  assert.match(evidenceHtml, /EVIDENCE_TRUST_FIXTURE/);
+  assert.match(evidenceHtml, /Direct event economics/);
+  assert.match(evidenceHtml, /Data\/evidence trust/);
+});
+
+test("Decision Room evidence summary preserves mobile and light-mode density without hiding truth states", () => {
+  const html = renderToString(<DecisionRoom decision={DECISION_ROOM_FIXTURE_V1} />);
+  const evidenceStart = html.indexOf('data-testid="decision-evidence-summary"');
+  const evidenceEnd = html.indexOf("Specialist disagreement");
+  const evidenceHtml = html.slice(evidenceStart, evidenceEnd);
+
+  assert.ok(evidenceStart >= 0);
+  assert.match(evidenceHtml, /bg-stone-50/);
+  assert.match(evidenceHtml, /bg-white/);
+  assert.match(evidenceHtml, /sm:grid-cols-2/);
+  assert.match(evidenceHtml, /Source drill-down/);
+  assert.match(evidenceHtml, /UNKNOWN/);
+  assert.match(evidenceHtml, /CONFLICTED/);
+  assert.doesNotMatch(evidenceHtml, /^<details[^>]*open/);
+  assert.doesNotMatch(evidenceHtml, /0%|\$0|score[^<]*0/i);
+});
+
 test("Decision Room integrates conversation panel and recommendation revision history", () => {
   const room = DECISION_ROOM_CONVERSATION_REVISION_FIXTURE_V1;
   const html = renderToString(<DecisionRoom decision={room} />);
