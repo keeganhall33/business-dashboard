@@ -44,8 +44,25 @@ test("command center preserves UNKNOWN instead of converting missing evidence to
   assert.match(html, /UNKNOWN economics/);
   assert.match(html, /Direct economics for prestige event concepts remain UNKNOWN rather than zero/);
   assert.match(html, /UNKNOWN/);
+  assert.match(html, /Specialist intelligence/);
+  assert.match(html, /WHAT_CHANGED/);
+  assert.match(html, /WHY_IT_MATTERS/);
+  assert.match(html, /NEXT_BEST_ACTION/);
   assert.doesNotMatch(html, />0<\/div><div[^>]*>Data health/);
   assert.doesNotMatch(html, /false/);
+});
+
+test("command center renders three specialist cards with grounded drill-down links", () => {
+  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+
+  assert.match(html, /Financial/);
+  assert.match(html, /Goals \/ Capacity/);
+  assert.match(html, /Relationships/);
+  assert.match(html, /href="\/specialists\/financial"/);
+  assert.match(html, /href="\/specialists\/goals-capacity"/);
+  assert.match(html, /href="\/relationships"/);
+  assert.match(html, /UNKNOWN direct costs could materially change profitability/);
+  assert.match(html, /UNKNOWN warm path/);
 });
 
 test("command center cards expose drill-down controls for metrics and actions", () => {
