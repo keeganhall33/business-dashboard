@@ -31,7 +31,7 @@ export function ExecutiveHomeShell({
 
   return (
     <main className="min-h-screen bg-[#f8f4ec] text-stone-950">
-      <ExecutiveCommandCenter data={data.command_center} />
+      <ExecutiveCommandCenter data={data.command_center} onOpenDecisionRoom={(decisionRoomId) => setActiveDecisionRoomId(decisionRoomId)} />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Light-first intelligence dashboard</p>
@@ -99,7 +99,7 @@ export function ExecutiveHomeShell({
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Grounded drill-down</p>
               <h2 className="mt-1 text-xl font-semibold tracking-normal text-stone-950">Decision Room detail</h2>
-              <p className="mt-1 text-sm leading-6 text-stone-700">Open the Home recommendation to inspect WHY, evidence, unknowns, counterargument, next move, and contextual Ask Jeeves.</p>
+              <p className="mt-1 text-sm leading-6 text-stone-700">Open a Home recommendation or specialist signal to inspect WHY, evidence, unknowns, counterargument, next move, and contextual Ask Jeeves.</p>
             </div>
             {isDecisionRoomOpen ? (
               <button type="button" onClick={() => setActiveDecisionRoomId(null)} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
@@ -115,7 +115,7 @@ export function ExecutiveHomeShell({
             <DecisionRoom decision={decisionRoom} />
           ) : (
             <div className="rounded-3xl border border-dashed border-stone-300 bg-white p-5 text-sm leading-6 text-stone-700">
-              No Decision Room is open. Use the Home recommendation card to drill down without losing Executive Home orientation.
+              No Decision Room is open. Use the Home recommendation card or Financial specialist signal to drill down without losing Executive Home orientation.
             </div>
           )}
         </section>
