@@ -2,6 +2,7 @@ import { getFinancialIntelligenceFixtureBundleV1 } from "@/lib/financial-intelli
 import { getGoalsPortfolioCapacityFixtureBundleV1 } from "@/lib/goals-portfolio-capacity/fixtures";
 import { toExecutiveGoalsCapacityViewModelV1 } from "@/lib/goals-portfolio-capacity/executive-view-model";
 import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contract";
+import { DECISION_ROOM_FIXTURE_V1 } from "@/lib/decision-room/fixtures";
 import { RELATIONSHIP_INTELLIGENCE_FIXTURES_V1 } from "@/lib/relationship-intelligence/fixtures";
 import { toRelationshipOpportunityViewModelV1 } from "@/lib/relationship-intelligence/view-model";
 
@@ -17,6 +18,9 @@ export type SpecialistCommandCenterCardV1 = {
   truth_state: SpecialistCommandCenterTruthStateV1;
   material_gap_or_risk: string;
   detail_href: string;
+  evidence: string;
+  decision_room_id?: string;
+  approval_class?: string;
   source: string;
 };
 
@@ -46,6 +50,9 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       truth_state: financialSnapshot.coverage_state === "COMPLETE" ? "KNOWN" : "UNKNOWN",
       material_gap_or_risk: financialSnapshot.key_uncertainty,
       detail_href: "/specialists/financial",
+      evidence: DECISION_ROOM_FIXTURE_V1.evidence_refs.find((ref) => ref.provenance === "FINANCIAL_FIXTURE")?.label ?? financialSnapshot.source,
+      decision_room_id: DECISION_ROOM_FIXTURE_V1.decision_id,
+      approval_class: DECISION_ROOM_FIXTURE_V1.approval_class,
       source: financialSnapshot.source
     },
     {
@@ -58,6 +65,7 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       truth_state: goalsView.portfolio_state === "UNKNOWN" ? "UNKNOWN" : goalsView.overload_or_conflict.visible ? "INFERRED" : "KNOWN",
       material_gap_or_risk: goalsSnapshot.unknown_resource_inputs[0] ?? goalsView.overload_or_conflict.summary,
       detail_href: "/specialists/goals-capacity",
+      evidence: `Goals fixture: ${goalsSnapshot.source}`,
       source: goalsSnapshot.source
     },
     {
@@ -70,6 +78,7 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       truth_state: relationshipBrief.ACCESS_PATH.truth_state,
       material_gap_or_risk: relationshipBrief.ACCESS_PATH.summary,
       detail_href: "/relationships",
+      evidence: `Relationship fixture: ${relationshipBrief.source_mode}`,
       source: relationshipBrief.source_mode
     }
   ];

@@ -18,13 +18,22 @@ test("specialist command-center adapter returns exactly the Phase C entry cards"
   assert.ok(cards.every((card) => card.why_it_matters.length > 20));
   assert.ok(cards.every((card) => card.next_best_action.length > 20));
   assert.ok(cards.every((card) => card.material_gap_or_risk.length > 10));
+  assert.ok(cards.every((card) => card.evidence.length > 10));
+  assert.equal(cards.filter((card) => card.decision_room_id).length, 1);
+  assert.equal(cards.find((card) => card.id === "financial")?.decision_room_id, "decision-private-collector-room");
+  assert.equal(cards.find((card) => card.id === "financial")?.approval_class, "L1_RECOMMENDATION");
 });
 
 test("specialist cards keep mobile and desktop grid classes in the light command center", () => {
-  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} onOpenDecisionRoom={() => undefined} />);
 
   assert.match(html, /Specialist intelligence/);
   assert.match(html, /grid gap-3 lg:grid-cols-3/);
+  assert.match(html, /WHAT_CHANGED/);
+  assert.match(html, /WHY_IT_MATTERS/);
+  assert.match(html, /NEXT_BEST_ACTION/);
+  assert.match(html, /EVIDENCE/);
+  assert.match(html, /Review in Decision Room/);
   assert.match(html, /bg-white/);
   assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950/);
 });

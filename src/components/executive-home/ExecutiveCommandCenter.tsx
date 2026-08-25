@@ -21,7 +21,13 @@ const truthStyles: Record<ExecutiveCommandCenterTruthStateV1, string> = {
 
 const specialistTruthStyles: Record<SpecialistCommandCenterTruthStateV1, string> = truthStyles;
 
-export function ExecutiveCommandCenter({ data }: { data: ExecutiveCommandCenterV1 }) {
+export function ExecutiveCommandCenter({
+  data,
+  onOpenDecisionRoom
+}: {
+  data: ExecutiveCommandCenterV1;
+  onOpenDecisionRoom?: (decisionRoomId: string) => void;
+}) {
   const [commandCenter, setCommandCenter] = useState(data);
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
   const activeDetail = useMemo(() => detailFor(commandCenter, activeDetailId), [commandCenter, activeDetailId]);
@@ -141,14 +147,27 @@ export function ExecutiveCommandCenter({ data }: { data: ExecutiveCommandCenterV
                   <SpecialistDetail label="WHAT_CHANGED" value={card.what_changed} />
                   <SpecialistDetail label="WHY_IT_MATTERS" value={card.why_it_matters} />
                   <SpecialistDetail label="NEXT_BEST_ACTION" value={card.next_best_action} />
+                  <SpecialistDetail label="EVIDENCE" value={card.evidence} />
+                  {card.approval_class ? <SpecialistDetail label="Approval class" value={card.approval_class} /> : null}
                   <SpecialistDetail label="Confidence" value={card.confidence} />
                   <SpecialistDetail label="Gap / risk" value={card.material_gap_or_risk} />
                 </dl>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                   <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">Source: {card.source}</span>
-                  <a href={card.detail_href} className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white">
-                    Open detail
-                  </a>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {card.decision_room_id && onOpenDecisionRoom ? (
+                      <a
+                        href="#decision-room-drilldown"
+                        onClick={() => onOpenDecisionRoom(card.decision_room_id!)}
+                        className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+                      >
+                        Review in Decision Room
+                      </a>
+                    ) : null}
+                    <a href={card.detail_href} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+                      Open detail
+                    </a>
+                  </div>
                 </div>
               </article>
             ))}
