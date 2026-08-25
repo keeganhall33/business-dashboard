@@ -101,6 +101,56 @@ function DecisionOptionComparison({ viewModel }: { viewModel: ReturnType<typeof 
   );
 }
 
+function DecisionEvidenceSummary({ evidenceRefs }: { evidenceRefs: DecisionRoomEvidenceRefV1[] }) {
+  const counts = evidenceRefs.reduce<Record<string, number>>((acc, evidence) => {
+    acc[evidence.truth_state] = (acc[evidence.truth_state] ?? 0) + 1;
+    return acc;
+  }, {});
+  const riskStates = evidenceRefs.filter((evidence) => ["UNKNOWN", "STALE", "CONFLICTED"].includes(evidence.truth_state));
+
+  return (
+    <details data-testid="decision-evidence-summary" className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-stone-950">
+        Evidence
+        <span className="ml-2 text-xs font-medium text-stone-500">{evidenceRefs.length} sources</span>
+      </summary>
+      <div className="mt-3 grid gap-3">
+        <div className="flex flex-wrap gap-2">
+          {["KNOWN", "INFERRED", "UNKNOWN", "STALE", "CONFLICTED"].map((state) => (
+            <span key={state} className={`rounded-full border px-2 py-1 text-xs font-semibold ${truthStateTone[state as DecisionRoomTruthStateV1 | "STALE"]}`}>
+              {state} {counts[state] ?? 0}
+            </span>
+          ))}
+        </div>
+        {riskStates.length > 0 ? (
+          <div data-testid="decision-evidence-risk-strip" className="grid gap-2 sm:grid-cols-2">
+            {riskStates.map((item) => (
+              <div key={item.ref_id} className="rounded-xl border border-stone-200 bg-white p-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-stone-950">{item.label}</span>
+                  <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${truthStateTone[item.truth_state as DecisionRoomTruthStateV1 | "STALE"]}`}>{item.truth_state}</span>
+                </div>
+                <p className="mt-2 leading-5 text-stone-600">{item.provenance}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <details data-testid="decision-evidence-source-drilldown" className="rounded-xl border border-stone-200 bg-white p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-stone-700">Source drill-down</summary>
+          <div className="mt-3 space-y-2">
+            {evidenceRefs.map((item) => (
+              <div key={item.ref_id} className="rounded-lg bg-stone-50 p-3 text-sm">
+                <div className="font-semibold text-stone-950">{item.label}</div>
+                <div className="mt-1 leading-6 text-stone-700">{item.truth_state} | {item.provenance} | {item.detail}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    </details>
+  );
+}
+
 function RevisionDiff({ revision }: { revision: NonNullable<ReturnType<typeof toDecisionRoomViewModelV1>["conversation_revision"]>["recommendation_revision"] }) {
   const diff = revision.diff;
 
@@ -244,7 +294,7 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
               </div>
             </details>
           ) : null}
-          <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Evidence</summary><div className="mt-3 space-y-3">{viewModel.evidence_refs.map((item) => <div key={item.ref_id} className="rounded-xl bg-white p-3 text-sm"><div className="font-semibold text-stone-950">{item.label}</div><div className="mt-1 leading-6 text-stone-700">{item.truth_state} | {item.provenance} | {item.detail}</div></div>)}</div></details>
+          <DecisionEvidenceSummary evidenceRefs={viewModel.evidence_refs} />
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Disagreement</summary><div className="mt-3 space-y-2">{viewModel.specialist_disagreement.map((item) => <div key={`${item.specialist}-${item.stance}-${item.summary}`} className="rounded-xl bg-white p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-stone-950">{item.specialist}</span><span className="rounded-full border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-700">{item.stance}</span></div><p className="mt-2 leading-6 text-stone-700">{item.summary}</p></div>)}</div></details>
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4" open><summary className="cursor-pointer text-sm font-semibold text-stone-950">Assumptions / unknowns</summary><div className="mt-3 space-y-2">{viewModel.assumptions_unknowns.map((item) => <div key={item.assumption_id} className="rounded-xl bg-white p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="text-stone-800">{item.label}</span><span className="rounded-full border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-700">{item.truth_state}</span></div><p className="mt-2 leading-6 text-stone-600">{item.why_it_matters}</p></div>)}</div></details>
           <details className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><summary className="cursor-pointer text-sm font-semibold text-stone-950">What would change my mind</summary><ul className="mt-3 space-y-2 text-sm leading-6 text-stone-700">{viewModel.WHAT_WOULD_CHANGE_MY_MIND.map((item) => <li key={item}>{item}</li>)}</ul></details>
