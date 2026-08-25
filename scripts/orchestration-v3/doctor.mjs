@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerForStream } from "./config.mjs";
 import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
+import { readQueueWatermarkState } from "./queue-watermarks.mjs";
 
 const TOLERATED_ACTIVE_WORKER_ERRORS = new Set([
   "TRACKED_WORKTREE_DIRTY",
@@ -89,6 +90,7 @@ const liveWorkerCount = activeWorkers.size;
 const productLiveWorkerCount = ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
 const integrationReleaseLiveWorkerCount = ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
 const qaEvaluationLiveWorkerCount = ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const queueWatermark = readQueueWatermarkState();
 
 const report = {
   CONTROL_PLANE: "UNKNOWN",
@@ -116,7 +118,13 @@ const report = {
   WORKER_EFFECTIVE_HEALTH: workerEffectiveHealth,
   QUEUE: {
     READY: ready.issues.map((i) => i.number),
-    RUNNING: running.issues.map((i) => i.number)
+    RUNNING: running.issues.map((i) => i.number),
+    ACTIVE_COUNT: queueWatermark?.active_count ?? liveWorkerCount,
+    READY_RESERVE_COUNT: queueWatermark?.ready_reserve_count ?? null,
+    LOW_WATERMARK_STATE: queueWatermark?.low_watermark_state ?? "UNKNOWN",
+    LAST_REPLENISH_AT: queueWatermark?.last_replenish_at ?? null,
+    LAST_RECOVERY_RESULT: queueWatermark?.last_recovery_result ?? null,
+    WATERMARK: queueWatermark
   },
   PROCESSES: {
     V3_WATCHER: watcherProcesses,

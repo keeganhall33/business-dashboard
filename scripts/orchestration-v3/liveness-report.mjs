@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot } from "./preflight.mjs";
+import { readQueueWatermarkState } from "./queue-watermarks.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -182,6 +183,7 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
   const github = githubQueueSnapshot(includeGithub);
   const runningIssuesWithLiveLease = new Set(workers.filter((worker) => worker.pid_alive && worker.issue_number).map((worker) => worker.issue_number));
   const heartbeat = latestHeartbeatSnapshot();
+  const queueWatermark = readQueueWatermarkState();
   return {
     generated_at: new Date().toISOString(),
     runtime_root: ORCHESTRATION_V3.runtime.root,
@@ -191,8 +193,14 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
     heartbeat,
     workers,
     github,
+    queue_watermark: queueWatermark,
     summary: {
       live_worker_count: liveWorkers.length,
+      active_count: queueWatermark?.active_count ?? liveWorkers.length,
+      ready_reserve_count: queueWatermark?.ready_reserve_count ?? null,
+      low_watermark_state: queueWatermark?.low_watermark_state ?? "UNKNOWN",
+      last_replenish_at: queueWatermark?.last_replenish_at ?? null,
+      last_recovery_result: queueWatermark?.last_recovery_result ?? null,
       capacity_acceptance_proof: `${workers.length}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
       utilization_label: `${liveWorkers.length}/${ORCHESTRATION_V3.capacity.totalWorkers} capacity`,
       role_utilization: {
