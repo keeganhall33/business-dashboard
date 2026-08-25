@@ -91,6 +91,19 @@ test("worktree identity mismatch with stale heartbeat is proven stale", () => {
   assert.ok(mismatch.evidence.includes("WORKTREE_IDENTITY_MISMATCH"));
 });
 
+test("legacy live lease without worktree identity is preserved when heartbeat and process match", () => {
+  const legacyLive = inspectLease("local-d", {
+    now,
+    lease: lease({ worktree: undefined }),
+    pidAlive: true,
+    processCommandText: "node scripts/orchestration-v3/worker.mjs --issue 773 --worker local-d"
+  });
+
+  assert.equal(legacyLive.worktree_matches, true);
+  assert.equal(legacyLive.reconciliation_decision, "LIVE_LEASE_PRESERVED");
+  assert.deepEqual(legacyLive.evidence, []);
+});
+
 test("reconcile clears only proven stale local lease state with auditable evidence", () => {
   const unlinked = [];
   const result = reconcileLeaseState("local-d", {

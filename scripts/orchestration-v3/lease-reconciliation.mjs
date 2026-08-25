@@ -88,7 +88,9 @@ export function inspectLease(workerId, {
   const command = processCommandText === undefined ? processCommand(pid) : processCommandText;
   const leaseAgeMs = hasLease ? ageMs(lease.startedAt, nowMs) : null;
   const heartbeatAgeMs = hasLease ? ageMs(lease.heartbeatAt ?? lease.startedAt, nowMs) : null;
-  const worktreeMatches = !hasLease || !cfg ? false : path.resolve(String(lease.worktree ?? "")) === path.resolve(cfg.worktree);
+  const worktreeMatches = !hasLease || !cfg
+    ? false
+    : lease.worktree === null || lease.worktree === undefined || path.resolve(String(lease.worktree)) === path.resolve(cfg.worktree);
   const commandMatches = hasLease && resolvedPidAlive ? commandMatchesLease(command, lease) : false;
   const heartbeatFresh = hasLease && Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs <= LEASE_TTL_CONTRACT.heartbeatFreshMs;
   const leaseWithinTtl = hasLease && Number.isFinite(leaseAgeMs) && leaseAgeMs <= LEASE_TTL_CONTRACT.leaseTtlMs;
