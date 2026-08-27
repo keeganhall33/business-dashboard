@@ -16,18 +16,21 @@ test("V3 real worker uses capability-aware invocation instead of hard-coding a C
   assert.doesNotMatch(source, /"agent", "--local"/);
 });
 
-test("worker exec helper enables Code Mode and local-model-lean when available", () => {
+test("worker exec helper uses direct agent exec and preserves isolated control workspace", () => {
   const help = `Usage: openclaw agent exec <prompt>\nOptions:\n  --isolated\n  --auth-env-only\n  --model <id>\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <dir>\n  --json\n  --timeout <seconds>`;
   const capabilities = parseWorkerExecCapabilities(help);
   const invocation = buildWorkerExecInvocation({ capabilities, prompt: "do work", controlWorkspace: "/tmp/control", timeoutSeconds: 900 });
   assert.equal(invocation.supported, true);
-  assert.equal(invocation.mode, "AGENT_EXEC_CODE_MODE");
+  assert.equal(invocation.mode, "AGENT_EXEC_DIRECT");
+  assert.equal(invocation.codeMode, false);
   assert.deepEqual(invocation.args.slice(0, 3), ["agent", "exec", "do work"]);
   assert.ok(invocation.args.includes("--isolated"));
   assert.ok(invocation.args.includes("--auth-env-only"));
-  assert.ok(invocation.args.includes("--code-mode"));
   assert.ok(invocation.args.includes("--local-model-lean"));
+  assert.ok(invocation.args.includes("--cwd"));
+  assert.ok(invocation.args.includes("/tmp/control"));
   assert.ok(invocation.args.includes("ollama/qwen3.5:9b"));
+  assert.equal(invocation.args.includes("--code-mode"), false);
 });
 
 test("V3 worker uses installed legacy local-message path when agent exec is unavailable", () => {

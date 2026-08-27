@@ -186,7 +186,9 @@ const architectureGroundingRequired = requiresArchitectureGrounding(snapshot);
 const architectureGroundingInstructions = architectureGroundingRequired
   ? [
       "CANONICAL PRODUCT ARCHITECTURE GROUNDING REQUIRED.",
-      "Before planning or editing product/system behavior, read docs/ARCHITECTURE.md from the protected repository.",
+      "Before planning or editing product/system behavior, inspect docs/ARCHITECTURE.md from the protected repository using the shell exec tool with the protected repository as workdir.",
+      "Do NOT use OpenClaw read/write/edit file tools for protected-repository paths; those tools are intentionally sandboxed to the separate control workspace.",
+      "Use shell exec for every protected-repository read, search, edit, test, git operation, and diff.",
       "Follow its canonical source hierarchy when older docs, local workspace files, memories, or generated AGENTS.md content conflict.",
       "Do not create a parallel recommendation engine, scheduler, memory store, deployment path, agent role, or source-of-truth boundary without first checking the canonical owner in docs/ARCHITECTURE.md."
     ]
@@ -248,7 +250,13 @@ const shellExecutionInstruction = codeModeBridge
       `Every repository command must use workdir ${repoRoot}.`,
       "Do not narrate a command instead of invoking the bridge. Do not claim success from command text you did not execute."
     ].join("\n")
-  : "Use the shell exec tool for shell commands and the exact protected repository as workdir.";
+  : [
+      "DIRECT SHELL EXECUTION IS AUTHORITATIVE.",
+      `Use the shell exec tool for EVERY protected-repository operation with exact workdir ${repoRoot}.`,
+      "Do NOT invoke read, write, edit, or other workspace-file tools against protected-repository paths.",
+      "For repository file reads use shell commands such as cat/sed/grep through exec.",
+      "For repository edits use shell commands or scripts through exec, then verify with the observed git wrapper."
+    ].join("\n");
 
 const prompt = [
   `You are Jeeves executing GitHub issue #${issue} in ${ORCHESTRATION_V3.repo}.`,
