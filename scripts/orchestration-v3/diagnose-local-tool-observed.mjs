@@ -43,7 +43,39 @@ export function buildObservedPrompt({ observedGit, repoRoot }) {
   ].join("\n");
 }
 
+export function writeExecOnlyToolPolicy(configPath) {
+  let config = {};
+  try {
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf8").trim();
+      if (raw) config = JSON.parse(raw);
+    }
+  } catch {
+    config = {};
+  }
+
+  const existingTools = config?.tools && typeof config.tools === "object" ? config.tools : {};
+  const existingDeny = Array.isArray(existingTools.deny) ? existingTools.deny : [];
+  config = {
+    ...config,
+    tools: {
+      ...existingTools,
+      deny: [...new Set([...existingDeny, "group:fs"])]
+    }
+  };
+
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return config;
+}
+
 export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stateDir, configPath, controlWorkspace, harnessEnv = {} }) {
+  // V3 protected-repository access is exec-only. OpenClaw filesystem tools are
+  // hard-disabled in the isolated worker config so a model cannot terminate a
+  // real implementation round by attempting a sandboxed read/write/edit of the
+  // protected worktree. Shell exec remains available and is still observed by
+  // the host evidence harness.
+  writeExecOnlyToolPolicy(configPath);
+
   const env = { ...baseEnv };
   for (const key of Object.keys(env)) {
     if (key.startsWith("OPENCLAW_")) delete env[key];
