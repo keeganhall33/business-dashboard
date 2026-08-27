@@ -205,6 +205,9 @@ const architectureGroundingInstructions = architectureGroundingRequired
 
 const beforeHead = git(["rev-parse", "HEAD"], repoRoot);
 const beforePrs = openPrSnapshot();
+const beforeMap = new Map(
+  beforePrs.map((pr) => [Number(pr.number), pr])
+);
 const harness = createObservedExecutionHarness({ issue, workerId });
 const observed = Object.fromEntries(["git", "pnpm", "npm", "npx"].map((name) => [name, path.join(harness.shimRoot, name)]));
 if (!fs.existsSync(observed.git)) throw new Error("OBSERVED_GIT_WRAPPER_MISSING");
