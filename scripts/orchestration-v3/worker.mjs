@@ -18,6 +18,12 @@ import {
   codeModeShellInstruction
 } from "./worker-exec-invocation.mjs";
 import { LEASE_TTL_CONTRACT, touchLeaseHeartbeat } from "./lease-reconciliation.mjs";
+import {
+  MAX_LOCAL_ROUNDS,
+  buildContinuationPrompt,
+  missingImplementationEvidence,
+  shouldContinueLocalRun
+} from "./continuation-policy.mjs";
 
 const CLOUD_CREDENTIAL_PREFIXES = [
   "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
@@ -232,7 +238,9 @@ const capabilities = probeWorkerExecCapabilities(openclaw);
 const preflightCommand = `${q(observed.git)} rev-parse --show-toplevel && ${q(observed.git)} status --short --branch && ${q(observed.git)} remote -v`;
 const testRequired = requiresTestExecution(snapshot.body);
 const diffCheckRequired = requiresDiffCheck(snapshot.body);
-const codeModeBridge = capabilities.codeMode;
+// V3 canonical execution is currently AGENT_EXEC_DIRECT.
+ // Do not advertise Code Mode merely because the installed CLI supports it.
+const codeModeBridge = false;
 const firstToolInstruction = codeModeBridge
   ? [
       "MANDATORY FIRST TOOL ACTION: invoke the outer Code Mode exec tool exactly once with this JavaScript:",
@@ -300,67 +308,238 @@ if (!invocation.supported) {
 
 console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead, capabilities, invocationMode: invocation.mode }));
 
-const run = spawnSync(openclaw, invocation.args, {
-  cwd: controlWorkspace,
-  env,
-  encoding: "utf8",
-  timeout: 950_000,
-  maxBuffer: 24 * 1024 * 1024,
-  stdio: ["ignore", "pipe", "pipe"]
-});
+function executeLocalRound(roundPrompt, roundNumber) {
+  const roundInvocation = buildWorkerExecInvocation({
+    capabilities,
+    prompt: roundPrompt,
+    controlWorkspace,
+    timeoutSeconds: 900
+  });
 
-const postModelIntegrity = recoverIdleWorker(workerId);
-const executionEvidence = readObservedExecutionEvidence(harness.journalPath);
-const machine = parseMachineEnvelope(run.stdout);
-const afterHead = git(["rev-parse", "HEAD"], repoRoot);
-const afterPrs = openPrSnapshot();
-const beforeMap = mapPrs(beforePrs);
-const changedPrs = afterPrs.filter((pr) => !beforeMap.has(Number(pr.number)) || beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid);
-const realMutationObserved = beforeHead !== afterHead || changedPrs.length > 0;
-const providerOk = String(machine.provider ?? "").toLowerCase() === "ollama";
-const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(String(machine.model ?? "").toLowerCase());
-const fallbackOk = machine.fallbackUsed === false;
+  if (!roundInvocation.supported) {
+    return {
+      run: { status: 1, stdout: "", stderr: "", error: null },
+      invocation: roundInvocation,
+      machine: {},
+      executionEvidence: readObservedExecutionEvidence(harness.journalPath),
+      realMutationObserved: false,
+      changedPrs: [],
+      finalValue: {
+        ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"),
+        BLOCKERS: [roundInvocation.reason]
+      }
+    };
+  }
 
-let parsed;
-try {
-  const envelope = JSON.parse(String(run.stdout ?? ""));
-  const value = extractOrchestrationResult(envelope);
-  parsed = { ...resultBase(value.STATUS, String(value.SUMMARY ?? "")), ...value };
-} catch (error) {
-  parsed = { ...resultBase("BLOCKED", "Local model output could not be parsed as OrchestrationResultContractV1"), BLOCKERS: [error?.message ?? String(error)] };
-}
+  console.log(JSON.stringify({
+    event: roundNumber === 1 ? "WORKER_LOCAL_ROUND_START" : "WORKER_REPAIR_ROUND_EXEC",
+    issue,
+    workerId,
+    round: roundNumber,
+    invocationMode: roundInvocation.mode
+  }));
 
-const evidenceErrors = [];
-if (run.error?.code === "ETIMEDOUT") evidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
-else if (run.status !== 0) evidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${run.status}`);
-if (!postModelIntegrity.after?.healthy) evidenceErrors.push(`POST_MODEL_WORKTREE_INTEGRITY_FAILED:${postModelIntegrity.after?.errors?.join(",") ?? postModelIntegrity.before?.errors?.join(",") ?? "UNKNOWN"}`);
-if (!providerOk) evidenceErrors.push(`PROVIDER_MISMATCH:${machine.provider}`);
-if (!modelOk) evidenceErrors.push(`MODEL_MISMATCH:${machine.model}`);
-if (!fallbackOk) evidenceErrors.push(`FALLBACK_NOT_PROVEN_FALSE:${machine.fallbackUsed}`);
-if (!executionEvidence.repoPreflightObserved) evidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
-if (testRequired && !executionEvidence.testExecutionObserved) evidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
-if (!executionEvidence.gitDiffObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
-if (diffCheckRequired && !executionEvidence.gitDiffCheckObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
-if (!executionEvidence.gitMutationCommandObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
-if (!realMutationObserved) evidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
+  const roundRun = spawnSync(openclaw, roundInvocation.args, {
+    cwd: controlWorkspace,
+    env,
+    encoding: "utf8",
+    timeout: 950_000,
+    maxBuffer: 24 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
 
-let finalValue = { ...parsed, ROUTING_TIER: "LOCAL_FIRST", MODEL_USED: machine.model, LOCAL_ATTEMPTED: true, LOCAL_RESULT: parsed.STATUS === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED", ESCALATED_TO_CLOUD: false, ESCALATION_REASON: null, CLOUD_USAGE: null, CLOUD_COST: null };
-if (parsed.STATUS === "PASS" && evidenceErrors.length > 0) {
-  finalValue = {
-    ...resultBase("BLOCKED", "Machine evidence rejected an unproven model PASS"),
-    BLOCKERS: evidenceErrors,
-    UNEXPECTED_RESULTS: [JSON.stringify({ machine, executionEvidence, beforeHead, afterHead, changedPrNumbers: changedPrs.map((pr) => pr.number) })]
+  const postModelIntegrity = recoverIdleWorker(workerId);
+  const roundExecutionEvidence = readObservedExecutionEvidence(harness.journalPath);
+  const roundMachine = parseMachineEnvelope(roundRun.stdout);
+
+  const roundAfterHead = git(["rev-parse", "HEAD"], repoRoot);
+  const roundAfterPrs = openPrSnapshot();
+  const roundChangedPrs = roundAfterPrs.filter(
+    (pr) =>
+      !beforeMap.has(Number(pr.number)) ||
+      beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
+  );
+
+  const roundRealMutationObserved =
+    beforeHead !== roundAfterHead || roundChangedPrs.length > 0;
+
+  const providerOk =
+    String(roundMachine.provider ?? "").toLowerCase() === "ollama";
+  const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(
+    String(roundMachine.model ?? "").toLowerCase()
+  );
+  const fallbackOk = roundMachine.fallbackUsed === false;
+
+  let roundParsed;
+
+  try {
+    const envelope = JSON.parse(String(roundRun.stdout ?? ""));
+    const value = extractOrchestrationResult(envelope);
+    roundParsed = {
+      ...resultBase(value.STATUS, String(value.SUMMARY ?? "")),
+      ...value
+    };
+  } catch (error) {
+    roundParsed = {
+      ...resultBase(
+        "BLOCKED",
+        "Local model output could not be parsed as OrchestrationResultContractV1"
+      ),
+      BLOCKERS: [
+        "NO_VALID_ORCHESTRATION_RESULT",
+        error?.message ?? String(error)
+      ]
+    };
+  }
+
+  const roundEvidenceErrors = [];
+
+  if (roundRun.error?.code === "ETIMEDOUT") {
+    roundEvidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
+  } else if (roundRun.status !== 0) {
+    roundEvidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${roundRun.status}`);
+  }
+
+  if (!postModelIntegrity.after?.healthy) {
+    roundEvidenceErrors.push(
+      `POST_MODEL_WORKTREE_INTEGRITY_FAILED:${
+        postModelIntegrity.after?.errors?.join(",") ??
+        postModelIntegrity.before?.errors?.join(",") ??
+        "UNKNOWN"
+      }`
+    );
+  }
+
+  if (!providerOk) {
+    roundEvidenceErrors.push(`PROVIDER_MISMATCH:${roundMachine.provider}`);
+  }
+  if (!modelOk) {
+    roundEvidenceErrors.push(`MODEL_MISMATCH:${roundMachine.model}`);
+  }
+  if (!fallbackOk) {
+    roundEvidenceErrors.push(
+      `FALLBACK_NOT_PROVEN_FALSE:${roundMachine.fallbackUsed}`
+    );
+  }
+  if (!roundExecutionEvidence.repoPreflightObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
+  }
+  if (testRequired && !roundExecutionEvidence.testExecutionObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
+  }
+  if (!roundExecutionEvidence.gitDiffObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
+  }
+  if (diffCheckRequired && !roundExecutionEvidence.gitDiffCheckObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
+  }
+  if (!roundExecutionEvidence.gitMutationCommandObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
+  }
+  if (!roundRealMutationObserved) {
+    roundEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
+  }
+
+  let roundFinalValue = {
+    ...roundParsed,
+    ROUTING_TIER: "LOCAL_FIRST",
+    MODEL_USED: roundMachine.model,
+    LOCAL_ATTEMPTED: true,
+    LOCAL_RESULT:
+      roundParsed.STATUS === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED",
+    ESCALATED_TO_CLOUD: false,
+    ESCALATION_REASON: null,
+    CLOUD_USAGE: null,
+    CLOUD_COST: null
+  };
+
+  if (roundParsed.STATUS === "PASS" && roundEvidenceErrors.length > 0) {
+    roundFinalValue = {
+      ...resultBase(
+        "BLOCKED",
+        "Machine evidence rejected an unproven model PASS"
+      ),
+      BLOCKERS: roundEvidenceErrors,
+      UNEXPECTED_RESULTS: [
+        JSON.stringify({
+          machine: roundMachine,
+          executionEvidence: roundExecutionEvidence,
+          beforeHead,
+          afterHead: roundAfterHead,
+          changedPrNumbers: roundChangedPrs.map((pr) => pr.number)
+        })
+      ]
+    };
+  } else if (roundParsed.STATUS !== "PASS" && roundEvidenceErrors.length > 0) {
+    roundFinalValue.BLOCKERS = [
+      ...new Set([
+        ...(roundFinalValue.BLOCKERS ?? []),
+        ...roundEvidenceErrors
+      ])
+    ];
+  }
+
+  return {
+    run: roundRun,
+    invocation: roundInvocation,
+    machine: roundMachine,
+    executionEvidence: roundExecutionEvidence,
+    realMutationObserved: roundRealMutationObserved,
+    changedPrs: roundChangedPrs,
+    finalValue: roundFinalValue
   };
 }
-if (parsed.STATUS !== "PASS" && evidenceErrors.length > 0) {
-  finalValue.BLOCKERS = [...new Set([...(finalValue.BLOCKERS ?? []), ...evidenceErrors])];
-}
 
-let resultMachine = machine;
-let resultExecutionEvidence = executionEvidence;
-let resultInvocationMode = invocation.mode;
-let resultRealMutationObserved = realMutationObserved;
-let resultChangedPrs = changedPrs;
+let localRound = 1;
+let localResult = executeLocalRound(prompt, localRound);
+
+let run = localResult.run;
+let finalValue = localResult.finalValue;
+let resultMachine = localResult.machine;
+let resultExecutionEvidence = localResult.executionEvidence;
+let resultInvocationMode = localResult.invocation.mode;
+let resultRealMutationObserved = localResult.realMutationObserved;
+let resultChangedPrs = localResult.changedPrs;
+
+while (
+  shouldContinueLocalRun({
+    completedRound: localRound,
+    status: finalValue.STATUS,
+    blockers: finalValue.BLOCKERS ?? []
+  })
+) {
+  const nextRound = localRound + 1;
+  const missingEvidence = missingImplementationEvidence(
+    finalValue.BLOCKERS ?? []
+  );
+
+  console.log(JSON.stringify({
+    event: "WORKER_REPAIR_ROUND_START",
+    issue,
+    workerId,
+    round: nextRound,
+    missingEvidence,
+    invocationMode: "AGENT_EXEC_DIRECT"
+  }));
+
+  const continuationPrompt = buildContinuationPrompt(prompt, {
+    nextRound,
+    blockers: finalValue.BLOCKERS ?? []
+  });
+
+  localResult = executeLocalRound(continuationPrompt, nextRound);
+  localRound = nextRound;
+
+  run = localResult.run;
+  finalValue = localResult.finalValue;
+  resultMachine = localResult.machine;
+  resultExecutionEvidence = localResult.executionEvidence;
+  resultInvocationMode = localResult.invocation.mode;
+  resultRealMutationObserved = localResult.realMutationObserved;
+  resultChangedPrs = localResult.changedPrs;
+
+  if (localRound >= MAX_LOCAL_ROUNDS) break;
+}
 
 /*
  * Product delivery and the background 4/4 Ollama proof are intentionally

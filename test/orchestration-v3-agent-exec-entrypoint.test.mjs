@@ -12,7 +12,8 @@ test("V3 real worker uses capability-aware invocation instead of hard-coding a C
   assert.match(source, /probeWorkerExecCapabilities/);
   assert.match(source, /buildWorkerExecInvocation/);
   assert.match(source, /codeModeShellInstruction/);
-  assert.match(source, /invocation\.args/);
+  assert.match(source, /executeLocalRound/);
+  assert.match(source, /roundInvocation\.args/);
   assert.doesNotMatch(source, /"agent", "--local"/);
 });
 
