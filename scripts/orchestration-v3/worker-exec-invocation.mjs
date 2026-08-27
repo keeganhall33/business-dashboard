@@ -80,7 +80,11 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
   if (capabilities.isolated) args.push("--isolated");
   if (capabilities.authEnvOnly) args.push("--auth-env-only");
   args.push("--model", MODEL);
-  if (capabilities.codeMode) args.push("--code-mode", "code");
+  // V3 intentionally uses the direct agent-exec tool path.
+  // Code Mode currently exposes repository file operations through the
+  // isolated control-workspace sandbox rather than the protected worktree.
+  // Repository operations are instead performed through the observed shell
+  // execution harness with an explicit workdir.
   if (capabilities.localModelLean) args.push("--local-model-lean");
   if (capabilities.cwd) args.push("--cwd", controlWorkspace);
   if (capabilities.json) args.push("--json");
@@ -89,8 +93,8 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
     supported: true,
     reason: null,
     args,
-    mode: capabilities.codeMode ? "AGENT_EXEC_CODE_MODE" : "AGENT_EXEC_DIRECT",
-    codeMode: Boolean(capabilities.codeMode),
+    mode: "AGENT_EXEC_DIRECT",
+    codeMode: false,
     promptIndex: 2,
     sessionKey: null
   };
