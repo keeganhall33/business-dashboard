@@ -71,7 +71,7 @@ test("V3 worker gives Qwen absolute observed command wrappers", () => {
   assert.match(source, /For every git command use this exact executable/);
   assert.match(source, /For every pnpm command use/);
   assert.match(source, /actually execute and inspect/);
-  assert.match(source, /perform a real git mutation/);
+  assert.match(source, /perform a real (?:focused )?git mutation/);
 });
 
 test("V3 worker requires machine provider/model/fallback and observed stages", () => {

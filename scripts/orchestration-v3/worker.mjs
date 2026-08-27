@@ -113,6 +113,22 @@ function taskField(body, name) {
 function humanApprovalRequired(body) {
   return String(taskField(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
 }
+
+function taskMutability(body) {
+  const text = String(body ?? "");
+  const explicit = String(taskField(text, "task_mutability") ?? "").trim().toUpperCase();
+
+  if (explicit === "VALIDATION_EVIDENCE_ONLY") return "VALIDATION_EVIDENCE_ONLY";
+  if (explicit === "IMPLEMENTATION_MUTATION_REQUIRED") return "IMPLEMENTATION_MUTATION_REQUIRED";
+
+  const evidenceOnly =
+    /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(text) &&
+    /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(text);
+
+  return evidenceOnly
+    ? "VALIDATION_EVIDENCE_ONLY"
+    : "IMPLEMENTATION_MUTATION_REQUIRED";
+}
 function requiresArchitectureGrounding(snapshot) {
   const body = String(snapshot?.body ?? "");
   const stream = String(taskField(body, "stream") ?? "").trim().toUpperCase();
@@ -205,6 +221,9 @@ const architectureGroundingInstructions = architectureGroundingRequired
 
 const beforeHead = git(["rev-parse", "HEAD"], repoRoot);
 const beforePrs = openPrSnapshot();
+const beforeMap = new Map(
+  beforePrs.map((pr) => [Number(pr.number), pr])
+);
 const harness = createObservedExecutionHarness({ issue, workerId });
 const observed = Object.fromEntries(["git", "pnpm", "npm", "npx"].map((name) => [name, path.join(harness.shimRoot, name)]));
 if (!fs.existsSync(observed.git)) throw new Error("OBSERVED_GIT_WRAPPER_MISSING");
@@ -238,6 +257,8 @@ const capabilities = probeWorkerExecCapabilities(openclaw);
 const preflightCommand = `${q(observed.git)} rev-parse --show-toplevel && ${q(observed.git)} status --short --branch && ${q(observed.git)} remote -v`;
 const testRequired = requiresTestExecution(snapshot.body);
 const diffCheckRequired = requiresDiffCheck(snapshot.body);
+const mutability = taskMutability(snapshot.body);
+const mutationRequired = mutability === "IMPLEMENTATION_MUTATION_REQUIRED";
 // V3 canonical execution is currently AGENT_EXEC_DIRECT.
  // Do not advertise Code Mode merely because the installed CLI supports it.
 const codeModeBridge = false;
@@ -287,7 +308,9 @@ const prompt = [
   testRequired ? "The issue requires tests/build/typecheck. Actually execute the relevant successful command through one of the observed package-manager wrappers before PASS." : null,
   `Before PASS, actually execute and inspect: ${q(observed.git)} diff`,
   diffCheckRequired ? `Before PASS, actually execute: ${q(observed.git)} diff --check` : null,
-  "Before PASS, perform a real git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue.",
+  mutationRequired
+    ? "Before PASS, perform a real focused git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue."
+    : "TASK MUTABILITY: VALIDATION_EVIDENCE_ONLY. Do NOT create, stage, commit, push, or fabricate a repository mutation merely to satisfy PASS. PASS is allowed with zero mutation when all applicable host-observed validation evidence is present.",
   "Use gh inside the same shell bridge when PR inspection or PR creation/update is required. Do not create a duplicate PR when the issue names an existing PR.",
   "Cloud use is forbidden. Do not request or use OpenAI/Anthropic/Gemini/etc.",
   "After the bounded implementation attempt, return ONLY one strict JSON object with this exact uppercase-key shape:",
@@ -433,10 +456,10 @@ function executeLocalRound(roundPrompt, roundNumber) {
   if (diffCheckRequired && !roundExecutionEvidence.gitDiffCheckObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
   }
-  if (!roundExecutionEvidence.gitMutationCommandObserved) {
+  if (mutationRequired && !roundExecutionEvidence.gitMutationCommandObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
   }
-  if (!roundRealMutationObserved) {
+  if (mutationRequired && !roundRealMutationObserved) {
     roundEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
   }
 
@@ -659,10 +682,10 @@ if (finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.clou
   if (diffCheckRequired && !cloudExecutionEvidence.gitDiffCheckObserved) {
     cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
   }
-  if (!cloudExecutionEvidence.gitMutationCommandObserved) {
+  if (mutationRequired && !cloudExecutionEvidence.gitMutationCommandObserved) {
     cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
   }
-  if (!cloudRealMutationObserved) {
+  if (mutationRequired && !cloudRealMutationObserved) {
     cloudEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
   }
 

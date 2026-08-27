@@ -59,3 +59,76 @@ test("source preserves strict local gate and adds host-verification requirements
   assert.match(source, /HOST_VERIFY_BUILD_FAILED/);
   assert.match(source, /HOST_VERIFY_WORKTREE_NOT_CLEAN/);
 });
+
+test("task mutability preserves implementation mutation gates and permits evidence-only zero mutation", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+  const hostSource = fs.readFileSync(
+    "scripts/orchestration-v3/execution-evidence.mjs",
+    "utf8"
+  );
+
+  assert.match(
+    workerSource,
+    /VALIDATION_EVIDENCE_ONLY/
+  );
+  assert.match(
+    workerSource,
+    /IMPLEMENTATION_MUTATION_REQUIRED/
+  );
+  assert.match(
+    workerSource,
+    /if\s*\(\s*mutationRequired\s*&&\s*!roundExecutionEvidence\.gitMutationCommandObserved\s*\)/
+  );
+  assert.match(
+    workerSource,
+    /if\s*\(\s*mutationRequired\s*&&\s*!roundRealMutationObserved\s*\)/
+  );
+
+  assert.match(
+    hostSource,
+    /const mutationRequired = !\(explicitEvidenceOnly \|\| inferredEvidenceOnly\)/
+  );
+  assert.match(
+    hostSource,
+    /if\s*\(\s*mutationRequired\s*&&\s*\(!head \|\| !base \|\| head === base\)\s*\)/
+  );
+  assert.match(
+    hostSource,
+    /if\s*\(\s*mutationRequired\s*&&\s*!matchingPr\s*\)/
+  );
+  assert.match(
+    hostSource,
+    /if\s*\(\s*mutationRequired\s*&&\s*changedFiles\.length === 0\s*\)/
+  );
+  assert.match(
+    hostSource,
+    /\(!mutationRequired \|\| Boolean\(matchingPr\)\)/
+  );
+  assert.match(
+    hostSource,
+    /\(!mutationRequired \|\| changedFiles\.length > 0\)/
+  );
+});
+
+test("explicit task_mutability metadata takes precedence over evidence-only prose", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+
+  assert.match(
+    workerSource,
+    /const explicit = String\(taskField\(text, "task_mutability"\)/
+  );
+  assert.match(
+    workerSource,
+    /if \(explicit === "VALIDATION_EVIDENCE_ONLY"\) return "VALIDATION_EVIDENCE_ONLY"/
+  );
+  assert.match(
+    workerSource,
+    /if \(explicit === "IMPLEMENTATION_MUTATION_REQUIRED"\) return "IMPLEMENTATION_MUTATION_REQUIRED"/
+  );
+});
