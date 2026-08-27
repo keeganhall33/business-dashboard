@@ -98,12 +98,25 @@ function hostVerifyCloudFallback(journalPath) {
   const head = headRes.stdout;
   const base = baseRes.stdout;
   if (!branch || branch === "HEAD") errors.push("HOST_VERIFY_BRANCH_REQUIRED");
-  if (!head || !base || head === base) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
-
+  // Mutation requirements are evaluated after reading task mutability.
   let issueBody = "";
   const issueRes = run(ghExe, ["issue", "view", String(identity.issue), "--repo", ORCHESTRATION_V3.repo, "--json", "body", "--jq", ".body"]);
   if (issueRes.ok) issueBody = issueRes.stdout;
   else errors.push("HOST_VERIFY_ISSUE_READ_FAILED");
+
+  const explicitEvidenceOnly =
+    /(?:^|\n)\s*(?:\*\*)?task_mutability(?:\*\*)?\s*:\s*VALIDATION_EVIDENCE_ONLY\b/im.test(issueBody);
+
+  const inferredEvidenceOnly =
+    /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(issueBody) &&
+    /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(issueBody);
+
+  const mutationRequired = !(explicitEvidenceOnly || inferredEvidenceOnly);
+
+  if (mutationRequired && (!head || !base || head === base)) {
+    errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
+  }
+
 
   let prs = [];
   if (branch && branch !== "HEAD") {
@@ -115,18 +128,24 @@ function hostVerifyCloudFallback(journalPath) {
     }
   }
   const matchingPr = prs.find((pr) => String(pr.headRefOid ?? "") === head && String(pr.headRefName ?? "") === branch);
-  if (!matchingPr) errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
-
+  if (mutationRequired && !matchingPr) {
+    errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
+  }
   const changedRes = head && base && head !== base
     ? run(gitExe, ["diff", "--name-only", `${base}...${head}`])
     : { ok: false, stdout: "" };
   const changedFiles = changedRes.ok ? changedRes.stdout.split("\n").filter(Boolean) : [];
-  if (changedFiles.length === 0) errors.push("HOST_VERIFY_CHANGED_FILES_REQUIRED");
+  if (mutationRequired && changedFiles.length === 0) {
+    errors.push("HOST_VERIFY_CHANGED_FILES_REQUIRED");
+  }
+  const diffCheckRes =
+    mutationRequired && head && base && head !== base
+      ? run(gitExe, ["diff", "--check", `${base}...${head}`])
+      : run(gitExe, ["diff", "--check"]);
 
-  const diffCheckRes = head && base && head !== base
-    ? run(gitExe, ["diff", "--check", `${base}...${head}`])
-    : { ok: false };
-  if (!diffCheckRes.ok) errors.push("HOST_VERIFY_DIFF_CHECK_FAILED");
+  if (!diffCheckRes.ok) {
+    errors.push("HOST_VERIFY_DIFF_CHECK_FAILED");
+  }
 
   const changedTestFiles = classifyChangedTestFiles(changedFiles);
   let focusedTestsOk = true;
@@ -177,8 +196,8 @@ function hostVerifyCloudFallback(journalPath) {
 
   const verified =
     errors.length === 0 &&
-    Boolean(matchingPr) &&
-    changedFiles.length > 0 &&
+    (!mutationRequired || Boolean(matchingPr)) &&
+    (!mutationRequired || changedFiles.length > 0) &&
     diffCheckRes.ok &&
     focusedTestsOk &&
     typecheckOk &&
