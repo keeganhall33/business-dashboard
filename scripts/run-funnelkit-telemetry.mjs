@@ -21,13 +21,11 @@ function parseArgs(argv) {
 }
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
-
 function addDays(dateStr, days) {
   const d = new Date(`${dateStr}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return isoDate(d);
 }
-
 function yesterdayPacific() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -35,7 +33,6 @@ function yesterdayPacific() {
   const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return addDays(`${map.year}-${map.month}-${map.day}`, -1);
 }
-
 function pacificMidnightIso(dateStr) {
   const noonUtc = new Date(`${dateStr}T12:00:00Z`);
   const tzParts = new Intl.DateTimeFormat('en-US', {
@@ -44,12 +41,10 @@ function pacificMidnightIso(dateStr) {
   const offsetPart = tzParts.find(p => p.type === 'timeZoneName')?.value || 'GMT-07:00';
   return `${dateStr}T00:00:00${offsetPart.replace('GMT', '')}`;
 }
-
 function int(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : fallback;
 }
-
 function errorMessage(err) {
   if (err instanceof Error) return err.message;
   if (err && typeof err === 'object') {
@@ -59,7 +54,6 @@ function errorMessage(err) {
   }
   return String(err);
 }
-
 async function rpcOrThrow(db, fn, params = {}) {
   const { data, error } = await db.rpc(fn, params);
   if (error) throw error;
@@ -83,15 +77,6 @@ async function main() {
   const endDate = args.end || yesterdayPacific();
 
   try {
-    await rpcOrThrow(db, 'log_funnelkit_ingest_run_v2', {
-      p_id: runId,
-      p_run_started: started,
-      p_run_finished: null,
-      p_status: 'running',
-      p_steps: 0,
-      p_error: null
-    });
-
     if (!startDate) {
       const latest = await rpcOrThrow(db, 'get_funnelkit_latest_date_v2');
       startDate = latest ? addDays(String(latest), 1) : endDate;
@@ -105,7 +90,7 @@ async function main() {
     const headers = {
       Authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64'),
       Accept: 'application/json',
-      'User-Agent': 'business-dashboard-funnelkit-ingestion/2.1'
+      'User-Agent': 'business-dashboard-funnelkit-ingestion/2.2'
     };
 
     for (let day = startDate; day <= endDate; day = addDays(day, 1)) {
@@ -144,7 +129,6 @@ async function main() {
 
       const activityEntries = rows.reduce((s, r) => s + r.entries, 0);
       const activityCompletions = rows.reduce((s, r) => s + r.completions, 0);
-
       const written = await rpcOrThrow(db, 'ingest_funnelkit_day_v2', {
         p_rows: rows,
         p_coverage_date: day,
@@ -170,7 +154,6 @@ async function main() {
       p_steps: totalSteps,
       p_error: null
     });
-
     console.log(JSON.stringify({ status: 'success', source: SOURCE, runId, startDate, endDate, processedDays, totalSteps }));
   } catch (err) {
     const message = errorMessage(err);
