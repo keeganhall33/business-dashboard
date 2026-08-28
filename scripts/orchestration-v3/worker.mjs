@@ -325,7 +325,14 @@ const prompt = [
   "No prose and no markdown fences."
 ].filter(Boolean).join("\n");
 
-const invocation = buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds: 900 });
+const invocation = buildWorkerExecInvocation({
+  capabilities,
+  prompt,
+  controlWorkspace,
+  configPath,
+  stateDir,
+  timeoutSeconds: 900
+});
 if (!invocation.supported) {
   const value = { ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"), BLOCKERS: [invocation.reason] };
   postResult(value, { provider: null, model: null, fallbackUsed: null, capabilities, invocation });
@@ -341,6 +348,8 @@ function executeLocalRound(roundPrompt, roundNumber) {
     capabilities,
     prompt: roundPrompt,
     controlWorkspace,
+    configPath,
+    stateDir,
     timeoutSeconds: 900
   });
 
