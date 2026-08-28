@@ -298,7 +298,9 @@ const prompt = [
   String(snapshot.body ?? "").slice(0, 12000),
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
-  mutationRequired\n    ? "This is a real implementation run. Perform the focused repository work required by the task."\n    : "This is a real validation/evidence run. Execute and record the required verification without fabricating repository mutation.",
+  mutationRequired
+    ? "This is a real implementation run. Perform the focused repository work required by the task."
+    : "This is a real validation/evidence run. Execute and record the required verification without fabricating repository mutation.",
   ...architectureGroundingInstructions,
   shellExecutionInstruction,
   firstToolInstruction,
