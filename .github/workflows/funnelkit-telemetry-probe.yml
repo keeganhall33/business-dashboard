@@ -1,0 +1,109 @@
+name: FunnelKit Telemetry Probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/funnelkit-probe-trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funnelkit-telemetry-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: 1Password/install-cli-action@v1
+      - name: Probe FunnelKit read-only analytics endpoints
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" || { echo "PROBE_ERROR=OP_SERVICE_ACCOUNT_TOKEN_MISSING"; exit 1; }
+          op item get "FunnelKit API Credentials" --vault OpenClaw --format=json > /tmp/funnelkit-item.json
+          node <<'NODE'
+          const fs = require('fs');
+          const item = JSON.parse(fs.readFileSync('/tmp/funnelkit-item.json','utf8'));
+          const fields = Array.isArray(item.fields) ? item.fields : [];
+          const norm = s => String(s || '').trim().toLowerCase();
+          const candidates = fields.map(f => ({
+            label: norm(f.label),
+            id: norm(f.id),
+            value: typeof f.value === 'string' ? f.value.trim() : ''
+          })).filter(f => f.value);
+          const pick = (labels, ids=[]) => {
+            for (const wanted of labels) {
+              const hit = candidates.find(f => f.label === wanted);
+              if (hit) return hit.value;
+            }
+            for (const wanted of ids) {
+              const hit = candidates.find(f => f.id === wanted);
+              if (hit) return hit.value;
+            }
+            return '';
+          };
+          let base = pick(['url','website','base url','base_url','site url','site_url'], ['url']);
+          const username = pick(['username','user','login'], ['username']);
+          const password = pick(['credential','password','app password','application password','api password'], ['password']);
+          if (!base || !username || !password) {
+            console.log(`FIELD_DISCOVERY url=${Boolean(base)} username=${Boolean(username)} password=${Boolean(password)} field_count=${candidates.length}`);
+            process.exit(2);
+          }
+          if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
+          base = base.replace(/\/$/, '');
+          let site = base;
+          const wpIdx = site.indexOf('/wp-json/');
+          if (wpIdx >= 0) site = site.slice(0, wpIdx);
+          const auth = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+          const headers = { Authorization: auth, Accept: 'application/json', 'User-Agent': 'business-dashboard-funnelkit-probe/1.0' };
+          const tests = [
+            ['stored_base', base],
+            ['site_wpjson', `${site}/wp-json/`],
+            ['fk_app_root', `${site}/wp-json/funnelkit-app/`],
+            ['legacy_steps', `${site}/funnel-analytics/1/steps`],
+            ['fk_app_steps', `${site}/wp-json/funnelkit-app/funnel-analytics/1/steps`],
+            ['fk_app_steps_date', `${site}/wp-json/funnelkit-app/funnel-analytics/1/steps?start_date=2026-08-27&end_date=2026-08-27`]
+          ];
+          const safeShape = async res => {
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            const text = await res.text();
+            let shape = 'non_json';
+            if (ct.includes('json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+              try {
+                const data = JSON.parse(text);
+                if (Array.isArray(data)) shape = `array(len=${data.length})`;
+                else if (data && typeof data === 'object') shape = `object(keys=${Object.keys(data).slice(0,12).sort().join(',')})`;
+                else shape = typeof data;
+              } catch { shape = 'invalid_json'; }
+            }
+            return { bytes: Buffer.byteLength(text), shape };
+          };
+          (async () => {
+            console.log('FUNNELKIT_CREDENTIALS=present');
+            console.log(`FUNNELKIT_SITE_HOST=${new URL(site).host}`);
+            for (const [name,url] of tests) {
+              try {
+                const res = await fetch(url, { method:'GET', headers, redirect:'manual' });
+                const {bytes,shape} = await safeShape(res);
+                const server = (res.headers.get('server') || '').replace(/[^a-zA-Z0-9._ -]/g,'').slice(0,60);
+                const location = res.headers.get('location');
+                let locationHost = '';
+                if (location) { try { locationHost = new URL(location, url).host; } catch {} }
+                console.log(`PROBE name=${name} status=${res.status} bytes=${bytes} shape=${shape} server=${JSON.stringify(server)} redirect_host=${JSON.stringify(locationHost)}`);
+              } catch (e) {
+                console.log(`PROBE name=${name} error=${String(e?.name || 'Error').slice(0,40)}`);
+              }
+            }
+          })().catch(err => { console.error('PROBE_FATAL=' + String(err?.name || 'Error')); process.exit(1); });
+          NODE
+          rm -f /tmp/funnelkit-item.json
