@@ -67,8 +67,10 @@ export function writeExecOnlyToolPolicy(configPath) {
       search: {
         ...(config.memory?.search ?? {}),
         enabled: false,
+        provider: "none",
         rememberAcrossConversations: false,
         fallback: "none",
+        sources: ["memory"],
         experimental: {
           ...(config.memory?.search?.experimental ?? {}),
           sessionMemory: false
@@ -81,6 +83,7 @@ export function writeExecOnlyToolPolicy(configPath) {
         ...(config.agents?.defaults ?? {}),
         compaction: {
           ...(config.agents?.defaults?.compaction ?? {}),
+          postIndexSync: "off",
           memoryFlush: {
             ...(config.agents?.defaults?.compaction?.memoryFlush ?? {}),
             enabled: false
