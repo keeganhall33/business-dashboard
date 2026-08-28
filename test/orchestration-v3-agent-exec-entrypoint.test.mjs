@@ -37,7 +37,7 @@ test("worker exec helper uses direct agent exec and preserves isolated control w
   assert.ok(invocation.args.includes("/tmp/openclaw.json"));
   assert.ok(invocation.args.includes("--state-dir"));
   assert.ok(invocation.args.includes("/tmp/openclaw-state"));
-  assert.ok(invocation.args.includes("--auth-env-only"));
+  assert.equal(invocation.args.includes("--auth-env-only"), false);
   assert.ok(invocation.args.includes("--local-model-lean"));
   assert.ok(invocation.args.includes("--cwd"));
   assert.ok(invocation.args.includes("/tmp/control"));

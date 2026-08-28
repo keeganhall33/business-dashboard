@@ -109,7 +109,9 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
   // Do not use --isolated here. In current OpenClaw, --isolated intentionally
   // ignores the supplied/ambient config and falls back to exec defaults. V3
   // instead pins a generated stateless config plus an ephemeral state dir.
-  if (capabilities.authEnvOnly) args.push("--auth-env-only");
+  // OpenClaw 2026.8.1 rejects --config combined with --auth-env-only.
+  // V3 already strips cloud credentials from the child environment and pins
+  // the local model explicitly, so do not add the incompatible CLI flag here.
   args.push("--model", MODEL);
   // V3 intentionally uses the direct agent-exec tool path.
   // Code Mode currently exposes repository file operations through the

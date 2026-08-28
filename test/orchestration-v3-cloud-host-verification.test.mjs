@@ -172,8 +172,11 @@ test("isolated V3 workers disable persistent memory side effects", () => {
   );
 
   assert.match(source, /enabled:\s*false/);
+  assert.match(source, /provider:\s*"none"/);
   assert.match(source, /rememberAcrossConversations:\s*false/);
   assert.match(source, /fallback:\s*"none"/);
+  assert.match(source, /sources:\s*\["memory"\]/);
   assert.match(source, /sessionMemory:\s*false/);
+  assert.match(source, /postIndexSync:\s*"off"/);
   assert.match(source, /memoryFlush:[\s\S]*enabled:\s*false/);
 });
