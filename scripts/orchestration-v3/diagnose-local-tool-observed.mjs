@@ -61,6 +61,32 @@ export function writeExecOnlyToolPolicy(configPath) {
     tools: {
       ...existingTools,
       deny: [...new Set([...existingDeny, "group:fs"])]
+    },
+    memory: {
+      ...(config.memory ?? {}),
+      search: {
+        ...(config.memory?.search ?? {}),
+        enabled: false,
+        rememberAcrossConversations: false,
+        fallback: "none",
+        experimental: {
+          ...(config.memory?.search?.experimental ?? {}),
+          sessionMemory: false
+        }
+      }
+    },
+    agents: {
+      ...(config.agents ?? {}),
+      defaults: {
+        ...(config.agents?.defaults ?? {}),
+        compaction: {
+          ...(config.agents?.defaults?.compaction ?? {}),
+          memoryFlush: {
+            ...(config.agents?.defaults?.compaction?.memoryFlush ?? {}),
+            enabled: false
+          }
+        }
+      }
     }
   };
 

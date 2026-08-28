@@ -107,11 +107,19 @@ function hostVerifyCloudFallback(journalPath) {
   const explicitEvidenceOnly =
     /(?:^|\n)\s*(?:\*\*)?task_mutability(?:\*\*)?\s*:\s*VALIDATION_EVIDENCE_ONLY\b/im.test(issueBody);
 
+  const explicitMutationRequired =
+    /(?:^|\n)\s*(?:\*\*)?task_mutability(?:\*\*)?\s*:\s*IMPLEMENTATION_MUTATION_REQUIRED\b/im.test(issueBody);
+
+  const qaEvaluationStream =
+    /(?:^|\n)\s*(?:\*\*)?stream(?:\*\*)?\s*:\s*QA_EVALUATION\b/im.test(issueBody);
+
   const inferredEvidenceOnly =
     /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(issueBody) &&
     /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(issueBody);
 
-  const mutationRequired = !(explicitEvidenceOnly || inferredEvidenceOnly);
+  const mutationRequired =
+    explicitMutationRequired ||
+    !(explicitEvidenceOnly || qaEvaluationStream || inferredEvidenceOnly);
 
   if (mutationRequired && (!head || !base || head === base)) {
     errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
