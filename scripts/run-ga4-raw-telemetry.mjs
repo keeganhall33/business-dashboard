@@ -35,18 +35,13 @@ function mapRow(row) {
   const d = row.dimensionValues ?? [];
   const m = row.metricValues ?? [];
   const eventDate = parseGaDate(d[0]?.value ?? '');
-  const pagePath = d[1]?.value || '(not set)';
-  const pageTitle = d[2]?.value || null;
-  const deviceCategory = d[3]?.value || '(not set)';
-  const trafficSource = d[4]?.value || '(not set)';
-  const eventName = d[5]?.value || '(not set)';
   return {
     event_date: eventDate,
-    page_path: pagePath,
-    page_title: pageTitle,
-    device_category: deviceCategory,
-    traffic_source: trafficSource,
-    event_name: eventName,
+    page_path: d[1]?.value || '(not set)',
+    page_title: d[2]?.value || null,
+    device_category: d[3]?.value || '(not set)',
+    traffic_source: d[4]?.value || '(not set)',
+    event_name: d[5]?.value || '(not set)',
     event_count: Math.trunc(num(m[0]?.value)),
     sessions: Math.trunc(num(m[1]?.value)),
     engaged_sessions: Math.trunc(num(m[2]?.value)),
@@ -84,40 +79,29 @@ async function fetchRows() {
   return (report.rows ?? []).map(mapRow).filter((row) => row.event_date);
 }
 
-async function upsertRows(rows) {
-  const db = supabase.schema('exec_dashboard');
-  const batchSize = 500;
+async function ingestRows(rows) {
+  const batchSize = 1000;
+  let ingested = 0;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
-    const { error } = await db.from('raw_ga4_events').upsert(batch, {
-      onConflict: 'event_date,page_path,device_category,traffic_source,event_name'
+    const { data, error } = await supabase.rpc('ingest_ga4_raw_events_v2', {
+      p_rows: batch,
+      p_run_started: runStarted,
+      p_start_date: startDate,
+      p_end_date: endDate
     });
-    if (error) throw new Error(`[ga4-ingest] Supabase upsert failed: ${error.message}`);
+    if (error) throw new Error(`[ga4-ingest] Supabase RPC failed: ${error.message}`);
+    ingested += Number(data ?? batch.length);
   }
-}
-
-async function recordRun(status, rowCount, errorText = null) {
-  const { error } = await supabase.schema('exec_dashboard').from('ingest_runs').insert({
-    source: 'ga4_data_api_v2',
-    run_started: runStarted,
-    run_finished: new Date().toISOString(),
-    status,
-    woo_orders: 0,
-    ga4_rows: rowCount,
-    funnelkit_steps: 0,
-    error: errorText
-  });
-  if (error) console.warn('[ga4-ingest] Could not record ingest run:', error.message);
+  return ingested;
 }
 
 try {
   const rows = await fetchRows();
-  await upsertRows(rows);
-  await recordRun('success', rows.length);
-  console.log(`[ga4-ingest] success rows=${rows.length} range=${startDate}..${endDate}`);
+  const ingested = await ingestRows(rows);
+  console.log(`[ga4-ingest] success fetched=${rows.length} ingested=${ingested} range=${startDate}..${endDate}`);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  await recordRun('error', 0, message);
   console.error('[ga4-ingest] failed:', message);
   process.exit(1);
 }
