@@ -28,26 +28,28 @@ jobs:
           op item get "FunnelKit API Credentials" --vault OpenClaw --format=json > /tmp/fk.json
           node <<'NODE'
           const fs=require('fs');
-          const item=JSON.parse(fs.readFileSync('/tmp/fk.json','utf8'));
-          const f=(item.fields||[]).map(x=>({l:String(x.label||'').trim().toLowerCase(),i:String(x.id||'').trim().toLowerCase(),v:typeof x.value==='string'?x.value.trim():''})).filter(x=>x.v);
-          const find=(a,b=[])=>f.find(x=>a.includes(x.l)||b.includes(x.i));
-          const u=find(['url','website','base url','site url'],['url']); const user=find(['username','user','login'],['username']); const p=find(['password','application password','app password','api password'],['password','credential']);
-          if(!u||!user||!p) throw new Error('credential_shape');
-          let base=u.v;if(!/^https?:\/\//i.test(base))base='https://'+base;base=base.replace(/\/$/,'');const wi=base.indexOf('/wp-json/');const site=wi>=0?base.slice(0,wi):base;
-          const headers={Authorization:'Basic '+Buffer.from(user.v+':'+p.v).toString('base64'),Accept:'application/json','User-Agent':'business-dashboard-funnelkit-shape/1.0'};
-          const url=new URL(site+'/wp-json/funnelkit-app/funnel-analytics/1/steps');url.searchParams.set('after','2026-08-27T00:00:00Z');url.searchParams.set('before','2026-08-28T00:00:00Z');
-          const res=await fetch(url,{headers}); console.log(`STATUS=${res.status}`); if(!res.ok) process.exit(2);
-          const payload=await res.json();
-          const summarize=(value,depth=0)=>{
-            if(depth>4)return typeof value;
-            if(Array.isArray(value)) return {type:'array',length:value.length,sample:value.length?summarize(value[0],depth+1):null};
-            if(value&&typeof value==='object'){
-              const out={type:'object',keys:Object.keys(value).sort()};
-              for(const k of Object.keys(value).slice(0,20)) out[k]=summarize(value[k],depth+1);
-              return out;
-            }
-            return {type:typeof value,value:(typeof value==='string'&&value.length<100)?value:(typeof value==='number'||typeof value==='boolean'?value:null)};
-          };
-          console.log('PAYLOAD_SHAPE='+JSON.stringify(summarize(payload)));
+          (async()=>{
+            const item=JSON.parse(fs.readFileSync('/tmp/fk.json','utf8'));
+            const f=(item.fields||[]).map(x=>({l:String(x.label||'').trim().toLowerCase(),i:String(x.id||'').trim().toLowerCase(),v:typeof x.value==='string'?x.value.trim():''})).filter(x=>x.v);
+            const find=(a,b=[])=>f.find(x=>a.includes(x.l)||b.includes(x.i));
+            const u=find(['url','website','base url','site url'],['url']); const user=find(['username','user','login'],['username']); const p=find(['password','application password','app password','api password'],['password','credential']);
+            if(!u||!user||!p) throw new Error('credential_shape');
+            let base=u.v;if(!/^https?:\/\//i.test(base))base='https://'+base;base=base.replace(/\/$/,'');const wi=base.indexOf('/wp-json/');const site=wi>=0?base.slice(0,wi):base;
+            const headers={Authorization:'Basic '+Buffer.from(user.v+':'+p.v).toString('base64'),Accept:'application/json','User-Agent':'business-dashboard-funnelkit-shape/1.1'};
+            const url=new URL(site+'/wp-json/funnelkit-app/funnel-analytics/1/steps');url.searchParams.set('after','2026-08-27T00:00:00Z');url.searchParams.set('before','2026-08-28T00:00:00Z');
+            const res=await fetch(url,{headers}); console.log(`STATUS=${res.status}`); if(!res.ok) process.exit(2);
+            const payload=await res.json();
+            const summarize=(value,depth=0)=>{
+              if(depth>4)return typeof value;
+              if(Array.isArray(value)) return {type:'array',length:value.length,sample:value.length?summarize(value[0],depth+1):null};
+              if(value&&typeof value==='object'){
+                const out={type:'object',keys:Object.keys(value).sort()};
+                for(const k of Object.keys(value).slice(0,20)) out[k]=summarize(value[k],depth+1);
+                return out;
+              }
+              return {type:typeof value,value:(typeof value==='string'&&value.length<100)?value:(typeof value==='number'||typeof value==='boolean'?value:null)};
+            };
+            console.log('PAYLOAD_SHAPE='+JSON.stringify(summarize(payload)));
+          })().catch(e=>{console.error('SHAPE_FATAL='+String(e?.name||'Error'));process.exit(1)});
           NODE
           rm -f /tmp/fk.json
