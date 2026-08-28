@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +18,7 @@ import {
   codeModeShellInstruction
 } from "./worker-exec-invocation.mjs";
 import { LEASE_TTL_CONTRACT, touchLeaseHeartbeat } from "./lease-reconciliation.mjs";
+import { runBufferedChild } from "./buffered-child-process.mjs";
 import {
   MAX_LOCAL_ROUNDS,
   buildContinuationPrompt,
@@ -343,7 +344,7 @@ if (!invocation.supported) {
 
 console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead, capabilities, invocationMode: invocation.mode }));
 
-function executeLocalRound(roundPrompt, roundNumber) {
+async function executeLocalRound(roundPrompt, roundNumber) {
   const roundInvocation = buildWorkerExecInvocation({
     capabilities,
     prompt: roundPrompt,
@@ -376,13 +377,11 @@ function executeLocalRound(roundPrompt, roundNumber) {
     invocationMode: roundInvocation.mode
   }));
 
-  const roundRun = spawnSync(openclaw, roundInvocation.args, {
+  const roundRun = await runBufferedChild(openclaw, roundInvocation.args, {
     cwd: controlWorkspace,
     env,
-    encoding: "utf8",
     timeout: 950_000,
-    maxBuffer: 24 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"]
+    maxBuffer: 24 * 1024 * 1024
   });
 
   const postModelIntegrity = recoverIdleWorker(workerId);
@@ -528,7 +527,7 @@ function executeLocalRound(roundPrompt, roundNumber) {
 }
 
 let localRound = 1;
-let localResult = executeLocalRound(prompt, localRound);
+let localResult = await executeLocalRound(prompt, localRound);
 
 let run = localResult.run;
 let finalValue = localResult.finalValue;
@@ -564,7 +563,7 @@ while (
     blockers: finalValue.BLOCKERS ?? []
   });
 
-  localResult = executeLocalRound(continuationPrompt, nextRound);
+  localResult = await executeLocalRound(continuationPrompt, nextRound);
   localRound = nextRound;
 
   run = localResult.run;
@@ -620,7 +619,7 @@ if (finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.clou
     cloudAgent: "main"
   }));
 
-  const cloudRun = spawnSync(
+  const cloudRun = await runBufferedChild(
     openclaw,
     [
       "agent",
@@ -632,10 +631,8 @@ if (finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.clou
     {
       cwd: controlWorkspace,
       env: cloudEnv,
-      encoding: "utf8",
       timeout: 950_000,
-      maxBuffer: 24 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"]
+      maxBuffer: 24 * 1024 * 1024
     }
   );
 

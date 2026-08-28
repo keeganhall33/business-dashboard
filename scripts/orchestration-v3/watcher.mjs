@@ -4,6 +4,10 @@ import { execFileSync, spawn } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
 import { inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 import { integrateValidatedPrQueue } from "./integration-queue.mjs";
+import {
+  buildFollowupBody,
+  planFollowupMaterialization
+} from "./followup-materializer.mjs";
 import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";
 import { alive, readLease, reconcileLeaseState, writeLease } from "./lease-reconciliation.mjs";
 
@@ -187,12 +191,49 @@ function activeLeaseIssueNumbers() {
   }
   return active;
 }
+function labelSet(snapshot) {
+  return new Set(
+    (snapshot?.labels ?? [])
+      .map((label) => typeof label === "string" ? label : label?.name)
+      .filter(Boolean)
+  );
+}
+
+function humanApprovalRequiredForBody(body) {
+  return String(field(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
+}
+
 function reconcileRunningClaims() {
   const activeIssues = activeLeaseIssueNumbers();
   const candidates = runningIssues();
   for (const candidate of candidates) {
     if (activeIssues.has(Number(candidate.number))) continue;
-    transitionLabels(candidate.number, { remove: [ORCHESTRATION_V3.queue.running], add: [ORCHESTRATION_V3.queue.ready] });
+
+    const fresh = issue(Number(candidate.number));
+    const labels = labelSet(fresh);
+    const gated =
+      labels.has(ORCHESTRATION_V3.queue.blocked) ||
+      labels.has(ORCHESTRATION_V3.queue.awaitingReview) ||
+      labels.has(ORCHESTRATION_V3.queue.humanApproval) ||
+      humanApprovalRequiredForBody(fresh.body);
+
+    if (gated) {
+      transitionLabels(candidate.number, {
+        remove: [ORCHESTRATION_V3.queue.running],
+        add: []
+      });
+      console.log(JSON.stringify({
+        event: "STALE_RUNNING_DEQUEUED_GATED",
+        issueNumber: Number(candidate.number),
+        reason: "NO_AUTHORITATIVE_LIVE_LEASE_AND_CURRENTLY_GATED"
+      }));
+      continue;
+    }
+
+    transitionLabels(candidate.number, {
+      remove: [ORCHESTRATION_V3.queue.running],
+      add: [ORCHESTRATION_V3.queue.ready]
+    });
     console.log(JSON.stringify({
       event: "STALE_RUNNING_REQUEUED",
       issueNumber: Number(candidate.number),
@@ -200,8 +241,114 @@ function reconcileRunningClaims() {
     }));
   }
 }
+
+function revalidateClaim(issueNumber) {
+  const fresh = issue(Number(issueNumber));
+  const labels = labelSet(fresh);
+  const reasons = [];
+
+  if (!labels.has(ORCHESTRATION_V3.queue.base)) reasons.push("MISSING_BASE_LABEL");
+  if (!labels.has(ORCHESTRATION_V3.queue.ready)) reasons.push("READY_LABEL_MISSING");
+  if (labels.has(ORCHESTRATION_V3.queue.running)) reasons.push("ALREADY_RUNNING");
+  if (labels.has(ORCHESTRATION_V3.queue.blocked)) reasons.push("BLOCKED");
+  if (labels.has(ORCHESTRATION_V3.queue.awaitingReview)) reasons.push("AWAITING_REVIEW");
+  if (labels.has(ORCHESTRATION_V3.queue.humanApproval)) reasons.push("AWAITING_HUMAN_APPROVAL");
+  if (humanApprovalRequiredForBody(fresh.body)) reasons.push("HUMAN_APPROVAL_REQUIRED");
+
+  return {
+    claimable: reasons.length === 0,
+    reasons,
+    snapshot: fresh
+  };
+}
+
 function claim(issueNumber) {
-  transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.running] });
+  const validation = revalidateClaim(issueNumber);
+  if (!validation.claimable) {
+    console.log(JSON.stringify({
+      event: "CLAIM_REVALIDATION_SKIPPED",
+      issueNumber: Number(issueNumber),
+      reasons: validation.reasons
+    }));
+    return false;
+  }
+
+  transitionLabels(issueNumber, {
+    remove: [ORCHESTRATION_V3.queue.ready],
+    add: [ORCHESTRATION_V3.queue.running]
+  });
+  return true;
+}
+
+function openOrchestrationIssues() {
+  return issuesWithLabels(ORCHESTRATION_V3.queue.base);
+}
+
+function createFollowupIssue(work) {
+  const body = buildFollowupBody(work);
+  const args = [
+    "api", "--method", "POST",
+    `repos/${ORCHESTRATION_V3.repo}/issues`,
+    "-f", `title=[P0 ${String(work.stream).toUpperCase() === "QA_EVALUATION" ? "QA" : "Integration"}] ${work.title}`,
+    "-f", `body=${body}`,
+    "-f", `labels[]=${ORCHESTRATION_V3.queue.base}`,
+    "-f", `labels[]=${ORCHESTRATION_V3.queue.ready}`
+  ];
+  return JSON.parse(gh(args));
+}
+
+function materializeIntegrationFollowups(followupWork = []) {
+  for (const work of followupWork) {
+    const currentIssues = openOrchestrationIssues();
+    const plan = planFollowupMaterialization(work, currentIssues);
+
+    if (plan.action === "SKIP") {
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_SKIPPED",
+        identity: plan.identity,
+        reason: plan.reason,
+        ...work
+      }));
+      continue;
+    }
+
+    if (plan.action === "CREATE_READY") {
+      const created = createFollowupIssue(work);
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_ENQUEUED",
+        identity: plan.identity,
+        issueNumber: Number(created.number),
+        reason: plan.reason,
+        ...work
+      }));
+      continue;
+    }
+
+    if (plan.action === "REUSE_AND_READY") {
+      transitionLabels(Number(plan.issue.number), {
+        remove: [],
+        add: [ORCHESTRATION_V3.queue.ready]
+      });
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_REUSED",
+        identity: plan.identity,
+        issueNumber: Number(plan.issue.number),
+        reason: plan.reason,
+        transitionedToReady: true,
+        ...work
+      }));
+      continue;
+    }
+
+    console.log(JSON.stringify({
+      event: "INTEGRATION_FOLLOWUP_REUSED",
+      identity: plan.identity,
+      issueNumber: Number(plan.issue?.number),
+      reason: plan.reason,
+      transitionedToReady: false,
+      ...work
+    }));
+  }
 }
 function quarantineUnmappedIssue(issueNumber, stream) {
   transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.blocked] });
@@ -239,6 +386,7 @@ async function poll(reason = "UNKNOWN") {
     for (const work of integration.followupWork ?? []) {
       console.log(JSON.stringify({ event: "INTEGRATION_FOLLOWUP_WORK_READY", ...work }));
     }
+    materializeIntegrationFollowups(integration.followupWork ?? []);
   } catch (err) {
     if (isTransientGhError(err)) console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
     else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
@@ -279,8 +427,8 @@ async function poll(reason = "UNKNOWN") {
       }
       const workerId = workerCandidates.find((candidateWorkerId) => !claimedWorkersThisPass.has(candidateWorkerId) && !reconcileLease(candidateWorkerId));
       if (!workerId) continue;
+      if (!claim(snapshot.number)) continue;
       claimedWorkersThisPass.add(workerId);
-      claim(snapshot.number);
       try {
         launch(workerId, snapshot.number);
       } catch (err) {

@@ -148,7 +148,10 @@ export function reconciliationWorkForCandidate(candidate) {
       reason: "MERGE_CONFLICT_RECONCILIATION_REQUIRED",
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
-      title: `Reconcile merge conflict for PR #${candidate.prNumber}`
+      title: `Reconcile merge conflict for PR #${candidate.prNumber}`,
+      sourceReasons: [...candidate.reasons],
+      sourceCreatedAt: candidate.createdAt,
+      evaluatedAt: candidate.evaluatedAt
     };
   }
   if (candidate.reasons.includes("MISSING_VALIDATION_EVIDENCE")) {
@@ -158,7 +161,10 @@ export function reconciliationWorkForCandidate(candidate) {
       reason: "MISSING_VALIDATION_EVIDENCE",
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
-      title: `Collect validation evidence for PR #${candidate.prNumber}`
+      title: `Collect validation evidence for PR #${candidate.prNumber}`,
+      sourceReasons: [...candidate.reasons],
+      sourceCreatedAt: candidate.createdAt,
+      evaluatedAt: candidate.evaluatedAt
     };
   }
   return null;
@@ -169,7 +175,7 @@ export function integrationFollowupWork(candidates) {
   for (const candidate of candidates) {
     const work = reconciliationWorkForCandidate(candidate);
     if (!work) continue;
-    workByKey.set(`${work.reason}:${work.prNumber}`, work);
+    workByKey.set(`${work.prNumber}:${work.reason}:${work.stream}`, work);
   }
   return [...workByKey.values()].sort((a, b) => {
     if (a.issueNumber !== b.issueNumber) return a.issueNumber - b.issueNumber;
