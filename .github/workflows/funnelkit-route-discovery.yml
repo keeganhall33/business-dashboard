@@ -38,31 +38,25 @@ jobs:
           if(!urlE||!userE||!passE) throw new Error('credential_shape_unrecognized');
           let base=urlE.value; if(!/^https?:\/\//i.test(base)) base='https://'+base; base=base.replace(/\/$/,'');
           const wi=base.indexOf('/wp-json/'); const site=wi>=0?base.slice(0,wi):base;
-          const headers={Authorization:'Basic '+Buffer.from(userE.value+':'+passE.value).toString('base64'),Accept:'application/json','User-Agent':'business-dashboard-funnelkit-route-discovery/1.0'};
-          const safeError=async(res)=>{try{const d=await res.clone().json();return `${String(d.code||'').slice(0,60)}:${String(d.message||'').replace(/\s+/g,' ').slice(0,120)}`}catch{return ''}};
+          const headers={Authorization:'Basic '+Buffer.from(userE.value+':'+passE.value).toString('base64'),Accept:'application/json','User-Agent':'business-dashboard-funnelkit-route-discovery/1.1'};
+          const describe=async(res)=>{let code='',msg='',shape='';try{const d=await res.clone().json();code=String(d?.code||'').slice(0,80);msg=String(d?.message||'').replace(/\s+/g,' ').slice(0,120);shape=Array.isArray(d)?`array:${d.length}`:(d&&typeof d==='object'?`object:${Object.keys(d).slice(0,12).sort().join(',')}`:typeof d)}catch{shape='non_json'}return {code,msg,shape}};
           (async()=>{
             const res=await fetch(site+'/wp-json/funnelkit-app/',{headers});
-            console.log(`ROOT_STATUS=${res.status}`);
             const root=await res.json();
             const routes=root&&root.routes&&typeof root.routes==='object'?root.routes:{};
-            const matches=Object.entries(routes).filter(([path])=>/funnel|analytics|step|order|conversion/i.test(path));
-            console.log(`MATCHING_ROUTE_COUNT=${matches.length}`);
-            for(const [path,def] of matches.slice(0,100)){
+            const analytics=Object.entries(routes).filter(([path])=>/analytic|stat|report|conversion|revenue/i.test(path));
+            console.log(`ANALYTICS_ROUTE_COUNT=${analytics.length}`);
+            for(const [path,def] of analytics){
               const endpoints=Array.isArray(def.endpoints)?def.endpoints:[];
-              const summary=endpoints.map(ep=>{
-                const methods=Array.isArray(ep.methods)?ep.methods.join(','):String(ep.methods||'');
-                const args=ep.args&&typeof ep.args==='object'?Object.keys(ep.args).sort().slice(0,40).join(','):'';
-                return `{methods=${methods};args=${args}}`;
-              }).join('|');
-              console.log(`ROUTE path=${path} ${summary}`);
+              const summary=endpoints.map(ep=>{const methods=Array.isArray(ep.methods)?ep.methods.join(','):String(ep.methods||'');const args=ep.args&&typeof ep.args==='object'?Object.keys(ep.args).sort().join(','):'';return `{methods=${methods};args=${args}}`}).join('|');
+              console.log(`ANALYTICS_ROUTE path=${path} ${summary}`);
             }
-            const candidates=matches.map(([p])=>p).filter(p=>/analytic|step/i.test(p)).slice(0,20);
-            for(const path of candidates){
-              if(/[\(\?<]/.test(path)) continue;
-              const u=site+'/wp-json'+path;
-              const r=await fetch(u,{headers,redirect:'manual'});
-              console.log(`AUTH_CHECK path=${path} status=${r.status} error=${JSON.stringify(await safeError(r))}`);
-            }
+            const tests=[
+              ['/funnelkit-app/funnels/1','GET'],
+              ['/funnelkit-app/canvas/1/nodes','GET'],
+              ['/funnelkit-app/funnels','GET']
+            ];
+            for(const [path,method] of tests){const r=await fetch(site+'/wp-json'+path,{headers,method,redirect:'manual'});const d=await describe(r);console.log(`AUTH_TEST path=${path} status=${r.status} code=${JSON.stringify(d.code)} msg=${JSON.stringify(d.msg)} shape=${d.shape}`)}
           })().catch(e=>{console.error('DISCOVERY_FATAL='+String(e.name||'Error'));process.exit(1)});
           NODE
           rm -f /tmp/fk.json
