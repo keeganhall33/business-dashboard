@@ -1,0 +1,43 @@
+name: Website Telemetry Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Off the top of the hour to reduce GitHub Actions schedule-delay/drop risk.
+    - cron: "17 10 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-telemetry-refresh
+  cancel-in-progress: false
+
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Run website evidence refresh
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/website.op.env .env.website
+          op run --env-file .env.website -- npm run website:run
+      - name: Upload website evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-latest-json
+          path: |
+            dashboard/data/website/latest.json
+            dashboard/logs/website_agent.log
+          retention-days: 7
