@@ -20,9 +20,7 @@ function parseArgs(argv) {
   return out;
 }
 
-function isoDate(d) {
-  return d.toISOString().slice(0, 10);
-}
+function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 function addDays(dateStr, days) {
   const d = new Date(`${dateStr}T12:00:00Z`);
@@ -39,19 +37,33 @@ function yesterdayPacific() {
 }
 
 function pacificMidnightIso(dateStr) {
-  // Determine the UTC offset at noon on this date, then express local midnight with that offset.
   const noonUtc = new Date(`${dateStr}T12:00:00Z`);
   const tzParts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', timeZoneName: 'longOffset', hour: '2-digit'
   }).formatToParts(noonUtc);
   const offsetPart = tzParts.find(p => p.type === 'timeZoneName')?.value || 'GMT-07:00';
-  const offset = offsetPart.replace('GMT', '');
-  return `${dateStr}T00:00:00${offset}`;
+  return `${dateStr}T00:00:00${offsetPart.replace('GMT', '')}`;
 }
 
 function int(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+function errorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object') {
+    const bits = [err.message, err.details, err.hint, err.code].filter(Boolean).map(String);
+    if (bits.length) return bits.join(' | ');
+    try { return JSON.stringify(err); } catch {}
+  }
+  return String(err);
+}
+
+async function rpcOrThrow(db, fn, params = {}) {
+  const { data, error } = await db.rpc(fn, params);
+  if (error) throw error;
+  return data;
 }
 
 async function main() {
@@ -61,38 +73,28 @@ async function main() {
   const password = envOrThrow('FUNNELKIT_PASSWORD');
   const supabaseUrl = envOrThrow('NEXT_PUBLIC_SUPABASE_URL');
   const serviceKey = envOrThrow('SUPABASE_SERVICE_ROLE_KEY');
-
   const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const exec = db.schema('exec_dashboard');
+
   const runId = crypto.randomUUID();
   const started = new Date().toISOString();
-
-  await exec.from('ingest_runs').insert({
-    id: runId,
-    source: SOURCE,
-    run_started: started,
-    status: 'running',
-    woo_orders: 0,
-    ga4_rows: 0,
-    funnelkit_steps: 0,
-    error: null
-  });
-
   let totalSteps = 0;
   let processedDays = 0;
   let startDate = args.start;
   const endDate = args.end || yesterdayPacific();
 
   try {
+    await rpcOrThrow(db, 'log_funnelkit_ingest_run_v2', {
+      p_id: runId,
+      p_run_started: started,
+      p_run_finished: null,
+      p_status: 'running',
+      p_steps: 0,
+      p_error: null
+    });
+
     if (!startDate) {
-      const { data, error } = await exec
-        .from('raw_funnelkit_steps')
-        .select('collected_at')
-        .order('collected_at', { ascending: false })
-        .limit(1);
-      if (error) throw error;
-      const latest = data?.[0]?.collected_at || null;
-      startDate = latest ? addDays(latest, 1) : endDate;
+      const latest = await rpcOrThrow(db, 'get_funnelkit_latest_date_v2');
+      startDate = latest ? addDays(String(latest), 1) : endDate;
       if (startDate > endDate) startDate = endDate;
     }
 
@@ -103,7 +105,7 @@ async function main() {
     const headers = {
       Authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64'),
       Accept: 'application/json',
-      'User-Agent': 'business-dashboard-funnelkit-ingestion/2.0'
+      'User-Agent': 'business-dashboard-funnelkit-ingestion/2.1'
     };
 
     for (let day = startDate; day <= endDate; day = addDays(day, 1)) {
@@ -133,7 +135,6 @@ async function main() {
         step_id: Number(r.object_id),
         step_name: String(r.object_name || r.type || `Step ${index + 1}`),
         step_index: index + 1,
-        collected_at: day,
         entries: int(r.views),
         completions: int(r.conversions),
         avg_time_seconds: null,
@@ -141,52 +142,50 @@ async function main() {
         upsell_accepts: 0
       })).filter(r => Number.isFinite(r.step_id));
 
-      if (rows.length) {
-        const { error } = await exec
-          .from('raw_funnelkit_steps')
-          .upsert(rows, { onConflict: 'step_id,collected_at' });
-        if (error) throw error;
-      }
+      const activityEntries = rows.reduce((s, r) => s + r.entries, 0);
+      const activityCompletions = rows.reduce((s, r) => s + r.completions, 0);
 
-      const { error: coverageError } = await exec
-        .from('source_daily_coverage_v1')
-        .upsert({
-          source: 'funnelkit',
-          coverage_date: day,
-          coverage_status: 'complete',
-          row_count: rows.length,
-          observed_at: new Date().toISOString(),
-          run_ref: runId,
-          details: {
-            endpoint: 'funnelkit-app/funnel-analytics/{id}/steps',
-            funnel_id: FUNNEL_ID,
-            activity_entries: rows.reduce((s, r) => s + r.entries, 0),
-            activity_completions: rows.reduce((s, r) => s + r.completions, 0)
-          }
-        }, { onConflict: 'source,coverage_date' });
-      if (coverageError) throw coverageError;
+      const written = await rpcOrThrow(db, 'ingest_funnelkit_day_v2', {
+        p_rows: rows,
+        p_coverage_date: day,
+        p_run_ref: runId,
+        p_details: {
+          endpoint: 'funnelkit-app/funnel-analytics/{id}/steps',
+          funnel_id: FUNNEL_ID,
+          activity_entries: activityEntries,
+          activity_completions: activityCompletions
+        }
+      });
 
-      totalSteps += rows.length;
+      totalSteps += Number(written || 0);
       processedDays += 1;
-      console.log(JSON.stringify({ source: SOURCE, day, rows: rows.length, entries: rows.reduce((s,r)=>s+r.entries,0), completions: rows.reduce((s,r)=>s+r.completions,0) }));
+      console.log(JSON.stringify({ source: SOURCE, day, rows: Number(written || 0), entries: activityEntries, completions: activityCompletions }));
     }
 
-    await exec.from('ingest_runs').update({
-      run_finished: new Date().toISOString(),
-      status: 'success',
-      funnelkit_steps: totalSteps,
-      error: null
-    }).eq('id', runId);
+    await rpcOrThrow(db, 'log_funnelkit_ingest_run_v2', {
+      p_id: runId,
+      p_run_started: started,
+      p_run_finished: new Date().toISOString(),
+      p_status: 'success',
+      p_steps: totalSteps,
+      p_error: null
+    });
 
     console.log(JSON.stringify({ status: 'success', source: SOURCE, runId, startDate, endDate, processedDays, totalSteps }));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await exec.from('ingest_runs').update({
-      run_finished: new Date().toISOString(),
-      status: 'error',
-      funnelkit_steps: totalSteps,
-      error: message.slice(0, 500)
-    }).eq('id', runId);
+    const message = errorMessage(err);
+    try {
+      await rpcOrThrow(db, 'log_funnelkit_ingest_run_v2', {
+        p_id: runId,
+        p_run_started: started,
+        p_run_finished: new Date().toISOString(),
+        p_status: 'error',
+        p_steps: totalSteps,
+        p_error: message.slice(0, 500)
+      });
+    } catch (logErr) {
+      console.error(JSON.stringify({ status: 'run_log_error', error: errorMessage(logErr) }));
+    }
     console.error(JSON.stringify({ status: 'error', source: SOURCE, runId, startDate, endDate, processedDays, totalSteps, error: message }));
     process.exit(1);
   }
