@@ -326,7 +326,7 @@ function materializeIntegrationFollowups(followupWork = []) {
 
     if (plan.action === "REUSE_AND_READY") {
       transitionLabels(Number(plan.issue.number), {
-        remove: [],
+        remove: [ORCHESTRATION_V3.queue.blocked],
         add: [ORCHESTRATION_V3.queue.ready]
       });
       console.log(JSON.stringify({
