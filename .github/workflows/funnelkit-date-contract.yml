@@ -30,16 +30,16 @@ jobs:
           const fs=require('fs');
           (async()=>{
             const item=JSON.parse(fs.readFileSync('/tmp/fk.json','utf8'));
-            const f=(item.fields||[]).map(x=>({l:String(x.label||'').toLowerCase(),i:String(x.id||'').toLowerCase(),v:typeof x.value==='string'?x.value.trim():''})).filter(x=>x.v);
+            const f=(item.fields||[]).map(x=>({l:String(x.label||'').trim().toLowerCase(),i:String(x.id||'').trim().toLowerCase(),v:typeof x.value==='string'?x.value.trim():''})).filter(x=>x.v);
             const find=(a,b=[])=>f.find(x=>a.includes(x.l)||b.includes(x.i));
             const u=find(['url','website','base url','site url'],['url']);
             const user=find(['username','user','login'],['username']);
-            const p=f.find(x=>x!==u&&x!==user);
+            const p=find(['password','application password','app password','api password'],['password','credential']);
             if(!u||!user||!p)throw new Error('credential_shape');
             let base=u.v;if(!/^https?:\/\//i.test(base))base='https://'+base;base=base.replace(/\/$/,'');
             const wi=base.indexOf('/wp-json/');const site=wi>=0?base.slice(0,wi):base;
             const auth='Basic '+Buffer.from(user.v+':'+p.v).toString('base64');
-            const root=await fetch(site+'/wp-json/funnelkit-app/').then(r=>r.json());
+            const root=await fetch(site+'/wp-json/funnelkit-app/',{headers:{Authorization:auth,Accept:'application/json'}}).then(r=>r.json());
             const route='/funnelkit-app/funnel-analytics/(?P<id>[\\d]+)/steps';
             const def=root.routes?.[route];
             const args=def?.endpoints?.[0]?.args||{};
@@ -56,14 +56,11 @@ jobs:
             ];
             const describe=async r=>{let code='',msg='',shape='';try{const d=await r.clone().json();code=String(d?.code||'');msg=String(d?.message||'').replace(/\s+/g,' ').slice(0,100);shape=Array.isArray(d)?`array:${d.length}`:(d&&typeof d==='object'?`object:${Object.keys(d).slice(0,10).sort().join(',')}`:typeof d)}catch{shape='non_json'}return {code,msg,shape}};
             for(const [name,after,before] of cases){
-              for(const mode of ['anon','basic']){
-                const headers={Accept:'application/json','User-Agent':'business-dashboard-funnelkit-date-probe/1.1'};
-                if(mode==='basic')headers.Authorization=auth;
-                const url=new URL(site+'/wp-json/funnelkit-app/funnel-analytics/1/steps');
-                url.searchParams.set('after',after);url.searchParams.set('before',before);
-                const r=await fetch(url,{headers,redirect:'manual'});const d=await describe(r);
-                console.log(`DATE_TEST case=${name} auth=${mode} status=${r.status} code=${d.code} shape=${d.shape} msg=${JSON.stringify(d.msg)}`);
-              }
+              const headers={Authorization:auth,Accept:'application/json','User-Agent':'business-dashboard-funnelkit-date-probe/2.0'};
+              const url=new URL(site+'/wp-json/funnelkit-app/funnel-analytics/1/steps');
+              url.searchParams.set('after',after);url.searchParams.set('before',before);
+              const r=await fetch(url,{headers,redirect:'manual'});const d=await describe(r);
+              console.log(`DATE_TEST case=${name} status=${r.status} code=${d.code} shape=${d.shape} msg=${JSON.stringify(d.msg)}`);
             }
           })().catch(e=>{console.error('CONTRACT_FATAL='+String(e.name||'Error'));process.exit(1)});
           NODE
