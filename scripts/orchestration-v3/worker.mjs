@@ -121,6 +121,9 @@ function taskMutability(body) {
   if (explicit === "VALIDATION_EVIDENCE_ONLY") return "VALIDATION_EVIDENCE_ONLY";
   if (explicit === "IMPLEMENTATION_MUTATION_REQUIRED") return "IMPLEMENTATION_MUTATION_REQUIRED";
 
+  const stream = String(taskField(text, "stream") ?? "").trim().toUpperCase();
+  if (stream === "QA_EVALUATION") return "VALIDATION_EVIDENCE_ONLY";
+
   const evidenceOnly =
     /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(text) &&
     /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(text);
@@ -295,7 +298,7 @@ const prompt = [
   String(snapshot.body ?? "").slice(0, 12000),
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
-  "This is a real implementation run. Do not merely review or narrate commands.",
+  mutationRequired\n    ? "This is a real implementation run. Perform the focused repository work required by the task."\n    : "This is a real validation/evidence run. Execute and record the required verification without fabricating repository mutation.",
   ...architectureGroundingInstructions,
   shellExecutionInstruction,
   firstToolInstruction,

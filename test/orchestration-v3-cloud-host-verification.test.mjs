@@ -89,7 +89,7 @@ test("task mutability preserves implementation mutation gates and permits eviden
 
   assert.match(
     hostSource,
-    /const mutationRequired = !\(explicitEvidenceOnly \|\| inferredEvidenceOnly\)/
+    /const mutationRequired =\s*explicitMutationRequired \|\|\s*!\(explicitEvidenceOnly \|\| qaEvaluationStream \|\| inferredEvidenceOnly\)/
   );
   assert.match(
     hostSource,
@@ -131,4 +131,49 @@ test("explicit task_mutability metadata takes precedence over evidence-only pros
     workerSource,
     /if \(explicit === "IMPLEMENTATION_MUTATION_REQUIRED"\) return "IMPLEMENTATION_MUTATION_REQUIRED"/
   );
+});
+
+
+test("QA_EVALUATION defaults to validation evidence only unless explicitly mutation-required", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+  const hostSource = fs.readFileSync(
+    "scripts/orchestration-v3/execution-evidence.mjs",
+    "utf8"
+  );
+
+  assert.match(
+    workerSource,
+    /stream === "QA_EVALUATION"\) return "VALIDATION_EVIDENCE_ONLY"/
+  );
+
+  assert.match(
+    hostSource,
+    /qaEvaluationStream/
+  );
+
+  assert.match(
+    hostSource,
+    /explicitMutationRequired/
+  );
+
+  assert.match(
+    hostSource,
+    /explicitMutationRequired \|\|[\s\S]*qaEvaluationStream/
+  );
+});
+
+test("isolated V3 workers disable persistent memory side effects", () => {
+  const source = fs.readFileSync(
+    "scripts/orchestration-v3/diagnose-local-tool-observed.mjs",
+    "utf8"
+  );
+
+  assert.match(source, /enabled:\s*false/);
+  assert.match(source, /rememberAcrossConversations:\s*false/);
+  assert.match(source, /fallback:\s*"none"/);
+  assert.match(source, /sessionMemory:\s*false/);
+  assert.match(source, /memoryFlush:[\s\S]*enabled:\s*false/);
 });
