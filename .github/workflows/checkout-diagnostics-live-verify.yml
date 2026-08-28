@@ -1,0 +1,54 @@
+name: Checkout Diagnostics Live Verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/checkout-diagnostics-live-verify.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Query today's checkout diagnostic events from GA4
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+          cp config/env/website.op.env .env.website
+          op run --env-file .env.website -- node <<'NODE'
+          const { BetaAnalyticsDataClient } = require('@google-analytics/data');
+          const credentials = JSON.parse(process.env.GA4_CREDENTIALS_JSON);
+          const propertyId = process.env.GA4_PROPERTY_ID;
+          const client = new BetaAnalyticsDataClient({ credentials });
+          const names = [
+            'checkout_loaded','customer_info_started','customer_info_complete',
+            'shipping_methods_loaded','shipping_method_selected','shipping_total_shown',
+            'payment_section_visible','payment_methods_loaded','payment_method_selected',
+            'place_order_clicked','checkout_validation_error','payment_error','order_created'
+          ];
+          (async () => {
+            const [r] = await client.runReport({
+              property:`properties/${propertyId}`,
+              dateRanges:[{startDate:'today',endDate:'today'}],
+              dimensions:[{name:'eventName'}],
+              metrics:[{name:'eventCount'},{name:'sessions'}],
+              dimensionFilter:{filter:{fieldName:'eventName',inListFilter:{values:names}}},
+              limit:100
+            });
+            const rows=(r.rows||[]).map(x=>({event:x.dimensionValues?.[0]?.value,count:Number(x.metricValues?.[0]?.value||0),sessions:Number(x.metricValues?.[1]?.value||0)}));
+            console.log('CHECKOUT_DIAGNOSTICS_TODAY=' + JSON.stringify(rows));
+            console.log('INSTRUMENTATION_ACTIVE=' + (rows.some(x=>x.event==='checkout_loaded'&&x.count>0) ? 'true':'false'));
+          })().catch(e=>{console.error('VERIFY_ERROR='+String(e.message||e));process.exit(1)});
+          NODE
