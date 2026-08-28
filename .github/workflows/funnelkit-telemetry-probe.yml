@@ -37,35 +37,34 @@ jobs:
           const fields = Array.isArray(item.fields) ? item.fields : [];
           const norm = s => String(s || '').trim().toLowerCase();
           const candidates = fields.map(f => ({
-            label: norm(f.label),
-            id: norm(f.id),
-            value: typeof f.value === 'string' ? f.value.trim() : ''
+            label: norm(f.label), id: norm(f.id), value: typeof f.value === 'string' ? f.value.trim() : ''
           })).filter(f => f.value);
-          const pick = (labels, ids=[]) => {
-            for (const wanted of labels) {
-              const hit = candidates.find(f => f.label === wanted);
-              if (hit) return hit.value;
-            }
-            for (const wanted of ids) {
-              const hit = candidates.find(f => f.id === wanted);
-              if (hit) return hit.value;
-            }
-            return '';
+          const pickEntry = (labels, ids=[]) => {
+            for (const wanted of labels) { const hit = candidates.find(f => f.label === wanted); if (hit) return hit; }
+            for (const wanted of ids) { const hit = candidates.find(f => f.id === wanted); if (hit) return hit; }
+            return null;
           };
-          let base = pick(['url','website','base url','base_url','site url','site_url'], ['url']);
-          const username = pick(['username','user','login'], ['username']);
-          const password = pick(['credential','password','app password','application password','api password'], ['password']);
-          if (!base || !username || !password) {
-            console.log(`FIELD_DISCOVERY url=${Boolean(base)} username=${Boolean(username)} password=${Boolean(password)} field_count=${candidates.length}`);
+          const baseEntry = pickEntry(['url','website','base url','base_url','site url','site_url'], ['url']);
+          const userEntry = pickEntry(['username','user','login'], ['username']);
+          let passwordEntry = pickEntry(['credential','password','app password','application password','api password','secret','api key','key','token'], ['password','credential']);
+          if (!passwordEntry && candidates.length === 3 && baseEntry && userEntry) {
+            passwordEntry = candidates.find(f => f !== baseEntry && f !== userEntry) || null;
+          }
+          if (!baseEntry || !userEntry || !passwordEntry) {
+            const safeLabels = candidates.map(f => f.label || f.id || 'unlabeled').join(',');
+            console.log(`FIELD_DISCOVERY url=${Boolean(baseEntry)} username=${Boolean(userEntry)} password=${Boolean(passwordEntry)} field_count=${candidates.length} labels=${safeLabels}`);
             process.exit(2);
           }
+          let base = baseEntry.value;
+          const username = userEntry.value;
+          const password = passwordEntry.value;
           if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
           base = base.replace(/\/$/, '');
           let site = base;
           const wpIdx = site.indexOf('/wp-json/');
           if (wpIdx >= 0) site = site.slice(0, wpIdx);
           const auth = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
-          const headers = { Authorization: auth, Accept: 'application/json', 'User-Agent': 'business-dashboard-funnelkit-probe/1.0' };
+          const headers = { Authorization: auth, Accept: 'application/json', 'User-Agent': 'business-dashboard-funnelkit-probe/1.1' };
           const tests = [
             ['stored_base', base],
             ['site_wpjson', `${site}/wp-json/`],
@@ -91,6 +90,7 @@ jobs:
           (async () => {
             console.log('FUNNELKIT_CREDENTIALS=present');
             console.log(`FUNNELKIT_SITE_HOST=${new URL(site).host}`);
+            console.log(`FUNNELKIT_CREDENTIAL_FIELD=${passwordEntry.label || passwordEntry.id || 'unlabeled'}`);
             for (const [name,url] of tests) {
               try {
                 const res = await fetch(url, { method:'GET', headers, redirect:'manual' });
