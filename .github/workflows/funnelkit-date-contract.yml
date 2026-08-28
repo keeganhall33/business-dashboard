@@ -1,0 +1,41 @@
+name: FunnelKit Date Contract
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/funnelkit-date-trigger"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: 1Password/install-cli-action@v1
+      - name: Probe date schema without exposing analytics payloads
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          op item get "FunnelKit API Credentials" --vault OpenClaw --format=json > /tmp/fk.json
+          node <<'NODE'
+          const fs=require('fs');const item=JSON.parse(fs.readFileSync('/tmp/fk.json','utf8'));const f=(item.fields||[]).map(x=>({l:String(x.label||'').toLowerCase(),i:String(x.id||'').toLowerCase(),v:typeof x.value==='string'?x.value.trim():''})).filter(x=>x.v);const find=(a,b=[])=>f.find(x=>a.includes(x.l)||b.includes(x.i));const u=find(['url','website','base url','site url'],['url']);const user=find(['username','user','login'],['username']);const p=f.find(x=>x!==u&&x!==user);if(!u||!user||!p)throw new Error('credential_shape');let base=u.v;if(!/^https?:\/\//i.test(base))base='https://'+base;base=base.replace(/\/$/,'');const wi=base.indexOf('/wp-json/');const site=wi>=0?base.slice(0,wi):base;const auth='Basic '+Buffer.from(user.v+':'+p.v).toString('base64');
+          const root=await fetch(site+'/wp-json/funnelkit-app/').then(r=>r.json());const route='/funnelkit-app/funnel-analytics/(?P<id>[\\d]+)/steps';const def=root.routes?.[route];const args=def?.endpoints?.[0]?.args||{};for(const name of ['after','before']){const a=args[name]||{};const safe={required:a.required??null,type:a.type??null,default:a.default??null,description:a.description??null,enum:Array.isArray(a.enum)?a.enum:null,minimum:a.minimum??null,maximum:a.maximum??null,pattern:a.pattern??null};console.log(`ARG_SCHEMA ${name}=${JSON.stringify(safe)}`)}
+          const cases=[
+            ['date','2026-08-27','2026-08-28'],
+            ['iso','2026-08-27T00:00:00Z','2026-08-28T00:00:00Z'],
+            ['seconds',String(Math.floor(Date.parse('2026-08-27T00:00:00Z')/1000)),String(Math.floor(Date.parse('2026-08-28T00:00:00Z')/1000))],
+            ['milliseconds',String(Date.parse('2026-08-27T00:00:00Z')),String(Date.parse('2026-08-28T00:00:00Z'))]
+          ];
+          const describe=async r=>{let code='',msg='',shape='';try{const d=await r.clone().json();code=String(d?.code||'');msg=String(d?.message||'').replace(/\s+/g,' ').slice(0,100);shape=Array.isArray(d)?`array:${d.length}`:(d&&typeof d==='object'?`object:${Object.keys(d).slice(0,10).sort().join(',')}`:typeof d)}catch{shape='non_json'}return {code,msg,shape}};
+          for(const [name,after,before] of cases){for(const mode of ['anon','basic']){const headers={Accept:'application/json','User-Agent':'business-dashboard-funnelkit-date-probe/1.0'};if(mode==='basic')headers.Authorization=auth;const url=new URL(site+'/wp-json/funnelkit-app/funnel-analytics/1/steps');url.searchParams.set('after',after);url.searchParams.set('before',before);const r=await fetch(url,{headers,redirect:'manual'});const d=await describe(r);console.log(`DATE_TEST case=${name} auth=${mode} status=${r.status} code=${d.code} shape=${d.shape} msg=${JSON.stringify(d.msg)}`)}}
+          NODE
+          rm -f /tmp/fk.json
