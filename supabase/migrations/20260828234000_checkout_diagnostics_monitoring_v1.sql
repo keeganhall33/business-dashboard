@@ -1,0 +1,9 @@
+-- Checkout diagnostics monitoring v1
+-- Production migration applied 2026-08-28.
+-- Canonical implementation lives in Supabase and exposes:
+--   exec_dashboard.get_checkout_diagnostics_v1(start_date,end_date)
+--   public.check_checkout_diagnostics_v1()
+-- with daily cron job checkout-diagnostics-v1 at 11:35 UTC.
+--
+-- This file intentionally documents the production migration entrypoint.
+-- Future schema changes should create a new migration rather than editing this marker.
