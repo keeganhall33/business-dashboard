@@ -9,6 +9,7 @@ import {
   planFollowupMaterialization
 } from "./followup-materializer.mjs";
 import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";
+import { evaluateRoadmapCandidate, planRoadmapReplenishment } from "./roadmap-replenisher.mjs";
 import { alive, readLease, reconcileLeaseState, writeLease } from "./lease-reconciliation.mjs";
 
 function arg(name, fallback = null) {
@@ -295,6 +296,73 @@ function openOrchestrationIssues() {
   return issuesWithLabels(ORCHESTRATION_V3.queue.base);
 }
 
+function dependencyStatesForIssues(issues = []) {
+  const refs = new Set();
+  for (const candidate of issues) {
+    const text = String(candidate?.body ?? "");
+    const declarations = [
+      ...text.matchAll(/^\s*(?:\*\*)?(?:depends_on|dependency|dependencies)(?:\*\*)?\s*:\s*(.+)$/gim),
+      ...text.matchAll(/^\s*(?:[-*]\s*)?Depends\s+on\s+(.+)$/gim)
+    ];
+    for (const declaration of declarations) {
+      for (const match of String(declaration[1] ?? "").matchAll(/#(\d+)\b/g)) refs.add(Number(match[1]));
+    }
+  }
+  return new Map([...refs].map((number) => [number, String(restIssue(number).state ?? "unknown").toLowerCase()]));
+}
+
+function replenishProductRoadmap(watermark) {
+  const uncoveredWorkerIds = (watermark?.uncovered_worker_ids ?? []).filter((workerId) =>
+    ORCHESTRATION_V3.capacity.productWorkers.includes(workerId)
+  );
+  if (!watermark?.replenishment_needed || uncoveredWorkerIds.length === 0) {
+    return { selected: [], promoted: [], still_uncovered_worker_ids: uncoveredWorkerIds };
+  }
+
+  const allOpen = openOrchestrationIssues();
+  const occupiedIssues = allOpen.filter((candidate) => {
+    const labels = labelSet(candidate);
+    return labels.has(ORCHESTRATION_V3.queue.ready) || labels.has(ORCHESTRATION_V3.queue.running);
+  });
+  const dependencyStates = dependencyStatesForIssues(allOpen);
+  const plan = planRoadmapReplenishment({
+    openIssues: allOpen,
+    uncoveredWorkerIds,
+    dependencyStates,
+    occupiedIssues
+  });
+
+  for (const rejected of plan.rejected) {
+    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_REJECTED", ...rejected }));
+  }
+
+  const promoted = [];
+  const occupiedNow = [...occupiedIssues];
+  for (const selected of plan.selected) {
+    const fresh = issue(Number(selected.issue_number));
+    const validation = evaluateRoadmapCandidate(fresh, {
+      uncoveredWorkerIds: [selected.worker_id],
+      dependencyStates,
+      occupiedIssues: occupiedNow
+    });
+    if (!validation.eligible) {
+      console.log(JSON.stringify({
+        event: "ROADMAP_REPLENISHMENT_REVALIDATION_SKIPPED",
+        workerId: selected.worker_id,
+        issueNumber: selected.issue_number,
+        reasons: validation.reasons
+      }));
+      continue;
+    }
+    transitionLabels(Number(selected.issue_number), { remove: [], add: [ORCHESTRATION_V3.queue.ready] });
+    occupiedNow.push(fresh);
+    promoted.push(selected);
+    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_PROMOTED", ...selected }));
+  }
+
+  return { ...plan, promoted };
+}
+
 function createFollowupIssue(work) {
   const body = buildFollowupBody(work);
   const args = [
@@ -419,13 +487,31 @@ async function poll(reason = "UNKNOWN") {
     if (leftPriority !== rightPriority) return leftPriority - rightPriority;
     return Number(left.number) - Number(right.number);
   });
-  const watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
+  let watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
     readyIssues: ready,
     runningIssues: runningIssues(),
     activeLeaseAssignments: activeAssignments,
     lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason
   }));
   console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));
+
+  const replenishment = replenishProductRoadmap(watermark);
+  if (replenishment.promoted?.length > 0) {
+    ready.splice(0, ready.length, ...readyIssues().sort((left, right) => {
+      const leftPriority = priorityRank(left.body, left.number);
+      const rightPriority = priorityRank(right.body, right.number);
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return Number(left.number) - Number(right.number);
+    }));
+    watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
+      readyIssues: ready,
+      runningIssues: runningIssues(),
+      activeLeaseAssignments: activeAssignments,
+      lastReplenishAt: new Date().toISOString(),
+      lastRecoveryResult: "PRODUCT_ROADMAP_REPLENISHED"
+    }));
+    console.log(JSON.stringify({ event: "QUEUE_WATERMARK_REPLENISHED", ...watermark }));
+  }
 
   for (const candidate of ready) {
     try {
