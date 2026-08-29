@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { inspectLease, LEASE_TTL_CONTRACT } from "../scripts/orchestration-v3/lease-reconciliation.mjs";
-import { runBufferedChild } from "../scripts/orchestration-v3/buffered-child-process.mjs";
+import {
+  DEFAULT_PROGRESS_TIMEOUT_MS,
+  LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS,
+  resolveProgressTimeout,
+  runBufferedChild
+} from "../scripts/orchestration-v3/buffered-child-process.mjs";
 
 test("fresh timer heartbeat does not imply fresh execution progress", () => {
   const now = new Date("2026-08-29T15:00:00.000Z");
@@ -29,6 +34,14 @@ test("fresh timer heartbeat does not imply fresh execution progress", () => {
   assert.equal(inspection.progress_fresh, false);
   assert.ok(inspection.evidence.includes("PROGRESS_STALE"));
   assert.equal(inspection.reconciliation_decision, "LIVE_LEASE_PRESERVED", "ownership lease remains preserved even though forward progress is stale");
+});
+
+test("local OpenClaw receives a larger bounded no-output allowance than generic children", () => {
+  assert.equal(resolveProgressTimeout("/bin/sh"), DEFAULT_PROGRESS_TIMEOUT_MS);
+  assert.equal(resolveProgressTimeout("/opt/homebrew/bin/openclaw"), LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS);
+  assert.ok(LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS > DEFAULT_PROGRESS_TIMEOUT_MS);
+  assert.ok(LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS < 950_000, "OpenClaw progress allowance must remain below the hard worker timeout");
+  assert.equal(resolveProgressTimeout("/opt/homebrew/bin/openclaw", 150), 150, "explicit test/diagnostic bounds must override the OpenClaw default");
 });
 
 test("buffered child detects bounded progress stall and terminates its owned process group", async () => {
