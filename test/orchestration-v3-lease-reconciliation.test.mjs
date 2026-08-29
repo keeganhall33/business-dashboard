@@ -126,7 +126,7 @@ test("reconcile clears only proven stale local lease state with auditable eviden
 
 test("watcher reconciles stale leases before ready selection so the freed lane can backfill", () => {
   const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
-  assert.match(watcher, /reconcileRunningClaims\(\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)/);
+  assert.match(watcher, /const activeAssignments = activeLeaseAssignments\(\);[\s\S]*reconcileRunningClaims\(activeAssignments\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)/);
   assert.match(watcher, /workerCandidates\.find\(\(candidateWorkerId\) => !claimedWorkersThisPass\.has\(candidateWorkerId\) && !reconcileLease\(candidateWorkerId\)\)/);
   assert.match(watcher, /STALE_LEASE_RECLAIMED[\s\S]*reconciliationDecision/);
 });
