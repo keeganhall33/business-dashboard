@@ -148,7 +148,11 @@ export function inspectLease(workerId, {
     if (!progressFresh) evidence.push("PROGRESS_STALE");
     if (!leaseWithinTtl) evidence.push("LEASE_TTL_EXPIRED");
 
-    if (resolvedPidAlive && commandMatches && worktreeMatches && heartbeatFresh) {
+    if (!resolvedPidAlive && worktreeMatches) {
+      // A dead PID is authoritative process-liveness evidence. Do not wait for
+      // heartbeat/progress TTLs before freeing a clean, identity-matched lane.
+      decision = "PROVEN_STALE_RECLAIM";
+    } else if (resolvedPidAlive && commandMatches && worktreeMatches && heartbeatFresh) {
       decision = "LIVE_LEASE_PRESERVED";
     } else if (!heartbeatFresh && (!resolvedPidAlive || !commandMatches || !worktreeMatches)) {
       decision = "PROVEN_STALE_RECLAIM";
