@@ -34,6 +34,10 @@ export function writeCloudMemoryDisabledConfig(configPath) {
   const existingTools = config?.tools && typeof config.tools === "object" ? config.tools : {};
   const existingDeny = Array.isArray(existingTools.deny) ? existingTools.deny : [];
 
+  // Keep this config intentionally minimal and limited to documented OpenClaw
+  // surfaces. In particular, do not invent sentinel provider values such as
+  // `provider: "none"` or legacy agent memory keys: OpenClaw validates its
+  // config before the local agent can start.
   config = {
     ...config,
     tools: {
@@ -69,47 +73,11 @@ export function writeCloudMemoryDisabledConfig(configPath) {
       search: {
         ...(config.memory?.search ?? {}),
         enabled: false,
-        provider: "none",
         rememberAcrossConversations: false,
-        fallback: "none",
         sources: ["memory"],
         experimental: {
           ...(config.memory?.search?.experimental ?? {}),
           sessionMemory: false
-        }
-      },
-      qmd: {
-        ...(config.memory?.qmd ?? {}),
-        sessions: {
-          ...(config.memory?.qmd?.sessions ?? {}),
-          enabled: false
-        }
-      }
-    },
-    agents: {
-      ...(config.agents ?? {}),
-      defaults: {
-        ...(config.agents?.defaults ?? {}),
-        memorySearch: {
-          ...(config.agents?.defaults?.memorySearch ?? {}),
-          enabled: false,
-          provider: "none",
-          fallback: "none",
-          sync: {
-            ...(config.agents?.defaults?.memorySearch?.sync ?? {}),
-            onSessionStart: false,
-            onSearch: false,
-            watch: false,
-            intervalMinutes: 0
-          }
-        },
-        compaction: {
-          ...(config.agents?.defaults?.compaction ?? {}),
-          postIndexSync: "off",
-          memoryFlush: {
-            ...(config.agents?.defaults?.compaction?.memoryFlush ?? {}),
-            enabled: false
-          }
         }
       }
     },
@@ -139,10 +107,7 @@ export function assertCloudMemoryDisabled(config, env = {}) {
   if (config?.plugins?.entries?.["active-memory"]?.enabled !== false) violations.push("ACTIVE_MEMORY_ENABLED");
   if (config?.memory?.search?.enabled !== false) violations.push("MEMORY_SEARCH_ENABLED");
   if (config?.memory?.search?.rememberAcrossConversations !== false) violations.push("CROSS_CONVERSATION_MEMORY_ENABLED");
-  if (config?.memory?.qmd?.sessions?.enabled !== false) violations.push("QMD_SESSION_EXPORT_ENABLED");
-  if (config?.agents?.defaults?.memorySearch?.enabled !== false) violations.push("AGENT_MEMORY_SEARCH_ENABLED");
-  if (config?.agents?.defaults?.memorySearch?.sync?.onSessionStart !== false) violations.push("MEMORY_SESSION_START_SYNC_ENABLED");
-  if (config?.agents?.defaults?.memorySearch?.sync?.watch !== false) violations.push("MEMORY_WATCH_ENABLED");
+  if (config?.memory?.search?.experimental?.sessionMemory !== false) violations.push("SESSION_INDEXING_ENABLED");
   if (config?.hooks?.internal?.entries?.["session-memory"]?.enabled !== false) violations.push("SESSION_MEMORY_HOOK_ENABLED");
 
   for (const key of Object.keys(env)) {
