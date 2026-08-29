@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { touchOwnedLeaseProgress } from "./lease-reconciliation.mjs";
 
@@ -55,6 +56,15 @@ export function runBufferedChild(
 ) {
   return new Promise((resolve) => {
     const effectiveProgressTimeout = resolveProgressTimeout(command, progressTimeout);
+    const executionJournalPath = String(env?.ORCH_EXECUTION_JOURNAL ?? "").trim() || null;
+    let journalFingerprint = null;
+    if (executionJournalPath) {
+      try {
+        const stat = fs.statSync(executionJournalPath);
+        journalFingerprint = `${stat.size}:${stat.mtimeMs}`;
+      } catch {}
+    }
+
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -88,6 +98,24 @@ export function runBufferedChild(
         childProcessGroupId: process.platform === "win32" ? null : childPid,
         observedToolEvent
       });
+    };
+
+    const observeExecutionJournalProgress = () => {
+      if (!executionJournalPath) return false;
+      try {
+        const stat = fs.statSync(executionJournalPath);
+        const nextFingerprint = `${stat.size}:${stat.mtimeMs}`;
+        if (journalFingerprint === null) {
+          journalFingerprint = nextFingerprint;
+          return false;
+        }
+        if (nextFingerprint === journalFingerprint) return false;
+        journalFingerprint = nextFingerprint;
+        markProgress("CHILD_TOOL_JOURNAL", { observedToolEvent: true });
+        return true;
+      } catch {
+        return false;
+      }
     };
 
     const terminate = (reason = "TERMINATE") => {
@@ -205,6 +233,7 @@ export function runBufferedChild(
 
     progressTimer = setInterval(() => {
       if (settled || progressTimedOut) return;
+      observeExecutionJournalProgress();
       if (Date.now() - lastProgressAt <= effectiveProgressTimeout) return;
       progressTimedOut = true;
       touchOwnedLeaseProgress({
