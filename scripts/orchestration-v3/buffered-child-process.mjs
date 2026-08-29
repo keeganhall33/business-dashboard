@@ -1,6 +1,19 @@
 import { spawn } from "node:child_process";
 import { touchOwnedLeaseProgress } from "./lease-reconciliation.mjs";
 
+export const DEFAULT_PROGRESS_TIMEOUT_MS = 240_000;
+export const LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS = 600_000;
+
+export function resolveProgressTimeout(command, configuredTimeout = null) {
+  const configured = Number(configuredTimeout);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+
+  const executable = String(command ?? "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  return executable === "openclaw"
+    ? LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS
+    : DEFAULT_PROGRESS_TIMEOUT_MS;
+}
+
 function processError(message, code) {
   const error = new Error(message);
   error.code = code;
@@ -36,11 +49,12 @@ export function runBufferedChild(
     cwd,
     env,
     timeout = 950_000,
-    progressTimeout = 240_000,
+    progressTimeout = null,
     maxBuffer = 24 * 1024 * 1024
   } = {}
 ) {
   return new Promise((resolve) => {
+    const effectiveProgressTimeout = resolveProgressTimeout(command, progressTimeout);
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -191,7 +205,7 @@ export function runBufferedChild(
 
     progressTimer = setInterval(() => {
       if (settled || progressTimedOut) return;
-      if (Date.now() - lastProgressAt <= progressTimeout) return;
+      if (Date.now() - lastProgressAt <= effectiveProgressTimeout) return;
       progressTimedOut = true;
       touchOwnedLeaseProgress({
         phase: "PROGRESS_STALL_DETECTED",
@@ -199,7 +213,7 @@ export function runBufferedChild(
         childProcessGroupId: process.platform === "win32" ? null : childPid
       });
       terminate("PROGRESS_STALL");
-    }, Math.min(5_000, Math.max(1_000, Math.floor(progressTimeout / 10))));
+    }, Math.min(5_000, Math.max(1_000, Math.floor(effectiveProgressTimeout / 10))));
     progressTimer.unref?.();
   });
 }
