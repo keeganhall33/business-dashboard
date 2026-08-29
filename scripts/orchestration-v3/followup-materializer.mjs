@@ -1,4 +1,5 @@
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
+import { formatOwnershipPatterns } from "./file-ownership.mjs";
 
 export const FOLLOWUP_MARKER_PREFIX = "orchestration-v3-followup:";
 
@@ -61,7 +62,10 @@ export function followupEligibility(work) {
     return { eligible: false, reason: "MISSING_ORIGINAL_ISSUE" };
   }
 
-  return { eligible: true, reason: null };
+  const ownership = work.fileOwnership ?? formatOwnershipPatterns(work.changedFiles ?? []);
+  if (!ownership) return { eligible: false, reason: "MISSING_EXPLICIT_FILE_OWNERSHIP" };
+
+  return { eligible: true, reason: null, ownership };
 }
 
 export function findCanonicalFollowupIssue(work, issues = []) {
@@ -92,6 +96,8 @@ export function buildFollowupBody(work) {
   const originalIssue = Number(work.issueNumber);
   const prNumber = Number(work.prNumber);
   const marker = followupMarker(work);
+  const ownership = work.fileOwnership ?? formatOwnershipPatterns(work.changedFiles ?? []);
+  if (!ownership) throw new Error(`FOLLOWUP_FILE_OWNERSHIP_REQUIRED:PR#${prNumber}`);
 
   return [
     "Source: orchestration-v3 integration release-train follow-up.",
@@ -103,6 +109,7 @@ export function buildFollowupBody(work) {
     `**stream:** ${stream}`,
     "**priority:** P0",
     "**human_approval_required:** false",
+    `**file_ownership:** ${ownership}`,
     "",
     "## Goal",
     String(work.title ?? `Resolve release-train follow-up for PR #${prNumber}`),
@@ -174,6 +181,16 @@ export function planFollowupMaterialization(work, issues = []) {
     return {
       action: "REUSE_NO_CHANGE",
       reason: "EXISTING_HUMAN_APPROVAL_GATE",
+      identity: followupIdentity(work),
+      issue: existing
+    };
+  }
+
+  const existingOwnership = bodyField(existing.body, "file_ownership");
+  if (!existingOwnership) {
+    return {
+      action: "REUSE_NO_CHANGE",
+      reason: "EXISTING_FOLLOWUP_MISSING_FILE_OWNERSHIP",
       identity: followupIdentity(work),
       issue: existing
     };
