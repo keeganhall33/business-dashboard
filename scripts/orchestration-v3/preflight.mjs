@@ -5,6 +5,8 @@ import {
   recoverDisposableWorktree,
   emitWorktreeIntegrityEvent
 } from "./worktree-integrity.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
+import { recoverStaleWorkerSafely } from "./stale-worker-recovery.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
@@ -142,6 +144,10 @@ export function inspectGitRoot(cwd) {
 }
 
 export function recoverIdleWorker(workerId) {
+  const leaseInspection = inspectLease(workerId);
+  if (leaseInspection.reconciliation_decision === "PROVEN_STALE_RECLAIM") {
+    return recoverStaleWorkerSafely(workerId);
+  }
   return recoverDisposableWorktree(workerId, { reason: "IDLE_WORKER_RECOVERY" });
 }
 
