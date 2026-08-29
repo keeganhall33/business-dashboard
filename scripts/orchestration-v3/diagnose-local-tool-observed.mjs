@@ -98,11 +98,6 @@ export function writeExecOnlyToolPolicy(configPath) {
 }
 
 export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stateDir, configPath, controlWorkspace, harnessEnv = {} }) {
-  // V3 protected-repository access is exec-only. OpenClaw filesystem tools are
-  // hard-disabled in the isolated worker config so a model cannot terminate a
-  // real implementation round by attempting a sandboxed read/write/edit of the
-  // protected worktree. Shell exec remains available and is still observed by
-  // the host evidence harness.
   writeExecOnlyToolPolicy(configPath);
 
   const env = { ...baseEnv };
@@ -137,16 +132,51 @@ function walkFind(value, key) {
   return undefined;
 }
 
+function walkFindAny(value, keys) {
+  for (const key of keys) {
+    const found = walkFind(value, key);
+    if (found !== undefined && found !== null && found !== "") return found;
+  }
+  return undefined;
+}
+
+function normalizeProvider(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("ollama")) return "ollama";
+  return text;
+}
+
+function normalizeFallback(value) {
+  if (value === true || value === false) return value;
+  const text = String(value ?? "").trim().toLowerCase();
+  if (["true", "1", "yes", "used"].includes(text)) return true;
+  if (["false", "0", "no", "none", "disabled", "not_used", "not-used"].includes(text)) return false;
+  return null;
+}
+
 export function parseMachineEnvelope(stdout) {
   try {
     const value = JSON.parse(String(stdout ?? ""));
     const meta = value?.meta?.agentMeta ?? value?.agentMeta ?? value?.result?.agentMeta ?? walkFind(value, "agentMeta") ?? {};
+    const provider = normalizeProvider(
+      meta?.provider ??
+      walkFindAny(value, ["winnerProvider", "providerId", "provider_id", "modelProvider", "model_provider", "provider"])
+    );
+    const model = String(
+      meta?.model ??
+      walkFindAny(value, ["winnerModel", "modelId", "model_id", "selectedModel", "selected_model", "model"]) ??
+      ""
+    ).trim() || null;
+    const fallbackUsed = normalizeFallback(
+      walkFindAny(value, ["fallbackUsed", "fallback_used", "usedFallback", "used_fallback", "fallback"])
+    );
     return {
-      provider: meta?.provider ?? walkFind(value, "winnerProvider") ?? null,
-      model: meta?.model ?? walkFind(value, "winnerModel") ?? null,
-      fallbackUsed: walkFind(value, "fallbackUsed") ?? null,
-      toolCalls: walkFind(value, "calls") ?? null,
-      toolFailures: walkFind(value, "failures") ?? null,
+      provider,
+      model,
+      fallbackUsed,
+      toolCalls: walkFindAny(value, ["calls", "toolCalls", "tool_calls"]) ?? null,
+      toolFailures: walkFindAny(value, ["failures", "toolFailures", "tool_failures"]) ?? null,
       parseError: null
     };
   } catch (error) {
