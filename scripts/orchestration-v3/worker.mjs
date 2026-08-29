@@ -187,6 +187,23 @@ function sanitizeCloudEnv(baseEnv) {
 function q(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
+function localRuntimePolicyProvesNoCloud(runtimeEnv) {
+  const cloudCredentialPresent = Object.keys(runtimeEnv ?? {}).some((key) =>
+    CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+    /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)
+  );
+  return ORCHESTRATION_V3.model.cloudFallbackAllowed === false &&
+    String(runtimeEnv?.OPENCLAW_FALLBACK_MODELS ?? "") === "" &&
+    !cloudCredentialPresent;
+}
+function recoveryObservedPersistentMutation(recovery, expectedHead) {
+  const before = recovery?.before;
+  if (!before) return false;
+  return before.healthy === false ||
+    Number(before.trackedChangeCount ?? 0) > 0 ||
+    Number(before.untrackedCount ?? 0) > 0 ||
+    Boolean(before.head && expectedHead && before.head !== expectedHead);
+}
 
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
@@ -264,7 +281,7 @@ const diffCheckRequired = requiresDiffCheck(snapshot.body);
 const mutability = taskMutability(snapshot.body);
 const mutationRequired = mutability === "IMPLEMENTATION_MUTATION_REQUIRED";
 // V3 canonical execution is currently AGENT_EXEC_DIRECT.
- // Do not advertise Code Mode merely because the installed CLI supports it.
+// Do not advertise Code Mode merely because the installed CLI supports it.
 const codeModeBridge = false;
 const firstToolInstruction = codeModeBridge
   ? [
@@ -326,9 +343,37 @@ const prompt = [
   "No prose and no markdown fences."
 ].filter(Boolean).join("\n");
 
+const qaProviderPrompt = [
+  "V3_QA_PROVIDER_PROBE_V1.",
+  "This probe exists only to prove the local model/provider path before deterministic host QA verification.",
+  "Do not inspect, read, write, or modify any repository. Do not use shell or file tools.",
+  "Cloud use is forbidden.",
+  "Return ONLY one strict JSON object with this exact uppercase-key shape:",
+  JSON.stringify({
+    TASK_ID: `issue-${issue}`,
+    STATUS: "PASS",
+    SUMMARY: "Local QA provider probe complete",
+    CHANGES: [],
+    FILES_CHANGED: [],
+    DB_CHANGES: "NO",
+    MIGRATION: null,
+    TESTS: "HOST_VERIFICATION_PENDING",
+    PR: null,
+    MERGE_STATUS: "N/A",
+    PRODUCTION_CHANGE: "NO",
+    UNEXPECTED_RESULTS: [],
+    DECISIONS_REQUIRED: [],
+    BLOCKERS: [],
+    NEXT_RECOMMENDED_TASK: null,
+    SESSION_HEALTH: "GOOD",
+    SESSION_CONTEXT: `v3/${workerId}/issue-${issue}`
+  }),
+  "No prose and no markdown fences."
+].join("\n");
+
 const invocation = buildWorkerExecInvocation({
   capabilities,
-  prompt,
+  prompt: mutationRequired ? prompt : qaProviderPrompt,
   controlWorkspace,
   configPath,
   stateDir,
@@ -361,6 +406,7 @@ async function executeLocalRound(roundPrompt, roundNumber) {
       machine: {},
       executionEvidence: readObservedExecutionEvidence(harness.journalPath),
       realMutationObserved: false,
+      persistentMutationObserved: false,
       changedPrs: [],
       finalValue: {
         ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"),
@@ -385,6 +431,7 @@ async function executeLocalRound(roundPrompt, roundNumber) {
   });
 
   const postModelIntegrity = recoverIdleWorker(workerId);
+  const persistentMutationObserved = !mutationRequired && recoveryObservedPersistentMutation(postModelIntegrity, beforeHead);
   const roundExecutionEvidence = readObservedExecutionEvidence(harness.journalPath);
   const roundMachine = parseMachineEnvelope(roundRun.stdout);
 
@@ -404,7 +451,8 @@ async function executeLocalRound(roundPrompt, roundNumber) {
   const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(
     String(roundMachine.model ?? "").toLowerCase()
   );
-  const fallbackOk = roundMachine.fallbackUsed === false;
+  const fallbackPolicyOk = !mutationRequired && providerOk && localRuntimePolicyProvesNoCloud(env);
+  const fallbackOk = roundMachine.fallbackUsed === false || fallbackPolicyOk;
 
   let roundParsed;
 
@@ -445,6 +493,9 @@ async function executeLocalRound(roundPrompt, roundNumber) {
       }`
     );
   }
+  if (persistentMutationObserved) {
+    roundEvidenceErrors.push("HOST_VERIFY_QA_PERSISTENT_MUTATION");
+  }
 
   if (!providerOk) {
     roundEvidenceErrors.push(`PROVIDER_MISMATCH:${roundMachine.provider}`);
@@ -457,16 +508,16 @@ async function executeLocalRound(roundPrompt, roundNumber) {
       `FALLBACK_NOT_PROVEN_FALSE:${roundMachine.fallbackUsed}`
     );
   }
-  if (!roundExecutionEvidence.repoPreflightObserved) {
+  if (mutationRequired && !roundExecutionEvidence.repoPreflightObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
   }
-  if (testRequired && !roundExecutionEvidence.testExecutionObserved) {
+  if (mutationRequired && testRequired && !roundExecutionEvidence.testExecutionObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
   }
-  if (!roundExecutionEvidence.gitDiffObserved) {
+  if (mutationRequired && !roundExecutionEvidence.gitDiffObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
   }
-  if (diffCheckRequired && !roundExecutionEvidence.gitDiffCheckObserved) {
+  if (mutationRequired && diffCheckRequired && !roundExecutionEvidence.gitDiffCheckObserved) {
     roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
   }
   if (mutationRequired && !roundExecutionEvidence.gitMutationCommandObserved) {
@@ -521,13 +572,14 @@ async function executeLocalRound(roundPrompt, roundNumber) {
     machine: roundMachine,
     executionEvidence: roundExecutionEvidence,
     realMutationObserved: roundRealMutationObserved,
+    persistentMutationObserved,
     changedPrs: roundChangedPrs,
     finalValue: roundFinalValue
   };
 }
 
 let localRound = 1;
-let localResult = await executeLocalRound(prompt, localRound);
+let localResult = await executeLocalRound(mutationRequired ? prompt : qaProviderPrompt, localRound);
 
 let run = localResult.run;
 let finalValue = localResult.finalValue;
@@ -536,9 +588,10 @@ let resultExecutionEvidence = localResult.executionEvidence;
 let resultInvocationMode = localResult.invocation.mode;
 let resultRealMutationObserved = localResult.realMutationObserved;
 let resultChangedPrs = localResult.changedPrs;
+let qaPersistentMutationObserved = Boolean(localResult.persistentMutationObserved);
 
 while (
-  shouldContinueLocalRun({
+  mutationRequired && shouldContinueLocalRun({
     completedRound: localRound,
     status: finalValue.STATUS,
     blockers: finalValue.BLOCKERS ?? []
@@ -573,8 +626,70 @@ while (
   resultInvocationMode = localResult.invocation.mode;
   resultRealMutationObserved = localResult.realMutationObserved;
   resultChangedPrs = localResult.changedPrs;
+  qaPersistentMutationObserved = qaPersistentMutationObserved || Boolean(localResult.persistentMutationObserved);
 
   if (localRound >= MAX_LOCAL_ROUNDS) break;
+}
+
+if (!mutationRequired) {
+  // A second evidence read activates deterministic host verification. For QA,
+  // that host proof is authoritative; the model is only a local provider probe.
+  const authoritativeEvidence = readObservedExecutionEvidence(harness.journalPath);
+  const hostVerification = authoritativeEvidence.hostVerification;
+  const providerOk = String(resultMachine.provider ?? "").toLowerCase() === "ollama";
+  const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(
+    String(resultMachine.model ?? "").toLowerCase()
+  );
+  const runtimeNoCloud = providerOk && localRuntimePolicyProvesNoCloud(env);
+  const fallbackProvenFalse = resultMachine.fallbackUsed === false || runtimeNoCloud;
+  const currentHead = git(["rev-parse", "HEAD"], repoRoot);
+  qaPersistentMutationObserved = qaPersistentMutationObserved || currentHead !== beforeHead;
+
+  const qaBlockers = [];
+  if (!hostVerification?.verified) qaBlockers.push("HOST_VERIFY_QA_NOT_VERIFIED");
+  if (!providerOk) qaBlockers.push(`PROVIDER_MISMATCH:${resultMachine.provider}`);
+  if (!modelOk) qaBlockers.push(`MODEL_MISMATCH:${resultMachine.model}`);
+  if (!fallbackProvenFalse) qaBlockers.push(`FALLBACK_NOT_PROVEN_FALSE:${resultMachine.fallbackUsed}`);
+  if (qaPersistentMutationObserved) qaBlockers.push("HOST_VERIFY_QA_PERSISTENT_MUTATION");
+
+  resultExecutionEvidence = authoritativeEvidence;
+  resultMachine = {
+    ...resultMachine,
+    fallbackUsed: fallbackProvenFalse ? false : resultMachine.fallbackUsed
+  };
+  resultInvocationMode = "QA_HOST_VERIFICATION_WITH_LOCAL_PROVIDER_PROBE";
+  resultRealMutationObserved = qaPersistentMutationObserved;
+  resultChangedPrs = [];
+
+  if (qaBlockers.length === 0) {
+    finalValue = {
+      ...resultBase("PASS", `Deterministic QA verification passed for PR #${hostVerification.prNumber}`),
+      TESTS: [
+        `focused=${hostVerification.focusedTestsPassed ? "PASS" : "FAIL"}`,
+        `typecheck=${hostVerification.typecheckPassed ? "PASS" : "FAIL"}`,
+        `build=${hostVerification.buildPassed ? "PASS" : "FAIL"}`,
+        `diffCheck=${hostVerification.diffCheckPassed ? "PASS" : "FAIL"}`
+      ].join("; "),
+      PR: hostVerification.prUrl,
+      MODEL_USED: resultMachine.model,
+      LOCAL_RESULT: "SUCCESS",
+      BLOCKERS: []
+    };
+  } else {
+    finalValue = {
+      ...resultBase("BLOCKED", "Evidence-only QA did not satisfy authoritative host/local-safety proof"),
+      MODEL_USED: resultMachine.model,
+      BLOCKERS: qaBlockers,
+      UNEXPECTED_RESULTS: [JSON.stringify({
+        hostVerification,
+        provider: resultMachine.provider,
+        model: resultMachine.model,
+        fallbackUsed: resultMachine.fallbackUsed,
+        runtimeNoCloud,
+        qaPersistentMutationObserved
+      })]
+    };
+  }
 }
 
 /*
@@ -586,7 +701,7 @@ while (
  * one bounded local failure, but only when the central model policy explicitly
  * permits cloud fallback. The production default is false/$0 autonomous spend.
  */
-if (finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.cloudFallbackAllowed) {
+if (mutationRequired && finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.cloudFallbackAllowed) {
   const localFailureReason =
     (finalValue.BLOCKERS ?? [])[0] ??
     (run.error?.code === "ETIMEDOUT" ? "OPENCLAW_PROCESS_TIMEOUT" : null) ??
