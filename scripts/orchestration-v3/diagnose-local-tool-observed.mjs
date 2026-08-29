@@ -4,14 +4,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createObservedExecutionHarness, readObservedExecutionEvidence } from "./execution-evidence.mjs";
+import {
+  assertCloudMemoryDisabled,
+  stripCloudCredentials,
+  writeCloudMemoryDisabledConfig
+} from "./isolated-local-runtime.mjs";
 
 const MODEL = "ollama/qwen3.5:9b";
 const SESSION_KEY = "agent:main:jeeves-v3-observed-diagnostic";
-const CLOUD_CREDENTIAL_PREFIXES = [
-  "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
-  "GROQ_", "DEEPSEEK_", "PERPLEXITY_", "OPENROUTER_", "COHERE_", "HUGGINGFACE_",
-  "HF_", "TOGETHER_", "CEREBRAS_", "FIREWORKS_", "AZURE_", "BEDROCK_"
-];
 
 function arg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -44,67 +44,13 @@ export function buildObservedPrompt({ observedGit, repoRoot }) {
 }
 
 export function writeExecOnlyToolPolicy(configPath) {
-  let config = {};
-  try {
-    if (fs.existsSync(configPath)) {
-      const raw = fs.readFileSync(configPath, "utf8").trim();
-      if (raw) config = JSON.parse(raw);
-    }
-  } catch {
-    config = {};
-  }
-
-  const existingTools = config?.tools && typeof config.tools === "object" ? config.tools : {};
-  const existingDeny = Array.isArray(existingTools.deny) ? existingTools.deny : [];
-  config = {
-    ...config,
-    tools: {
-      ...existingTools,
-      deny: [...new Set([...existingDeny, "group:fs"])]
-    },
-    memory: {
-      ...(config.memory ?? {}),
-      search: {
-        ...(config.memory?.search ?? {}),
-        enabled: false,
-        provider: "none",
-        rememberAcrossConversations: false,
-        fallback: "none",
-        sources: ["memory"],
-        experimental: {
-          ...(config.memory?.search?.experimental ?? {}),
-          sessionMemory: false
-        }
-      }
-    },
-    agents: {
-      ...(config.agents ?? {}),
-      defaults: {
-        ...(config.agents?.defaults ?? {}),
-        compaction: {
-          ...(config.agents?.defaults?.compaction ?? {}),
-          postIndexSync: "off",
-          memoryFlush: {
-            ...(config.agents?.defaults?.compaction?.memoryFlush ?? {}),
-            enabled: false
-          }
-        }
-      }
-    }
-  };
-
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  return config;
+  return writeCloudMemoryDisabledConfig(configPath);
 }
 
 export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stateDir, configPath, controlWorkspace, harnessEnv = {} }) {
-  writeExecOnlyToolPolicy(configPath);
+  const config = writeExecOnlyToolPolicy(configPath);
+  const env = stripCloudCredentials(baseEnv);
 
-  const env = { ...baseEnv };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("OPENCLAW_")) delete env[key];
-    if (CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) && /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)) delete env[key];
-  }
   Object.assign(env, harnessEnv, {
     HOME: tempHome,
     OPENCLAW_HOME: tempHome,
@@ -119,6 +65,8 @@ export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stat
     OLLAMA_API_KEY: baseEnv.OLLAMA_API_KEY || "ollama-local"
   });
   if (baseEnv.OLLAMA_HOST) env.OLLAMA_HOST = baseEnv.OLLAMA_HOST;
+
+  assertCloudMemoryDisabled(config, env);
   return env;
 }
 
@@ -186,12 +134,14 @@ export function parseMachineEnvelope(stdout) {
 
 export function classifyObservedDiagnostic({ processResult, evidence, machine }) {
   const timedOut = processResult?.error?.code === "ETIMEDOUT" || /ETIMEDOUT|timed out|timeout/i.test(String(processResult?.error?.message ?? ""));
+  const memoryAuthFailure = /\[memory\].*No API key found for provider ["']openai["']/i.test(String(processResult?.stderr ?? ""));
   const observedGit = evidence.successfulCommands.some((command) => /^git status --short --branch\b/.test(command));
   const providerOk = String(machine?.provider ?? "").toLowerCase() === "ollama";
   const model = String(machine?.model ?? "").toLowerCase();
   const modelOk = model === "qwen3.5:9b" || model === MODEL;
   const fallbackOk = machine?.fallbackUsed === false;
 
+  if (memoryAuthFailure) return { status: "FAILED", reason: "CLOUD_MEMORY_AUTH_ATTEMPTED" };
   if (timedOut) return { status: "FAILED", reason: "OPENCLAW_PROCESS_TIMEOUT" };
   if (processResult?.status !== 0) return { status: "FAILED", reason: "OPENCLAW_PROCESS_FAILED" };
   if (!observedGit) return { status: "FAILED", reason: "MISSING_OBSERVED_GIT_EXECUTION" };
@@ -272,7 +222,8 @@ export function runObservedDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
       stateDir,
       configPath,
       controlWorkspace,
-      ambientCloudCredentialsStripped: true
+      ambientCloudCredentialsStripped: true,
+      cloudMemoryDisabled: true
     },
     invocation: {
       executable: openclaw,
@@ -306,7 +257,7 @@ async function main() {
 
 if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
-    console.error(JSON.stringify({ diagnostic: "V3_STANDALONE_OBSERVED_TOOL_DIAGNOSTIC_V2", status: "FAILED", reason: "DIAGNOSTIC_CRASH", error: error?.stack ?? String(error) }, null, 2));
+    console.error(JSON.stringify({ diagnostic: "V3_STANDALONE_OBSERVED_TOOL_DIAGNOSTIC_V2", status: "FAILED", reason: error?.code ?? "DIAGNOSTIC_CRASH", error: error?.stack ?? String(error) }, null, 2));
     process.exitCode = 1;
   });
 }

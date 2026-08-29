@@ -7,7 +7,8 @@ import { ORCHESTRATION_V3 } from "./config.mjs";
 export const LEASE_TTL_CONTRACT = Object.freeze({
   leaseTtlMs: 4 * 60 * 60 * 1000,
   heartbeatFreshMs: 2 * 60 * 1000,
-  workerHeartbeatIntervalMs: 30 * 1000
+  workerHeartbeatIntervalMs: 30 * 1000,
+  progressFreshMs: 3 * 60 * 1000
 });
 
 export function leasePath(workerId) {
@@ -24,13 +25,20 @@ export function readLease(workerId, filePath = leasePath(workerId)) {
 
 export function writeLease(workerId, lease, filePath = leasePath(workerId)) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const startedAt = lease.startedAt ?? new Date().toISOString();
   fs.writeFileSync(filePath, JSON.stringify({
     sessionId: lease.sessionId ?? randomUUID(),
     workerId,
     issueNumber: Number(lease.issueNumber),
     pid: Number(lease.pid),
-    startedAt: lease.startedAt ?? new Date().toISOString(),
-    heartbeatAt: lease.heartbeatAt ?? new Date().toISOString(),
+    startedAt,
+    heartbeatAt: lease.heartbeatAt ?? startedAt,
+    lastProgressAt: lease.lastProgressAt ?? startedAt,
+    progressSequence: Number.isInteger(Number(lease.progressSequence)) ? Number(lease.progressSequence) : 0,
+    progressPhase: lease.progressPhase ?? "LEASE_ACQUIRED",
+    lastObservedToolEventAt: lease.lastObservedToolEventAt ?? null,
+    childPid: Number.isInteger(Number(lease.childPid)) && Number(lease.childPid) > 0 ? Number(lease.childPid) : null,
+    childProcessGroupId: Number.isInteger(Number(lease.childProcessGroupId)) && Number(lease.childProcessGroupId) > 0 ? Number(lease.childProcessGroupId) : null,
     worktree: lease.worktree ?? ORCHESTRATION_V3.workers[workerId]?.worktree ?? null,
     logPath: lease.logPath ?? null
   }, null, 2) + "\n");
@@ -41,6 +49,39 @@ export function touchLeaseHeartbeat(workerId, { pid = process.pid, nowIso = new 
   if (!lease || Number(lease.pid) !== Number(pid)) return false;
   writeLease(workerId, { ...lease, heartbeatAt: nowIso });
   return true;
+}
+
+export function touchLeaseProgress(workerId, {
+  pid = process.pid,
+  phase = "PROGRESS",
+  childPid = undefined,
+  childProcessGroupId = undefined,
+  observedToolEvent = false,
+  nowIso = new Date().toISOString()
+} = {}) {
+  const lease = readLease(workerId);
+  if (!lease || Number(lease.pid) !== Number(pid)) return false;
+  const next = {
+    ...lease,
+    lastProgressAt: nowIso,
+    progressSequence: Number(lease.progressSequence ?? 0) + 1,
+    progressPhase: phase
+  };
+  if (childPid !== undefined) next.childPid = childPid;
+  if (childProcessGroupId !== undefined) next.childProcessGroupId = childProcessGroupId;
+  if (observedToolEvent) next.lastObservedToolEventAt = nowIso;
+  writeLease(workerId, next);
+  return true;
+}
+
+export function touchOwnedLeaseProgress(options = {}) {
+  for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
+    const lease = readLease(workerId);
+    if (lease && Number(lease.pid) === Number(process.pid)) {
+      return touchLeaseProgress(workerId, options);
+    }
+  }
+  return false;
 }
 
 export function alive(pid) {
@@ -88,11 +129,13 @@ export function inspectLease(workerId, {
   const command = processCommandText === undefined ? processCommand(pid) : processCommandText;
   const leaseAgeMs = hasLease ? ageMs(lease.startedAt, nowMs) : null;
   const heartbeatAgeMs = hasLease ? ageMs(lease.heartbeatAt ?? lease.startedAt, nowMs) : null;
+  const progressAgeMs = hasLease ? ageMs(lease.lastProgressAt ?? lease.startedAt, nowMs) : null;
   const worktreeMatches = !hasLease || !cfg
     ? false
     : lease.worktree === null || lease.worktree === undefined || path.resolve(String(lease.worktree)) === path.resolve(cfg.worktree);
   const commandMatches = hasLease && resolvedPidAlive ? commandMatchesLease(command, lease) : false;
   const heartbeatFresh = hasLease && Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs <= LEASE_TTL_CONTRACT.heartbeatFreshMs;
+  const progressFresh = hasLease && Number.isFinite(progressAgeMs) && progressAgeMs <= LEASE_TTL_CONTRACT.progressFreshMs;
   const leaseWithinTtl = hasLease && Number.isFinite(leaseAgeMs) && leaseAgeMs <= LEASE_TTL_CONTRACT.leaseTtlMs;
 
   let decision = "NO_LEASE";
@@ -102,6 +145,7 @@ export function inspectLease(workerId, {
     if (resolvedPidAlive && !commandMatches) evidence.push("PID_COMMAND_MISMATCH");
     if (!worktreeMatches) evidence.push("WORKTREE_IDENTITY_MISMATCH");
     if (!heartbeatFresh) evidence.push("HEARTBEAT_STALE");
+    if (!progressFresh) evidence.push("PROGRESS_STALE");
     if (!leaseWithinTtl) evidence.push("LEASE_TTL_EXPIRED");
 
     if (resolvedPidAlive && commandMatches && worktreeMatches && heartbeatFresh) {
@@ -120,8 +164,15 @@ export function inspectLease(workerId, {
     session_id: lease?.sessionId ?? null,
     started_at: lease?.startedAt ?? null,
     heartbeat_at: lease?.heartbeatAt ?? null,
+    last_progress_at: lease?.lastProgressAt ?? null,
+    progress_sequence: Number(lease?.progressSequence ?? 0),
+    progress_phase: lease?.progressPhase ?? null,
+    last_observed_tool_event_at: lease?.lastObservedToolEventAt ?? null,
+    child_pid: Number(lease?.childPid) || null,
+    child_process_group_id: Number(lease?.childProcessGroupId) || null,
     lease_age_seconds: Number.isFinite(leaseAgeMs) ? Math.round(leaseAgeMs / 1000) : null,
     heartbeat_age_seconds: Number.isFinite(heartbeatAgeMs) ? Math.round(heartbeatAgeMs / 1000) : null,
+    progress_age_seconds: Number.isFinite(progressAgeMs) ? Math.round(progressAgeMs / 1000) : null,
     pid_alive: Boolean(resolvedPidAlive),
     process_command: command,
     worktree: lease?.worktree ?? null,
@@ -129,6 +180,7 @@ export function inspectLease(workerId, {
     worktree_matches: worktreeMatches,
     command_matches_lease: commandMatches,
     heartbeat_fresh: heartbeatFresh,
+    progress_fresh: progressFresh,
     lease_within_ttl: leaseWithinTtl,
     reconciliation_decision: decision,
     evidence
