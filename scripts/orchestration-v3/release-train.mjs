@@ -39,15 +39,22 @@ function verificationRequired(candidate) {
     failureAction: {
       stream: "QA_EVALUATION",
       reason: "POST_MERGE_PRODUCTION_VERIFICATION_FAILED",
-      title: `Repair production verification for PR #${candidate.prNumber}`
+      title: `Repair production verification for PR #${candidate.prNumber}`,
+      changedFiles: [...(candidate.changedFiles ?? [])],
+      fileOwnership: candidate.fileOwnership ?? null
     }
   };
 }
 
 function followupForSkippedCandidate(candidate) {
   if (!isCurrentCandidate(candidate)) return null;
+  const shared = {
+    changedFiles: [...(candidate.changedFiles ?? [])],
+    fileOwnership: candidate.fileOwnership ?? null
+  };
   if (includesReason(candidate, "NOT_MERGEABLE:CONFLICTING")) {
     return {
+      ...shared,
       prNumber: candidate.prNumber,
       issueNumber: candidate.issueNumber,
       stream: "INTEGRATION_RELEASE",
@@ -58,6 +65,7 @@ function followupForSkippedCandidate(candidate) {
   }
   if ((candidate.reasons ?? []).includes("MISSING_VALIDATION_EVIDENCE")) {
     return {
+      ...shared,
       prNumber: candidate.prNumber,
       issueNumber: candidate.issueNumber,
       stream: "QA_EVALUATION",
@@ -68,6 +76,7 @@ function followupForSkippedCandidate(candidate) {
   }
   if ((candidate.reasons ?? []).includes("STACKED_PR_REQUIRES_PARENT_FIRST")) {
     return {
+      ...shared,
       prNumber: candidate.prNumber,
       issueNumber: candidate.issueNumber,
       stream: "INTEGRATION_RELEASE",
@@ -135,7 +144,8 @@ export function buildReleaseTrainSnapshot({ evaluatedCandidates, mergedCandidate
       humanProductionGatesUnchanged: true,
       productionVerificationIsReadOnly: true,
       failedVerificationPreventsFalseCompletion: true,
-      staleHistoricalPrsExcluded: true
+      staleHistoricalPrsExcluded: true,
+      followupOwnershipDerivedFromPrFiles: true
     }
   };
 }
