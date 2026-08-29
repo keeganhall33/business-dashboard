@@ -1,0 +1,42 @@
+name: Woo Shipping Method Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/woo-shipping-method-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 1Password/install-cli-action@v1
+      - name: Inspect WooCommerce shipping zones and methods
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+          cp config/env/website.op.env .env.website
+          op run --env-file .env.website -- bash <<'BASH'
+          set -euo pipefail
+          base="${WOO_BASE_URL%/}"
+          auth="${WOO_CONSUMER_KEY}:${WOO_CONSUMER_SECRET}"
+
+          echo '=== REGISTERED SHIPPING METHODS ==='
+          curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping_methods" | jq '[.[] | {id,title,description}]'
+
+          echo '=== SHIPPING ZONES ==='
+          zones=$(curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping/zones")
+          echo "$zones" | jq '[.[] | {id,name,order}]'
+          for id in $(echo "$zones" | jq -r '.[].id'); do
+            echo "=== ZONE $id METHODS ==="
+            curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping/zones/$id/methods" | jq '[.[] | {id,instance_id,title,method_id,method_title,enabled,settings}]'
+          done
+          echo '=== ZONE 0 METHODS ==='
+          curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping/zones/0/methods" | jq '[.[] | {id,instance_id,title,method_id,method_title,enabled,settings}]'
+          BASH
