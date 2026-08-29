@@ -1,0 +1,28 @@
+import fs from "node:fs";
+
+const file = "scripts/orchestration-v3/watcher.mjs";
+let source = fs.readFileSync(file, "utf8");
+
+const importAnchor = 'import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";';
+const importLine = 'import { evaluateRoadmapCandidate, planRoadmapReplenishment } from "./roadmap-replenisher.mjs";';
+if (!source.includes(importLine)) {
+  if (!source.includes(importAnchor)) throw new Error("ROADMAP_REPLENISH_IMPORT_ANCHOR_NOT_FOUND");
+  source = source.replace(importAnchor, `${importAnchor}\n${importLine}`);
+}
+
+const functionAnchor = `function openOrchestrationIssues() {\n  return issuesWithLabels(ORCHESTRATION_V3.queue.base);\n}\n`;
+const functionBlock = `function dependencyStatesForIssues(issues = []) {\n  const refs = new Set();\n  for (const candidate of issues) {\n    const text = String(candidate?.body ?? "");\n    const declarations = [\n      ...text.matchAll(/^\\s*(?:\\*\\*)?(?:depends_on|dependency|dependencies)(?:\\*\\*)?\\s*:\\s*(.+)$/gim),\n      ...text.matchAll(/^\\s*(?:[-*]\\s*)?Depends\\s+on\\s+(.+)$/gim)\n    ];\n    for (const declaration of declarations) {\n      for (const match of String(declaration[1] ?? "").matchAll(/#(\\d+)\\b/g)) refs.add(Number(match[1]));\n    }\n  }\n  return new Map([...refs].map((number) => [number, String(restIssue(number).state ?? "unknown").toLowerCase()]));\n}\n\nfunction replenishProductRoadmap(watermark) {\n  const uncoveredWorkerIds = (watermark?.uncovered_worker_ids ?? []).filter((workerId) =>\n    ORCHESTRATION_V3.capacity.productWorkers.includes(workerId)\n  );\n  if (!watermark?.replenishment_needed || uncoveredWorkerIds.length === 0) {\n    return { selected: [], promoted: [], still_uncovered_worker_ids: uncoveredWorkerIds };\n  }\n\n  const allOpen = openOrchestrationIssues();\n  const occupiedIssues = allOpen.filter((candidate) => {\n    const labels = labelSet(candidate);\n    return labels.has(ORCHESTRATION_V3.queue.ready) || labels.has(ORCHESTRATION_V3.queue.running);\n  });\n  const dependencyStates = dependencyStatesForIssues(allOpen);\n  const plan = planRoadmapReplenishment({\n    openIssues: allOpen,\n    uncoveredWorkerIds,\n    dependencyStates,\n    occupiedIssues\n  });\n\n  for (const rejected of plan.rejected) {\n    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_REJECTED", ...rejected }));\n  }\n\n  const promoted = [];\n  const occupiedNow = [...occupiedIssues];\n  for (const selected of plan.selected) {\n    const fresh = issue(Number(selected.issue_number));\n    const validation = evaluateRoadmapCandidate(fresh, {\n      uncoveredWorkerIds: [selected.worker_id],\n      dependencyStates,\n      occupiedIssues: occupiedNow\n    });\n    if (!validation.eligible) {\n      console.log(JSON.stringify({\n        event: "ROADMAP_REPLENISHMENT_REVALIDATION_SKIPPED",\n        workerId: selected.worker_id,\n        issueNumber: selected.issue_number,\n        reasons: validation.reasons\n      }));\n      continue;\n    }\n    transitionLabels(Number(selected.issue_number), { remove: [], add: [ORCHESTRATION_V3.queue.ready] });\n    occupiedNow.push(fresh);\n    promoted.push(selected);\n    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_PROMOTED", ...selected }));\n  }\n\n  return { ...plan, promoted };\n}\n`;
+if (!source.includes("function replenishProductRoadmap(")) {
+  if (!source.includes(functionAnchor)) throw new Error("ROADMAP_REPLENISH_FUNCTION_ANCHOR_NOT_FOUND");
+  source = source.replace(functionAnchor, `${functionAnchor}\n${functionBlock}`);
+}
+
+const oldWatermarkBlock = `  const watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({\n    readyIssues: ready,\n    runningIssues: runningIssues(),\n    activeLeaseAssignments: activeAssignments,\n    lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason\n  }));\n  console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));\n`;
+const newWatermarkBlock = `  let watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({\n    readyIssues: ready,\n    runningIssues: runningIssues(),\n    activeLeaseAssignments: activeAssignments,\n    lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason\n  }));\n  console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));\n\n  const replenishment = replenishProductRoadmap(watermark);\n  if (replenishment.promoted?.length > 0) {\n    ready.splice(0, ready.length, ...readyIssues().sort((left, right) => {\n      const leftPriority = priorityRank(left.body, left.number);\n      const rightPriority = priorityRank(right.body, right.number);\n      if (leftPriority !== rightPriority) return leftPriority - rightPriority;\n      return Number(left.number) - Number(right.number);\n    }));\n    watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({\n      readyIssues: ready,\n      runningIssues: runningIssues(),\n      activeLeaseAssignments: activeAssignments,\n      lastReplenishAt: new Date().toISOString(),\n      lastRecoveryResult: "PRODUCT_ROADMAP_REPLENISHED"\n    }));\n    console.log(JSON.stringify({ event: "QUEUE_WATERMARK_REPLENISHED", ...watermark }));\n  }\n`;
+if (!source.includes("const replenishment = replenishProductRoadmap(watermark);")) {
+  if (!source.includes(oldWatermarkBlock)) throw new Error("ROADMAP_REPLENISH_WATERMARK_ANCHOR_NOT_FOUND");
+  source = source.replace(oldWatermarkBlock, newWatermarkBlock);
+}
+
+fs.writeFileSync(file, source);
+console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_WIRING_APPLIED", file }));
