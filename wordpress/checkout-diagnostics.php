@@ -1,6 +1,6 @@
 <?php
 /**
- * KeeganHall checkout diagnostics instrumentation.
+ * KeeganHall checkout diagnostics instrumentation v1.1.
  * Install as a PHP snippet in Code Snippets and run on front end only.
  * Emits no customer PII. Sends only event names and coarse checkout state.
  */
@@ -10,12 +10,22 @@ add_action('wp_footer', function () {
         return;
     }
     ?>
-<script id="kh-checkout-diagnostics-v1">
+<script id="kh-checkout-diagnostics-v11">
 (function () {
   'use strict';
 
   var fired = {};
   var lastShippingTotal = null;
+  var customerCompleteAt = null;
+  var shippingUpdateStartedAt = null;
+  var shippingMethodsFirstSeenAt = null;
+  var shippingTotalFirstSeenAt = null;
+  var ajaxUpdateStartedAt = null;
+  var autofillCandidateAt = null;
+
+  function now() {
+    return (window.performance && typeof window.performance.now === 'function') ? window.performance.now() : Date.now();
+  }
 
   function deviceType() {
     var w = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -33,24 +43,43 @@ add_action('wp_footer', function () {
     return 'other';
   }
 
+  function latencyBucket(ms) {
+    if (ms === null || ms === undefined || !isFinite(ms)) return 'unknown';
+    if (ms < 1000) return 'under_1s';
+    if (ms < 2000) return '1_to_2s';
+    if (ms < 4000) return '2_to_4s';
+    if (ms < 6000) return '4_to_6s';
+    if (ms < 10000) return '6_to_10s';
+    return '10s_plus';
+  }
+
+  function emitLatencyEvent(prefix, ms) {
+    var bucket = latencyBucket(ms);
+    send(prefix + '_' + bucket, {latency_bucket: bucket}, true);
+  }
+
+  function ensureGtagQueue() {
+    window.dataLayer = window.dataLayer || [];
+    if (typeof window.gtag !== 'function') {
+      window.gtag = function () { window.dataLayer.push(arguments); };
+    }
+  }
+
   function send(name, props, once) {
     if (once && fired[name]) return;
     if (once) fired[name] = true;
 
     var safe = Object.assign({
-      checkout_diag_version: 'v1',
+      checkout_diag_version: 'v1_1',
       device_class: deviceType(),
       browser_family: browserFamily(),
       page_path: location.pathname
     }, props || {});
 
     try {
-      if (typeof window.gtag === 'function') {
-        window.gtag('event', name, safe);
-      } else {
-        window.dataLayer = window.dataLayer || [];
-        window.dataLayer.push(Object.assign({event: name}, safe));
-      }
+      ensureGtagQueue();
+      window.gtag('event', name, safe);
+      window.dataLayer.push(Object.assign({event: name}, safe));
     } catch (e) {}
 
     try {
@@ -74,11 +103,14 @@ add_action('wp_footer', function () {
     return r.width > 0 && r.height > 0;
   }
 
-  function requiredCustomerFieldsComplete() {
-    var fields = Array.prototype.slice.call(document.querySelectorAll(
-      '#billing_first_name, #billing_last_name, #billing_address_1, #billing_city, #billing_postcode, #billing_email, #shipping_first_name, #shipping_last_name, #shipping_address_1, #shipping_city, #shipping_postcode'
+  function customerFields() {
+    return Array.prototype.slice.call(document.querySelectorAll(
+      '#billing_first_name, #billing_last_name, #billing_address_1, #billing_city, #billing_state, #billing_postcode, #billing_email, #shipping_first_name, #shipping_last_name, #shipping_address_1, #shipping_city, #shipping_state, #shipping_postcode'
     ));
-    var relevant = fields.filter(function (f) {
+  }
+
+  function requiredCustomerFieldsComplete() {
+    var relevant = customerFields().filter(function (f) {
       var row = f.closest('.form-row');
       var required = row ? row.classList.contains('validate-required') : f.required;
       return required && visible(f);
@@ -118,21 +150,50 @@ add_action('wp_footer', function () {
     return isFinite(n) ? Math.round(n * 100) / 100 : null;
   }
 
+  function markCustomerComplete() {
+    if (!requiredCustomerFieldsComplete()) return;
+    if (customerCompleteAt === null) {
+      customerCompleteAt = now();
+      send('customer_info_complete', {}, true);
+      if (autofillCandidateAt !== null && (customerCompleteAt - autofillCandidateAt) < 1500) {
+        send('customer_info_autofill_detected', {autofill_detection: 'rapid_multi_field_completion'}, true);
+      }
+    }
+  }
+
+  function markShippingUpdateStarted(source) {
+    if (shippingUpdateStartedAt === null) shippingUpdateStartedAt = now();
+    send('shipping_update_started', {update_source: source || 'unknown'}, true);
+  }
+
   function scan() {
+    markCustomerComplete();
+
     if (shippingMethodsLoaded()) {
-      send('shipping_methods_loaded', {shipping_method_state: selectedShippingMethod()}, true);
+      if (shippingMethodsFirstSeenAt === null) {
+        shippingMethodsFirstSeenAt = now();
+        send('shipping_methods_loaded', {shipping_method_state: selectedShippingMethod()}, true);
+        if (customerCompleteAt !== null) {
+          emitLatencyEvent('shipping_methods_latency', shippingMethodsFirstSeenAt - customerCompleteAt);
+        }
+        if (shippingUpdateStartedAt !== null) {
+          emitLatencyEvent('shipping_update_to_methods', shippingMethodsFirstSeenAt - shippingUpdateStartedAt);
+        }
+      }
     }
 
     var shippingTotal = detectShippingTotal();
     if (shippingTotal !== null && shippingTotal !== lastShippingTotal) {
       lastShippingTotal = shippingTotal;
+      if (shippingTotalFirstSeenAt === null) {
+        shippingTotalFirstSeenAt = now();
+        if (customerCompleteAt !== null) {
+          emitLatencyEvent('shipping_total_latency', shippingTotalFirstSeenAt - customerCompleteAt);
+        }
+      }
       send('shipping_total_shown', {
         shipping_bucket: shippingTotal === 0 ? 'free' : (shippingTotal < 10 ? 'under_10' : (shippingTotal < 20 ? '10_to_20' : '20_plus'))
       }, false);
-    }
-
-    if (requiredCustomerFieldsComplete()) {
-      send('customer_info_complete', {}, true);
     }
 
     var payment = paymentSection();
@@ -153,28 +214,46 @@ add_action('wp_footer', function () {
     }
   }, true);
 
+  document.addEventListener('input', function (e) {
+    if (!e.target || !e.target.matches || !e.target.matches('input, select, textarea')) return;
+    var populated = customerFields().filter(function (f) { return visible(f) && String(f.value || '').trim().length > 0; }).length;
+    if (populated >= 4 && autofillCandidateAt === null) autofillCandidateAt = now();
+    window.setTimeout(scan, 50);
+    window.setTimeout(scan, 300);
+  }, true);
+
   document.addEventListener('change', function (e) {
     if (!e.target || !e.target.matches) return;
+    if (e.target.matches('#billing_country, #billing_state, #billing_postcode, #billing_city, #billing_address_1, #shipping_country, #shipping_state, #shipping_postcode, #shipping_city, #shipping_address_1')) {
+      markShippingUpdateStarted('address_change');
+    }
     if (e.target.matches('input[name^="shipping_method"], select[name^="shipping_method"]')) {
       send('shipping_method_selected', {shipping_method_state: 'selected'}, false);
     }
     if (e.target.matches('input[name="payment_method"]')) {
       send('payment_method_selected', {payment_method: selectedPaymentMethod()}, false);
     }
-    window.setTimeout(scan, 150);
+    window.setTimeout(scan, 100);
+    window.setTimeout(scan, 500);
   }, true);
 
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('#place_order, button[name="woocommerce_checkout_place_order"], .wfacp_next_page_button, [class*="place-order"] button') : null;
-    if (btn) {
-      send('place_order_clicked', {payment_method: selectedPaymentMethod()}, false);
-    }
+    if (btn) send('place_order_clicked', {payment_method: selectedPaymentMethod()}, false);
   }, true);
 
   if (window.jQuery) {
-    window.jQuery(document.body)
+    var $ = window.jQuery;
+    $(document.body)
+      .on('update_checkout', function () {
+        markShippingUpdateStarted('woocommerce_update_checkout');
+      })
       .on('updated_checkout', function () {
-        window.setTimeout(scan, 100);
+        if (ajaxUpdateStartedAt !== null) {
+          emitLatencyEvent('checkout_ajax_latency', now() - ajaxUpdateStartedAt);
+          ajaxUpdateStartedAt = null;
+        }
+        window.setTimeout(scan, 50);
       })
       .on('checkout_error', function () {
         send('checkout_validation_error', {error_stage: 'woocommerce_checkout'}, false);
@@ -182,6 +261,22 @@ add_action('wp_footer', function () {
       .on('payment_method_selected', function () {
         send('payment_method_selected', {payment_method: selectedPaymentMethod()}, false);
       });
+
+    $(document).ajaxSend(function (_event, _xhr, settings) {
+      var url = String((settings && settings.url) || '');
+      var data = String((settings && settings.data) || '');
+      if (/update_order_review|wc-ajax=update_order_review|wfacp|checkout/i.test(url + ' ' + data)) {
+        ajaxUpdateStartedAt = now();
+        markShippingUpdateStarted('ajax');
+      }
+    });
+
+    $(document).ajaxError(function (_event, _xhr, settings) {
+      var url = String((settings && settings.url) || '');
+      if (/update_order_review|wc-ajax|wfacp|checkout|payment/i.test(url)) {
+        send('checkout_ajax_error', {error_stage: 'ajax'}, false);
+      }
+    });
   }
 
   window.addEventListener('error', function (e) {
@@ -198,23 +293,12 @@ add_action('wp_footer', function () {
 
   var observer = new MutationObserver(function () {
     window.clearTimeout(observer._t);
-    observer._t = window.setTimeout(scan, 120);
+    observer._t = window.setTimeout(scan, 80);
   });
   observer.observe(document.documentElement, {childList: true, subtree: true});
 
-  var payment = paymentSection();
-  if (payment && 'IntersectionObserver' in window) {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
-          send('payment_section_visible', {}, true);
-        }
-      });
-    }, {threshold: [0.25]});
-    io.observe(payment);
-  }
-
-  window.setTimeout(scan, 500);
+  window.setTimeout(scan, 200);
+  window.setTimeout(scan, 750);
   window.setTimeout(scan, 1500);
 })();
 </script>
