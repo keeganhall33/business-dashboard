@@ -87,14 +87,8 @@ test("task mutability preserves implementation mutation gates and permits eviden
     "utf8"
   );
 
-  assert.match(
-    workerSource,
-    /VALIDATION_EVIDENCE_ONLY/
-  );
-  assert.match(
-    workerSource,
-    /IMPLEMENTATION_MUTATION_REQUIRED/
-  );
+  assert.match(workerSource, /VALIDATION_EVIDENCE_ONLY/);
+  assert.match(workerSource, /IMPLEMENTATION_MUTATION_REQUIRED/);
   assert.match(
     workerSource,
     /if\s*\(\s*mutationRequired\s*&&\s*!roundExecutionEvidence\.gitMutationCommandObserved\s*\)/
@@ -116,10 +110,7 @@ test("task mutability preserves implementation mutation gates and permits eviden
     hostSource,
     /if\s*\(\s*mutationRequired\s*&&\s*!matchingPr\s*\)/
   );
-  assert.match(
-    hostSource,
-    /changedFiles\.length === 0/
-  );
+  assert.match(hostSource, /changedFiles\.length === 0/);
 });
 
 test("explicit task_mutability metadata takes precedence over evidence-only prose", () => {
@@ -171,4 +162,41 @@ test("disposable QA verification installs local dependencies instead of symlinki
   assert.match(source, /npmExe, \["ci", "--no-audit", "--no-fund"\]/);
   assert.doesNotMatch(source, /symlinkSync\([^\n]*node_modules/i);
   assert.match(source, /HOST_VERIFY_QA_DEPENDENCY_INSTALL_FAILED/);
+});
+
+test("evidence-only QA uses a local provider probe plus authoritative host verification", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+
+  assert.match(workerSource, /V3_QA_PROVIDER_PROBE_V1/);
+  assert.match(workerSource, /QA_HOST_VERIFICATION_WITH_LOCAL_PROVIDER_PROBE/);
+  assert.match(workerSource, /const authoritativeEvidence = readObservedExecutionEvidence\(harness\.journalPath\)/);
+  assert.match(workerSource, /if \(!hostVerification\?\.verified\) qaBlockers\.push\("HOST_VERIFY_QA_NOT_VERIFIED"\)/);
+});
+
+test("evidence-only QA proves no-cloud fallback from fail-closed local policy and observed Ollama", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+
+  assert.match(workerSource, /function localRuntimePolicyProvesNoCloud/);
+  assert.match(workerSource, /ORCHESTRATION_V3\.model\.cloudFallbackAllowed === false/);
+  assert.match(workerSource, /OPENCLAW_FALLBACK_MODELS/);
+  assert.match(workerSource, /const runtimeNoCloud = providerOk && localRuntimePolicyProvesNoCloud\(env\)/);
+  assert.match(workerSource, /fallbackUsed: fallbackProvenFalse \? false : resultMachine\.fallbackUsed/);
+});
+
+test("evidence-only QA rejects any persistent local-f mutation even after preservation-first recovery", () => {
+  const workerSource = fs.readFileSync(
+    "scripts/orchestration-v3/worker.mjs",
+    "utf8"
+  );
+
+  assert.match(workerSource, /recoveryObservedPersistentMutation/);
+  assert.match(workerSource, /HOST_VERIFY_QA_PERSISTENT_MUTATION/);
+  assert.match(workerSource, /qaPersistentMutationObserved = qaPersistentMutationObserved \|\| currentHead !== beforeHead/);
+  assert.match(workerSource, /if \(mutationRequired && finalValue\.STATUS !== "PASS"/);
 });
