@@ -9,7 +9,7 @@ import {
   writeCloudMemoryDisabledConfig
 } from "../scripts/orchestration-v3/isolated-local-runtime.mjs";
 
-test("isolated local config disables cloud-backed memory lifecycle", () => {
+test("isolated local config disables cloud-backed memory lifecycle with schema-safe keys", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "v3-memory-config-"));
   const configPath = path.join(dir, "openclaw.json");
   fs.writeFileSync(configPath, "{}\n", "utf8");
@@ -18,14 +18,20 @@ test("isolated local config disables cloud-backed memory lifecycle", () => {
   assert.equal(config.plugins.slots.memory, "none");
   assert.equal(config.plugins.entries["memory-core"].enabled, false);
   assert.equal(config.plugins.entries["active-memory"].enabled, false);
+  assert.equal(config.plugins.entries["active-memory"].config.mode, "off");
   assert.equal(config.memory.search.enabled, false);
   assert.equal(config.memory.search.rememberAcrossConversations, false);
-  assert.equal(config.memory.qmd.sessions.enabled, false);
-  assert.equal(config.agents.defaults.memorySearch.enabled, false);
-  assert.equal(config.agents.defaults.memorySearch.sync.onSessionStart, false);
-  assert.equal(config.agents.defaults.memorySearch.sync.onSearch, false);
-  assert.equal(config.agents.defaults.memorySearch.sync.watch, false);
+  assert.deepEqual(config.memory.search.sources, ["memory"]);
+  assert.equal(config.memory.search.experimental.sessionMemory, false);
   assert.equal(config.hooks.internal.entries["session-memory"].enabled, false);
+
+  // Do not emit unsupported sentinel providers or legacy memory paths. The
+  // isolated CLI must be able to validate this config before agent startup.
+  assert.equal("provider" in config.memory.search, false);
+  assert.equal("fallback" in config.memory.search, false);
+  assert.equal("qmd" in config.memory, false);
+  assert.equal("agents" in config, false);
+
   assert.doesNotThrow(() => assertCloudMemoryDisabled(config, {}));
 });
 
@@ -49,8 +55,7 @@ test("startup self-check fails closed when cloud memory is re-enabled", () => {
   assert.throws(
     () => assertCloudMemoryDisabled({
       plugins: { slots: { memory: "memory-core" }, entries: { "memory-core": { enabled: true }, "active-memory": { enabled: false } } },
-      memory: { search: { enabled: false, rememberAcrossConversations: false }, qmd: { sessions: { enabled: false } } },
-      agents: { defaults: { memorySearch: { enabled: false, sync: { onSessionStart: false, watch: false } } } },
+      memory: { search: { enabled: false, rememberAcrossConversations: false, experimental: { sessionMemory: false } } },
       hooks: { internal: { entries: { "session-memory": { enabled: false } } } }
     }, {}),
     /ISOLATED_CLOUD_MEMORY_NOT_DISABLED/
