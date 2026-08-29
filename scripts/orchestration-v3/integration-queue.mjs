@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { buildReleaseTrainSnapshot } from "./release-train.mjs";
+import { formatOwnershipPatterns } from "./file-ownership.mjs";
 
 export const CURRENT_AUTOMATION_CUTOFF_ISO = "2026-08-17T00:00:00.000Z";
 const LOCK_PATH = path.join(ORCHESTRATION_V3.runtime.stateRoot, "integration-queue.lock");
@@ -108,12 +109,18 @@ export function issueNumberFromBranch(headRefName) {
   return match ? Number(match[1]) : null;
 }
 
+function changedFilesFromPr(pr) {
+  return [...new Set((pr?.files ?? []).map((file) => String(file?.path ?? file?.name ?? "").trim()).filter(Boolean))].sort();
+}
+
 export function classifyIntegrationCandidate(pr, nowIso = new Date().toISOString()) {
   const reasons = [];
   const body = String(pr.body ?? "");
   const headRefName = String(pr.headRefName ?? "");
   const checkState = checkRollupState(pr.statusCheckRollup);
   const createdAt = pr.createdAt ? new Date(pr.createdAt).toISOString() : null;
+  const changedFiles = changedFilesFromPr(pr);
+  const fileOwnership = formatOwnershipPatterns(changedFiles);
 
   if (pr.isDraft) reasons.push("DRAFT_PR");
   if (!VALIDATED_BRANCH.test(headRefName)) reasons.push("UNVERIFIED_BRANCH_IDENTITY");
@@ -133,6 +140,8 @@ export function classifyIntegrationCandidate(pr, nowIso = new Date().toISOString
     baseRefName: pr.baseRefName ?? null,
     createdAt,
     checkState,
+    changedFiles,
+    fileOwnership,
     eligible: reasons.length === 0,
     reasons,
     evaluatedAt: nowIso
@@ -141,30 +150,30 @@ export function classifyIntegrationCandidate(pr, nowIso = new Date().toISOString
 
 export function reconciliationWorkForCandidate(candidate) {
   if (!candidate.issueNumber) return null;
+  const shared = {
+    issueNumber: candidate.issueNumber,
+    prNumber: candidate.prNumber,
+    headRefName: candidate.headRefName,
+    changedFiles: [...(candidate.changedFiles ?? [])],
+    fileOwnership: candidate.fileOwnership ?? null,
+    sourceReasons: [...candidate.reasons],
+    sourceCreatedAt: candidate.createdAt,
+    evaluatedAt: candidate.evaluatedAt
+  };
   if (candidate.reasons.some((reason) => reason === "NOT_MERGEABLE:CONFLICTING")) {
     return {
-      issueNumber: candidate.issueNumber,
+      ...shared,
       stream: "INTEGRATION_RELEASE",
       reason: "MERGE_CONFLICT_RECONCILIATION_REQUIRED",
-      prNumber: candidate.prNumber,
-      headRefName: candidate.headRefName,
-      title: `Reconcile merge conflict for PR #${candidate.prNumber}`,
-      sourceReasons: [...candidate.reasons],
-      sourceCreatedAt: candidate.createdAt,
-      evaluatedAt: candidate.evaluatedAt
+      title: `Reconcile merge conflict for PR #${candidate.prNumber}`
     };
   }
   if (candidate.reasons.includes("MISSING_VALIDATION_EVIDENCE")) {
     return {
-      issueNumber: candidate.issueNumber,
+      ...shared,
       stream: "QA_EVALUATION",
       reason: "MISSING_VALIDATION_EVIDENCE",
-      prNumber: candidate.prNumber,
-      headRefName: candidate.headRefName,
-      title: `Collect validation evidence for PR #${candidate.prNumber}`,
-      sourceReasons: [...candidate.reasons],
-      sourceCreatedAt: candidate.createdAt,
-      evaluatedAt: candidate.evaluatedAt
+      title: `Collect validation evidence for PR #${candidate.prNumber}`
     };
   }
   return null;
@@ -198,7 +207,7 @@ function openPullRequests() {
     "--repo", ORCHESTRATION_V3.repo,
     "--state", "open",
     "--limit", "50",
-    "--json", "number,title,body,headRefName,baseRefName,isDraft,mergeable,statusCheckRollup,url,createdAt,updatedAt"
+    "--json", "number,title,body,headRefName,baseRefName,isDraft,mergeable,statusCheckRollup,url,createdAt,updatedAt,files"
   ]) || "[]");
 }
 
