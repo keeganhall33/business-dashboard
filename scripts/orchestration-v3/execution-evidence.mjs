@@ -316,6 +316,24 @@ export function createObservedExecutionHarness({ issue, workerId }) {
       '    ;;',
       'esac'
     ] : [];
+    const integrationProtectedRoot = workerId === "local-e" ? path.resolve(ORCHESTRATION_V3.workers[workerId]?.worktree ?? "") : null;
+    const integrationIsolationGuard = command === "git" && workerId === "local-e" ? [
+      `PROTECTED_INTEGRATION_ROOT=${shellQuote(integrationProtectedRoot)}`,
+      'dangerous_integration_git=0',
+      'case " $* " in',
+      '  *" rebase "*|*" merge "*|*" cherry-pick "*|*" reset "*|*" clean "*|*" checkout "*|*" switch "*) dangerous_integration_git=1 ;;',
+      'esac',
+      'if [ "$dangerous_integration_git" -eq 1 ]; then',
+      '  effective_cwd="$PWD"',
+      '  if [ "$1" = "-C" ] && [ -n "$2" ]; then effective_cwd="$2"; fi',
+      '  effective_root=$(cd "$effective_cwd" 2>/dev/null && "$REAL" rev-parse --show-toplevel 2>/dev/null || true)',
+      '  if [ -n "$effective_root" ] && [ "$effective_root" = "$PROTECTED_INTEGRATION_ROOT" ]; then',
+      '    printf \'%s\\tgit\\t94\\tGUARD_INTEGRATION_PERSISTENT_WORKTREE blocked=%s root=%s\\n\' "$(date +%s)" "$*" "$effective_root" >> "$ORCH_EXECUTION_JOURNAL"',
+      '    echo "V3_GUARD_INTEGRATION_PERSISTENT_WORKTREE: reconcile in a disposable worktree or temporary clone, never local-e" >&2',
+      '    exit 94',
+      '  fi',
+      'fi'
+    ] : [];
     const guard = command === "git" ? [
       'if "$REAL" rev-parse --is-inside-work-tree >/dev/null 2>&1; then',
       '  worktree_deletions=$("$REAL" diff --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
@@ -356,6 +374,7 @@ export function createObservedExecutionHarness({ issue, workerId }) {
       "#!/bin/sh",
       `REAL=${shellQuote(real)}`,
       ...qaReadOnlyGuard,
+      ...integrationIsolationGuard,
       ...guard,
       '"$REAL" "$@"',
       "status=$?",
@@ -417,6 +436,7 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     gitDiffObserved: succeeded("git", /\bdiff\b/),
     gitDiffCheckObserved: succeeded("git", /\bdiff\s+--check\b/),
     gitMutationCommandObserved: gitEvents.some((event) => event.status === 0 && /\b(add|commit|push|merge|rebase|cherry-pick|checkout|switch)\b/i.test(event.args)),
+    integrationPersistentGuardTriggered: gitEvents.some((event) => event.status === 94 && /GUARD_INTEGRATION_PERSISTENT_WORKTREE/.test(event.args)),
     qaReadOnlyGuardTriggered: gitEvents.some((event) => event.status === 95 && /GUARD_QA_READ_ONLY/.test(event.args)),
     massDeletionGuardTriggered: gitEvents.some((event) => [96, 97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
     massDeletionAutoHealed: gitEvents.some((event) => event.status === 96 && /autoheal/.test(event.args)),
