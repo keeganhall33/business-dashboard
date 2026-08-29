@@ -21,7 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - uses: 1Password/install-cli-action@v1
-      - name: Query today's checkout diagnostic events from GA4
+      - name: Query realtime checkout diagnostic events from GA4
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
@@ -34,21 +34,22 @@ jobs:
           const client = new BetaAnalyticsDataClient({ credentials });
           const names = [
             'checkout_loaded','customer_info_started','customer_info_complete',
-            'shipping_methods_loaded','shipping_method_selected','shipping_total_shown',
-            'payment_section_visible','payment_methods_loaded','payment_method_selected',
+            'shipping_update_started','shipping_methods_loaded','shipping_method_selected','shipping_total_shown',
+            'shipping_latency_measured','shipping_latency_4s_plus','shipping_latency_6s_plus','shipping_latency_10s_plus',
+            'autofill_detected','checkout_ajax_error','payment_section_visible','payment_methods_loaded','payment_method_selected',
             'place_order_clicked','checkout_validation_error','payment_error','order_created'
           ];
           (async () => {
-            const [r] = await client.runReport({
+            const [r] = await client.runRealtimeReport({
               property:`properties/${propertyId}`,
-              dateRanges:[{startDate:'today',endDate:'today'}],
               dimensions:[{name:'eventName'}],
-              metrics:[{name:'eventCount'},{name:'sessions'}],
+              metrics:[{name:'eventCount'}],
               dimensionFilter:{filter:{fieldName:'eventName',inListFilter:{values:names}}},
+              minuteRanges:[{name:'last_30_minutes',startMinutesAgo:29,endMinutesAgo:0}],
               limit:100
             });
-            const rows=(r.rows||[]).map(x=>({event:x.dimensionValues?.[0]?.value,count:Number(x.metricValues?.[0]?.value||0),sessions:Number(x.metricValues?.[1]?.value||0)}));
-            console.log('CHECKOUT_DIAGNOSTICS_TODAY=' + JSON.stringify(rows));
+            const rows=(r.rows||[]).map(x=>({event:x.dimensionValues?.[0]?.value,count:Number(x.metricValues?.[0]?.value||0)}));
+            console.log('CHECKOUT_DIAGNOSTICS_REALTIME=' + JSON.stringify(rows));
             console.log('INSTRUMENTATION_ACTIVE=' + (rows.some(x=>x.event==='checkout_loaded'&&x.count>0) ? 'true':'false'));
           })().catch(e=>{console.error('VERIFY_ERROR='+String(e.message||e));process.exit(1)});
           NODE
