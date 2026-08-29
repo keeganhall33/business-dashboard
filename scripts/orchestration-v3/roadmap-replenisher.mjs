@@ -1,4 +1,5 @@
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
+import { parseOwnershipPatterns, ownershipSetsOverlap } from "./file-ownership.mjs";
 
 const PRIORITY_RANK = Object.freeze({ CRITICAL: 0, P0: 1, P1: 2, P2: 3, P3: 4 });
 const GATED_LABELS = new Set([
@@ -51,16 +52,10 @@ function dependencyDeclaration(body) {
 }
 
 function ownershipDeclaration(body) {
-  const direct = [field(body, "file_ownership"), field(body, "file ownership"), field(body, "collision_guard"), field(body, "collision guard")].find(Boolean);
-  const value = direct ?? section(body, ["File ownership / collision guard", "File ownership", "Collision guard", "Scope / ownership"]);
-  if (!value) return null;
-  const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
-  return normalized.length >= 12 ? normalized : null;
-}
-
-function ownershipOverlaps(left, right) {
-  if (!left || !right) return true;
-  return left === right || left.includes(right) || right.includes(left);
+  const direct = [field(body, "file_ownership"), field(body, "file ownership")].find(Boolean);
+  const value = direct ?? section(body, ["File ownership", "File ownership / collision guard"]);
+  if (!value) return { declared: false, valid: [], invalid: [] };
+  return parseOwnershipPatterns(value);
 }
 
 function normalizeCandidate(issue) {
@@ -108,14 +103,17 @@ export function evaluateRoadmapCandidate(issue, {
     }
   }
 
-  if (!candidate.ownership) reasons.push("MISSING_EXPLICIT_FILE_OWNERSHIP");
-  if (candidate.ownership) {
+  if (!candidate.ownership.declared) reasons.push("MISSING_EXPLICIT_FILE_OWNERSHIP");
+  if (candidate.ownership.invalid.length > 0) reasons.push(`INVALID_FILE_OWNERSHIP:${candidate.ownership.invalid.join("|")}`);
+  if (candidate.ownership.declared && candidate.ownership.valid.length === 0) reasons.push("EMPTY_VALID_FILE_OWNERSHIP");
+
+  if (candidate.ownership.valid.length > 0) {
     for (const occupied of occupiedIssues.map(normalizeCandidate)) {
-      if (!occupied.ownership) {
+      if (!occupied.ownership.declared || occupied.ownership.valid.length === 0 || occupied.ownership.invalid.length > 0) {
         reasons.push(`OCCUPIED_OWNERSHIP_UNKNOWN:#${occupied.number}`);
         continue;
       }
-      if (ownershipOverlaps(candidate.ownership, occupied.ownership)) {
+      if (ownershipSetsOverlap(candidate.ownership.valid, occupied.ownership.valid)) {
         reasons.push(`FILE_OWNERSHIP_COLLISION:#${occupied.number}`);
       }
     }
@@ -129,7 +127,8 @@ export function evaluateRoadmapCandidate(issue, {
     priority: candidate.priority,
     priority_rank: candidate.priority_rank,
     worker_candidates: candidate.worker_candidates,
-    ownership: candidate.ownership,
+    ownership: candidate.ownership.valid,
+    invalid_ownership: candidate.ownership.invalid,
     dependency_issue_numbers: candidate.dependencies.issue_numbers
   };
 }
@@ -165,12 +164,12 @@ export function planRoadmapReplenishment({
     const workerId = entry.evaluation.worker_candidates.find((id) => productUncovered.includes(id) && !selectedWorkers.has(id));
     if (!workerId) continue;
 
-    const collision = selectedIssues.some((other) => ownershipOverlaps(entry.evaluation.ownership, other.evaluation.ownership));
+    const collision = selectedIssues.some((other) => ownershipSetsOverlap(entry.evaluation.ownership, other.evaluation.ownership));
     if (collision) continue;
 
     selectedWorkers.add(workerId);
     selectedIssues.push(entry);
-    selected.push({ worker_id: workerId, issue_number: entry.evaluation.issue_number, stream: entry.evaluation.stream });
+    selected.push({ worker_id: workerId, issue_number: entry.evaluation.issue_number, stream: entry.evaluation.stream, ownership: entry.evaluation.ownership });
   }
 
   return {
