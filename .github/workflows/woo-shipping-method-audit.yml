@@ -26,6 +26,10 @@ jobs:
           set -euo pipefail
           base="${WOO_BASE_URL%/}"
           auth="${WOO_CONSUMER_KEY}:${WOO_CONSUMER_SECRET}"
+
+          echo '=== REGISTERED SHIPPING METHODS ==='
+          curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping_methods" | jq '[.[] | {id,title,description}]'
+
           echo '=== SHIPPING ZONES ==='
           zones=$(curl -fsS -u "$auth" "$base/wp-json/wc/v3/shipping/zones")
           echo "$zones" | jq '[.[] | {id,name,order}]'
