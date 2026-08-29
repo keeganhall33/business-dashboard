@@ -79,10 +79,10 @@ if (path.resolve(sourceRoot) !== path.resolve(process.cwd())) throw new Error(`R
 console.log("=== V3 BOOTSTRAP: FETCH CLEAN MAIN ===");
 git(sourceRoot, ["fetch", "origin", "main"]);
 git(sourceRoot, ["worktree", "prune"]);
-const mainSha = git(sourceRoot, ["rev-parse", "origin/main"]);
+const mainSha = git(sourceRoot, ["rev-parse", "refs/remotes/origin/main"]);
 const tempRoot = path.join("/tmp", `jeeves-v3-bootstrap-${process.pid}`);
 if (fs.existsSync(tempRoot)) fs.rmSync(tempRoot, { recursive: true, force: true });
-git(sourceRoot, ["worktree", "add", "--detach", tempRoot, "origin/main"]);
+git(sourceRoot, ["worktree", "add", "--detach", tempRoot, "refs/remotes/origin/main"]);
 
 try {
   console.log(`V3_MAIN_SHA=${mainSha}`);

@@ -46,7 +46,7 @@ function issueRemoteBranches(cwd, issueNumber) {
   }
 }
 
-export function prepareCleanWorktreeForIssue({ cwd, issueNumber, canonicalRef = "origin/main" }) {
+export function prepareCleanWorktreeForIssue({ cwd, issueNumber, canonicalRef = "refs/remotes/origin/main" }) {
   if (!Number.isInteger(Number(issueNumber)) || Number(issueNumber) <= 0) {
     throw new Error(`INVALID_ISSUE_NUMBER:${issueNumber}`);
   }

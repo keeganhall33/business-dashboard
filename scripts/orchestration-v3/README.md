@@ -10,7 +10,7 @@ Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn
 
 ## Invariants
 
-- The watcher runs only from `~/.openclaw/runtime-v3/business-dashboard`, a clean git worktree pinned to a known `origin/main` SHA.
+- The watcher runs only from `~/.openclaw/runtime-v3/business-dashboard`, a clean git worktree pinned to a known `refs/remotes/origin/main` SHA.
 - The normal development checkout is never the scheduler runtime.
 - Only explicitly labeled `orch:ready` issues enter the queue. There is no self-healing resurrection of unlabeled historical tasks.
 - Exactly six worker identities exist: local-a CORE, local-b DISCOVERY/DATA, local-c UX/PRODUCTION_VALUE, local-d orchestration, local-e integration/release, and local-f QA/evaluation.

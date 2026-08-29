@@ -140,7 +140,7 @@ export function inspectWorktreeIntegrity(cwd) {
     const totalTrackedFiles = Number(run(cwd, ["ls-files"]).split("\n").filter(Boolean).length);
     result.status = status ? status.split("\n") : [];
     const integrity = classifyWorktreeIntegrity(result.status, { totalTrackedFiles });
-    if (path.resolve(result.gitRoot) !== path.resolve(cwd)) result.errors.push(INTEGRITY_CLASSIFICATION.WORKTREE_ROOT_MISMATCH);
+    if (fs.realpathSync(result.gitRoot) !== fs.realpathSync(cwd)) result.errors.push(INTEGRITY_CLASSIFICATION.WORKTREE_ROOT_MISMATCH);
     if (integrity.classification !== INTEGRITY_CLASSIFICATION.CLEAN) result.errors.push(integrity.classification);
     result.healthy = result.errors.length === 0;
     return { ...result, ...integrity };

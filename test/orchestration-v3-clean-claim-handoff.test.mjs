@@ -47,10 +47,10 @@ test("branchMatchesIssue rejects another issue and accepts issue-specific branch
 
 test("clean detached/stale lane is moved to the claimed issue branch from canonical main", () => {
   const { worker } = fixture();
-  const canonical = git(worker, ["rev-parse", "origin/main"]);
+  const canonical = git(worker, ["rev-parse", "refs/remotes/origin/main"]);
   git(worker, ["checkout", "--detach", canonical]);
 
-  const result = prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "origin/main" });
+  const result = prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "refs/remotes/origin/main" });
 
   assert.equal(result.prepared, true);
   assert.equal(result.branch, "issue-845-worker");
@@ -66,7 +66,7 @@ test("existing remote branch for the same issue is reused", () => {
   git(seed, ["commit", "-m", "existing issue work"]);
   git(seed, ["push", "-u", "origin", "issue-845-existing"]);
 
-  const result = prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "origin/main" });
+  const result = prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "refs/remotes/origin/main" });
 
   assert.equal(result.reusedRemoteBranch, true);
   assert.equal(result.branch, "issue-845-existing");
@@ -81,9 +81,37 @@ test("unpreserved committed work on a stale lane fails closed", () => {
   git(worker, ["commit", "-m", "local only"]);
 
   assert.throws(
-    () => prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "origin/main" }),
+    () => prepareCleanWorktreeForIssue({ cwd: worker, issueNumber: 845, canonicalRef: "refs/remotes/origin/main" }),
     /STALE_BRANCH_HAS_UNPRESERVED_COMMITS/
   );
   assert.equal(fs.readFileSync(path.join(worker, "local-only.txt"), "utf8"), "do not lose\n");
   assert.equal(git(worker, ["rev-parse", "--abbrev-ref", "HEAD"]), "issue-790-stale");
+});
+
+test("canonical remote ref remains unambiguous when a local origin/main branch exists", () => {
+  const { worker } = fixture();
+  const canonicalRef = "refs/remotes/origin/main";
+  const canonical = git(worker, ["rev-parse", canonicalRef]);
+
+  git(worker, ["switch", "-c", "origin/main"]);
+  fs.writeFileSync(path.join(worker, "wrong-local-main.txt"), "must not be canonical\n");
+  git(worker, ["add", "wrong-local-main.txt"]);
+  git(worker, ["commit", "-m", "divergent local origin/main"]);
+  git(worker, ["switch", "main"]);
+
+  assert.notEqual(
+    git(worker, ["rev-parse", "refs/heads/origin/main"]),
+    canonical
+  );
+
+  const result = prepareCleanWorktreeForIssue({
+    cwd: worker,
+    issueNumber: 845,
+    canonicalRef
+  });
+
+  assert.equal(result.prepared, true);
+  assert.equal(result.branch, "issue-845-worker");
+  assert.equal(git(worker, ["rev-parse", "HEAD"]), canonical);
+  assert.equal(fs.existsSync(path.join(worker, "wrong-local-main.txt")), false);
 });

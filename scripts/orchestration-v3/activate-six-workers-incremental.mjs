@@ -62,10 +62,10 @@ function ensureTargetWorktree(sourceRoot, workerId, cfg) {
       const recovery = recoverDisposableWorktree(workerId, { reason: "SIX_WORKER_INCREMENTAL_ACTIVATION" });
       if (!recovery.after?.healthy) throw new Error(`REFUSE_DIRTY_TARGET_WORKTREE:${workerId}:${recovery.after?.classification ?? recovery.before?.classification ?? "UNKNOWN"}`);
     }
-    git(cfg.worktree, ["reset", "--hard", "origin/main"]);
+    git(cfg.worktree, ["reset", "--hard", "refs/remotes/origin/main"]);
     git(cfg.worktree, ["clean", "-fd"]);
   } else {
-    git(sourceRoot, ["worktree", "add", "--detach", cfg.worktree, "origin/main"]);
+    git(sourceRoot, ["worktree", "add", "--detach", cfg.worktree, "refs/remotes/origin/main"]);
   }
   fs.mkdirSync(cfg.workspace, { recursive: true });
   if (path.resolve(cfg.workspace) === path.resolve(cfg.worktree)) throw new Error(`WORKSPACE_EQUALS_WORKTREE:${workerId}`);
@@ -76,18 +76,18 @@ function updateRuntime(sourceRoot) {
     if (path.resolve(root) !== path.resolve(RUNTIME)) throw new Error(`REFUSE_UNKNOWN_RUNTIME_PATH:${RUNTIME}`);
     const dirty = git(RUNTIME, ["status", "--porcelain"]);
     if (dirty) throw new Error("REFUSE_DIRTY_RUNTIME");
-    git(RUNTIME, ["reset", "--hard", "origin/main"]);
+    git(RUNTIME, ["reset", "--hard", "refs/remotes/origin/main"]);
     git(RUNTIME, ["clean", "-fd"]);
   } else {
     fs.mkdirSync(path.dirname(RUNTIME), { recursive: true });
-    git(sourceRoot, ["worktree", "add", "--detach", RUNTIME, "origin/main"]);
+    git(sourceRoot, ["worktree", "add", "--detach", RUNTIME, "refs/remotes/origin/main"]);
   }
 }
 
 const sourceRoot = repoRoot(process.cwd());
 git(sourceRoot, ["fetch", "origin", "main"]);
 git(sourceRoot, ["worktree", "prune"]);
-const mainSha = git(sourceRoot, ["rev-parse", "origin/main"]);
+const mainSha = git(sourceRoot, ["rev-parse", "refs/remotes/origin/main"]);
 run("ollama", ["show", "qwen3.5:9b"]);
 
 console.log(JSON.stringify({ event: "SIX_WORKER_INCREMENTAL_START", mainSha, targets: Object.keys(TARGETS) }));

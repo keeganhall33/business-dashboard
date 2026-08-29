@@ -123,7 +123,7 @@ git(repoRoot, ["worktree", "prune"]);
 
 for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
   fs.mkdirSync(path.dirname(cfg.worktree), { recursive: true });
-  git(repoRoot, ["worktree", "add", "--detach", cfg.worktree, "origin/main"]);
+  git(repoRoot, ["worktree", "add", "--detach", cfg.worktree, "refs/remotes/origin/main"]);
   const root = git(cfg.worktree, ["rev-parse", "--show-toplevel"]);
   if (root !== cfg.worktree) throw new Error(`WORKER_ROOT_MISMATCH:${workerId}:${root}`);
 
@@ -156,15 +156,15 @@ for (const [workerId, cfg] of Object.entries(ORCHESTRATION_V3.workers)) {
 if (fs.existsSync(ORCHESTRATION_V3.runtime.root)) {
   const runtimeRoot = safeText(ORCHESTRATION_V3.runtime.root, ["rev-parse", "--show-toplevel"]);
   if (runtimeRoot !== ORCHESTRATION_V3.runtime.root) throw new Error(`REFUSE_UNKNOWN_RUNTIME_PATH:${ORCHESTRATION_V3.runtime.root}`);
-  git(ORCHESTRATION_V3.runtime.root, ["reset", "--hard", "origin/main"]);
+  git(ORCHESTRATION_V3.runtime.root, ["reset", "--hard", "refs/remotes/origin/main"]);
   git(ORCHESTRATION_V3.runtime.root, ["clean", "-fd"]);
 } else {
   fs.mkdirSync(path.dirname(ORCHESTRATION_V3.runtime.root), { recursive: true });
-  git(repoRoot, ["worktree", "add", "--detach", ORCHESTRATION_V3.runtime.root, "origin/main"]);
+  git(repoRoot, ["worktree", "add", "--detach", ORCHESTRATION_V3.runtime.root, "refs/remotes/origin/main"]);
 }
 
 fs.mkdirSync(ORCHESTRATION_V3.runtime.stateRoot, { recursive: true });
-fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations, archivedAgentWorkspaces }, null, 2) + "\n");
+fs.writeFileSync(path.join(ORCHESTRATION_V3.runtime.stateRoot, "prepared.json"), JSON.stringify({ preparedAt: new Date().toISOString(), backupRoot, mainSha: git(repoRoot, ["rev-parse", "refs/remotes/origin/main"]), model: ORCHESTRATION_V3.model.id, agentConfigKey: agentSurface.key, archivedAttestations, archivedAgentWorkspaces }, null, 2) + "\n");
 
 console.log(JSON.stringify({
   status: "PREPARED",

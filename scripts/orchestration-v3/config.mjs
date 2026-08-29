@@ -19,7 +19,7 @@ export const ORCHESTRATION_V3 = Object.freeze({
     stateRoot: path.join(OPENCLAW_ROOT, "state", "orchestration-v3"),
     backupRoot: path.join(OPENCLAW_ROOT, "orchestration-v3-backups"),
     logRoot: path.join(os.homedir(), "Library", "Logs"),
-    canonicalRef: "origin/main"
+    canonicalRef: "refs/remotes/origin/main"
   }),
   model: Object.freeze({
     provider: "ollama",

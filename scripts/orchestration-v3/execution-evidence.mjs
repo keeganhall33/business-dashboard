@@ -91,7 +91,7 @@ function hostVerifyCloudFallback(journalPath) {
 
   const branchRes = run(gitExe, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const headRes = run(gitExe, ["rev-parse", "HEAD"]);
-  const baseRes = run(gitExe, ["rev-parse", "origin/main"]);
+  const baseRes = run(gitExe, ["rev-parse", "refs/remotes/origin/main"]);
   if (!branchRes.ok || !headRes.ok || !baseRes.ok) errors.push("HOST_VERIFY_GIT_IDENTITY_FAILED");
 
   const branch = branchRes.stdout;
@@ -275,11 +275,11 @@ export function createObservedExecutionHarness({ issue, workerId }) {
       '  fi',
       'fi',
       'if [ "$1" = "push" ]; then',
-      '  if "$REAL" rev-parse --verify origin/main >/dev/null 2>&1; then',
-      '    deletions=$("$REAL" diff --name-only --diff-filter=D origin/main...HEAD | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '  if "$REAL" rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then',
+      '    deletions=$("$REAL" diff --name-only --diff-filter=D refs/remotes/origin/main...HEAD | /usr/bin/wc -l | /usr/bin/tr -d " ")',
       '    if [ "${deletions:-0}" -ge 25 ]; then',
       '      printf \'%s\\tgit\\t98\\tGUARD_MASS_TRACKED_DELETION push deletions_vs_origin_main=%s args=%s\\n\' "$(date +%s)" "$deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
-      '      echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git push with $deletions deletions vs origin/main" >&2',
+      '      echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git push with $deletions deletions vs refs/remotes/origin/main" >&2',
       '      exit 98',
       '    fi',
       '  fi',
