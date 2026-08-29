@@ -27,9 +27,11 @@ function heartbeat(date: string, time: string, epochMs: number) {
 }
 
 test("V3 host uses process-scoped macOS idle-sleep prevention without wrapping watcher identity", () => {
-  const host = read("scripts/orchestration-v3/watcher-host.mjs");
+  const hostEntry = read("scripts/orchestration-v3/watcher-host.mjs");
+  const host = read("scripts/orchestration-v3/watcher-host-runtime.mjs");
   const activation = read("scripts/orchestration-v3/activate-host.mjs");
 
+  assert.match(hostEntry, /watcher-host-runtime\.mjs/);
   assert.match(host, /\/usr\/bin\/caffeinate/);
   assert.match(host, /\["-i", "-w", String\(watcherPid\)\]/);
   assert.match(host, /process\.platform !== "darwin"/);
