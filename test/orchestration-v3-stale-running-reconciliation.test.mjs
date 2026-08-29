@@ -7,13 +7,13 @@ test("V3 watcher reconciles stale running labels from authoritative live leases"
 
   assert.match(source, /function runningIssues\(\)/);
   assert.match(source, /function activeLeaseIssueNumbers\(\)/);
-  assert.match(source, /function reconcileRunningClaims\(\)/);
+  assert.match(source, /function reconcileRunningClaims\(activeAssignments = activeLeaseAssignments\(\)\)/);
   assert.match(source, /NO_AUTHORITATIVE_LIVE_LEASE/);
   assert.match(source, /STALE_RUNNING_REQUEUED/);
 
   assert.match(
     source,
-    /reconcileRunningClaims\(\);[\s\S]*const ready = readyIssues\(\)/
+    /const activeAssignments = activeLeaseAssignments\(\);[\s\S]*reconcileRunningClaims\(activeAssignments\);[\s\S]*const ready = readyIssues\(\)/
   );
 
   // Normal stale running work is requeued only when no current gate exists.

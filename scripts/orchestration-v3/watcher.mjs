@@ -183,13 +183,22 @@ function reconcileLease(workerId) {
   if (result.reclaimed) console.log(JSON.stringify({ event: "STALE_LEASE_RECLAIMED", workerId, issueNumber: inspection.issue_number, pid: inspection.pid, issueRunning, evidence: inspection.evidence, heartbeatAgeSeconds: inspection.heartbeat_age_seconds, leaseAgeSeconds: inspection.lease_age_seconds, reconciliationDecision: inspection.reconciliation_decision }));
   return null;
 }
-function activeLeaseIssueNumbers() {
-  const active = new Set();
+function activeLeaseAssignments() {
+  const active = [];
   for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
     const lease = reconcileLease(workerId);
-    if (lease && alive(Number(lease.pid))) active.add(Number(lease.issueNumber));
+    if (lease && alive(Number(lease.pid))) {
+      active.push({
+        workerId,
+        issueNumber: Number(lease.issueNumber)
+      });
+    }
   }
   return active;
+}
+
+function activeLeaseIssueNumbers() {
+  return new Set(activeLeaseAssignments().map((entry) => entry.issueNumber));
 }
 function labelSet(snapshot) {
   return new Set(
@@ -203,8 +212,10 @@ function humanApprovalRequiredForBody(body) {
   return String(field(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
 }
 
-function reconcileRunningClaims() {
-  const activeIssues = activeLeaseIssueNumbers();
+function reconcileRunningClaims(activeAssignments = activeLeaseAssignments()) {
+  const activeIssues = new Set(
+    activeAssignments.map((entry) => Number(entry.issueNumber))
+  );
   const candidates = runningIssues();
   for (const candidate of candidates) {
     if (activeIssues.has(Number(candidate.number))) continue;
@@ -392,7 +403,8 @@ async function poll(reason = "UNKNOWN") {
     else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
   }
 
-  reconcileRunningClaims();
+  const activeAssignments = activeLeaseAssignments();
+  reconcileRunningClaims(activeAssignments);
   const claimedWorkersThisPass = new Set();
   const ready = readyIssues().sort((left, right) => {
     const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
@@ -410,7 +422,7 @@ async function poll(reason = "UNKNOWN") {
   const watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
     readyIssues: ready,
     runningIssues: runningIssues(),
-    activeLeaseIssueNumbers: [...activeLeaseIssueNumbers()],
+    activeLeaseAssignments: activeAssignments,
     lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason
   }));
   console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));

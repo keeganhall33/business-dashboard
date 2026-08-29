@@ -127,7 +127,7 @@ test("watcher records queue watermark after startup reconciliation and before re
   assert.match(watcher, /buildQueueWatermarkSnapshot/);
   assert.match(watcher, /writeQueueWatermarkState/);
   assert.match(watcher, /lastRecoveryResult: \["STARTUP", "SAFETY_TIMER"\]\.includes\(reason\) \? "STARTUP_RECONCILIATION_COMPLETE" : reason/);
-  assert.match(watcher, /reconcileRunningClaims\(\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)[\s\S]*QUEUE_WATERMARK_STATE[\s\S]*for \(const candidate of ready\)/);
+  assert.match(watcher, /const activeAssignments = activeLeaseAssignments\(\);[\s\S]*reconcileRunningClaims\(activeAssignments\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)[\s\S]*activeLeaseAssignments: activeAssignments[\s\S]*QUEUE_WATERMARK_STATE[\s\S]*for \(const candidate of ready\)/);
 });
 
 test("doctor and liveness expose queue watermark acceptance fields", () => {
@@ -139,4 +139,56 @@ test("doctor and liveness expose queue watermark acceptance fields", () => {
   for (const field of ["active_count", "ready_reserve_count", "low_watermark_state", "last_replenish_at", "last_recovery_result"]) {
     assert.match(liveness, new RegExp(field));
   }
+});
+
+test("queue watermark fails closed when raw reserve cannot cover distinct idle workers", () => {
+  const snapshot = buildQueueWatermarkSnapshot({
+    readyIssues: [
+      issue(101, "INTEGRATION_RELEASE"),
+      issue(102, "INTEGRATION_RELEASE"),
+      issue(103, "INTEGRATION_RELEASE"),
+      issue(104, "QA_EVALUATION"),
+      issue(105, "QA_EVALUATION")
+    ],
+    runningIssues: [issue(100, "QA_EVALUATION")],
+    activeLeaseIssueNumbers: [100]
+  });
+
+  assert.equal(snapshot.ready_reserve_count, 5);
+  assert.equal(snapshot.distinct_worker_coverage_count, 1);
+  assert.deepEqual(snapshot.covered_idle_worker_ids, ["local-e"]);
+  assert.deepEqual(
+    snapshot.uncovered_worker_ids,
+    ["local-a", "local-b", "local-c", "local-d"]
+  );
+  assert.equal(snapshot.safe_to_target_six, false);
+  assert.equal(snapshot.replenishment_needed, true);
+  assert.equal(
+    snapshot.low_watermark_state,
+    "FAIL_CLOSED_INSUFFICIENT_WORKER_COVERAGE"
+  );
+  assert.equal(
+    snapshot.fail_closed_reason,
+    "INSUFFICIENT_DISTINCT_WORKER_COVERAGE"
+  );
+});
+
+test("queue watermark uses authoritative active worker identity instead of inferring from overflow streams", () => {
+  const snapshot = buildQueueWatermarkSnapshot({
+    runningIssues: [
+      issue(200, "LEARNING_INTELLIGENCE")
+    ],
+    activeLeaseAssignments: [
+      { workerId: "local-a", issueNumber: 200 }
+    ],
+    readyIssues: [
+      issue(201, "CORE_INTELLIGENCE"),
+      issue(202, "DISCOVERY_INTELLIGENCE")
+    ]
+  });
+
+  assert.deepEqual(snapshot.active_worker_ids, ["local-a"]);
+  assert.equal(snapshot.idle_worker_ids.includes("local-a"), false);
+  assert.equal(snapshot.covered_idle_worker_ids.includes("local-a"), false);
+  assert.equal(snapshot.covered_idle_worker_ids.includes("local-b"), true);
 });

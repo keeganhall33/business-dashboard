@@ -46,22 +46,67 @@ function normalizeIssue(issue) {
   };
 }
 
+function maximumWorkerCoverage(issues, eligibleWorkerIds) {
+  const eligible = new Set(eligibleWorkerIds);
+  const workerToIssue = new Map();
+
+  function assign(issue, visitedWorkers) {
+    for (const workerId of issue.worker_candidates) {
+      if (!eligible.has(workerId) || visitedWorkers.has(workerId)) continue;
+      visitedWorkers.add(workerId);
+
+      const occupyingIssue = workerToIssue.get(workerId);
+      if (!occupyingIssue || assign(occupyingIssue, visitedWorkers)) {
+        workerToIssue.set(workerId, issue);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (const issue of issues) {
+    assign(issue, new Set());
+  }
+
+  return {
+    worker_ids: [...workerToIssue.keys()],
+    issue_numbers: [...workerToIssue.values()].map((issue) => issue.number)
+  };
+}
+
 export function buildQueueWatermarkSnapshot({
   readyIssues = [],
   runningIssues = [],
   activeLeaseIssueNumbers = [],
+  activeLeaseAssignments = [],
   currentMainIssueNumbers = [],
   mergedIssueNumbers = [],
   nowIso = new Date().toISOString(),
   lastReplenishAt = null,
   lastRecoveryResult = null
 } = {}) {
-  const activeLeaseSet = new Set(activeLeaseIssueNumbers.map(Number).filter(Number.isFinite));
+  const normalizedActiveAssignments = activeLeaseAssignments
+    .map((entry) => ({
+      workerId: String(entry?.workerId ?? ""),
+      issueNumber: Number(entry?.issueNumber)
+    }))
+    .filter((entry) =>
+      ORCHESTRATION_V3.workers[entry.workerId] &&
+      Number.isFinite(entry.issueNumber)
+    );
+
+  const activeLeaseSet = new Set([
+    ...activeLeaseIssueNumbers.map(Number).filter(Number.isFinite),
+    ...normalizedActiveAssignments.map((entry) => entry.issueNumber)
+  ]);
+
   const currentMainSet = new Set(currentMainIssueNumbers.map(Number).filter(Number.isFinite));
   const mergedSet = new Set(mergedIssueNumbers.map(Number).filter(Number.isFinite));
   const running = runningIssues.map(normalizeIssue);
   const ready = readyIssues.map(normalizeIssue);
-  const activeCount = activeLeaseSet.size;
+  const activeCount = normalizedActiveAssignments.length > 0
+    ? new Set(normalizedActiveAssignments.map((entry) => entry.workerId)).size
+    : activeLeaseSet.size;
   const activeIdentities = new Set(running.map((issue) => issue.identity));
   const seenReserveIdentities = new Set();
   const reserve = [];
@@ -81,10 +126,48 @@ export function buildQueueWatermarkSnapshot({
     reserve.push(issue);
   }
 
+  const workerIds = Object.keys(ORCHESTRATION_V3.workers);
+
+  const activeIssues = running.filter((issue) => activeLeaseSet.has(issue.number));
+
+  const activeWorkerIds = normalizedActiveAssignments.length > 0
+    ? [...new Set(normalizedActiveAssignments.map((entry) => entry.workerId))]
+    : maximumWorkerCoverage(activeIssues, workerIds).worker_ids;
+
+  const idleWorkerIds = workerIds.filter((workerId) => !activeWorkerIds.includes(workerId));
+  const reserveCoverage = maximumWorkerCoverage(reserve, idleWorkerIds);
+  const coveredIdleWorkerIds = reserveCoverage.worker_ids;
+  const uncoveredWorkerIds = idleWorkerIds.filter(
+    (workerId) => !coveredIdleWorkerIds.includes(workerId)
+  );
+
+  const distinctWorkerCoverageCount = coveredIdleWorkerIds.length;
+  const totalWorkerCoverageCount = activeWorkerIds.length + distinctWorkerCoverageCount;
+  const workerCoverageSufficient =
+    totalWorkerCoverageCount >= QUEUE_WATERMARKS.targetActiveWorkers;
+
   const activeShortfall = Math.max(0, QUEUE_WATERMARKS.targetActiveWorkers - activeCount);
+
   let lowWatermarkState = "HEALTHY";
-  if (reserve.length < QUEUE_WATERMARKS.minReadyReserve) lowWatermarkState = "REPLENISHMENT_REQUIRED";
-  if (activeCount + reserve.length < QUEUE_WATERMARKS.targetActiveWorkers) lowWatermarkState = "FAIL_CLOSED_INSUFFICIENT_SAFE_WORK";
+  if (reserve.length < QUEUE_WATERMARKS.minReadyReserve) {
+    lowWatermarkState = "REPLENISHMENT_REQUIRED";
+  }
+  if (activeCount + reserve.length < QUEUE_WATERMARKS.targetActiveWorkers) {
+    lowWatermarkState = "FAIL_CLOSED_INSUFFICIENT_SAFE_WORK";
+  } else if (!workerCoverageSufficient) {
+    lowWatermarkState = "FAIL_CLOSED_INSUFFICIENT_WORKER_COVERAGE";
+  }
+
+  const replenishmentNeeded =
+    reserve.length < QUEUE_WATERMARKS.minReadyReserve ||
+    !workerCoverageSufficient;
+
+  let failClosedReason = null;
+  if (activeCount + reserve.length < QUEUE_WATERMARKS.targetActiveWorkers) {
+    failClosedReason = "INSUFFICIENT_DEPENDENCY_SAFE_FILE_ISOLATED_WORK";
+  } else if (!workerCoverageSufficient) {
+    failClosedReason = "INSUFFICIENT_DISTINCT_WORKER_COVERAGE";
+  }
 
   return {
     generated_at: nowIso,
@@ -99,11 +182,16 @@ export function buildQueueWatermarkSnapshot({
     last_recovery_result: lastRecoveryResult,
     reserve_issue_numbers: reserve.map((issue) => issue.number),
     rejected_issue_numbers: rejected,
-    safe_to_target_six: activeCount + reserve.length >= QUEUE_WATERMARKS.targetActiveWorkers,
-    replenishment_needed: reserve.length < QUEUE_WATERMARKS.minReadyReserve,
-    fail_closed_reason: activeCount + reserve.length < QUEUE_WATERMARKS.targetActiveWorkers
-      ? "INSUFFICIENT_DEPENDENCY_SAFE_FILE_ISOLATED_WORK"
-      : null
+    active_worker_ids: activeWorkerIds,
+    idle_worker_ids: idleWorkerIds,
+    distinct_worker_coverage_count: distinctWorkerCoverageCount,
+    total_worker_coverage_count: totalWorkerCoverageCount,
+    covered_idle_worker_ids: coveredIdleWorkerIds,
+    uncovered_worker_ids: uncoveredWorkerIds,
+    coverage_issue_numbers: reserveCoverage.issue_numbers,
+    safe_to_target_six: workerCoverageSufficient,
+    replenishment_needed: replenishmentNeeded,
+    fail_closed_reason: failClosedReason
   };
 }
 
