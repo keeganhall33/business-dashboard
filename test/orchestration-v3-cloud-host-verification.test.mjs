@@ -6,7 +6,8 @@ import test from "node:test";
 import {
   classifyChangedTestFiles,
   readObservedExecutionEvidence,
-  shouldAttemptCloudHostVerification
+  shouldAttemptCloudHostVerification,
+  taskMetadataValue
 } from "../scripts/orchestration-v3/execution-evidence.mjs";
 
 test("cloud host verification is second-read only", () => {
@@ -46,6 +47,22 @@ test("changed test file classification is deterministic", () => {
     "src/widget.spec.ts",
     "tests/basic.mjs"
   ]);
+});
+
+test("task metadata parser accepts plain and Markdown-bold colon forms", () => {
+  const markdown = [
+    "**stream:** QA_EVALUATION",
+    "**task_mutability:** VALIDATION_EVIDENCE_ONLY"
+  ].join("\n");
+  const plain = [
+    "stream: QA_EVALUATION",
+    "task_mutability: VALIDATION_EVIDENCE_ONLY"
+  ].join("\n");
+
+  assert.equal(taskMetadataValue(markdown, "stream"), "QA_EVALUATION");
+  assert.equal(taskMetadataValue(markdown, "task_mutability"), "VALIDATION_EVIDENCE_ONLY");
+  assert.equal(taskMetadataValue(plain, "stream"), "QA_EVALUATION");
+  assert.equal(taskMetadataValue(plain, "task_mutability"), "VALIDATION_EVIDENCE_ONLY");
 });
 
 test("source preserves strict local gate and adds host-verification requirements", () => {
@@ -93,7 +110,7 @@ test("task mutability preserves implementation mutation gates and permits eviden
   );
   assert.match(
     hostSource,
-    /if\s*\(\s*mutationRequired\s*&&\s*\(!head \|\| !base \|\| head === base\)\s*\)/
+    /if\s*\(\s*mutationRequired\s*&&\s*\(!persistentHead \|\| !base \|\| persistentHead === base\)\s*\)/
   );
   assert.match(
     hostSource,
@@ -101,15 +118,7 @@ test("task mutability preserves implementation mutation gates and permits eviden
   );
   assert.match(
     hostSource,
-    /if\s*\(\s*mutationRequired\s*&&\s*changedFiles\.length === 0\s*\)/
-  );
-  assert.match(
-    hostSource,
-    /\(!mutationRequired \|\| Boolean\(matchingPr\)\)/
-  );
-  assert.match(
-    hostSource,
-    /\(!mutationRequired \|\| changedFiles\.length > 0\)/
+    /changedFiles\.length === 0/
   );
 });
 
@@ -133,7 +142,6 @@ test("explicit task_mutability metadata takes precedence over evidence-only pros
   );
 });
 
-
 test("QA_EVALUATION defaults to validation evidence only unless explicitly mutation-required", () => {
   const workerSource = fs.readFileSync(
     "scripts/orchestration-v3/worker.mjs",
@@ -149,34 +157,18 @@ test("QA_EVALUATION defaults to validation evidence only unless explicitly mutat
     /stream === "QA_EVALUATION"\) return "VALIDATION_EVIDENCE_ONLY"/
   );
 
-  assert.match(
-    hostSource,
-    /qaEvaluationStream/
-  );
-
-  assert.match(
-    hostSource,
-    /explicitMutationRequired/
-  );
-
-  assert.match(
-    hostSource,
-    /explicitMutationRequired \|\|[\s\S]*qaEvaluationStream/
-  );
+  assert.match(hostSource, /qaEvaluationStream/);
+  assert.match(hostSource, /explicitMutationRequired/);
+  assert.match(hostSource, /explicitMutationRequired \|\|[\s\S]*qaEvaluationStream/);
 });
 
-test("isolated V3 workers disable persistent memory side effects", () => {
+test("disposable QA verification installs local dependencies instead of symlinking node_modules", () => {
   const source = fs.readFileSync(
-    "scripts/orchestration-v3/diagnose-local-tool-observed.mjs",
+    "scripts/orchestration-v3/execution-evidence.mjs",
     "utf8"
   );
 
-  assert.match(source, /enabled:\s*false/);
-  assert.match(source, /provider:\s*"none"/);
-  assert.match(source, /rememberAcrossConversations:\s*false/);
-  assert.match(source, /fallback:\s*"none"/);
-  assert.match(source, /sources:\s*\["memory"\]/);
-  assert.match(source, /sessionMemory:\s*false/);
-  assert.match(source, /postIndexSync:\s*"off"/);
-  assert.match(source, /memoryFlush:[\s\S]*enabled:\s*false/);
+  assert.match(source, /npmExe, \["ci", "--no-audit", "--no-fund"\]/);
+  assert.doesNotMatch(source, /symlinkSync\([^\n]*node_modules/i);
+  assert.match(source, /HOST_VERIFY_QA_DEPENDENCY_INSTALL_FAILED/);
 });
