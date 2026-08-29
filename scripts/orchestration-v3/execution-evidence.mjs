@@ -50,6 +50,21 @@ function referencedPrNumber(body) {
   return url ? Number(url[1]) : null;
 }
 
+export function taskMetadataValue(body, name) {
+  const text = String(body ?? "");
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`^\\s*\\*\\*${escaped}:\\*\\*\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*\\*\\*${escaped}\\*\\*\\s*:\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, "im")
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 export function classifyChangedTestFiles(files) {
   return (files ?? []).filter((file) =>
     /(?:^|\/)(?:test|tests)\/.*\.(?:mjs|js|ts|tsx)$/i.test(file) ||
@@ -113,12 +128,11 @@ function hostVerifyCloudFallback(journalPath) {
   if (issueRes.ok) issueBody = issueRes.stdout;
   else errors.push("HOST_VERIFY_ISSUE_READ_FAILED");
 
-  const explicitEvidenceOnly =
-    /(?:^|\n)\s*(?:\*\*)?task_mutability(?:\*\*)?\s*:\s*VALIDATION_EVIDENCE_ONLY\b/im.test(issueBody);
-  const explicitMutationRequired =
-    /(?:^|\n)\s*(?:\*\*)?task_mutability(?:\*\*)?\s*:\s*IMPLEMENTATION_MUTATION_REQUIRED\b/im.test(issueBody);
-  const qaEvaluationStream =
-    /(?:^|\n)\s*(?:\*\*)?stream(?:\*\*)?\s*:\s*QA_EVALUATION\b/im.test(issueBody);
+  const taskMutability = String(taskMetadataValue(issueBody, "task_mutability") ?? "").trim().toUpperCase();
+  const stream = String(taskMetadataValue(issueBody, "stream") ?? "").trim().toUpperCase();
+  const explicitEvidenceOnly = taskMutability === "VALIDATION_EVIDENCE_ONLY";
+  const explicitMutationRequired = taskMutability === "IMPLEMENTATION_MUTATION_REQUIRED";
+  const qaEvaluationStream = stream === "QA_EVALUATION";
   const inferredEvidenceOnly =
     /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(issueBody) &&
     /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(issueBody);
@@ -188,10 +202,14 @@ function hostVerifyCloudFallback(journalPath) {
       temporaryWorktree = null;
     } else {
       targetRoot = temporaryWorktree;
-      const sourceNodeModules = path.join(repoRoot, "node_modules");
-      const targetNodeModules = path.join(targetRoot, "node_modules");
-      if (fs.existsSync(sourceNodeModules) && !fs.existsSync(targetNodeModules)) {
-        try { fs.symlinkSync(sourceNodeModules, targetNodeModules, "dir"); } catch {}
+      const lockfile = path.join(targetRoot, "package-lock.json");
+      if (!npmExe) {
+        errors.push("HOST_VERIFY_QA_NPM_REQUIRED");
+      } else if (!fs.existsSync(lockfile)) {
+        errors.push("HOST_VERIFY_QA_DEPENDENCY_LOCK_REQUIRED");
+      } else {
+        const install = runAt(targetRoot, npmExe, ["ci", "--no-audit", "--no-fund"], 600_000);
+        if (!install.ok) errors.push("HOST_VERIFY_QA_DEPENDENCY_INSTALL_FAILED");
       }
     }
   }
