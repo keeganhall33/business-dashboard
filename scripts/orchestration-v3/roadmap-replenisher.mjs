@@ -30,7 +30,7 @@ function section(body, names) {
   const text = String(body ?? "");
   for (const name of names) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$([\\s\\S]*?)(?=^\\s*#{1,6}\\s|\\Z)`, "im"));
+    const match = text.match(new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$([\\s\\S]*?)(?=^\\s*#{1,6}\\s|$)`, "im"));
     if (match?.[1]?.trim()) return match[1].trim();
   }
   return null;
