@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planRoadmapReplenishment } from "../scripts/orchestration-v3/roadmap-replenisher.mjs";
+import { evaluateRoadmapCandidate, planRoadmapReplenishment } from "../scripts/orchestration-v3/roadmap-replenisher.mjs";
 
 function issue(number, stream, {
   labels = ["agent-orchestration"],
@@ -98,4 +98,21 @@ test("does not select non-product lanes during product replenishment", () => {
 
   assert.deepEqual(plan.requested_worker_ids, []);
   assert.deepEqual(plan.selected, []);
+});
+
+
+test("fails closed when a candidate closes before promotion", () => {
+  const candidate = issue({
+    number: 908,
+    stream: "CORE_INTELLIGENCE",
+    ownership: "core closed-state adapter only"
+  });
+  candidate.state = "closed";
+
+  const result = evaluateRoadmapCandidate(candidate, {
+    uncoveredWorkerIds: ["local-a"]
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reasons.includes("ISSUE_NOT_OPEN"), true);
 });

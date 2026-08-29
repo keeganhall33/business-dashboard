@@ -77,6 +77,7 @@ function normalizeCandidate(issue) {
     worker_candidates: workerCandidatesForStream(stream),
     labels: labelNames(issue),
     approval,
+    state: String(issue?.state ?? "open").trim().toLowerCase(),
     dependencies: dependencyDeclaration(body),
     ownership: ownershipDeclaration(body)
   };
@@ -92,6 +93,7 @@ export function evaluateRoadmapCandidate(issue, {
   const uncovered = new Set(uncoveredWorkerIds);
 
   if (!Number.isInteger(candidate.number) || candidate.number <= 0) reasons.push("INVALID_ISSUE_NUMBER");
+  if (candidate.state !== "open") reasons.push("ISSUE_NOT_OPEN");
   if (!candidate.labels.has(ORCHESTRATION_V3.queue.base)) reasons.push("MISSING_BASE_LABEL");
   for (const label of GATED_LABELS) if (candidate.labels.has(label)) reasons.push(`GATED_${label.toUpperCase().replace(/[: -]/g, "_")}`);
   if (candidate.labels.has(ORCHESTRATION_V3.queue.ready)) reasons.push("ALREADY_READY");

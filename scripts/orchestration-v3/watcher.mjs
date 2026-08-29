@@ -92,7 +92,7 @@ function restIssue(number) {
 }
 function issue(number) {
   const row = restIssue(number);
-  return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title };
+  return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title, state: row.state };
 }
 function issuesWithLabels(...labels) {
   const rows = JSON.parse(gh([
