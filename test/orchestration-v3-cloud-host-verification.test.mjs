@@ -77,6 +77,22 @@ test("source preserves strict local gate and adds host-verification requirements
   assert.match(source, /HOST_VERIFY_WORKTREE_NOT_CLEAN/);
 });
 
+test("integration release mutation verifies explicitly referenced existing PR instead of worker issue branch", () => {
+  const source = fs.readFileSync(
+    "scripts/orchestration-v3/execution-evidence.mjs",
+    "utf8"
+  );
+
+  assert.match(source, /integrationReleaseStream = stream === "INTEGRATION_RELEASE"/);
+  assert.match(source, /verifyReferencedMutationPr = mutationRequired && integrationReleaseStream && Boolean\(referencedPr\)/);
+  assert.match(source, /HOST_VERIFY_REFERENCED_MUTATION_PR_LOOKUP_FAILED/);
+  assert.match(source, /HOST_VERIFY_REFERENCED_MUTATION_PR_REQUIRED/);
+  assert.match(
+    source,
+    /if \(mutationRequired && !verifyReferencedMutationPr && \(!persistentHead \|\| !base \|\| persistentHead === base\)\)/
+  );
+});
+
 test("task mutability preserves implementation mutation gates and permits evidence-only zero mutation", () => {
   const workerSource = fs.readFileSync(
     "scripts/orchestration-v3/worker.mjs",
@@ -104,11 +120,11 @@ test("task mutability preserves implementation mutation gates and permits eviden
   );
   assert.match(
     hostSource,
-    /if\s*\(\s*mutationRequired\s*&&\s*\(!persistentHead \|\| !base \|\| persistentHead === base\)\s*\)/
+    /if\s*\(\s*mutationRequired\s*&&\s*!verifyReferencedMutationPr\s*&&\s*\(!persistentHead \|\| !base \|\| persistentHead === base\)\s*\)/
   );
   assert.match(
     hostSource,
-    /if\s*\(\s*mutationRequired\s*&&\s*!matchingPr\s*\)/
+    /else if\s*\(\s*mutationRequired\s*\)[\s\S]*?if\s*\(\s*!matchingPr\s*\)\s*errors\.push\("HOST_VERIFY_MATCHING_PR_REQUIRED"\)/
   );
   assert.match(hostSource, /changedFiles\.length === 0/);
 });
