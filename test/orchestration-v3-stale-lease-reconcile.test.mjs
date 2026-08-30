@@ -6,13 +6,11 @@ test("V3 leases require authoritative live evidence and never treat transient Gi
   const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
   const reconciliation = fs.readFileSync("scripts/orchestration-v3/lease-reconciliation.mjs", "utf8");
 
-  // GitHub running-state lookup remains fail-safe: transient GitHub failure is UNKNOWN,
-  // and UNKNOWN preserves the current lease rather than reclaiming it.
-  assert.match(watcher, /function issueIsRunning\(issueNumber\)/);
-  assert.match(watcher, /typeof label === "string" \? label : label\.name/);
-  assert.match(watcher, /=== ORCHESTRATION_V3\.queue\.running/);
-  assert.match(watcher, /if \(issueRunning === null\) return currentLease/);
-  assert.match(watcher, /ISSUE_RUNNING_STATE_UNKNOWN/);
+  // Lease liveness is determined from authoritative local evidence and does not
+  // depend on a GitHub running-label lookup before stale local state can be reclaimed.
+  assert.doesNotMatch(watcher, /function issueIsRunning\(issueNumber\)/);
+  assert.doesNotMatch(watcher, /if \(issueRunning === null\) return currentLease/);
+  assert.doesNotMatch(watcher, /ISSUE_RUNNING_STATE_UNKNOWN/);
 
   // The watcher delegates authoritative PID\/session\/worktree\/heartbeat decisions to
   // the lease reconciler instead of duplicating that logic inline.

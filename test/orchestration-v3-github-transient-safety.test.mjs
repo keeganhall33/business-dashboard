@@ -19,12 +19,13 @@ test("V3 worker retries transient GitHub failures with bounded backoff", () => {
   assert.match(workerSource, /function gh\(args, \{ attempts = 3 \} = \{\}\)/);
 });
 
-test("V3 never converts unknown GitHub running state into a stale live lease", () => {
-  assert.match(watcherSource, /ISSUE_RUNNING_STATE_UNKNOWN/);
-  assert.match(watcherSource, /return null;/);
-  assert.match(watcherSource, /if \(issueRunning === null\) return currentLease;/);
+test("V3 lease liveness remains local-first during transient GitHub failures", () => {
+  assert.doesNotMatch(watcherSource, /ISSUE_RUNNING_STATE_UNKNOWN/);
+  assert.doesNotMatch(watcherSource, /function issueIsRunning\(issueNumber\)/);
+  assert.doesNotMatch(watcherSource, /if \(issueRunning === null\) return currentLease;/);
   assert.match(watcherSource, /reconcileLeaseState\(workerId, \{ recoverIdleWorker \}\)/);
   assert.match(watcherSource, /if \(inspection\.reconciliation_decision === "LIVE_LEASE_PRESERVED"\) return result\.lease;/);
+  assert.match(watcherSource, /if \(inspection\.reconciliation_decision === "INSUFFICIENT_EVIDENCE_PRESERVE"\) return result\.lease;/);
 });
 
 test("V3 defers one candidate on transient GitHub failure instead of aborting the whole ready queue", () => {
