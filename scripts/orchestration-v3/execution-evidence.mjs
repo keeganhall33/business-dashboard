@@ -137,16 +137,32 @@ function hostVerifyCloudFallback(journalPath) {
     /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(issueBody) &&
     /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(issueBody);
   const mutationRequired = explicitMutationRequired || !(explicitEvidenceOnly || qaEvaluationStream || inferredEvidenceOnly);
+  const integrationReleaseStream = stream === "INTEGRATION_RELEASE";
+  const referencedPr = referencedPrNumber(issueBody);
+  const verifyReferencedMutationPr = mutationRequired && integrationReleaseStream && Boolean(referencedPr);
 
-  if (mutationRequired && (!branch || branch === "HEAD")) errors.push("HOST_VERIFY_BRANCH_REQUIRED");
-  if (mutationRequired && (!persistentHead || !base || persistentHead === base)) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
+  if (mutationRequired && !verifyReferencedMutationPr && (!branch || branch === "HEAD")) errors.push("HOST_VERIFY_BRANCH_REQUIRED");
+  if (mutationRequired && !verifyReferencedMutationPr && (!persistentHead || !base || persistentHead === base)) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
 
   let matchingPr = null;
   let targetHead = persistentHead;
   let targetRoot = repoRoot;
   let temporaryWorktree = null;
 
-  if (mutationRequired) {
+  if (verifyReferencedMutationPr) {
+    const prRes = run(ghExe, ["pr", "view", String(referencedPr), "--repo", ORCHESTRATION_V3.repo, "--json", "number,headRefName,headRefOid,baseRefName,url"]);
+    if (!prRes.ok) {
+      errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_LOOKUP_FAILED");
+    } else {
+      try {
+        matchingPr = JSON.parse(prRes.stdout);
+        targetHead = String(matchingPr?.headRefOid ?? "");
+      } catch {
+        errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_JSON_INVALID");
+      }
+    }
+    if (!matchingPr || !targetHead) errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_REQUIRED");
+  } else if (mutationRequired) {
     let prs = [];
     if (branch && branch !== "HEAD") {
       const prRes = run(ghExe, ["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--head", branch, "--state", "open", "--limit", "10", "--json", "number,headRefName,headRefOid,baseRefName,url"]);
@@ -159,7 +175,7 @@ function hostVerifyCloudFallback(journalPath) {
     matchingPr = prs.find((pr) => String(pr.headRefOid ?? "") === persistentHead && String(pr.headRefName ?? "") === branch) ?? null;
     if (!matchingPr) errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
   } else {
-    const prNumber = referencedPrNumber(issueBody);
+    const prNumber = referencedPr;
     if (!prNumber) {
       errors.push("HOST_VERIFY_REFERENCED_PR_REQUIRED");
     } else {
