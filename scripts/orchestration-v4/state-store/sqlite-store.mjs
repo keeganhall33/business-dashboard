@@ -62,7 +62,8 @@ export function listTasks(db) {
 export function claimTask(db, { taskId, slotId, expectedState = V4_STATES.READY, now = new Date() }) {
   assertTransition(expectedState, V4_STATES.CLAIMED);
   const timestamp = nowIso(now);
-  const tx = db.transaction(() => {
+  db.exec('BEGIN IMMEDIATE');
+  try {
     const current = getTask(db, taskId);
     if (!current) throw new Error('V4_STATE_TASK_NOT_FOUND');
     if (current.state !== expectedState) throw new Error(`V4_STATE_CAS_MISMATCH:${current.state}:${expectedState}`);
@@ -71,9 +72,12 @@ export function claimTask(db, { taskId, slotId, expectedState = V4_STATES.READY,
     const result = db.prepare(`UPDATE tasks SET state=?,slot_id=?,attempt=attempt+1,updated_at=? WHERE task_id=? AND state=?`)
       .run(V4_STATES.CLAIMED, slotId, timestamp, taskId, expectedState);
     if (result.changes !== 1) throw new Error('V4_STATE_CLAIM_LOST_RACE');
+    db.exec('COMMIT');
     return getTask(db, taskId);
-  });
-  return tx();
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
 }
 
 export function transitionTask(db, { taskId, expectedState, toState, patch = {}, now = new Date() }) {
