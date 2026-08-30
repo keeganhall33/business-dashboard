@@ -142,24 +142,13 @@ function priorityRank(body, issueNumber) {
   if (Number(issueNumber) === BACKGROUND_OLLAMA_PROOF_ISSUE) return Number.MAX_SAFE_INTEGER;
   return PRIORITY_RANK[String(field(body, "priority") ?? "P2").toUpperCase()] ?? PRIORITY_RANK.P2;
 }
-function issueIsRunning(issueNumber) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
-  try {
-    const snapshot = issue(issueNumber);
-    return (snapshot.labels ?? []).some((label) => (typeof label === "string" ? label : label.name) === ORCHESTRATION_V3.queue.running);
-  } catch (err) {
-    if (isTransientGhError(err)) {
-      console.error(JSON.stringify({ event: "ISSUE_RUNNING_STATE_UNKNOWN", issueNumber, reason: "GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
-      return null;
-    }
-    throw err;
-  }
-}
 function reconcileLease(workerId) {
   const currentLease = readLease(workerId);
   if (!currentLease) return null;
-  const issueRunning = issueIsRunning(Number(currentLease.issueNumber));
-  if (issueRunning === null) return currentLease;
+
+  // Local process/worktree evidence is authoritative for lease liveness.
+  // Never require GitHub issue availability before reclaiming a proven-dead
+  // worker lease. Queue-label reconciliation happens separately.
   const result = reconcileLeaseState(workerId, { recoverIdleWorker });
   const { inspection, recovery } = result;
   if (inspection.reconciliation_decision === "LIVE_LEASE_PRESERVED") return result.lease;
@@ -181,7 +170,7 @@ function reconcileLease(workerId) {
     }));
     return result.lease;
   }
-  if (result.reclaimed) console.log(JSON.stringify({ event: "STALE_LEASE_RECLAIMED", workerId, issueNumber: inspection.issue_number, pid: inspection.pid, issueRunning, evidence: inspection.evidence, heartbeatAgeSeconds: inspection.heartbeat_age_seconds, leaseAgeSeconds: inspection.lease_age_seconds, reconciliationDecision: inspection.reconciliation_decision }));
+  if (result.reclaimed) console.log(JSON.stringify({ event: "STALE_LEASE_RECLAIMED", workerId, issueNumber: inspection.issue_number, pid: inspection.pid, evidence: inspection.evidence, heartbeatAgeSeconds: inspection.heartbeat_age_seconds, leaseAgeSeconds: inspection.lease_age_seconds, reconciliationDecision: inspection.reconciliation_decision }));
   return null;
 }
 function activeLeaseAssignments() {
