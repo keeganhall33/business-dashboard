@@ -5,6 +5,12 @@ import { touchOwnedLeaseProgress } from "./lease-reconciliation.mjs";
 export const DEFAULT_PROGRESS_TIMEOUT_MS = 240_000;
 export const LOCAL_OPENCLAW_PROGRESS_TIMEOUT_MS = 600_000;
 
+const PARENT_SIGNAL_EXIT_CODES = Object.freeze({
+  SIGHUP: 129,
+  SIGINT: 130,
+  SIGTERM: 143
+});
+
 export function resolveProgressTimeout(command, configuredTimeout = null) {
   const configured = Number(configuredTimeout);
   if (Number.isFinite(configured) && configured > 0) return configured;
@@ -71,10 +77,12 @@ export function runBufferedChild(
     let timedOut = false;
     let progressTimedOut = false;
     let overflowed = false;
+    let parentSignal = null;
     let timer = null;
     let progressTimer = null;
     let hardKillTimer = null;
     let lastProgressAt = Date.now();
+    const parentSignalHandlers = new Map();
 
     const child = spawn(command, args, {
       cwd,
@@ -134,22 +142,31 @@ export function runBufferedChild(
       }
     };
 
-    const cleanupTimers = () => {
+    const cleanupTimersAndSignals = () => {
       if (timer) clearTimeout(timer);
       if (progressTimer) clearInterval(progressTimer);
       if (hardKillTimer) clearTimeout(hardKillTimer);
+      for (const [signal, handler] of parentSignalHandlers) {
+        process.removeListener(signal, handler);
+      }
+      parentSignalHandlers.clear();
     };
 
     const finish = ({ status = null, signal = null, error = null } = {}) => {
       if (settled) return;
       settled = true;
-      cleanupTimers();
+      cleanupTimersAndSignals();
       markProgress("CHILD_COMPLETED");
       touchOwnedLeaseProgress({
         phase: "CHILD_REAPED",
         childPid: null,
         childProcessGroupId: null
       });
+
+      if (parentSignal) {
+        process.exitCode = PARENT_SIGNAL_EXIT_CODES[parentSignal] ?? 1;
+        return;
+      }
 
       resolve({
         status,
@@ -161,6 +178,19 @@ export function runBufferedChild(
         childProcessGroupId: process.platform === "win32" ? null : childPid
       });
     };
+
+    const requestParentShutdown = (signal) => {
+      if (settled || parentSignal) return;
+      parentSignal = signal;
+      markProgress(`PARENT_${signal}_RECEIVED`);
+      terminate(`PARENT_${signal}`);
+    };
+
+    for (const signal of Object.keys(PARENT_SIGNAL_EXIT_CODES)) {
+      const handler = () => requestParentShutdown(signal);
+      parentSignalHandlers.set(signal, handler);
+      process.once(signal, handler);
+    }
 
     const guardBuffer = () => {
       if (overflowed) return;

@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { inspectLease, LEASE_TTL_CONTRACT } from "../scripts/orchestration-v3/lease-reconciliation.mjs";
 import {
   DEFAULT_PROGRESS_TIMEOUT_MS,
@@ -7,6 +9,33 @@ import {
   resolveProgressTimeout,
   runBufferedChild
 } from "../scripts/orchestration-v3/buffered-child-process.mjs";
+
+function processRows() {
+  const output = execFileSync("ps", ["-axo", "pid=,ppid=,pgid=,command="], {
+    encoding: "utf8",
+    timeout: 2_000
+  });
+  return output.split("\n").map((line) => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
+    if (!match) return null;
+    return {
+      pid: Number(match[1]),
+      ppid: Number(match[2]),
+      pgid: Number(match[3]),
+      command: match[4]
+    };
+  }).filter(Boolean);
+}
+
+async function waitFor(check, { timeoutMs = 3_000, intervalMs = 25 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = check();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return null;
+}
 
 test("fresh timer heartbeat does not imply fresh execution progress", () => {
   const now = new Date("2026-08-29T15:00:00.000Z");
@@ -64,4 +93,52 @@ test("buffered child detects bounded progress stall and terminates its owned pro
     if (error?.code === "ESRCH") groupAlive = false;
   }
   assert.equal(groupAlive, false, "owned child process group must have no survivors after stall termination");
+});
+
+test("parent SIGTERM reaps the full detached child group before the parent exits", async () => {
+  if (process.platform === "win32") return;
+
+  const moduleUrl = new URL("../scripts/orchestration-v3/buffered-child-process.mjs", import.meta.url).href;
+  const helperSource = [
+    `import { runBufferedChild } from ${JSON.stringify(moduleUrl)};`,
+    "await runBufferedChild('/bin/sh', ['-c', 'sleep 30 & wait'], { timeout: 30000, progressTimeout: 30000 });"
+  ].join("\n");
+
+  const wrapper = spawn(process.execPath, ["--input-type=module", "--eval", helperSource], {
+    cwd: process.cwd(),
+    stdio: "ignore"
+  });
+
+  try {
+    const childRow = await waitFor(() =>
+      processRows().find((row) => row.ppid === wrapper.pid && row.command.includes("/bin/sh")) ?? null
+    );
+    assert.ok(childRow, "wrapper must spawn its detached child before failure injection");
+    assert.equal(childRow.pgid, childRow.pid, "buffered child must own a distinct process group");
+
+    const nestedRow = await waitFor(() =>
+      processRows().find((row) => row.ppid === childRow.pid && /sleep\s+30/.test(row.command)) ?? null
+    );
+    assert.ok(nestedRow, "fixture must include a nested descendant in the owned child group");
+    assert.equal(nestedRow.pgid, childRow.pgid, "nested descendant must remain in the owned process group");
+
+    const exitPromise = once(wrapper, "exit");
+    process.kill(wrapper.pid, "SIGTERM");
+    const [code, signal] = await exitPromise;
+
+    assert.equal(signal, null, "signal-aware cleanup converts parent SIGTERM into a bounded post-cleanup exit code");
+    assert.equal(code, 143, "SIGTERM cleanup exit code must preserve signal semantics");
+
+    const groupGone = await waitFor(() => {
+      try {
+        process.kill(-childRow.pgid, 0);
+        return false;
+      } catch (error) {
+        return error?.code === "ESRCH";
+      }
+    });
+    assert.equal(groupGone, true, "direct parent SIGTERM must leave zero owned descendants or reparented survivors");
+  } finally {
+    try { process.kill(wrapper.pid, "SIGKILL"); } catch {}
+  }
 });
