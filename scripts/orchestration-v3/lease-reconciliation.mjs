@@ -57,16 +57,19 @@ export function touchLeaseProgress(workerId, {
   childPid = undefined,
   childProcessGroupId = undefined,
   observedToolEvent = false,
+  semanticProgress = true,
   nowIso = new Date().toISOString()
 } = {}) {
   const lease = readLease(workerId);
   if (!lease || Number(lease.pid) !== Number(pid)) return false;
   const next = {
     ...lease,
-    lastProgressAt: nowIso,
-    progressSequence: Number(lease.progressSequence ?? 0) + 1,
     progressPhase: phase
   };
+  if (semanticProgress) {
+    next.lastProgressAt = nowIso;
+    next.progressSequence = Number(lease.progressSequence ?? 0) + 1;
+  }
   if (childPid !== undefined) next.childPid = childPid;
   if (childProcessGroupId !== undefined) next.childProcessGroupId = childProcessGroupId;
   if (observedToolEvent) next.lastObservedToolEventAt = nowIso;
@@ -84,14 +87,29 @@ export function touchOwnedLeaseProgress(options = {}) {
   return false;
 }
 
+function processState(pid) {
+  if (process.platform === "win32") return null;
+  try {
+    return execFileSync("ps", ["-p", String(pid), "-o", "stat="], {
+      encoding: "utf8",
+      timeout: 5000
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function alive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (err) {
     return err?.code === "EPERM";
   }
+
+  const state = processState(pid);
+  if (state && state.startsWith("Z")) return false;
+  return true;
 }
 
 function processCommand(pid) {
@@ -149,8 +167,6 @@ export function inspectLease(workerId, {
     if (!leaseWithinTtl) evidence.push("LEASE_TTL_EXPIRED");
 
     if (!resolvedPidAlive && worktreeMatches) {
-      // A dead PID is authoritative process-liveness evidence. Do not wait for
-      // heartbeat/progress TTLs before freeing a clean, identity-matched lane.
       decision = "PROVEN_STALE_RECLAIM";
     } else if (resolvedPidAlive && commandMatches && worktreeMatches && heartbeatFresh) {
       decision = "LIVE_LEASE_PRESERVED";
