@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 
+const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED','TEST_RESULT','BUILD_RESULT','TYPECHECK_RESULT','MODEL_RESULT','PR_MUTATION']);
+
 function signalGroup(pgid, signal) {
   if (!Number.isInteger(pgid) || pgid <= 0) return;
   try { process.kill(-pgid, signal); } catch (error) {
@@ -7,7 +9,20 @@ function signalGroup(pgid, signal) {
   }
 }
 
-export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, spawnImpl = spawn, now = () => Date.now() }) {
+function parseStructuredLine(line, observedAt) {
+  const prefix = 'V4_EVENT ';
+  if (!line.startsWith(prefix)) return null;
+  try {
+    const parsed = JSON.parse(line.slice(prefix.length));
+    const kind = String(parsed?.kind ?? '');
+    if (!ALLOWED_CHILD_EVENT_KINDS.has(kind)) return null;
+    return { kind, data: parsed?.data ?? '', observedAt };
+  } catch {
+    return null;
+  }
+}
+
+export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, spawnImpl = spawn, now = () => Date.now() }) {
   if (!command) throw new Error('V4_PROCESS_COMMAND_REQUIRED');
   if (!cwd) throw new Error('V4_PROCESS_CWD_REQUIRED');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('V4_PROCESS_TIMEOUT_REQUIRED');
@@ -17,8 +32,10 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     const startedAt = now();
     let lastSemanticAt = startedAt;
     let settled = false;
+    let stdoutBuffer = '';
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const pgid = child.pid;
+    onStarted({ childPid: child.pid, processGroupId: pgid, startedAt });
 
     const finish = (result) => {
       if (settled) return;
@@ -27,14 +44,24 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       resolve({ ...result, childPid: child.pid, processGroupId: pgid, startedAt, endedAt: now() });
     };
 
-    const mark = (kind, data = '') => {
-      const event = { kind, data: String(data), observedAt: new Date(now()).toISOString() };
+    const emit = (event) => {
       const classification = onEvent(event);
       if (classification === 'SEMANTIC') lastSemanticAt = now();
     };
 
-    child.stdout?.on('data', (chunk) => mark('STDOUT', chunk));
-    child.stderr?.on('data', (chunk) => mark('STDERR', chunk));
+    child.stdout?.on('data', (chunk) => {
+      const observedAt = new Date(now()).toISOString();
+      const text = String(chunk);
+      emit({ kind: 'STDOUT', data: text, observedAt });
+      stdoutBuffer += text;
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const structured = parseStructuredLine(line.trim(), observedAt);
+        if (structured) emit(structured);
+      }
+    });
+    child.stderr?.on('data', (chunk) => emit({ kind: 'STDERR', data: String(chunk), observedAt: new Date(now()).toISOString() }));
     child.on('error', (error) => {
       if (settled) return;
       settled = true;
