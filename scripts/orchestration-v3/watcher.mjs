@@ -95,10 +95,15 @@ function issue(number) {
   return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title, state: row.state };
 }
 function issuesWithLabels(...labels) {
+  let state = "open";
+  if (labels[0] === "__all_states__") {
+    state = "all";
+    labels = labels.slice(1);
+  }
   const rows = JSON.parse(gh([
     "api", "--method", "GET",
     `repos/${ORCHESTRATION_V3.repo}/issues`,
-    "-f", "state=open",
+    "-f", `state=${state}`,
     "-f", `labels=${labels.join(",")}`,
     "-f", "per_page=100"
   ]));
@@ -285,6 +290,10 @@ function openOrchestrationIssues() {
   return issuesWithLabels(ORCHESTRATION_V3.queue.base);
 }
 
+function allOrchestrationIssues() {
+  return issuesWithLabels("__all_states__", ORCHESTRATION_V3.queue.base);
+}
+
 function dependencyStatesForIssues(issues = []) {
   const refs = new Set();
   for (const candidate of issues) {
@@ -367,7 +376,7 @@ function createFollowupIssue(work) {
 
 function materializeIntegrationFollowups(followupWork = []) {
   for (const work of followupWork) {
-    const currentIssues = openOrchestrationIssues();
+    const currentIssues = allOrchestrationIssues();
     const plan = planFollowupMaterialization(work, currentIssues);
 
     if (plan.action === "SKIP") {
