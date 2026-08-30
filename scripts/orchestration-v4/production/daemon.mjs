@@ -1,8 +1,11 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
-import { buildAgentInvocation, cleanupEphemeralAgentState, createEphemeralAgentState, probeAgentCapabilities } from '../runner/agent-executor.mjs';
+import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
+
+const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 
 function promptForTask(task) {
   return [
@@ -22,18 +25,19 @@ export async function runProductionPoll({
   workspaceRoot,
   configPath,
   issues = null,
-  capabilities = null,
   openclaw = '/opt/homebrew/bin/openclaw',
   timeoutMs = 15 * 60_000,
-  stallMs = 4 * 60_000,
+  stallMs = timeoutMs,
 }) {
+  if (!path.isAbsolute(repoRoot) || !path.isAbsolute(workspaceRoot) || !path.isAbsolute(configPath)) {
+    throw new Error('V4_PRODUCTION_ABSOLUTE_PATHS_REQUIRED');
+  }
   const baseSha = refreshCanonicalMain(repoRoot);
   const snapshots = issues ?? listReadyIssues({ repoFullName });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
   const ready = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at,task_id").all();
   const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE');
   const executable = ready.filter((task) => task.stream !== 'INTEGRATION_RELEASE');
-  const agentCaps = capabilities ?? probeAgentCapabilities(openclaw);
   const ephemeral = [];
   const commandsByTaskId = {};
 
@@ -41,16 +45,10 @@ export async function runProductionPoll({
     for (const task of executable) {
       const state = createEphemeralAgentState({ taskId: task.task_id });
       ephemeral.push(state);
-      const invocation = buildAgentInvocation({
-        capabilities: agentCaps,
-        prompt: promptForTask(task),
-        workspacePath: path.join(workspaceRoot, `${task.task_id}-${task.issue_number}`),
-        configPath,
-        stateDir: state.stateDir,
-        timeoutSeconds: Math.ceil(timeoutMs / 1000),
-        openclaw,
-      });
-      commandsByTaskId[task.task_id] = invocation;
+      commandsByTaskId[task.task_id] = {
+        command: process.execPath,
+        args: [ENTRYPOINT, promptForTask(task), configPath, state.stateDir, String(Math.ceil(timeoutMs / 1000)), openclaw],
+      };
     }
 
     const result = await runReadyBatch({
