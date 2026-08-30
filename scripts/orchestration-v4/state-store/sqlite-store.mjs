@@ -89,6 +89,16 @@ export function transitionTask(db, { taskId, expectedState, toState, patch = {},
   return getTask(db, taskId);
 }
 
+export function recordExecutionIdentity(db, { taskId, childPid, processGroupId, now = new Date() }) {
+  if (!Number.isInteger(childPid) || childPid <= 0) throw new Error('V4_STATE_CHILD_PID_REQUIRED');
+  if (!Number.isInteger(processGroupId) || processGroupId <= 0) throw new Error('V4_STATE_PROCESS_GROUP_REQUIRED');
+  const timestamp = nowIso(now);
+  const result = db.prepare(`UPDATE tasks SET child_pid=?, process_group_id=?, updated_at=? WHERE task_id=? AND state='RUNNING'`)
+    .run(childPid, processGroupId, timestamp, taskId);
+  if (result.changes !== 1) throw new Error('V4_STATE_EXECUTION_IDENTITY_NOT_ALLOWED');
+  return getTask(db, taskId);
+}
+
 export function recordSemanticProgress(db, { taskId, observedAt = new Date() }) {
   const timestamp = nowIso(observedAt);
   const result = db.prepare(`UPDATE tasks SET semantic_progress_at=?, semantic_progress_seq=semantic_progress_seq+1, updated_at=? WHERE task_id=? AND state IN ('RUNNING','VALIDATING','PR_OPENED')`)
