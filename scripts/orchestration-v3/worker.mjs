@@ -115,6 +115,16 @@ function humanApprovalRequired(body) {
   return String(taskField(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
 }
 
+function referencedPrNumber(body) {
+  const text = String(body ?? "");
+  const direct =
+    text.match(/\bPR\s*#\s*(\d+)\b/i) ??
+    text.match(/\bpull\s*request\s*#\s*(\d+)\b/i);
+  if (direct) return Number(direct[1]);
+  const url = text.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/i);
+  return url ? Number(url[1]) : null;
+}
+
 function taskMutability(body) {
   const text = String(body ?? "");
   const explicit = String(taskField(text, "task_mutability") ?? "").trim().toUpperCase();
@@ -207,9 +217,13 @@ function recoveryObservedPersistentMutation(recovery, expectedHead) {
 
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
-const repoRoot = path.resolve(cfg.worktree);
+const persistentRepoRoot = path.resolve(cfg.worktree);
+let repoRoot = persistentRepoRoot;
+let integrationWorktreeRoot = null;
+let integrationTarget = null;
+
 const controlWorkspace = path.resolve(cfg.agentWorkspace);
-if (repoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
+if (persistentRepoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
 fs.mkdirSync(controlWorkspace, { recursive: true });
 touchLeaseHeartbeat(workerId);
 const leaseHeartbeatTimer = setInterval(() => {
@@ -218,6 +232,102 @@ const leaseHeartbeatTimer = setInterval(() => {
 leaseHeartbeatTimer.unref();
 
 const snapshot = issueSnapshot();
+
+const snapshotStream = String(taskField(snapshot.body, "stream") ?? "").trim().toUpperCase();
+const snapshotMutability = taskMutability(snapshot.body);
+const integrationReferencedPr = referencedPrNumber(snapshot.body);
+
+if (
+  workerId === "local-e" &&
+  snapshotStream === "INTEGRATION_RELEASE" &&
+  snapshotMutability === "IMPLEMENTATION_MUTATION_REQUIRED"
+) {
+  if (!integrationReferencedPr) {
+    throw new Error("INTEGRATION_REFERENCED_PR_REQUIRED");
+  }
+
+  const pr = JSON.parse(
+    gh([
+      "api",
+      "--method",
+      "GET",
+      `repos/${ORCHESTRATION_V3.repo}/pulls/${integrationReferencedPr}`
+    ])
+  );
+
+  const headRefName = String(pr?.head?.ref ?? "").trim();
+  const headRefOid = String(pr?.head?.sha ?? "").trim();
+  const headRepoFullName = String(pr?.head?.repo?.full_name ?? "").trim();
+
+  if (!headRefName || !headRefOid) {
+    throw new Error(`INTEGRATION_REFERENCED_PR_HEAD_REQUIRED:${integrationReferencedPr}`);
+  }
+
+  if (headRepoFullName && headRepoFullName !== ORCHESTRATION_V3.repo) {
+    throw new Error(`INTEGRATION_CROSS_REPO_PR_UNSUPPORTED:${integrationReferencedPr}:${headRepoFullName}`);
+  }
+
+  git(["fetch", "--no-tags", "origin", `pull/${integrationReferencedPr}/head`], persistentRepoRoot);
+  const fetchedHead = git(["rev-parse", "FETCH_HEAD"], persistentRepoRoot);
+
+  if (fetchedHead !== headRefOid) {
+    throw new Error(
+      `INTEGRATION_REFERENCED_PR_HEAD_MISMATCH:${integrationReferencedPr}:${headRefOid}:${fetchedHead}`
+    );
+  }
+
+  const disposableParent = fs.mkdtempSync(
+    path.join(os.tmpdir(), `jeeves-v3-integration-${issue}-pr-${integrationReferencedPr}-`)
+  );
+  integrationWorktreeRoot = path.join(disposableParent, "repo");
+
+  const localBranch = `reconcile-issue-${issue}-pr-${integrationReferencedPr}-${process.pid}`;
+
+  git(
+    ["worktree", "add", "-b", localBranch, integrationWorktreeRoot, headRefOid],
+    persistentRepoRoot
+  );
+
+  repoRoot = path.resolve(integrationWorktreeRoot);
+  integrationTarget = {
+    prNumber: integrationReferencedPr,
+    headRefName,
+    headRefOid,
+    localBranch
+  };
+
+  console.log(JSON.stringify({
+    event: "WORKER_INTEGRATION_PR_CONTEXT_PREPARED",
+    issue,
+    workerId,
+    prNumber: integrationReferencedPr,
+    headRefName,
+    headRefOid,
+    localBranch,
+    persistentRepoRoot,
+    repoRoot
+  }));
+}
+
+function cleanupIntegrationWorktree() {
+  if (!integrationWorktreeRoot) return;
+
+  try {
+    git(["worktree", "remove", "--force", integrationWorktreeRoot], persistentRepoRoot);
+  } catch {}
+
+  if (integrationTarget?.localBranch) {
+    try {
+      git(["branch", "-D", integrationTarget.localBranch], persistentRepoRoot);
+    } catch {}
+  }
+
+  try {
+    fs.rmSync(path.dirname(integrationWorktreeRoot), { recursive: true, force: true });
+  } catch {}
+}
+
+process.on("exit", cleanupIntegrationWorktree);
 if (humanApprovalRequired(snapshot.body)) {
   const value = { ...resultBase("BLOCKED", "Human approval required; V3 worker refused autonomous execution"), STATUS: "AWAITING_HUMAN_APPROVAL", DECISIONS_REQUIRED: ["KEEGAN_APPROVAL_REQUIRED"] };
   postResult(value);
@@ -316,6 +426,21 @@ const prompt = [
   String(snapshot.body ?? "").slice(0, 12000),
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
+  integrationTarget
+    ? `INTEGRATION TARGET PR: #${integrationTarget.prNumber}`
+    : null,
+  integrationTarget
+    ? `INTEGRATION TARGET HEAD BRANCH: ${integrationTarget.headRefName}`
+    : null,
+  integrationTarget
+    ? `INTEGRATION DISPOSABLE WORKTREE: ${repoRoot}`
+    : null,
+  integrationTarget
+    ? `Perform all reconciliation work only in this disposable worktree. Never checkout, merge, rebase, reset, clean, or otherwise mutate the persistent local-e worktree at ${persistentRepoRoot}.`
+    : null,
+  integrationTarget
+    ? `Update the existing PR branch with: ${q(observed.git)} push origin HEAD:${integrationTarget.headRefName}. Do not create a duplicate PR.`
+    : null,
   mutationRequired
     ? "This is a real implementation run. Perform the focused repository work required by the task."
     : "This is a real validation/evidence run. Execute and record the required verification without fabricating repository mutation.",
@@ -437,14 +562,29 @@ async function executeLocalRound(roundPrompt, roundNumber) {
 
   const roundAfterHead = git(["rev-parse", "HEAD"], repoRoot);
   const roundAfterPrs = openPrSnapshot();
-  const roundChangedPrs = roundAfterPrs.filter(
+  const allRoundChangedPrs = roundAfterPrs.filter(
     (pr) =>
       !beforeMap.has(Number(pr.number)) ||
       beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
   );
 
-  const roundRealMutationObserved =
-    beforeHead !== roundAfterHead || roundChangedPrs.length > 0;
+  const roundChangedPrs = integrationTarget
+    ? allRoundChangedPrs.filter(
+        (pr) => Number(pr.number) === Number(integrationTarget.prNumber)
+      )
+    : allRoundChangedPrs;
+
+  const referencedIntegrationPrChanged = integrationTarget
+    ? roundChangedPrs.some(
+        (pr) =>
+          Number(pr.number) === Number(integrationTarget.prNumber) &&
+          String(pr.headRefOid ?? "") !== String(integrationTarget.headRefOid ?? "")
+      )
+    : false;
+
+  const roundRealMutationObserved = integrationTarget
+    ? referencedIntegrationPrChanged
+    : beforeHead !== roundAfterHead || roundChangedPrs.length > 0;
 
   const providerOk =
     String(roundMachine.provider ?? "").toLowerCase() === "ollama";
@@ -758,14 +898,29 @@ if (mutationRequired && finalValue.STATUS !== "PASS" && issue !== 337 && ORCHEST
 
   const cloudAfterHead = git(["rev-parse", "HEAD"], repoRoot);
   const cloudAfterPrs = openPrSnapshot();
-  const cloudChangedPrs = cloudAfterPrs.filter(
+  const allCloudChangedPrs = cloudAfterPrs.filter(
     (pr) =>
       !beforeMap.has(Number(pr.number)) ||
       beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
   );
 
-  const cloudRealMutationObserved =
-    beforeHead !== cloudAfterHead || cloudChangedPrs.length > 0;
+  const cloudChangedPrs = integrationTarget
+    ? allCloudChangedPrs.filter(
+        (pr) => Number(pr.number) === Number(integrationTarget.prNumber)
+      )
+    : allCloudChangedPrs;
+
+  const referencedIntegrationPrChanged = integrationTarget
+    ? cloudChangedPrs.some(
+        (pr) =>
+          Number(pr.number) === Number(integrationTarget.prNumber) &&
+          String(pr.headRefOid ?? "") !== String(integrationTarget.headRefOid ?? "")
+      )
+    : false;
+
+  const cloudRealMutationObserved = integrationTarget
+    ? referencedIntegrationPrChanged
+    : beforeHead !== cloudAfterHead || cloudChangedPrs.length > 0;
 
   let cloudParsed;
   try {
