@@ -98,6 +98,9 @@ export function buildFollowupBody(work) {
   const marker = followupMarker(work);
   const ownership = work.fileOwnership ?? formatOwnershipPatterns(work.changedFiles ?? []);
   if (!ownership) throw new Error(`FOLLOWUP_FILE_OWNERSHIP_REQUIRED:PR#${prNumber}`);
+  const taskMutability = stream === "INTEGRATION_RELEASE"
+    ? "IMPLEMENTATION_MUTATION_REQUIRED"
+    : "EVIDENCE_ONLY";
 
   return [
     "Source: orchestration-v3 integration release-train follow-up.",
@@ -109,6 +112,7 @@ export function buildFollowupBody(work) {
     `**stream:** ${stream}`,
     "**priority:** P0",
     "**human_approval_required:** false",
+    `**task_mutability:** ${taskMutability}`,
     `**file_ownership:** ${ownership}`,
     "",
     "## Goal",
@@ -198,8 +202,17 @@ export function planFollowupMaterialization(work, issues = []) {
 
   if (labels.has(ORCHESTRATION_V3.queue.blocked)) {
     return {
-      action: "REUSE_AND_READY",
-      reason: "BLOCKED_CANONICAL_FOLLOWUP_STILL_ACTIONABLE",
+      action: "REUSE_NO_CHANGE",
+      reason: "BLOCKED_CANONICAL_FOLLOWUP_PRESERVED",
+      identity: followupIdentity(work),
+      issue: existing
+    };
+  }
+
+  if (String(existing?.state ?? "open").toLowerCase() === "closed") {
+    return {
+      action: "REUSE_NO_CHANGE",
+      reason: "CLOSED_CANONICAL_FOLLOWUP_SUPPRESSES_REGENERATION",
       identity: followupIdentity(work),
       issue: existing
     };
