@@ -22,7 +22,19 @@ function parseStructuredLine(line, observedAt) {
   }
 }
 
-export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, spawnImpl = spawn, now = () => Date.now() }) {
+export function runBoundedProcess({
+  command,
+  args = [],
+  cwd,
+  env = process.env,
+  timeoutMs,
+  stallMs,
+  onEvent = () => {},
+  onStarted = () => {},
+  observeSemantic = () => null,
+  spawnImpl = spawn,
+  now = () => Date.now(),
+}) {
   if (!command) throw new Error('V4_PROCESS_COMMAND_REQUIRED');
   if (!cwd) throw new Error('V4_PROCESS_CWD_REQUIRED');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('V4_PROCESS_TIMEOUT_REQUIRED');
@@ -31,22 +43,23 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
   return new Promise((resolve, reject) => {
     const startedAt = now();
     let lastSemanticAt = startedAt;
+    let lastObserverAt = startedAt;
     let settled = false;
     let stdoutBuffer = '';
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const pgid = child.pid;
     onStarted({ childPid: child.pid, processGroupId: pgid, startedAt });
 
+    const emit = (event) => {
+      const classification = onEvent(event);
+      if (classification === 'SEMANTIC') lastSemanticAt = now();
+    };
+
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearInterval(timer);
       resolve({ ...result, childPid: child.pid, processGroupId: pgid, startedAt, endedAt: now() });
-    };
-
-    const emit = (event) => {
-      const classification = onEvent(event);
-      if (classification === 'SEMANTIC') lastSemanticAt = now();
     };
 
     child.stdout?.on('data', (chunk) => {
@@ -71,14 +84,25 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     child.on('exit', (code, signal) => finish({ status: code === 0 ? 'COMPLETE' : 'FAILED', code, signal, reason: code === 0 ? null : `EXIT_${code ?? signal}` }));
 
     const timer = setInterval(() => {
-      const elapsed = now() - startedAt;
+      const current = now();
+      const elapsed = current - startedAt;
+      const observerIntervalMs = Math.min(2000, Math.max(500, Math.floor(stallMs / 8)));
+      if (current - lastObserverAt >= observerIntervalMs) {
+        lastObserverAt = current;
+        try {
+          const observed = observeSemantic(new Date(current).toISOString());
+          if (observed) emit(observed);
+        } catch (error) {
+          emit({ kind: 'STDERR', data: `V4_SEMANTIC_OBSERVER_ERROR:${String(error?.message ?? error)}`, observedAt: new Date(current).toISOString() });
+        }
+      }
       if (elapsed >= timeoutMs) {
         signalGroup(pgid, 'SIGTERM');
         setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250).unref?.();
         finish({ status: 'TIMED_OUT', code: null, signal: 'SIGTERM', reason: 'HARD_DEADLINE' });
         return;
       }
-      if (now() - lastSemanticAt >= stallMs) {
+      if (current - lastSemanticAt >= stallMs) {
         signalGroup(pgid, 'SIGTERM');
         setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250).unref?.();
         finish({ status: 'BLOCKED', code: null, signal: 'SIGTERM', reason: 'SEMANTIC_PROGRESS_STALL' });
