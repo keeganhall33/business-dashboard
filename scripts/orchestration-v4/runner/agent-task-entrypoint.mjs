@@ -8,19 +8,17 @@ if (!prompt || !configPath || !stateDir) throw new Error('V4_AGENT_ENTRYPOINT_AR
 const workspacePath = process.cwd();
 if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_REQUIRED');
 const capabilities = probeAgentCapabilities(openclaw);
-const invocation = buildAgentInvocation({
-  capabilities,
-  prompt,
-  workspacePath,
-  configPath,
-  stateDir,
-  timeoutSeconds: Number(timeoutSeconds),
-  openclaw,
-});
+const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
-const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: process.env, stdio: 'inherit' });
+const childEnv = { ...process.env, OPENCLAW_FALLBACK_MODELS: '' };
+const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+child.stdout?.on('data', (chunk) => process.stdout.write(chunk));
+child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
 child.on('error', (error) => { throw error; });
 child.on('exit', (code, signal) => {
+  if (code === 0 && !signal) {
+    process.stdout.write(`\nV4_EVENT ${JSON.stringify({ kind: 'MODEL_RESULT', data: 'OPENCLAW_EXIT_0' })}\n`);
+  }
   if (signal) process.kill(process.pid, signal);
   process.exitCode = code ?? 1;
 });
