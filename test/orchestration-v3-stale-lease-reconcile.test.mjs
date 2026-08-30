@@ -33,6 +33,18 @@ test("V3 leases require authoritative live evidence and never treat transient Gi
   assert.match(reconciliation, /decision = "PROVEN_STALE_RECLAIM"/);
   assert.match(reconciliation, /decision = "INSUFFICIENT_EVIDENCE_PRESERVE"/);
 
+  // Telemetry may update the visible phase/tool timestamp without pretending that
+  // semantic forward progress occurred.
+  assert.match(reconciliation, /semanticProgress = true/);
+  assert.match(reconciliation, /if \(semanticProgress\) \{/);
+  assert.match(reconciliation, /next\.lastProgressAt = nowIso/);
+  assert.match(reconciliation, /next\.progressSequence = Number\(lease\.progressSequence \?\? 0\) \+ 1/);
+
+  // A defunct process can still answer signal 0 on Unix. It must not count as a live
+  // worker lease or capacity slot.
+  assert.match(reconciliation, /execFileSync\("ps", \["-p", String\(pid\), "-o", "stat="\]/);
+  assert.match(reconciliation, /state && state\.startsWith\("Z"\)/);
+
   // Regression guard: never regress to preserving a lease solely because its PID exists.
   assert.doesNotMatch(watcher, /if \(alive\(Number\(lease\.pid\)\)\) return lease/);
 });
