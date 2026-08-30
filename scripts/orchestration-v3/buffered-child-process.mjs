@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { spawn } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { touchOwnedLeaseProgress } from "./lease-reconciliation.mjs";
 
 export const DEFAULT_PROGRESS_TIMEOUT_MS = 240_000;
@@ -49,6 +50,27 @@ function signalOwnedChild(child, signal) {
   }
 }
 
+function journalLineIsMeaningful(line) {
+  const parts = String(line ?? "").trim().split("\t");
+  if (parts.length < 4) return false;
+  const tool = String(parts[1] ?? "").trim().toLowerCase();
+  const command = parts.slice(3).join("\t").trim().toLowerCase();
+  if (!command) return false;
+
+  if (tool === "git") {
+    const readOnlyGit = /^(?:status\b|diff(?:\s+--check)?\b|rev-parse\b|log\b|show\b|branch(?:\s+--show-current)?\b|worktree\s+list\b)/;
+    if (readOnlyGit.test(command)) return false;
+  }
+
+  return true;
+}
+
+function journalDeltaIsMeaningful(delta) {
+  return String(delta ?? "")
+    .split(/\r?\n/)
+    .some((line) => journalLineIsMeaningful(line));
+}
+
 export function runBufferedChild(
   command,
   args,
@@ -64,10 +86,12 @@ export function runBufferedChild(
     const effectiveProgressTimeout = resolveProgressTimeout(command, progressTimeout);
     const executionJournalPath = String(env?.ORCH_EXECUTION_JOURNAL ?? "").trim() || null;
     let journalFingerprint = null;
+    let journalSize = 0;
     if (executionJournalPath) {
       try {
         const stat = fs.statSync(executionJournalPath);
         journalFingerprint = `${stat.size}:${stat.mtimeMs}`;
+        journalSize = stat.size;
       } catch {}
     }
 
@@ -81,7 +105,9 @@ export function runBufferedChild(
     let timer = null;
     let progressTimer = null;
     let hardKillTimer = null;
-    let lastProgressAt = Date.now();
+    const childStartAt = performance.now();
+    const hardDeadlineAt = childStartAt + Number(timeout);
+    let lastSemanticProgressAt = childStartAt;
     const parentSignalHandlers = new Map();
 
     const child = spawn(command, args, {
@@ -98,13 +124,24 @@ export function runBufferedChild(
       childProcessGroupId: process.platform === "win32" ? null : childPid
     });
 
-    const markProgress = (phase, { observedToolEvent = false } = {}) => {
-      lastProgressAt = Date.now();
+    const markSemanticProgress = (phase, { observedToolEvent = false } = {}) => {
+      lastSemanticProgressAt = performance.now();
       touchOwnedLeaseProgress({
         phase,
         childPid,
         childProcessGroupId: process.platform === "win32" ? null : childPid,
-        observedToolEvent
+        observedToolEvent,
+        semanticProgress: true
+      });
+    };
+
+    const markTelemetry = (phase, { observedToolEvent = false } = {}) => {
+      touchOwnedLeaseProgress({
+        phase,
+        childPid,
+        childProcessGroupId: process.platform === "win32" ? null : childPid,
+        observedToolEvent,
+        semanticProgress: false
       });
     };
 
@@ -115,12 +152,36 @@ export function runBufferedChild(
         const nextFingerprint = `${stat.size}:${stat.mtimeMs}`;
         if (journalFingerprint === null) {
           journalFingerprint = nextFingerprint;
+          journalSize = stat.size;
           return false;
         }
         if (nextFingerprint === journalFingerprint) return false;
+
+        let delta = "";
+        if (stat.size >= journalSize) {
+          const bytes = stat.size - journalSize;
+          if (bytes > 0) {
+            const fd = fs.openSync(executionJournalPath, "r");
+            try {
+              const buffer = Buffer.alloc(bytes);
+              fs.readSync(fd, buffer, 0, bytes, journalSize);
+              delta = buffer.toString("utf8");
+            } finally {
+              fs.closeSync(fd);
+            }
+          }
+        }
+
         journalFingerprint = nextFingerprint;
-        markProgress("CHILD_TOOL_JOURNAL", { observedToolEvent: true });
-        return true;
+        journalSize = stat.size;
+
+        if (journalDeltaIsMeaningful(delta)) {
+          markSemanticProgress("CHILD_MEANINGFUL_TOOL_PROGRESS", { observedToolEvent: true });
+          return true;
+        }
+
+        markTelemetry("CHILD_TOOL_JOURNAL_TELEMETRY", { observedToolEvent: true });
+        return false;
       } catch {
         return false;
       }
@@ -128,13 +189,13 @@ export function runBufferedChild(
 
     const terminate = (reason = "TERMINATE") => {
       if (child.exitCode !== null || child.signalCode !== null) return;
-      markProgress(`CHILD_${reason}_TERM`);
+      markTelemetry(`CHILD_${reason}_TERM`);
       signalOwnedChild(child, "SIGTERM");
 
       if (!hardKillTimer) {
         hardKillTimer = setTimeout(() => {
           if (!settled && child.exitCode === null && child.signalCode === null) {
-            markProgress(`CHILD_${reason}_KILL`);
+            markTelemetry(`CHILD_${reason}_KILL`);
             signalOwnedChild(child, "SIGKILL");
           }
         }, 5_000);
@@ -156,11 +217,12 @@ export function runBufferedChild(
       if (settled) return;
       settled = true;
       cleanupTimersAndSignals();
-      markProgress("CHILD_COMPLETED");
+      markTelemetry("CHILD_COMPLETED");
       touchOwnedLeaseProgress({
         phase: "CHILD_REAPED",
         childPid: null,
-        childProcessGroupId: null
+        childProcessGroupId: null,
+        semanticProgress: false
       });
 
       if (parentSignal) {
@@ -182,7 +244,7 @@ export function runBufferedChild(
     const requestParentShutdown = (signal) => {
       if (settled || parentSignal) return;
       parentSignal = signal;
-      markProgress(`PARENT_${signal}_RECEIVED`);
+      markTelemetry(`PARENT_${signal}_RECEIVED`);
       terminate(`PARENT_${signal}`);
     };
 
@@ -209,13 +271,13 @@ export function runBufferedChild(
 
     child.stdout?.on("data", (chunk) => {
       stdout += chunk;
-      markProgress("CHILD_STDOUT", { observedToolEvent: true });
+      markSemanticProgress("CHILD_STDOUT", { observedToolEvent: true });
       guardBuffer();
     });
 
     child.stderr?.on("data", (chunk) => {
       stderr += chunk;
-      markProgress("CHILD_STDERR", { observedToolEvent: true });
+      markSemanticProgress("CHILD_STDERR", { observedToolEvent: true });
       guardBuffer();
     });
 
@@ -228,7 +290,7 @@ export function runBufferedChild(
         finish({
           status: code,
           signal,
-          error: processError("Child process made no observable forward progress within the configured bound", "EPROGRESSSTALL")
+          error: processError("Child process made no meaningful forward progress within the configured bound", "EPROGRESSSTALL")
         });
         return;
       }
@@ -237,7 +299,7 @@ export function runBufferedChild(
         finish({
           status: code,
           signal,
-          error: processError("Child process timed out", "ETIMEDOUT")
+          error: processError("Child process exceeded the absolute runtime deadline", "ETIMEDOUT")
         });
         return;
       }
@@ -255,24 +317,31 @@ export function runBufferedChild(
     });
 
     timer = setTimeout(() => {
-      if (settled) return;
+      if (settled || timedOut) return;
       timedOut = true;
-      terminate("TIMEOUT");
+      markTelemetry("ABSOLUTE_TIMEOUT_DETECTED");
+      terminate("ABSOLUTE_TIMEOUT");
     }, timeout);
     timer.unref?.();
 
     progressTimer = setInterval(() => {
-      if (settled || progressTimedOut) return;
+      if (settled || progressTimedOut || timedOut) return;
+
       observeExecutionJournalProgress();
-      if (Date.now() - lastProgressAt <= effectiveProgressTimeout) return;
+      const now = performance.now();
+
+      if (now >= hardDeadlineAt) {
+        timedOut = true;
+        markTelemetry("ABSOLUTE_TIMEOUT_DETECTED");
+        terminate("ABSOLUTE_TIMEOUT");
+        return;
+      }
+
+      if (now - lastSemanticProgressAt <= effectiveProgressTimeout) return;
       progressTimedOut = true;
-      touchOwnedLeaseProgress({
-        phase: "PROGRESS_STALL_DETECTED",
-        childPid,
-        childProcessGroupId: process.platform === "win32" ? null : childPid
-      });
-      terminate("PROGRESS_STALL");
-    }, Math.min(5_000, Math.max(1_000, Math.floor(effectiveProgressTimeout / 10))));
+      markTelemetry("SEMANTIC_PROGRESS_STALL_DETECTED");
+      terminate("SEMANTIC_PROGRESS_STALL");
+    }, Math.min(5_000, Math.max(1_000, Math.floor(Math.min(effectiveProgressTimeout, timeout) / 10))));
     progressTimer.unref?.();
   });
 }
