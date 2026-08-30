@@ -4,6 +4,7 @@ import { classifyProgress } from '../progress.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { claimTask, getTask, recordExecutionIdentity, recordSemanticProgress, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
+import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
 
 const RESULT_TO_STATE = Object.freeze({
   COMPLETE: V4_STATES.COMPLETE,
@@ -12,19 +13,7 @@ const RESULT_TO_STATE = Object.freeze({
   TIMED_OUT: V4_STATES.TIMED_OUT,
 });
 
-export async function runV4Task({
-  db,
-  repoRoot,
-  workspaceRoot,
-  taskId,
-  slotId,
-  command,
-  args = [],
-  timeoutMs = 15 * 60_000,
-  stallMs = 4 * 60_000,
-  execute = runBoundedProcess,
-  now = () => new Date(),
-}) {
+export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, now = () => new Date() }) {
   const ready = getTask(db, taskId);
   if (!ready) throw new Error(`V4_RUNNER_TASK_NOT_FOUND:${taskId}`);
   if (ready.state !== V4_STATES.READY) throw new Error(`V4_RUNNER_TASK_NOT_READY:${taskId}:${ready.state}`);
@@ -37,6 +26,7 @@ export async function runV4Task({
     const workspace = createDisposableWorkspace({ repoRoot, context });
     workspaceReady = true;
     transitionTask(db, { taskId, expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING, patch: { workspacePath: workspace.workspacePath }, now: now() });
+    const observeSemantic = createWorkspaceProgressObserver(workspace.workspacePath);
 
     const result = await execute({
       command,
@@ -44,6 +34,7 @@ export async function runV4Task({
       cwd: workspace.workspacePath,
       timeoutMs,
       stallMs,
+      observeSemantic,
       onStarted({ childPid, processGroupId }) {
         recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() });
       },
