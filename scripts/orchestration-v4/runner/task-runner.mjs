@@ -1,6 +1,7 @@
 import { createExecutionContext } from '../execution-context.mjs';
 import { createDisposableWorkspace, cleanupDisposableWorkspace } from '../disposable-workspace.mjs';
 import { classifyProgress } from '../progress.mjs';
+import { chooseAvailableSlot } from '../slot-scheduler.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { claimTask, getTask, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
@@ -78,10 +79,11 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
 export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, commandsByTaskId, timeoutMs, stallMs, execute, finalizeSuccess }) {
   const readyTasks = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at, task_id").all();
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
+  const readyStreams = new Set(readyTasks.filter((task) => task.stream !== 'INTEGRATION_RELEASE').map((task) => task.stream));
   const jobs = [];
   for (const task of readyTasks) {
     if (task.stream === 'INTEGRATION_RELEASE') continue;
-    const slot = [...registry.values()].find((candidate) => !occupied.has(candidate.workerId) && candidate.streams.includes(task.stream));
+    const slot = chooseAvailableSlot(registry, { stream: task.stream, occupied, readyStreams });
     if (!slot) continue;
     const spec = commandsByTaskId?.[task.task_id];
     if (!spec?.command) continue;
