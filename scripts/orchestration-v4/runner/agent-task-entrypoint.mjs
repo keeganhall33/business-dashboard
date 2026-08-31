@@ -10,8 +10,11 @@ if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_RE
 const runtimePrompt = [
   `V4_RUNTIME_WORKSPACE_ROOT: ${workspacePath}`,
   'This absolute directory is the only authoritative workspace for this task.',
-  'For every file read, write, edit, shell command, and validation, resolve paths under this exact root.',
-  'For mutations, use absolute target paths rooted at V4_RUNTIME_WORKSPACE_ROOT rather than relying on an implicit current directory.',
+  'For every file read, shell command, mutation, and validation, resolve paths under this exact root.',
+  'Native write and edit tools are intentionally disabled for production coding agents.',
+  'Perform file mutations only with apply_patch or exec, rooted at V4_RUNTIME_WORKSPACE_ROOT.',
+  'When using exec for a mutation, use the exact absolute target path under V4_RUNTIME_WORKSPACE_ROOT or first verify pwd equals V4_RUNTIME_WORKSPACE_ROOT.',
+  'After mutating, verify the target with read or exec and confirm git status shows the intended change before declaring completion.',
   'Do not write into the OpenClaw state directory, temporary agent directory, home directory, or any other workspace.',
   '',
   prompt,
