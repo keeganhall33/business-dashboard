@@ -5,6 +5,11 @@ import { assertTransition, V4_STATES } from '../state-machine.mjs';
 
 const SHA = /^[0-9a-f]{40}$/i;
 
+function ensureColumn(db, name, definition) {
+  const existing = new Set(db.prepare('PRAGMA table_info(tasks)').all().map((row) => row.name));
+  if (!existing.has(name)) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${definition}`);
+}
+
 export function openV4StateStore(dbPath) {
   if (!path.isAbsolute(dbPath)) throw new Error('V4_STATE_DB_PATH_MUST_BE_ABSOLUTE');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -25,6 +30,8 @@ export function openV4StateStore(dbPath) {
       semantic_progress_seq INTEGER NOT NULL DEFAULT 0,
       attempt INTEGER NOT NULL DEFAULT 0,
       terminal_reason TEXT,
+      contract_json TEXT NOT NULL DEFAULT '{}',
+      result_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(issue_number)
@@ -33,6 +40,8 @@ export function openV4StateStore(dbPath) {
       ON tasks(slot_id)
       WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED');
   `);
+  ensureColumn(db, 'contract_json', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'result_json', 'TEXT');
   return db;
 }
 
@@ -40,14 +49,15 @@ function nowIso(now = new Date()) {
   return new Date(now).toISOString();
 }
 
-export function insertReadyTask(db, { taskId, issueNumber, stream, baseSha, now = new Date() }) {
+export function insertReadyTask(db, { taskId, issueNumber, stream, baseSha, contract = {}, now = new Date() }) {
   if (!taskId) throw new Error('V4_STATE_TASK_ID_REQUIRED');
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error('V4_STATE_ISSUE_REQUIRED');
   if (!stream) throw new Error('V4_STATE_STREAM_REQUIRED');
   if (!SHA.test(String(baseSha || ''))) throw new Error('V4_STATE_BASE_SHA_REQUIRED');
   const timestamp = nowIso(now);
-  db.prepare(`INSERT INTO tasks(task_id,issue_number,stream,state,base_sha,created_at,updated_at)
-              VALUES(?,?,?,?,?,?,?)`).run(taskId, issueNumber, stream, V4_STATES.READY, baseSha, timestamp, timestamp);
+  const contractJson = JSON.stringify(contract ?? {});
+  db.prepare(`INSERT INTO tasks(task_id,issue_number,stream,state,base_sha,contract_json,created_at,updated_at)
+              VALUES(?,?,?,?,?,?,?,?)`).run(taskId, issueNumber, stream, V4_STATES.READY, baseSha, contractJson, timestamp, timestamp);
   return getTask(db, taskId);
 }
 
@@ -55,8 +65,19 @@ export function getTask(db, taskId) {
   return db.prepare('SELECT * FROM tasks WHERE task_id=?').get(taskId) ?? null;
 }
 
+export function getTaskContract(task) {
+  try { return JSON.parse(task?.contract_json || '{}'); } catch { throw new Error('V4_STATE_CONTRACT_JSON_INVALID'); }
+}
+
 export function listTasks(db) {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at, task_id').all();
+}
+
+export function recordTaskResult(db, { taskId, result, now = new Date() }) {
+  const timestamp = nowIso(now);
+  const update = db.prepare('UPDATE tasks SET result_json=?, updated_at=? WHERE task_id=?').run(JSON.stringify(result ?? {}), timestamp, taskId);
+  if (update.changes !== 1) throw new Error('V4_STATE_TASK_NOT_FOUND');
+  return getTask(db, taskId);
 }
 
 export function claimTask(db, { taskId, slotId, expectedState = V4_STATES.READY, now = new Date() }) {

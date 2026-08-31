@@ -40,7 +40,13 @@ export function importReadyIssues({ db, issues, baseSha }) {
       continue;
     }
     const task = validation.task;
-    insertReadyTask(db, { taskId: task.taskId, issueNumber: task.issueNumber, stream: task.stream, baseSha });
+    insertReadyTask(db, {
+      taskId: task.taskId,
+      issueNumber: task.issueNumber,
+      stream: task.stream,
+      baseSha,
+      contract: task,
+    });
     imported.push(task);
   }
   return Object.freeze({ imported, rejected, duplicates });

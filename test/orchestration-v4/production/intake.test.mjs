@@ -6,13 +6,14 @@ import path from 'node:path';
 import { openV4StateStore, getTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { importReadyIssues } from '../../../scripts/orchestration-v4/production/github-intake.mjs';
 import { validateTaskContract } from '../../../scripts/orchestration-v4/production/task-contract.mjs';
+import { promptForTask } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 
 function issue(number, overrides = {}) {
   return {
     number,
     title: `Task ${number}`,
     labels: [{ name: 'agent-orchestration' }, { name: 'orch:ready' }],
-    body: `## OrchestrationTaskV1\n**task_id:** task-${number}\n**stream:** CORE_INTELLIGENCE\n**human_approval_required:** false\n**task_mutability:** IMPLEMENTATION_MUTATION_REQUIRED\n**file_ownership:** src/example/**`,
+    body: `## OrchestrationTaskV1\n**task_id:** task-${number}\n**stream:** CORE_INTELLIGENCE\n**human_approval_required:** false\n**task_mutability:** IMPLEMENTATION_MUTATION_REQUIRED\n**file_ownership:** src/example/**\n\n## Acceptance\nCreate the focused implementation and prove it.`,
     ...overrides,
   };
 }
@@ -28,6 +29,19 @@ test('ready intake is idempotent and preserves immutable admitted SHA', () => {
     assert.equal(second.imported.length, 0);
     assert.equal(second.duplicates.length, 1);
     assert.equal(getTask(db, 'task-10').base_sha, 'a'.repeat(40));
+  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('production worker prompt contains persisted title body ownership and mutability', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-prompt-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    importReadyIssues({ db, issues: [issue(11)], baseSha: 'd'.repeat(40) });
+    const prompt = promptForTask(getTask(db, 'task-11'));
+    assert.match(prompt, /Title: Task 11/);
+    assert.match(prompt, /IMPLEMENTATION_MUTATION_REQUIRED/);
+    assert.match(prompt, /src\/example\/\*\*/);
+    assert.match(prompt, /Create the focused implementation and prove it/);
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
