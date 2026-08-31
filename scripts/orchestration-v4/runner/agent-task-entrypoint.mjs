@@ -10,7 +10,15 @@ if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_RE
 const capabilities = probeAgentCapabilities(openclaw);
 const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
-const childEnv = { ...process.env, OPENCLAW_FALLBACK_MODELS: '' };
+export function buildProductionAgentEnv(parentEnv = process.env) {
+  return {
+    ...parentEnv,
+    OPENCLAW_FALLBACK_MODELS: '',
+    OLLAMA_API_KEY: parentEnv.OLLAMA_API_KEY || 'ollama-local',
+  };
+}
+
+const childEnv = buildProductionAgentEnv(process.env);
 const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
 child.stdout?.on('data', (chunk) => process.stdout.write(chunk));
 child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
