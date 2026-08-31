@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { buildAgentInvocation, probeAgentCapabilities } from './agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, probeAgentCapabilities } from './agent-executor.mjs';
 
 const [prompt, configPath, stateDir, timeoutSeconds = '900', openclaw = '/opt/homebrew/bin/openclaw'] = process.argv.slice(2);
 if (!prompt || !configPath || !stateDir) throw new Error('V4_AGENT_ENTRYPOINT_ARGS_REQUIRED');
@@ -9,14 +9,6 @@ const workspacePath = process.cwd();
 if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_REQUIRED');
 const capabilities = probeAgentCapabilities(openclaw);
 const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
-
-export function buildProductionAgentEnv(parentEnv = process.env) {
-  return {
-    ...parentEnv,
-    OPENCLAW_FALLBACK_MODELS: '',
-    OLLAMA_API_KEY: parentEnv.OLLAMA_API_KEY || 'ollama-local',
-  };
-}
 
 const childEnv = buildProductionAgentEnv(process.env);
 const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
