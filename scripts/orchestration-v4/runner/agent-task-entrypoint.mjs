@@ -10,7 +10,7 @@ if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_RE
 const capabilities = probeAgentCapabilities(openclaw);
 const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
-const childEnv = buildProductionAgentEnv(process.env);
+const childEnv = buildProductionAgentEnv(process.env, workspacePath);
 const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
 child.stdout?.on('data', (chunk) => process.stdout.write(chunk));
 child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
