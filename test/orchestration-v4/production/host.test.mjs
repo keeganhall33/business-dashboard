@@ -23,10 +23,33 @@ test('host loops, writes heartbeat, releases lock, and restarts', async () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host fails closed when lock already exists', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-lock-'));
-  fs.writeFileSync(path.join(root, 'host.lock'), '123\n');
+test('host fails closed when lock belongs to a live pid', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-live-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), `${process.pid}\n`);
   try {
     await assert.rejects(() => runProductionHost({ stateRoot: root, poll: async () => {}, maxCycles: 1 }), /V4_HOST_ALREADY_RUNNING/);
+    assert.equal(fs.readFileSync(path.join(root, 'host.lock'), 'utf8').trim(), String(process.pid));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host reclaims a stale dead-pid lock and starts normally', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stale-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), '99999999\n');
+  let calls = 0;
+  try {
+    const result = await runProductionHost({ stateRoot: root, poll: async () => { calls += 1; }, maxCycles: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(calls, 1);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host reclaims an invalid stale lock', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-invalid-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), 'not-a-pid\n');
+  try {
+    const result = await runProductionHost({ stateRoot: root, poll: async () => {}, maxCycles: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
