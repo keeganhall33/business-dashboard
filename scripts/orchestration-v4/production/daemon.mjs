@@ -3,17 +3,29 @@ import { fileURLToPath } from 'node:url';
 import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
 import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
+import { getTaskContract } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 
-function promptForTask(task) {
+export function promptForTask(task) {
+  const contract = getTaskContract(task);
+  if (!contract?.title || !contract?.body || !contract?.fileOwnership || !contract?.taskMutability) {
+    throw new Error(`V4_PRODUCTION_CONTRACT_INCOMPLETE:${task.task_id}`);
+  }
   return [
     `You are executing Orchestration V4 task ${task.task_id}.`,
     `Issue: #${task.issue_number}`,
     `Stream: ${task.stream}`,
+    `Title: ${contract.title}`,
+    `Task mutability: ${contract.taskMutability}`,
+    `File ownership: ${contract.fileOwnership}`,
+    '',
+    'Authoritative issue body and acceptance criteria:',
+    contract.body,
+    '',
     'Work only inside the supplied disposable workspace.',
-    'Respect the issue file ownership exactly. Do not mutate V3 orchestration files unless the issue explicitly owns them.',
+    'Respect file ownership exactly. Do not mutate V3 orchestration files unless the issue explicitly owns them.',
     'Use local tools and complete the implementation, tests, and validation required by the issue.',
   ].join('\n');
 }
