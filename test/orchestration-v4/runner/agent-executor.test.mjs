@@ -57,17 +57,25 @@ test('adapter remains compatible when code mode flag is unavailable', () => {
   assert.equal(invocation.args.includes('--code-mode'), false);
 });
 
-test('production agent env disables fallback and supplies local Ollama auth', () => {
-  const env = buildProductionAgentEnv({ PATH: '/bin' });
+test('production agent env disables fallback, supplies local Ollama auth, and pins workspace', () => {
+  const workspacePath = path.resolve('/tmp/v4-workspace');
+  const env = buildProductionAgentEnv({ PATH: '/bin' }, workspacePath);
   assert.equal(env.OPENCLAW_FALLBACK_MODELS, '');
+  assert.equal(env.OPENCLAW_WORKSPACE_DIR, workspacePath);
   assert.equal(env.OLLAMA_API_KEY, 'ollama-local');
   assert.equal(env.PATH, '/bin');
 });
 
 test('production agent env preserves an explicitly supplied Ollama API key', () => {
-  const env = buildProductionAgentEnv({ OLLAMA_API_KEY: 'explicit-local-key', OPENCLAW_FALLBACK_MODELS: 'cloud/model' });
+  const workspacePath = path.resolve('/tmp/v4-workspace');
+  const env = buildProductionAgentEnv({ OLLAMA_API_KEY: 'explicit-local-key', OPENCLAW_FALLBACK_MODELS: 'cloud/model', OPENCLAW_WORKSPACE_DIR: '/wrong/workspace' }, workspacePath);
   assert.equal(env.OLLAMA_API_KEY, 'explicit-local-key');
   assert.equal(env.OPENCLAW_FALLBACK_MODELS, '');
+  assert.equal(env.OPENCLAW_WORKSPACE_DIR, workspacePath);
+});
+
+test('production agent env fails closed without an absolute workspace', () => {
+  assert.throws(() => buildProductionAgentEnv({}, 'relative/workspace'), /V4_AGENT_WORKSPACE_ENV_REQUIRED/);
 });
 
 test('adapter fails closed when neither config nor isolated execution is available', () => {
