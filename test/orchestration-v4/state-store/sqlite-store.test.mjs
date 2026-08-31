@@ -7,6 +7,7 @@ import { V4_STATES } from '../../../scripts/orchestration-v4/state-machine.mjs';
 import {
   claimTask,
   getTask,
+  getTaskContract,
   insertReadyTask,
   listTasks,
   openV4StateStore,
@@ -19,7 +20,7 @@ function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-state-'));
   const dbPath = path.join(root, 'state.sqlite');
   const db = openV4StateStore(dbPath);
-  return { root, db, close() { db.close(); fs.rmSync(root, { recursive: true, force: true }); } };
+  return { root, dbPath, db, close() { db.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
 
 test('slot claim is compare-and-set and cannot double claim', () => {
@@ -43,6 +44,17 @@ test('durable task state contains no persistent worker git branch/head fields', 
     assert.equal(Object.hasOwn(row, 'branch'), false);
     assert.equal(Object.hasOwn(row, 'worker_head'), false);
     assert.equal(Object.hasOwn(row, 'github_label'), false);
+  } finally { f.close(); }
+});
+
+test('validated task contract survives SQLite close and reopen', () => {
+  const f = fixture();
+  try {
+    const contract = { taskId: 'persist', issueNumber: 33, stream: 'CORE_INTELLIGENCE', title: 'Persist me', body: 'Acceptance body', taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED', fileOwnership: 'src/**' };
+    insertReadyTask(f.db, { taskId: 'persist', issueNumber: 33, stream: 'CORE_INTELLIGENCE', baseSha: 'd'.repeat(40), contract });
+    f.db.close();
+    f.db = openV4StateStore(f.dbPath);
+    assert.deepEqual(getTaskContract(getTask(f.db, 'persist')), contract);
   } finally { f.close(); }
 });
 
