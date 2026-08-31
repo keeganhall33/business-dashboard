@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
@@ -34,7 +34,18 @@ test('adapter pins local Ollama model and task-scoped config in direct tool mode
   assert.equal(invocation.args[codeModeIndex + 1], 'direct');
 });
 
-test('task-scoped config disables semantic memory search', () => {
+test('production config disables semantic memory and native write/edit while preserving cwd-bound mutation tools', () => {
+  const config = productionAgentConfig();
+  assert.deepEqual(config.memory, { search: { enabled: false } });
+  assert.equal(config.tools.profile, 'coding');
+  assert.deepEqual(config.tools.deny, ['write', 'edit']);
+  assert.deepEqual(config.tools.exec.applyPatch, { enabled: true, workspaceOnly: true });
+  assert.equal(config.tools.deny.includes('exec'), false);
+  assert.equal(config.tools.deny.includes('apply_patch'), false);
+  assert.equal(config.tools.deny.includes('read'), false);
+});
+
+test('task-scoped config writes the production tool policy', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-state-test-'));
   const state = createEphemeralAgentState({ taskId: 'task-memory-off', root });
   try {
@@ -42,7 +53,7 @@ test('task-scoped config disables semantic memory search', () => {
     assert.ok(path.isAbsolute(state.configPath));
     assert.equal(path.dirname(state.configPath), state.stateDir);
     const config = JSON.parse(fs.readFileSync(state.configPath, 'utf8'));
-    assert.deepEqual(config, { memory: { search: { enabled: false } } });
+    assert.deepEqual(config, productionAgentConfig());
   } finally {
     cleanupEphemeralAgentState(state);
     fs.rmSync(root, { recursive: true, force: true });
