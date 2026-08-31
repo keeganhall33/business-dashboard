@@ -38,7 +38,7 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
   git(cwd, 'commit', '-m', `feat(v4-task): complete #${task.issue_number}`);
   const headSha = git(cwd, 'rev-parse', 'HEAD');
   if (headSha === task.base_sha) return { ok: false, reason: 'V4_IMPLEMENTATION_COMMIT_MISSING' };
-  git(cwd, 'push', '--force-with-lease', 'origin', `HEAD:refs/heads/${branch}`);
+  git(cwd, 'push', 'origin', `HEAD:refs/heads/${branch}`);
 
   let matches = ghJson(['pr','list','--repo',repoFullName,'--state','open','--head',branch,'--json','number,url,headRefOid'], gh);
   let pr = matches[0] || null;
