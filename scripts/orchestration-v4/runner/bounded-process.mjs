@@ -51,6 +51,15 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       if (classification === 'SEMANTIC') lastSemanticAt = now();
     };
 
+    const sampleSemantic = (observedAt) => {
+      try {
+        const observed = observeSemantic(observedAt);
+        if (observed) emit(observed);
+      } catch (error) {
+        emit({ kind: 'STDERR', data: `V4_SEMANTIC_OBSERVER_ERROR:${String(error?.message ?? error)}`, observedAt });
+      }
+    };
+
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -82,7 +91,10 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       clearInterval(timer);
       reject(error);
     });
-    child.on('exit', (code, signal) => finish({ status: code === 0 ? 'COMPLETE' : 'FAILED', code, signal, reason: code === 0 ? null : `EXIT_${code ?? signal}` }));
+    child.on('exit', (code, signal) => {
+      sampleSemantic(new Date(now()).toISOString());
+      finish({ status: code === 0 ? 'COMPLETE' : 'FAILED', code, signal, reason: code === 0 ? null : `EXIT_${code ?? signal}` });
+    });
 
     const timer = setInterval(() => {
       const current = now();
@@ -90,12 +102,7 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       const observerIntervalMs = Math.min(2000, Math.max(500, Math.floor(stallMs / 8)));
       if (current - lastObserverAt >= observerIntervalMs) {
         lastObserverAt = current;
-        try {
-          const observed = observeSemantic(new Date(current).toISOString());
-          if (observed) emit(observed);
-        } catch (error) {
-          emit({ kind: 'STDERR', data: `V4_SEMANTIC_OBSERVER_ERROR:${String(error?.message ?? error)}`, observedAt: new Date(current).toISOString() });
-        }
+        sampleSemantic(new Date(current).toISOString());
       }
       if (elapsed >= timeoutMs) {
         signalGroup(pgid, 'SIGTERM');
