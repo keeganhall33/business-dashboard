@@ -60,13 +60,24 @@ export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) 
   });
 }
 
+export function productionAgentConfig() {
+  return Object.freeze({
+    memory: { search: { enabled: false } },
+    tools: {
+      profile: 'coding',
+      deny: ['write', 'edit'],
+      exec: { applyPatch: { enabled: true, workspaceOnly: true } },
+    },
+  });
+}
+
 export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent') }) {
   if (!taskId) throw new Error('V4_AGENT_TASK_ID_REQUIRED');
   fs.mkdirSync(root, { recursive: true });
   const safe = String(taskId).replace(/[^A-Za-z0-9._-]/g, '-');
   const stateDir = fs.mkdtempSync(path.join(root, `${safe}-`));
   const configPath = path.join(stateDir, 'openclaw-v4.json');
-  fs.writeFileSync(configPath, `${JSON.stringify({ memory: { search: { enabled: false } } }, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(configPath, `${JSON.stringify(productionAgentConfig(), null, 2)}\n`, { mode: 0o600 });
   return Object.freeze({ stateDir, configPath });
 }
 
