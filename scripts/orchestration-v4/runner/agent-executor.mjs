@@ -34,14 +34,17 @@ export function probeAgentCapabilities(openclaw = '/opt/homebrew/bin/openclaw', 
 
 export function buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds = 900, openclaw = '/opt/homebrew/bin/openclaw' }) {
   if (!capabilities?.execSubcommand) throw new Error('V4_AGENT_EXEC_SUBCOMMAND_REQUIRED');
-  if (!capabilities?.config || !capabilities?.stateDir || !capabilities?.model) throw new Error('V4_AGENT_REQUIRED_FLAGS_MISSING');
+  if (!capabilities?.stateDir || !capabilities?.model) throw new Error('V4_AGENT_REQUIRED_FLAGS_MISSING');
+  if (!capabilities?.isolated && !capabilities?.config) throw new Error('V4_AGENT_CONFIG_OR_ISOLATED_REQUIRED');
   if (!workspacePath || !path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_WORKSPACE_REQUIRED');
   if (!configPath || !path.isAbsolute(configPath)) throw new Error('V4_AGENT_CONFIG_REQUIRED');
   if (!stateDir || !path.isAbsolute(stateDir)) throw new Error('V4_AGENT_STATE_DIR_REQUIRED');
   if (!prompt) throw new Error('V4_AGENT_PROMPT_REQUIRED');
 
-  const args = ['agent', 'exec', String(prompt), '--config', configPath, '--state-dir', stateDir, '--model', MODEL];
+  const args = ['agent', 'exec', String(prompt)];
   if (capabilities.isolated) args.push('--isolated');
+  else args.push('--config', configPath);
+  args.push('--state-dir', stateDir, '--model', MODEL);
   if (capabilities.codeMode) args.push('--code-mode', 'code');
   if (capabilities.localModelLean) args.push('--local-model-lean');
   if (capabilities.cwd) args.push('--cwd', workspacePath);

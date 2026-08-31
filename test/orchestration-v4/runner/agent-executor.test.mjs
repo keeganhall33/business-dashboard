@@ -5,7 +5,7 @@ import { buildAgentInvocation, buildProductionAgentEnv, parseAgentCapabilities, 
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter pins local Ollama and forces isolated code mode inside the task workspace', () => {
+test('adapter pins local Ollama model and uses isolated code mode without config', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -19,6 +19,9 @@ test('adapter pins local Ollama and forces isolated code mode inside the task wo
   assert.equal(invocation.model, 'ollama/qwen3.5:9b');
   assert.equal(V4_AGENT_MODEL, 'ollama/qwen3.5:9b');
   assert.ok(invocation.args.includes('--isolated'));
+  assert.equal(invocation.args.includes('--config'), false);
+  assert.ok(invocation.args.includes('--state-dir'));
+  assert.ok(invocation.args.includes('/tmp/v4-state'));
   assert.ok(invocation.args.includes('--cwd'));
   assert.ok(invocation.args.includes('/tmp/v4-workspace'));
   assert.ok(invocation.args.includes('--local-model-lean'));
@@ -27,8 +30,8 @@ test('adapter pins local Ollama and forces isolated code mode inside the task wo
   assert.equal(invocation.args[codeModeIndex + 1], 'code');
 });
 
-test('adapter remains compatible when isolated or code mode flags are unavailable', () => {
-  const capabilities = parseAgentCapabilities(help.replace('  --isolated\n', '').replace('  --code-mode <mode>\n', ''));
+test('adapter falls back to pinned config when isolated flag is unavailable', () => {
+  const capabilities = parseAgentCapabilities(help.replace('  --isolated\n', ''));
   const invocation = buildAgentInvocation({
     capabilities,
     prompt: 'do work',
@@ -37,6 +40,20 @@ test('adapter remains compatible when isolated or code mode flags are unavailabl
     stateDir: path.resolve('/tmp/v4-state'),
   });
   assert.equal(invocation.args.includes('--isolated'), false);
+  const configIndex = invocation.args.indexOf('--config');
+  assert.notEqual(configIndex, -1);
+  assert.equal(invocation.args[configIndex + 1], '/tmp/v4-config.json');
+});
+
+test('adapter remains compatible when code mode flag is unavailable', () => {
+  const capabilities = parseAgentCapabilities(help.replace('  --code-mode <mode>\n', ''));
+  const invocation = buildAgentInvocation({
+    capabilities,
+    prompt: 'do work',
+    workspacePath: path.resolve('/tmp/v4-workspace'),
+    configPath: path.resolve('/tmp/v4-config.json'),
+    stateDir: path.resolve('/tmp/v4-state'),
+  });
   assert.equal(invocation.args.includes('--code-mode'), false);
 });
 
@@ -53,9 +70,9 @@ test('production agent env preserves an explicitly supplied Ollama API key', () 
   assert.equal(env.OPENCLAW_FALLBACK_MODELS, '');
 });
 
-test('adapter fails closed when required flags are missing', () => {
+test('adapter fails closed when neither config nor isolated execution is available', () => {
   assert.throws(() => buildAgentInvocation({
-    capabilities: parseAgentCapabilities('Usage: openclaw agent exec <prompt> --model <id>'),
+    capabilities: parseAgentCapabilities('Usage: openclaw agent exec <prompt> --state-dir <path> --model <id>'),
     prompt: 'x', workspacePath: '/tmp/w', configPath: '/tmp/c', stateDir: '/tmp/s'
-  }), /V4_AGENT_REQUIRED_FLAGS_MISSING/);
+  }), /V4_AGENT_CONFIG_OR_ISOLATED_REQUIRED/);
 });
