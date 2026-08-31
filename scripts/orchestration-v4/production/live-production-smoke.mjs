@@ -74,6 +74,7 @@ export async function runLiveProductionSmoke({
     if (!parsedResult?.publicationRequired || !Number.isInteger(parsedResult?.prNumber)) throw new Error('V4_SMOKE_PR_RESULT_REQUIRED');
     if (task.slot_id !== null || task.child_pid !== null || task.process_group_id !== null) throw new Error('V4_SMOKE_SLOT_NOT_RELEASED');
     if (task.workspace_path && fs.existsSync(task.workspace_path)) throw new Error('V4_SMOKE_WORKSPACE_NOT_CLEANED');
+    if (!(result.githubSync || []).some((entry) => entry?.ok && entry?.label === 'orch:complete')) throw new Error('V4_SMOKE_GITHUB_TERMINAL_SYNC_FAILED');
 
     const pr = await inspectPr({ repoFullName, prNumber: parsedResult.prNumber, gh });
     if (Number(pr.number) !== parsedResult.prNumber) throw new Error('V4_SMOKE_PR_NUMBER_MISMATCH');
