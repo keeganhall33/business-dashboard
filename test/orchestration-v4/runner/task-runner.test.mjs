@@ -96,7 +96,7 @@ test('integration tasks are never executed by the product/QA runner', async () =
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('finalizer failure preserves successful execution evidence', async () => {
+test('finalizer failure preserves successful execution evidence and full finalization diagnostics', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-finalizer-'));
   const { repo, sha } = makeRepo(root);
   const db = openV4StateStore(path.join(root, 'state.sqlite'));
@@ -115,18 +115,20 @@ test('finalizer failure preserves successful execution evidence', async () => {
       onEvent({ kind: 'WORKTREE_MUTATION', observedAt: new Date().toISOString() });
       return { status: 'COMPLETE', code: 0, stdoutTail: 'model said done', stderrTail: '' };
     },
-    finalizeSuccess: async () => ({ ok: false, reason: 'FINALIZER_FIXTURE_FAILURE' }),
+    finalizeSuccess: async () => ({ ok: false, reason: 'FINALIZER_FIXTURE_FAILURE', diagnostics: { workspacePath: '/tmp/workspace', status: '' } }),
   });
 
   assert.equal(settled.length, 1);
   assert.equal(settled[0].status, 'rejected');
   const task = getTask(db, 'finalizer-task');
   assert.equal(task.state, 'FAILED');
+  assert.equal(task.terminal_reason, 'FINALIZER_FIXTURE_FAILURE');
   const result = JSON.parse(task.result_json);
   assert.equal(result.error, 'FINALIZER_FIXTURE_FAILURE');
   assert.equal(result.execution.status, 'COMPLETE');
   assert.equal(result.execution.code, 0);
   assert.equal(result.execution.stdoutTail, 'model said done');
+  assert.deepEqual(result.finalization, { ok: false, reason: 'FINALIZER_FIXTURE_FAILURE', diagnostics: { workspacePath: '/tmp/workspace', status: '' } });
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });

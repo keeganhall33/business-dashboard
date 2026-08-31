@@ -94,3 +94,31 @@ test('live production smoke fails closed when fixture terminal sync is missing',
     }), /V4_SMOKE_GITHUB_TERMINAL_SYNC_FAILED/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('live production smoke surfaces failed finalization diagnostics in evidence', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-smoke-finalization-evidence-'));
+  try {
+    await assert.rejects(() => runLiveProductionSmoke({
+      repoRoot: root,
+      issueNumber: 1237,
+      configPath: path.join(root, 'config.json'),
+      tempRoot: path.join(root, 'smoke'),
+      loadIssue: async () => ({ number: 1237, labels: [{ name: 'agent-orchestration' }, { name: 'orch:ready' }] }),
+      poll: async ({ db }) => {
+        insertReadyTask(db, { taskId: 'smoke-1237', issueNumber: 1237, stream: 'CORE_INTELLIGENCE', baseSha: 'e'.repeat(40) });
+        const stored = {
+          error: 'V4_IMPLEMENTATION_ZERO_EXIT_NO_MUTATION',
+          execution: { status: 'COMPLETE', code: 0, stdoutTail: 'done', stderrTail: '' },
+          finalization: { ok: false, reason: 'V4_IMPLEMENTATION_ZERO_EXIT_NO_MUTATION', diagnostics: { workspacePath: '/tmp/v4-workspace', expectedPaths: [{ path: '/tmp/v4-workspace/tmp/v4-smoke.txt', exists: false }] } },
+        };
+        db.prepare("UPDATE tasks SET state='FAILED', terminal_reason=?, result_json=? WHERE task_id=?").run('V4_IMPLEMENTATION_ZERO_EXIT_NO_MUTATION', JSON.stringify(stored), 'smoke-1237');
+        return { baseSha: 'e'.repeat(40), githubSync: [{ ok: true, label: 'orch:failed' }] };
+      },
+    }), (error) => {
+      assert.match(error.message, /V4_SMOKE_TASK_NOT_COMPLETE/);
+      assert.match(error.message, /\"finalization\":\{\"ok\":false/);
+      assert.match(error.message, /\/tmp\/v4-workspace/);
+      return true;
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

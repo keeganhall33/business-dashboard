@@ -31,6 +31,7 @@ function compactEvidence(result) {
     stdoutTail: execution.stdoutTail ?? '',
     stderrTail: execution.stderrTail ?? '',
     error: result.error ?? null,
+    finalization: result.finalization ?? null,
   };
 }
 
