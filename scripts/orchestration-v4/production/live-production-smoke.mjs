@@ -34,7 +34,11 @@ function compactEvidence(result) {
   };
 }
 
-export async function runLiveProductionSmoke({ repoRoot, issueNumber, repoFullName = 'keeganhall33/business-dashboard', configPath = path.join(os.homedir(), '.openclaw', 'config.json'), openclaw = '/opt/homebrew/bin/openclaw', timeoutMs = 5 * 60_000, stallMs = 2 * 60_000, gh = 'gh', loadIssue = loadFixtureIssue, inspectPr = inspectPublishedPr, openStore = openV4StateStore, poll = runProductionPoll, tempRoot = null } = {}) {
+export function defaultOpenClawConfigPath() {
+  return path.resolve(process.env.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), '.openclaw', 'openclaw.json'));
+}
+
+export async function runLiveProductionSmoke({ repoRoot, issueNumber, repoFullName = 'keeganhall33/business-dashboard', configPath = defaultOpenClawConfigPath(), openclaw = '/opt/homebrew/bin/openclaw', timeoutMs = 5 * 60_000, stallMs = 2 * 60_000, gh = 'gh', loadIssue = loadFixtureIssue, inspectPr = inspectPublishedPr, openStore = openV4StateStore, poll = runProductionPoll, tempRoot = null } = {}) {
   if (!repoRoot || !path.isAbsolute(repoRoot)) throw new Error('V4_SMOKE_REPO_ROOT_REQUIRED');
   if (!repoFullName) throw new Error('V4_SMOKE_REPO_REQUIRED');
   if (!path.isAbsolute(configPath)) throw new Error('V4_SMOKE_CONFIG_PATH_REQUIRED');
