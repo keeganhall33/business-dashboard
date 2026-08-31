@@ -3,10 +3,14 @@ import { spawn } from 'node:child_process';
 const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED','TEST_RESULT','BUILD_RESULT','TYPECHECK_RESULT','MODEL_RESULT','PR_MUTATION']);
 const OUTPUT_TAIL_LIMIT = 16_384;
 
-function signalGroup(pgid, signal) {
-  if (!Number.isInteger(pgid) || pgid <= 0) return;
-  try { process.kill(-pgid, signal); } catch (error) {
-    if (error?.code !== 'ESRCH') throw error;
+export function signalGroup(pgid, signal, killImpl = process.kill) {
+  if (!Number.isInteger(pgid) || pgid <= 0) return false;
+  try {
+    killImpl(-pgid, signal);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH' || error?.code === 'EPERM') return false;
+    throw error;
   }
 }
 

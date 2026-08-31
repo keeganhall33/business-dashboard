@@ -37,8 +37,9 @@ function acquireHostLock(lockPath) {
   }
 }
 
-export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
+  if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
   fs.mkdirSync(stateRoot, { recursive: true });
   const lockPath = path.join(stateRoot, 'host.lock');
   const lockFd = acquireHostLock(lockPath);
@@ -81,8 +82,13 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
     }
-    if (inFlightPolls.size) await Promise.allSettled([...inFlightPolls]);
-    return { ok: true, cycles, stopped, lastPollError };
+    let drained = true;
+    if (inFlightPolls.size) {
+      const drain = Promise.allSettled([...inFlightPolls]).then(() => true);
+      if (shutdownDrainMs === 0) drained = false;
+      else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
+    }
+    return { ok: true, cycles, stopped, lastPollError, drained };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);

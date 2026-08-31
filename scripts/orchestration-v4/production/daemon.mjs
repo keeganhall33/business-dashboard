@@ -30,6 +30,9 @@ export function promptForTask(task) {
     '',
     'Work only inside the supplied disposable workspace.',
     'Respect file ownership exactly. Do not mutate V3 orchestration files unless the issue explicitly owns them.',
+    'Begin with pwd, git status --short, and targeted inspection of the owned paths.',
+    'Use read/exec/find for repository discovery. Do not use tool-search to discover repository files.',
+    'If an owned file named by the acceptance criteria does not exist yet, create it rather than repeatedly searching for it.',
     'Use local tools and complete the implementation, tests, and validation required by the issue.',
   ].join('\n');
 }
@@ -43,11 +46,18 @@ export async function runProductionPoll({
   issues = null,
   openclaw = '/opt/homebrew/bin/openclaw',
   gh = 'gh',
-  timeoutMs = 15 * 60_000,
-  stallMs = timeoutMs,
+  timeoutMs = 50 * 60_000,
+  agentTimeoutMs = 45 * 60_000,
+  stallMs = 30 * 60_000,
 }) {
   if (!path.isAbsolute(repoRoot) || !path.isAbsolute(workspaceRoot) || !path.isAbsolute(configPath)) {
     throw new Error('V4_PRODUCTION_ABSOLUTE_PATHS_REQUIRED');
+  }
+  if (!Number.isInteger(agentTimeoutMs) || agentTimeoutMs <= 0 || agentTimeoutMs >= timeoutMs) {
+    throw new Error('V4_PRODUCTION_AGENT_TIMEOUT_INVALID');
+  }
+  if (!Number.isInteger(stallMs) || stallMs <= 0 || stallMs >= timeoutMs) {
+    throw new Error('V4_PRODUCTION_STALL_TIMEOUT_INVALID');
   }
   const baseSha = refreshCanonicalMain(repoRoot);
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
@@ -64,7 +74,7 @@ export async function runProductionPoll({
       ephemeral.push(state);
       commandsByTaskId[task.task_id] = {
         command: process.execPath,
-        args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(timeoutMs / 1000)), openclaw],
+        args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
       };
     }
 

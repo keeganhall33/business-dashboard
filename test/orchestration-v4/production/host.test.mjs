@@ -53,3 +53,20 @@ test('host reclaims an invalid stale lock', async () => {
     assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('host does not wait forever for an orphaned in-flight poll during shutdown', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-drain-'));
+  const never = new Promise(() => {});
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      poll: async () => never,
+      maxCycles: 1,
+      shutdownDrainMs: 0,
+      sleep: async () => {},
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.drained, false);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
