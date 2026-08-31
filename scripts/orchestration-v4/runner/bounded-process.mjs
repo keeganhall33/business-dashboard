@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED','TEST_RESULT','BUILD_RESULT','TYPECHECK_RESULT','MODEL_RESULT','PR_MUTATION']);
+const OUTPUT_TAIL_LIMIT = 16_384;
 
 function signalGroup(pgid, signal) {
   if (!Number.isInteger(pgid) || pgid <= 0) return;
@@ -22,19 +23,12 @@ function parseStructuredLine(line, observedAt) {
   }
 }
 
-export function runBoundedProcess({
-  command,
-  args = [],
-  cwd,
-  env = process.env,
-  timeoutMs,
-  stallMs,
-  onEvent = () => {},
-  onStarted = () => {},
-  observeSemantic = () => null,
-  spawnImpl = spawn,
-  now = () => Date.now(),
-}) {
+function appendTail(current, chunk) {
+  const next = current + String(chunk);
+  return next.length <= OUTPUT_TAIL_LIMIT ? next : next.slice(-OUTPUT_TAIL_LIMIT);
+}
+
+export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, observeSemantic = () => null, spawnImpl = spawn, now = () => Date.now() }) {
   if (!command) throw new Error('V4_PROCESS_COMMAND_REQUIRED');
   if (!cwd) throw new Error('V4_PROCESS_CWD_REQUIRED');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('V4_PROCESS_TIMEOUT_REQUIRED');
@@ -46,6 +40,8 @@ export function runBoundedProcess({
     let lastObserverAt = startedAt;
     let settled = false;
     let stdoutBuffer = '';
+    let stdoutTail = '';
+    let stderrTail = '';
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const pgid = child.pid;
     onStarted({ childPid: child.pid, processGroupId: pgid, startedAt });
@@ -59,12 +55,13 @@ export function runBoundedProcess({
       if (settled) return;
       settled = true;
       clearInterval(timer);
-      resolve({ ...result, childPid: child.pid, processGroupId: pgid, startedAt, endedAt: now() });
+      resolve({ ...result, stdoutTail, stderrTail, childPid: child.pid, processGroupId: pgid, startedAt, endedAt: now() });
     };
 
     child.stdout?.on('data', (chunk) => {
       const observedAt = new Date(now()).toISOString();
       const text = String(chunk);
+      stdoutTail = appendTail(stdoutTail, text);
       emit({ kind: 'STDOUT', data: text, observedAt });
       stdoutBuffer += text;
       const lines = stdoutBuffer.split(/\r?\n/);
@@ -74,7 +71,11 @@ export function runBoundedProcess({
         if (structured) emit(structured);
       }
     });
-    child.stderr?.on('data', (chunk) => emit({ kind: 'STDERR', data: String(chunk), observedAt: new Date(now()).toISOString() }));
+    child.stderr?.on('data', (chunk) => {
+      const text = String(chunk);
+      stderrTail = appendTail(stderrTail, text);
+      emit({ kind: 'STDERR', data: text, observedAt: new Date(now()).toISOString() });
+    });
     child.on('error', (error) => {
       if (settled) return;
       settled = true;
