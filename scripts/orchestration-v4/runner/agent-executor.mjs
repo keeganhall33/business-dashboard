@@ -53,10 +53,12 @@ export function buildAgentInvocation({ capabilities, prompt, workspacePath, conf
   return Object.freeze({ command: openclaw, args, model: MODEL });
 }
 
-export function buildProductionAgentEnv(parentEnv = process.env) {
+export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) {
+  if (!workspacePath || !path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_WORKSPACE_ENV_REQUIRED');
   return Object.freeze({
     ...parentEnv,
     OPENCLAW_FALLBACK_MODELS: '',
+    OPENCLAW_WORKSPACE_DIR: workspacePath,
     OLLAMA_API_KEY: parentEnv.OLLAMA_API_KEY || 'ollama-local',
   });
 }
