@@ -21,14 +21,40 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   let cycles = 0;
+  let lastPollError = null;
+  const inFlightPolls = new Set();
+
+  const launchPoll = () => {
+    let tracked;
+    tracked = Promise.resolve()
+      .then(() => poll({ db, ...pollArgs }))
+      .then(
+        () => ({ ok: true }),
+        (error) => {
+          lastPollError = String(error?.message || error);
+          return { ok: false, error: lastPollError };
+        },
+      )
+      .finally(() => inFlightPolls.delete(tracked));
+    inFlightPolls.add(tracked);
+    return tracked;
+  };
+
   try {
     while (!stopped && cycles < maxCycles) {
       cycles += 1;
-      await poll({ db, ...pollArgs });
-      fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({ pid: process.pid, cycles, generatedAt: new Date().toISOString() })}\n`);
+      launchPoll();
+      fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
+        pid: process.pid,
+        cycles,
+        inFlightPolls: inFlightPolls.size,
+        lastPollError,
+        generatedAt: new Date().toISOString(),
+      })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
     }
-    return { ok: true, cycles, stopped };
+    if (inFlightPolls.size) await Promise.allSettled([...inFlightPolls]);
+    return { ok: true, cycles, stopped, lastPollError };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
