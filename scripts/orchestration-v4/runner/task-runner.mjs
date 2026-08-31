@@ -6,12 +6,7 @@ import { claimTask, getTask, recordExecutionIdentity, recordSemanticProgress, re
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
 
-const RESULT_TO_STATE = Object.freeze({
-  COMPLETE: V4_STATES.COMPLETE,
-  BLOCKED: V4_STATES.BLOCKED,
-  FAILED: V4_STATES.FAILED,
-  TIMED_OUT: V4_STATES.TIMED_OUT,
-});
+const RESULT_TO_STATE = Object.freeze({ COMPLETE: V4_STATES.COMPLETE, BLOCKED: V4_STATES.BLOCKED, FAILED: V4_STATES.FAILED, TIMED_OUT: V4_STATES.TIMED_OUT });
 
 export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, finalizeSuccess = null, now = () => new Date() }) {
   const ready = getTask(db, taskId);
@@ -29,15 +24,8 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     const observeSemantic = createWorkspaceProgressObserver(workspace.workspacePath);
 
     const result = await execute({
-      command,
-      args,
-      cwd: workspace.workspacePath,
-      timeoutMs,
-      stallMs,
-      observeSemantic,
-      onStarted({ childPid, processGroupId }) {
-        recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() });
-      },
+      command, args, cwd: workspace.workspacePath, timeoutMs, stallMs, observeSemantic,
+      onStarted({ childPid, processGroupId }) { recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() }); },
       onEvent(event) {
         const classification = classifyProgress(event);
         if (classification === 'SEMANTIC') recordSemanticProgress(db, { taskId, observedAt: new Date(event.observedAt) });
@@ -50,24 +38,26 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
       if (finalizeSuccess) {
         const finalized = await finalizeSuccess({ task: getTask(db, taskId), workspace, result });
         if (!finalized?.ok) throw new Error(finalized?.reason || 'V4_RUNNER_FINALIZATION_FAILED');
-        recordTaskResult(db, { taskId, result: finalized, now: now() });
+        recordTaskResult(db, { taskId, result: { execution: result, publication: finalized }, now: now() });
+      } else {
+        recordTaskResult(db, { taskId, result: { execution: result }, now: now() });
       }
       transitionTask(db, { taskId, expectedState: V4_STATES.VALIDATING, toState: V4_STATES.COMPLETE, now: now() });
     } else {
+      recordTaskResult(db, { taskId, result: { execution: result }, now: now() });
       const terminalState = RESULT_TO_STATE[result.status] ?? V4_STATES.FAILED;
       transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: terminalState, patch: { terminalReason: result.reason ?? result.status ?? 'EXECUTION_FAILED' }, now: now() });
     }
     return { task: getTask(db, taskId), result, context: workspace };
   } catch (error) {
     const current = getTask(db, taskId);
+    try { if (current) recordTaskResult(db, { taskId, result: { error: String(error?.message ?? error) }, now: now() }); } catch {}
     if (current && [V4_STATES.CLAIMED, V4_STATES.RUNNING, V4_STATES.VALIDATING].includes(current.state)) {
       try { transitionTask(db, { taskId, expectedState: current.state, toState: V4_STATES.FAILED, patch: { terminalReason: String(error?.message ?? error) }, now: now() }); } catch {}
     }
     throw error;
   } finally {
-    if (workspaceReady) {
-      try { cleanupDisposableWorkspace({ repoRoot, context }); } catch {}
-    }
+    if (workspaceReady) { try { cleanupDisposableWorkspace({ repoRoot, context }); } catch {} }
     const terminal = getTask(db, taskId);
     if (terminal && [V4_STATES.COMPLETE, V4_STATES.BLOCKED, V4_STATES.FAILED, V4_STATES.TIMED_OUT].includes(terminal.state)) releaseSlotForTerminalTask(db, taskId);
   }
