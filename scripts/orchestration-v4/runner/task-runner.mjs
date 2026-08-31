@@ -18,6 +18,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
   const context = createExecutionContext({ taskId, issueNumber: claimed.issue_number, workerId: slotId, baseSha: claimed.base_sha, workspaceRoot, now: now(), timeoutMs });
   let workspaceReady = false;
   let executionResult = null;
+  let finalizationResult = null;
   try {
     const workspace = createDisposableWorkspace({ repoRoot, context });
     workspaceReady = true;
@@ -39,6 +40,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
       transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: V4_STATES.VALIDATING, now: now() });
       if (finalizeSuccess) {
         const finalized = await finalizeSuccess({ task: getTask(db, taskId), workspace, result });
+        finalizationResult = finalized;
         if (!finalized?.ok) throw new Error(finalized?.reason || 'V4_RUNNER_FINALIZATION_FAILED');
         recordTaskResult(db, { taskId, result: { ...finalized, execution: result }, now: now() });
       } else {
@@ -56,7 +58,9 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     try {
       if (current) recordTaskResult(db, {
         taskId,
-        result: executionResult ? { error: String(error?.message ?? error), execution: executionResult } : { error: String(error?.message ?? error) },
+        result: executionResult
+          ? { error: String(error?.message ?? error), execution: executionResult, ...(finalizationResult ? { finalization: finalizationResult } : {}) }
+          : { error: String(error?.message ?? error), ...(finalizationResult ? { finalization: finalizationResult } : {}) },
         now: now(),
       });
     } catch {}
