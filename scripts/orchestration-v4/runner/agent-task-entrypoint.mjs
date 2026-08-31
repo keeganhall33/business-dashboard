@@ -7,8 +7,17 @@ if (!prompt || !configPath || !stateDir) throw new Error('V4_AGENT_ENTRYPOINT_AR
 
 const workspacePath = process.cwd();
 if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_REQUIRED');
+const runtimePrompt = [
+  `V4_RUNTIME_WORKSPACE_ROOT: ${workspacePath}`,
+  'This absolute directory is the only authoritative workspace for this task.',
+  'For every file read, write, edit, shell command, and validation, resolve paths under this exact root.',
+  'For mutations, use absolute target paths rooted at V4_RUNTIME_WORKSPACE_ROOT rather than relying on an implicit current directory.',
+  'Do not write into the OpenClaw state directory, temporary agent directory, home directory, or any other workspace.',
+  '',
+  prompt,
+].join('\n');
 const capabilities = probeAgentCapabilities(openclaw);
-const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
+const invocation = buildAgentInvocation({ capabilities, prompt: runtimePrompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
 const childEnv = buildProductionAgentEnv(process.env, workspacePath);
 const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
