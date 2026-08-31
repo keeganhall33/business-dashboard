@@ -38,7 +38,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
       if (finalizeSuccess) {
         const finalized = await finalizeSuccess({ task: getTask(db, taskId), workspace, result });
         if (!finalized?.ok) throw new Error(finalized?.reason || 'V4_RUNNER_FINALIZATION_FAILED');
-        recordTaskResult(db, { taskId, result: { execution: result, publication: finalized }, now: now() });
+        recordTaskResult(db, { taskId, result: { ...finalized, execution: result }, now: now() });
       } else {
         recordTaskResult(db, { taskId, result: { execution: result }, now: now() });
       }
