@@ -17,6 +17,7 @@ export function parseAgentCapabilities(helpText) {
     config: hasFlag(text, '--config'),
     stateDir: hasFlag(text, '--state-dir'),
     model: hasFlag(text, '--model'),
+    codeMode: hasFlag(text, '--code-mode'),
     localModelLean: hasFlag(text, '--local-model-lean'),
     cwd: hasFlag(text, '--cwd'),
     json: hasFlag(text, '--json'),
@@ -39,6 +40,7 @@ export function buildAgentInvocation({ capabilities, prompt, workspacePath, conf
   if (!prompt) throw new Error('V4_AGENT_PROMPT_REQUIRED');
 
   const args = ['agent', 'exec', String(prompt), '--config', configPath, '--state-dir', stateDir, '--model', MODEL];
+  if (capabilities.codeMode) args.push('--code-mode', 'code');
   if (capabilities.localModelLean) args.push('--local-model-lean');
   if (capabilities.cwd) args.push('--cwd', workspacePath);
   if (capabilities.json) args.push('--json');
