@@ -95,3 +95,38 @@ test('integration tasks are never executed by the product/QA runner', async () =
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('finalizer failure preserves successful execution evidence', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-finalizer-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  insertReadyTask(db, { taskId: 'finalizer-task', issueNumber: 2002, stream: 'CORE_INTELLIGENCE', baseSha: sha });
+
+  const settled = await runReadyBatch({
+    db,
+    registry: createSlotRegistry(),
+    repoRoot: repo,
+    workspaceRoot: path.join(root, 'workspaces'),
+    commandsByTaskId: { 'finalizer-task': { command: 'fixture' } },
+    timeoutMs: 5000,
+    stallMs: 1000,
+    execute: async ({ cwd, onEvent }) => {
+      fs.writeFileSync(path.join(cwd, 'task-output.txt'), 'done\n');
+      onEvent({ kind: 'WORKTREE_MUTATION', observedAt: new Date().toISOString() });
+      return { status: 'COMPLETE', code: 0, stdoutTail: 'model said done', stderrTail: '' };
+    },
+    finalizeSuccess: async () => ({ ok: false, reason: 'FINALIZER_FIXTURE_FAILURE' }),
+  });
+
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].status, 'rejected');
+  const task = getTask(db, 'finalizer-task');
+  assert.equal(task.state, 'FAILED');
+  const result = JSON.parse(task.result_json);
+  assert.equal(result.error, 'FINALIZER_FIXTURE_FAILURE');
+  assert.equal(result.execution.status, 'COMPLETE');
+  assert.equal(result.execution.code, 0);
+  assert.equal(result.execution.stdoutTail, 'model said done');
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
