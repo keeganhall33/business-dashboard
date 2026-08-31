@@ -17,6 +17,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
   const claimed = claimTask(db, { taskId, slotId, now: now() });
   const context = createExecutionContext({ taskId, issueNumber: claimed.issue_number, workerId: slotId, baseSha: claimed.base_sha, workspaceRoot, now: now(), timeoutMs });
   let workspaceReady = false;
+  let executionResult = null;
   try {
     const workspace = createDisposableWorkspace({ repoRoot, context });
     workspaceReady = true;
@@ -32,6 +33,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
         return classification;
       },
     });
+    executionResult = result;
 
     if (result.status === 'COMPLETE') {
       transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: V4_STATES.VALIDATING, now: now() });
@@ -51,7 +53,13 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     return { task: getTask(db, taskId), result, context: workspace };
   } catch (error) {
     const current = getTask(db, taskId);
-    try { if (current) recordTaskResult(db, { taskId, result: { error: String(error?.message ?? error) }, now: now() }); } catch {}
+    try {
+      if (current) recordTaskResult(db, {
+        taskId,
+        result: executionResult ? { error: String(error?.message ?? error), execution: executionResult } : { error: String(error?.message ?? error) },
+        now: now(),
+      });
+    } catch {}
     if (current && [V4_STATES.CLAIMED, V4_STATES.RUNNING, V4_STATES.VALIDATING].includes(current.state)) {
       try { transitionTask(db, { taskId, expectedState: current.state, toState: V4_STATES.FAILED, patch: { terminalReason: String(error?.message ?? error) }, now: now() }); } catch {}
     }
