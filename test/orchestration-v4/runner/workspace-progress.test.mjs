@@ -8,7 +8,7 @@ import { createWorkspaceProgressObserver } from '../../../scripts/orchestration-
 
 function git(cwd, ...args) { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim(); }
 
-test('workspace observer reports only real repository changes', () => {
+test('workspace observer snapshots baseline eagerly and reports only real repository changes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-workspace-progress-'));
   try {
     git(root, 'init');
@@ -18,8 +18,6 @@ test('workspace observer reports only real repository changes', () => {
     git(root, 'add', 'base.txt');
     git(root, 'commit', '-m', 'base');
     const observe = createWorkspaceProgressObserver(root);
-    assert.equal(observe(), null);
-    assert.equal(observe(), null);
     fs.writeFileSync(path.join(root, 'change.txt'), 'changed\n');
     const event = observe('2026-08-30T00:00:00.000Z');
     assert.equal(event.kind, 'WORKTREE_MUTATION');
