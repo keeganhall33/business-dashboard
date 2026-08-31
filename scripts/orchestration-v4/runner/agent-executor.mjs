@@ -34,16 +34,13 @@ export function probeAgentCapabilities(openclaw = '/opt/homebrew/bin/openclaw', 
 
 export function buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds = 900, openclaw = '/opt/homebrew/bin/openclaw' }) {
   if (!capabilities?.execSubcommand) throw new Error('V4_AGENT_EXEC_SUBCOMMAND_REQUIRED');
-  if (!capabilities?.stateDir || !capabilities?.model) throw new Error('V4_AGENT_REQUIRED_FLAGS_MISSING');
-  if (!capabilities?.isolated && !capabilities?.config) throw new Error('V4_AGENT_CONFIG_OR_ISOLATED_REQUIRED');
+  if (!capabilities?.stateDir || !capabilities?.model || !capabilities?.config) throw new Error('V4_AGENT_REQUIRED_FLAGS_MISSING');
   if (!workspacePath || !path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_WORKSPACE_REQUIRED');
   if (!configPath || !path.isAbsolute(configPath)) throw new Error('V4_AGENT_CONFIG_REQUIRED');
   if (!stateDir || !path.isAbsolute(stateDir)) throw new Error('V4_AGENT_STATE_DIR_REQUIRED');
   if (!prompt) throw new Error('V4_AGENT_PROMPT_REQUIRED');
 
-  const args = ['agent', 'exec', String(prompt)];
-  if (capabilities.isolated) args.push('--isolated');
-  else args.push('--config', configPath);
+  const args = ['agent', 'exec', String(prompt), '--config', configPath];
   args.push('--state-dir', stateDir, '--model', MODEL);
   if (capabilities.codeMode) args.push('--code-mode', 'direct');
   if (capabilities.localModelLean) args.push('--local-model-lean');
@@ -68,7 +65,9 @@ export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir()
   fs.mkdirSync(root, { recursive: true });
   const safe = String(taskId).replace(/[^A-Za-z0-9._-]/g, '-');
   const stateDir = fs.mkdtempSync(path.join(root, `${safe}-`));
-  return Object.freeze({ stateDir });
+  const configPath = path.join(stateDir, 'openclaw-v4.json');
+  fs.writeFileSync(configPath, `${JSON.stringify({ memory: { search: { enabled: false } } }, null, 2)}\n`, { mode: 0o600 });
+  return Object.freeze({ stateDir, configPath });
 }
 
 export function cleanupEphemeralAgentState(state) {
