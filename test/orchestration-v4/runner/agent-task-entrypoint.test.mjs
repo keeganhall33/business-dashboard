@@ -7,22 +7,28 @@ import { execFileSync } from 'node:child_process';
 
 const entrypoint = path.resolve('scripts/orchestration-v4/runner/agent-task-entrypoint.mjs');
 
-function makeFake(root, exitCode) {
+function makeFake(root, exitCode, capturePath = null) {
   const fake = path.join(root, `openclaw-${exitCode}.sh`);
-  fs.writeFileSync(fake, `#!/bin/sh\nif [ "$1" = "agent" ] && [ "$2" = "exec" ] && [ "$3" = "--help" ]; then\n  echo 'Usage: openclaw agent exec --config --state-dir --model --local-model-lean --cwd --json --timeout'\n  exit 0\nfi\necho '{"ok":true}'\nexit ${exitCode}\n`);
+  const capture = capturePath ? `printf '%s\n' "$@" > ${JSON.stringify(capturePath)}\n` : '';
+  fs.writeFileSync(fake, `#!/bin/sh\nif [ "$1" = "agent" ] && [ "$2" = "exec" ] && [ "$3" = "--help" ]; then\n  echo 'Usage: openclaw agent exec --config --state-dir --model --local-model-lean --cwd --json --timeout'\n  exit 0\nfi\n${capture}echo '{"ok":true}'\nexit ${exitCode}\n`);
   fs.chmodSync(fake, 0o755);
   return fake;
 }
 
-test('successful adapter emits trusted MODEL_RESULT event', () => {
+test('successful adapter emits trusted MODEL_RESULT event and injects exact absolute workspace prompt', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-entrypoint-'));
   try {
     const config = path.join(root, 'config.json');
     const state = path.join(root, 'state');
+    const capture = path.join(root, 'args.txt');
     fs.writeFileSync(config, '{}\n');
     fs.mkdirSync(state);
-    const output = execFileSync(process.execPath, [entrypoint, 'test prompt', config, state, '5', makeFake(root, 0)], { cwd: root, encoding: 'utf8' });
+    const output = execFileSync(process.execPath, [entrypoint, 'test prompt', config, state, '5', makeFake(root, 0, capture)], { cwd: root, encoding: 'utf8' });
     assert.match(output, /V4_EVENT \{"kind":"MODEL_RESULT","data":"OPENCLAW_EXIT_0"\}/);
+    const args = fs.readFileSync(capture, 'utf8');
+    assert.match(args, new RegExp(`V4_RUNTIME_WORKSPACE_ROOT: ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(args, /use absolute target paths rooted at V4_RUNTIME_WORKSPACE_ROOT/i);
+    assert.match(args, /test prompt/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
