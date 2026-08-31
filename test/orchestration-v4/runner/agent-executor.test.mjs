@@ -5,7 +5,7 @@ import { buildAgentInvocation, buildProductionAgentEnv, parseAgentCapabilities, 
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter pins local Ollama model and uses isolated code mode without config', () => {
+test('adapter pins local Ollama model and uses isolated direct tool mode without config', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -27,7 +27,7 @@ test('adapter pins local Ollama model and uses isolated code mode without config
   assert.ok(invocation.args.includes('--local-model-lean'));
   const codeModeIndex = invocation.args.indexOf('--code-mode');
   assert.notEqual(codeModeIndex, -1);
-  assert.equal(invocation.args[codeModeIndex + 1], 'code');
+  assert.equal(invocation.args[codeModeIndex + 1], 'direct');
 });
 
 test('adapter falls back to pinned config when isolated flag is unavailable', () => {
