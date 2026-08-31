@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { buildAgentInvocation, parseAgentCapabilities, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, parseAgentCapabilities, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
@@ -22,6 +22,19 @@ test('adapter requires direct exec and pins local Ollama model', () => {
   assert.ok(invocation.args.includes('/tmp/v4-workspace'));
   assert.ok(invocation.args.includes('--local-model-lean'));
   assert.equal(invocation.args.includes('--isolated'), false);
+});
+
+test('production agent env disables fallback and supplies local Ollama auth', () => {
+  const env = buildProductionAgentEnv({ PATH: '/bin' });
+  assert.equal(env.OPENCLAW_FALLBACK_MODELS, '');
+  assert.equal(env.OLLAMA_API_KEY, 'ollama-local');
+  assert.equal(env.PATH, '/bin');
+});
+
+test('production agent env preserves an explicitly supplied Ollama API key', () => {
+  const env = buildProductionAgentEnv({ OLLAMA_API_KEY: 'explicit-local-key', OPENCLAW_FALLBACK_MODELS: 'cloud/model' });
+  assert.equal(env.OLLAMA_API_KEY, 'explicit-local-key');
+  assert.equal(env.OPENCLAW_FALLBACK_MODELS, '');
 });
 
 test('adapter fails closed when required flags are missing', () => {

@@ -46,6 +46,14 @@ export function buildAgentInvocation({ capabilities, prompt, workspacePath, conf
   return Object.freeze({ command: openclaw, args, model: MODEL });
 }
 
+export function buildProductionAgentEnv(parentEnv = process.env) {
+  return Object.freeze({
+    ...parentEnv,
+    OPENCLAW_FALLBACK_MODELS: '',
+    OLLAMA_API_KEY: parentEnv.OLLAMA_API_KEY || 'ollama-local',
+  });
+}
+
 export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent') }) {
   if (!taskId) throw new Error('V4_AGENT_TASK_ID_REQUIRED');
   fs.mkdirSync(root, { recursive: true });

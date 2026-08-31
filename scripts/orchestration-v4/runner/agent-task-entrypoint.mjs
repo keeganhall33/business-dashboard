@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { buildAgentInvocation, probeAgentCapabilities } from './agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, probeAgentCapabilities } from './agent-executor.mjs';
 
 const [prompt, configPath, stateDir, timeoutSeconds = '900', openclaw = '/opt/homebrew/bin/openclaw'] = process.argv.slice(2);
 if (!prompt || !configPath || !stateDir) throw new Error('V4_AGENT_ENTRYPOINT_ARGS_REQUIRED');
@@ -10,7 +10,7 @@ if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_RE
 const capabilities = probeAgentCapabilities(openclaw);
 const invocation = buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
-const childEnv = { ...process.env, OPENCLAW_FALLBACK_MODELS: '' };
+const childEnv = buildProductionAgentEnv(process.env);
 const child = spawn(invocation.command, invocation.args, { cwd: workspacePath, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
 child.stdout?.on('data', (chunk) => process.stdout.write(chunk));
 child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
