@@ -5,8 +5,12 @@ import { runReadyBatch } from '../runner/task-runner.mjs';
 import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
 import { getTaskContract } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
+import { publishImplementationResult } from './publisher.mjs';
+import { runIntegrationTask } from './integration-executor.mjs';
+import { syncTerminalTaskToGitHub } from './github-sync.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
+const TERMINAL_STATES = new Set(['COMPLETE','BLOCKED','FAILED','TIMED_OUT']);
 
 export function promptForTask(task) {
   const contract = getTaskContract(task);
@@ -38,6 +42,7 @@ export async function runProductionPoll({
   configPath,
   issues = null,
   openclaw = '/opt/homebrew/bin/openclaw',
+  gh = 'gh',
   timeoutMs = 15 * 60_000,
   stallMs = timeoutMs,
 }) {
@@ -45,7 +50,7 @@ export async function runProductionPoll({
     throw new Error('V4_PRODUCTION_ABSOLUTE_PATHS_REQUIRED');
   }
   const baseSha = refreshCanonicalMain(repoRoot);
-  const snapshots = issues ?? listReadyIssues({ repoFullName });
+  const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
   const ready = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at,task_id").all();
   const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE');
@@ -63,7 +68,7 @@ export async function runProductionPoll({
       };
     }
 
-    const result = await runReadyBatch({
+    const settled = await runReadyBatch({
       db,
       registry: createSlotRegistry(),
       repoRoot,
@@ -71,14 +76,35 @@ export async function runProductionPoll({
       commandsByTaskId,
       timeoutMs,
       stallMs,
+      finalizeSuccess: ({ task, workspace }) => publishImplementationResult({ task, workspace, repoFullName, gh }),
     });
+
+    const integrationSettled = [];
+    for (const task of integrationReady) {
+      try {
+        const result = runIntegrationTask({ db, repoRoot, repoFullName, workspaceRoot, taskId: task.task_id, canonicalMainSha: baseSha, gh, timeoutMs });
+        integrationSettled.push({ status: 'fulfilled', value: result });
+      } catch (error) {
+        integrationSettled.push({ status: 'rejected', reason: String(error?.message || error) });
+      }
+    }
+
+    const terminal = db.prepare("SELECT * FROM tasks WHERE state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT') ORDER BY updated_at,task_id").all();
+    const githubSync = [];
+    for (const task of terminal) {
+      if (!TERMINAL_STATES.has(task.state)) continue;
+      try { githubSync.push(syncTerminalTaskToGitHub({ task, repoFullName, gh })); }
+      catch (error) { githubSync.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) }); }
+    }
 
     return Object.freeze({
       baseSha,
       intake,
-      attempted: result.length,
-      settled: result,
-      integrationPending: integrationReady.map((task) => ({ taskId: task.task_id, issueNumber: task.issue_number })),
+      attempted: settled.length,
+      settled,
+      integrationAttempted: integrationSettled.length,
+      integrationSettled,
+      githubSync,
     });
   } finally {
     for (const state of ephemeral) cleanupEphemeralAgentState(state);
