@@ -8,16 +8,16 @@ function git(cwd, ...args) {
   }
 }
 
+function workspaceFingerprint(cwd) {
+  const head = git(cwd, 'rev-parse', 'HEAD');
+  const status = git(cwd, 'status', '--porcelain=v1', '--untracked-files=all');
+  return `${head}\n${status}`;
+}
+
 export function createWorkspaceProgressObserver(cwd) {
-  let previous = null;
+  let previous = workspaceFingerprint(cwd);
   return function observeWorkspaceProgress(observedAt = new Date().toISOString()) {
-    const head = git(cwd, 'rev-parse', 'HEAD');
-    const status = git(cwd, 'status', '--porcelain=v1', '--untracked-files=all');
-    const fingerprint = `${head}\n${status}`;
-    if (previous === null) {
-      previous = fingerprint;
-      return null;
-    }
+    const fingerprint = workspaceFingerprint(cwd);
     if (fingerprint === previous) return null;
     previous = fingerprint;
     return { kind: 'WORKTREE_MUTATION', data: fingerprint.slice(0, 4000), observedAt };
