@@ -64,7 +64,7 @@ export async function runProductionPoll({
       ephemeral.push(state);
       commandsByTaskId[task.task_id] = {
         command: process.execPath,
-        args: [ENTRYPOINT, promptForTask(task), configPath, state.stateDir, String(Math.ceil(timeoutMs / 1000)), openclaw],
+        args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(timeoutMs / 1000)), openclaw],
       };
     }
 
