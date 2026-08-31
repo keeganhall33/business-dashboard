@@ -15,7 +15,7 @@ function makeFake(root, exitCode, capturePath = null) {
   return fake;
 }
 
-test('successful adapter emits trusted MODEL_RESULT event and injects exact absolute workspace prompt', () => {
+test('successful adapter emits trusted MODEL_RESULT event and injects exact absolute workspace mutation guidance', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-entrypoint-'));
   try {
     const config = path.join(root, 'config.json');
@@ -27,7 +27,10 @@ test('successful adapter emits trusted MODEL_RESULT event and injects exact abso
     assert.match(output, /V4_EVENT \{"kind":"MODEL_RESULT","data":"OPENCLAW_EXIT_0"\}/);
     const args = fs.readFileSync(capture, 'utf8');
     assert.match(args, new RegExp(`V4_RUNTIME_WORKSPACE_ROOT: ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-    assert.match(args, /use absolute target paths rooted at V4_RUNTIME_WORKSPACE_ROOT/i);
+    assert.match(args, /Native write and edit tools are intentionally disabled/i);
+    assert.match(args, /Perform file mutations only with apply_patch or exec/i);
+    assert.match(args, /verify pwd equals V4_RUNTIME_WORKSPACE_ROOT/i);
+    assert.match(args, /confirm git status shows the intended change/i);
     assert.match(args, /test prompt/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
