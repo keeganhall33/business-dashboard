@@ -3,17 +3,45 @@ import path from 'node:path';
 import { openV4StateStore } from '../state-store/sqlite-store.mjs';
 import { runProductionPoll } from './daemon.mjs';
 
+function lockPidIsLive(lockPath) {
+  let raw;
+  try { raw = fs.readFileSync(lockPath, 'utf8').trim(); }
+  catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    return true;
+  }
+  const pid = Number(raw);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return true;
+  }
+}
+
+function acquireHostLock(lockPath) {
+  try {
+    return fs.openSync(lockPath, 'wx');
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    if (lockPidIsLive(lockPath)) throw new Error('V4_HOST_ALREADY_RUNNING');
+    try { fs.unlinkSync(lockPath); }
+    catch (unlinkError) { if (unlinkError?.code !== 'ENOENT') throw unlinkError; }
+    try { return fs.openSync(lockPath, 'wx'); }
+    catch (retryError) {
+      if (retryError?.code === 'EEXIST') throw new Error('V4_HOST_ALREADY_RUNNING');
+      throw retryError;
+    }
+  }
+}
+
 export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   fs.mkdirSync(stateRoot, { recursive: true });
   const lockPath = path.join(stateRoot, 'host.lock');
-  let lockFd;
-  try {
-    lockFd = fs.openSync(lockPath, 'wx');
-  } catch (error) {
-    if (error?.code === 'EEXIST') throw new Error('V4_HOST_ALREADY_RUNNING');
-    throw error;
-  }
+  const lockFd = acquireHostLock(lockPath);
   fs.writeFileSync(lockFd, `${process.pid}\n`);
   const db = openV4StateStore(path.join(stateRoot, 'state.sqlite'));
   let stopped = false;
