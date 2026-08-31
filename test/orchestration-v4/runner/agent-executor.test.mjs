@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { buildAgentInvocation, buildProductionAgentEnv, parseAgentCapabilities, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
-const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
+const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter requires direct exec and pins local Ollama model', () => {
+test('adapter requires direct exec and pins local Ollama model with forced code mode', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -21,7 +21,22 @@ test('adapter requires direct exec and pins local Ollama model', () => {
   assert.ok(invocation.args.includes('--cwd'));
   assert.ok(invocation.args.includes('/tmp/v4-workspace'));
   assert.ok(invocation.args.includes('--local-model-lean'));
+  const codeModeIndex = invocation.args.indexOf('--code-mode');
+  assert.notEqual(codeModeIndex, -1);
+  assert.equal(invocation.args[codeModeIndex + 1], 'code');
   assert.equal(invocation.args.includes('--isolated'), false);
+});
+
+test('adapter remains compatible when code mode flag is unavailable', () => {
+  const capabilities = parseAgentCapabilities(help.replace('  --code-mode <mode>\n', ''));
+  const invocation = buildAgentInvocation({
+    capabilities,
+    prompt: 'do work',
+    workspacePath: path.resolve('/tmp/v4-workspace'),
+    configPath: path.resolve('/tmp/v4-config.json'),
+    stateDir: path.resolve('/tmp/v4-state'),
+  });
+  assert.equal(invocation.args.includes('--code-mode'), false);
 });
 
 test('production agent env disables fallback and supplies local Ollama auth', () => {
