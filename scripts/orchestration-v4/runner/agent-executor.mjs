@@ -45,7 +45,7 @@ export function buildAgentInvocation({ capabilities, prompt, workspacePath, conf
   if (capabilities.isolated) args.push('--isolated');
   else args.push('--config', configPath);
   args.push('--state-dir', stateDir, '--model', MODEL);
-  if (capabilities.codeMode) args.push('--code-mode', 'code');
+  if (capabilities.codeMode) args.push('--code-mode', 'direct');
   if (capabilities.localModelLean) args.push('--local-model-lean');
   if (capabilities.cwd) args.push('--cwd', workspacePath);
   if (capabilities.json) args.push('--json');
