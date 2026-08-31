@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { runBoundedProcess } from '../../../scripts/orchestration-v4/runner/bounded-process.mjs';
+import { runBoundedProcess, signalGroup } from '../../../scripts/orchestration-v4/runner/bounded-process.mjs';
 
 function fakeChild(pid = 4321) {
   const child = new EventEmitter();
@@ -76,4 +76,23 @@ test('final semantic observer failure is telemetry and does not change a success
   const result = await promise;
   assert.equal(result.status, 'COMPLETE');
   assert.ok(events.some((event) => event.kind === 'STDERR' && String(event.data).includes('V4_SEMANTIC_OBSERVER_ERROR:observer-boom')));
+});
+
+test('process-group cleanup treats ESRCH and EPERM as nonfatal', () => {
+  for (const code of ['ESRCH', 'EPERM']) {
+    const result = signalGroup(9999, 'SIGTERM', () => {
+      const error = new Error(code);
+      error.code = code;
+      throw error;
+    });
+    assert.equal(result, false);
+  }
+});
+
+test('process-group cleanup still fails closed on unexpected errors', () => {
+  assert.throws(() => signalGroup(9999, 'SIGTERM', () => {
+    const error = new Error('EINVAL');
+    error.code = 'EINVAL';
+    throw error;
+  }), /EINVAL/);
 });
