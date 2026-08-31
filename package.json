@@ -20,8 +20,7 @@
     "leads:run": "node scripts/run-lead-intelligence.mjs",
     "cloudflare:run": "node scripts/run-cloudflare-telemetry.mjs",
     "scheduler:status": "node scripts/scheduler-status.mjs",
-    "woo:ingest": "node scripts/run-woo-telemetry.mjs",
-    "orchestration:v3:overnight-report": "node scripts/orchestration-v3/overnight-report.mjs --pretty"
+    "woo:ingest": "node scripts/run-woo-telemetry.mjs"
   },
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
