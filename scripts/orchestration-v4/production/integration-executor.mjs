@@ -119,6 +119,7 @@ export async function runIntegrationTask({
   claimTask(db, { taskId, slotId: 'local-e', now: now() });
   let context = null;
   let resolverResult = null;
+  let preserveWorkspace = false;
   try {
     const target = {
       issueNumber: ready.issue_number,
@@ -147,8 +148,9 @@ export async function runIntegrationTask({
         now,
       });
       if (resolverResult.status !== 'COMPLETE') {
+        preserveWorkspace = true;
         const terminalState = RESOLVER_RESULT_TO_STATE[resolverResult.status] ?? V4_STATES.FAILED;
-        recordTaskResult(db, { taskId, result: { prNumber, reconciliation: 'CONFLICT', mergeBase: reconciliation.mergeBase, resolver: resolverResult }, now: now() });
+        recordTaskResult(db, { taskId, result: { prNumber, reconciliation: 'CONFLICT', mergeBase: reconciliation.mergeBase, resolver: resolverResult, workspacePreserved: true }, now: now() });
         transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: terminalState, patch: { terminalReason: resolverResult.reason ?? resolverResult.status ?? 'INTEGRATION_RESOLVER_FAILED' }, now: now() });
         return getTask(db, taskId);
       }
@@ -170,6 +172,7 @@ export async function runIntegrationTask({
         pushed: true,
         headSha,
         duplicatePrCreated: false,
+        workspacePreserved: false,
         ...(resolverResult ? { resolver: resolverResult } : {}),
       },
       now: now(),
@@ -177,16 +180,17 @@ export async function runIntegrationTask({
     transitionTask(db, { taskId, expectedState: V4_STATES.VALIDATING, toState: V4_STATES.COMPLETE, now: now() });
     return getTask(db, taskId);
   } catch (error) {
+    preserveWorkspace = Boolean(context);
     const current = getTask(db, taskId);
     try {
-      if (current) recordTaskResult(db, { taskId, result: { error: String(error?.message || error), ...(resolverResult ? { resolver: resolverResult } : {}) }, now: now() });
+      if (current) recordTaskResult(db, { taskId, result: { error: String(error?.message || error), workspacePreserved: preserveWorkspace, ...(resolverResult ? { resolver: resolverResult } : {}) }, now: now() });
     } catch {}
     if (current && [V4_STATES.CLAIMED,V4_STATES.RUNNING,V4_STATES.VALIDATING].includes(current.state)) {
       try { transitionTask(db, { taskId, expectedState: current.state, toState: V4_STATES.FAILED, patch: { terminalReason: String(error?.message || error) }, now: now() }); } catch {}
     }
     throw error;
   } finally {
-    if (context) { try { cleanupIntegrationWorkspace({ repoRoot, context }); } catch {} }
+    if (context && !preserveWorkspace) { try { cleanupIntegrationWorkspace({ repoRoot, context }); } catch {} }
     const terminal = getTask(db, taskId);
     if (terminal && [V4_STATES.COMPLETE,V4_STATES.BLOCKED,V4_STATES.FAILED,V4_STATES.TIMED_OUT].includes(terminal.state)) releaseSlotForTerminalTask(db, taskId);
   }
