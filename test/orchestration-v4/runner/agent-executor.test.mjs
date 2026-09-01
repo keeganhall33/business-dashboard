@@ -48,6 +48,11 @@ test('agent model can be overridden without changing code', () => {
   assert.equal(invocation.args[invocation.args.indexOf('--model') + 1], 'ollama/custom-coder:latest');
 });
 
+test('production config forces structured tool calls for the dedicated V4 Ollama model', () => {
+  const config = productionAgentConfig();
+  assert.equal(config.agents.defaults.models['ollama/qwen2.5-coder:14b'].params.extra_body.tool_choice, 'required');
+});
+
 test('production config disables semantic memory and native write/edit while preserving cwd-bound mutation tools', () => {
   const config = productionAgentConfig();
   assert.deepEqual(config.memory, { search: { enabled: false } });
