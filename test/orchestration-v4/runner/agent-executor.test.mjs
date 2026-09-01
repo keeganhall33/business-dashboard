@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, V4_AGENT_MODEL, V4_OLLAMA_BASE_URL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
@@ -46,6 +46,16 @@ test('agent model can be overridden without changing code', () => {
   });
   assert.equal(invocation.model, 'ollama/custom-coder:latest');
   assert.equal(invocation.args[invocation.args.indexOf('--model') + 1], 'ollama/custom-coder:latest');
+});
+
+test('production config pins the native Ollama API and never the OpenAI-compatible /v1 endpoint', () => {
+  const config = productionAgentConfig();
+  assert.equal(V4_OLLAMA_BASE_URL, 'http://127.0.0.1:11434');
+  assert.equal(config.models.providers.ollama.baseUrl, V4_OLLAMA_BASE_URL);
+  assert.equal(config.models.providers.ollama.api, 'ollama');
+  assert.equal(config.models.providers.ollama.apiKey, 'OLLAMA_API_KEY');
+  assert.equal(config.models.providers.ollama.baseUrl.includes('/v1'), false);
+  assert.equal(config.models.providers.ollama.models[0].id, 'qwen2.5-coder:14b');
 });
 
 test('production config forces structured tool calls for the dedicated V4 Ollama model', () => {
