@@ -1,36 +1,7 @@
-name: Orchestration V3 CI
+name: Orchestration V3 CI (manual rollback only)
 
 on:
-  pull_request:
-    paths:
-      - 'AGENTS.md'
-      - 'scripts/orchestration-v3/**'
-      - 'scripts/orchestration-run-issue-openclaw.mjs'
-      - 'test/orchestration-v3-control-plane.test.mjs'
-      - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
-      - 'test/orchestration-v3-local-tool-diagnostic.test.mjs'
-      - 'test/orchestration-v3-local-tool-observed.test.mjs'
-      - 'test/orchestration-v3-code-mode-bridge.test.mjs'
-      - 'test/orchestration-v3-stale-lease-reconcile.test.mjs'
-      - 'test/orchestration-v3-stale-running-reconciliation.test.mjs'
-      - 'test/orchestration-v3-github-transient-safety.test.mjs'
-      - '.github/workflows/orchestration-v3-ci.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'AGENTS.md'
-      - 'scripts/orchestration-v3/**'
-      - 'scripts/orchestration-run-issue-openclaw.mjs'
-      - 'test/orchestration-v3-control-plane.test.mjs'
-      - 'test/orchestration-v3-agent-exec-entrypoint.test.mjs'
-      - 'test/orchestration-v3-local-tool-diagnostic.test.mjs'
-      - 'test/orchestration-v3-local-tool-observed.test.mjs'
-      - 'test/orchestration-v3-code-mode-bridge.test.mjs'
-      - 'test/orchestration-v3-stale-lease-reconcile.test.mjs'
-      - 'test/orchestration-v3-stale-running-reconciliation.test.mjs'
-      - 'test/orchestration-v3-github-transient-safety.test.mjs'
-      - '.github/workflows/orchestration-v3-ci.yml'
+  workflow_dispatch:
 
 jobs:
   control-plane:
@@ -40,6 +11,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Guard manual legacy execution
+        run: |
+          echo "V3 is retained only as rollback evidence/fallback. V4 is the sole active orchestration runtime."
       - name: Syntax check V3 scripts
         run: |
           node --check scripts/orchestration-v3/config.mjs

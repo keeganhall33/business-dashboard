@@ -4,7 +4,7 @@ import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contr
 export const RELATIONSHIP_INTELLIGENCE_VERSION_V1 = "relationship_intelligence_v1.0" as const;
 export const RELATIONSHIP_INTELLIGENCE_VIEW_VERSION_V1 = "relationship_intelligence_view_v1.0" as const;
 
-export type RelationshipTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "CONFLICTED";
+export type RelationshipTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
 export type RelationshipEvidenceQualityV1 = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
 export type ChampionSignalLevelV1 = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
 export type RelationshipRiskLevelV1 = "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
@@ -134,6 +134,7 @@ const evidenceRank: Record<RelationshipEvidenceQualityV1, number> = {
 const truthRank: Record<RelationshipTruthStateV1, number> = {
   KNOWN: 3,
   INFERRED: 2,
+  STALE: 1,
   UNKNOWN: 0,
   CONFLICTED: -1
 };

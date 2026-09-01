@@ -10,10 +10,11 @@ Only the V3 watcher owns queue claiming. Only the V3 worker owns one worker turn
 
 ## Invariants
 
-- The watcher runs only from `~/.openclaw/runtime-v3/business-dashboard`, a clean git worktree pinned to a known `origin/main` SHA.
+- The watcher runs only from `~/.openclaw/runtime-v3/business-dashboard`, a clean git worktree pinned to a known `refs/remotes/origin/main` SHA.
 - The normal development checkout is never the scheduler runtime.
 - Only explicitly labeled `orch:ready` issues enter the queue. There is no self-healing resurrection of unlabeled historical tasks.
-- Exactly four worker identities exist: local-a CORE, local-b DISCOVERY, local-c UX/PRODUCTION_VALUE, local-d orchestration.
+- Exactly six worker identities exist: local-a CORE, local-b DISCOVERY/DATA, local-c UX/PRODUCTION_VALUE, local-d orchestration, local-e integration/release, and local-f QA/evaluation.
+- Capacity is reported as both total `6/6` and role utilization: `4 product + 1 integration/release + 1 QA/evaluation`.
 - Each worker has at most one live lease/process.
 - Every worker worktree passes git-root/tree-integrity preflight before model invocation.
 - Local execution is pinned to `ollama/qwen3.5:9b`; cloud fallback is disabled for the V3 local acceptance path.
@@ -43,4 +44,4 @@ V3 is installed in parallel with the legacy runtime. Existing worker worktrees a
 
 ## Acceptance gate
 
-Do not call the system fixed until one machine-generated report proves all four workers active with distinct processes/worktrees, provider Ollama, model qwen3.5:9b, zero cloud invocations, zero stale locks, continuous queue replenishment across more than one task cycle, and an overnight report can distinguish a healthy quiet queue from a sleeping or failed control plane.
+Do not call the system fixed until one machine-generated report proves all six workers active with distinct processes/worktrees, `4 product + 1 integration/release + 1 QA/evaluation` role utilization, provider Ollama, model qwen3.5:9b, zero cloud invocations, zero stale locks, continuous queue replenishment across more than one task cycle, and an overnight report can distinguish a healthy quiet queue from a sleeping or failed control plane.

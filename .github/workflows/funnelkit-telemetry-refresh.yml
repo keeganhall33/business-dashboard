@@ -1,0 +1,40 @@
+name: FunnelKit Raw Telemetry Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 10 * * *" # 02:45 PT during PDT
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/run-funnelkit-telemetry.mjs"
+      - "config/env/website.op.env"
+      - ".github/workflows/funnelkit-telemetry-refresh.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funnelkit-raw-telemetry-production
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: 1Password/install-cli-action@v1
+      - name: Ingest FunnelKit raw telemetry into production Supabase
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP service account token missing" >&2; exit 1; }
+          cp config/env/website.op.env .env.website
+          op run --env-file .env.website -- node scripts/run-funnelkit-telemetry.mjs

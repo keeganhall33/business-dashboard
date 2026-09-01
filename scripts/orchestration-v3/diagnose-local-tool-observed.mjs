@@ -4,14 +4,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createObservedExecutionHarness, readObservedExecutionEvidence } from "./execution-evidence.mjs";
+import {
+  assertCloudMemoryDisabled,
+  stripCloudCredentials,
+  writeCloudMemoryDisabledConfig
+} from "./isolated-local-runtime.mjs";
 
 const MODEL = "ollama/qwen3.5:9b";
 const SESSION_KEY = "agent:main:jeeves-v3-observed-diagnostic";
-const CLOUD_CREDENTIAL_PREFIXES = [
-  "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
-  "GROQ_", "DEEPSEEK_", "PERPLEXITY_", "OPENROUTER_", "COHERE_", "HUGGINGFACE_",
-  "HF_", "TOGETHER_", "CEREBRAS_", "FIREWORKS_", "AZURE_", "BEDROCK_"
-];
 
 function arg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -43,12 +43,14 @@ export function buildObservedPrompt({ observedGit, repoRoot }) {
   ].join("\n");
 }
 
+export function writeExecOnlyToolPolicy(configPath) {
+  return writeCloudMemoryDisabledConfig(configPath);
+}
+
 export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stateDir, configPath, controlWorkspace, harnessEnv = {} }) {
-  const env = { ...baseEnv };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("OPENCLAW_")) delete env[key];
-    if (CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) && /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)) delete env[key];
-  }
+  const config = writeExecOnlyToolPolicy(configPath);
+  const env = stripCloudCredentials(baseEnv);
+
   Object.assign(env, harnessEnv, {
     HOME: tempHome,
     OPENCLAW_HOME: tempHome,
@@ -63,6 +65,8 @@ export function buildIsolatedEnvironment({ baseEnv = process.env, tempHome, stat
     OLLAMA_API_KEY: baseEnv.OLLAMA_API_KEY || "ollama-local"
   });
   if (baseEnv.OLLAMA_HOST) env.OLLAMA_HOST = baseEnv.OLLAMA_HOST;
+
+  assertCloudMemoryDisabled(config, env);
   return env;
 }
 
@@ -76,16 +80,51 @@ function walkFind(value, key) {
   return undefined;
 }
 
+function walkFindAny(value, keys) {
+  for (const key of keys) {
+    const found = walkFind(value, key);
+    if (found !== undefined && found !== null && found !== "") return found;
+  }
+  return undefined;
+}
+
+function normalizeProvider(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("ollama")) return "ollama";
+  return text;
+}
+
+function normalizeFallback(value) {
+  if (value === true || value === false) return value;
+  const text = String(value ?? "").trim().toLowerCase();
+  if (["true", "1", "yes", "used"].includes(text)) return true;
+  if (["false", "0", "no", "none", "disabled", "not_used", "not-used"].includes(text)) return false;
+  return null;
+}
+
 export function parseMachineEnvelope(stdout) {
   try {
     const value = JSON.parse(String(stdout ?? ""));
     const meta = value?.meta?.agentMeta ?? value?.agentMeta ?? value?.result?.agentMeta ?? walkFind(value, "agentMeta") ?? {};
+    const provider = normalizeProvider(
+      meta?.provider ??
+      walkFindAny(value, ["winnerProvider", "providerId", "provider_id", "modelProvider", "model_provider", "provider"])
+    );
+    const model = String(
+      meta?.model ??
+      walkFindAny(value, ["winnerModel", "modelId", "model_id", "selectedModel", "selected_model", "model"]) ??
+      ""
+    ).trim() || null;
+    const fallbackUsed = normalizeFallback(
+      walkFindAny(value, ["fallbackUsed", "fallback_used", "usedFallback", "used_fallback", "fallback"])
+    );
     return {
-      provider: meta?.provider ?? walkFind(value, "winnerProvider") ?? null,
-      model: meta?.model ?? walkFind(value, "winnerModel") ?? null,
-      fallbackUsed: walkFind(value, "fallbackUsed") ?? null,
-      toolCalls: walkFind(value, "calls") ?? null,
-      toolFailures: walkFind(value, "failures") ?? null,
+      provider,
+      model,
+      fallbackUsed,
+      toolCalls: walkFindAny(value, ["calls", "toolCalls", "tool_calls"]) ?? null,
+      toolFailures: walkFindAny(value, ["failures", "toolFailures", "tool_failures"]) ?? null,
       parseError: null
     };
   } catch (error) {
@@ -95,12 +134,14 @@ export function parseMachineEnvelope(stdout) {
 
 export function classifyObservedDiagnostic({ processResult, evidence, machine }) {
   const timedOut = processResult?.error?.code === "ETIMEDOUT" || /ETIMEDOUT|timed out|timeout/i.test(String(processResult?.error?.message ?? ""));
+  const memoryAuthFailure = /\[memory\].*No API key found for provider ["']openai["']/i.test(String(processResult?.stderr ?? ""));
   const observedGit = evidence.successfulCommands.some((command) => /^git status --short --branch\b/.test(command));
   const providerOk = String(machine?.provider ?? "").toLowerCase() === "ollama";
   const model = String(machine?.model ?? "").toLowerCase();
   const modelOk = model === "qwen3.5:9b" || model === MODEL;
   const fallbackOk = machine?.fallbackUsed === false;
 
+  if (memoryAuthFailure) return { status: "FAILED", reason: "CLOUD_MEMORY_AUTH_ATTEMPTED" };
   if (timedOut) return { status: "FAILED", reason: "OPENCLAW_PROCESS_TIMEOUT" };
   if (processResult?.status !== 0) return { status: "FAILED", reason: "OPENCLAW_PROCESS_FAILED" };
   if (!observedGit) return { status: "FAILED", reason: "MISSING_OBSERVED_GIT_EXECUTION" };
@@ -181,7 +222,8 @@ export function runObservedDiagnostic({ repoRoot, timeoutSeconds = 120 } = {}) {
       stateDir,
       configPath,
       controlWorkspace,
-      ambientCloudCredentialsStripped: true
+      ambientCloudCredentialsStripped: true,
+      cloudMemoryDisabled: true
     },
     invocation: {
       executable: openclaw,
@@ -215,7 +257,7 @@ async function main() {
 
 if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
-    console.error(JSON.stringify({ diagnostic: "V3_STANDALONE_OBSERVED_TOOL_DIAGNOSTIC_V2", status: "FAILED", reason: "DIAGNOSTIC_CRASH", error: error?.stack ?? String(error) }, null, 2));
+    console.error(JSON.stringify({ diagnostic: "V3_STANDALONE_OBSERVED_TOOL_DIAGNOSTIC_V2", status: "FAILED", reason: error?.code ?? "DIAGNOSTIC_CRASH", error: error?.stack ?? String(error) }, null, 2));
     process.exitCode = 1;
   });
 }

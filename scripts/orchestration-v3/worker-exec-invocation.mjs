@@ -25,6 +25,8 @@ export function parseWorkerExecCapabilities(helpText) {
     message: hasFlag(text, "--message"),
     sessionKey: hasFlag(text, "--session-key"),
     isolated: hasFlag(text, "--isolated"),
+    config: hasFlag(text, "--config"),
+    stateDir: hasFlag(text, "--state-dir"),
     authEnvOnly: hasFlag(text, "--auth-env-only"),
     model: hasFlag(text, "--model"),
     codeMode: hasFlag(text, "--code-mode"),
@@ -44,7 +46,7 @@ export function probeWorkerExecCapabilities(openclaw = "/opt/homebrew/bin/opencl
   return parseWorkerExecCapabilities(`${probe.stdout ?? ""}\n${probe.stderr ?? ""}`);
 }
 
-export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, sessionKey, timeoutSeconds = 900 }) {
+export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, configPath, stateDir, sessionKey, timeoutSeconds = 900 }) {
   if (!capabilities?.model) {
     return { supported: false, reason: "OPENCLAW_WORKER_MISSING_MODEL_FLAG", args: [], mode: null, codeMode: false, promptIndex: null };
   }
@@ -76,11 +78,46 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
     };
   }
 
-  const args = ["agent", "exec", prompt];
-  if (capabilities.isolated) args.push("--isolated");
-  if (capabilities.authEnvOnly) args.push("--auth-env-only");
+  if (!capabilities.config || !capabilities.stateDir) {
+    return {
+      supported: false,
+      reason: !capabilities.config
+        ? "OPENCLAW_AGENT_EXEC_MISSING_CONFIG_FLAG"
+        : "OPENCLAW_AGENT_EXEC_MISSING_STATE_DIR_FLAG",
+      args: [],
+      mode: null,
+      codeMode: false,
+      promptIndex: null
+    };
+  }
+  if (!configPath || !stateDir) {
+    return {
+      supported: false,
+      reason: "OPENCLAW_AGENT_EXEC_STATE_NOT_PINNED",
+      args: [],
+      mode: null,
+      codeMode: false,
+      promptIndex: null
+    };
+  }
+
+  const args = [
+    "agent", "exec", prompt,
+    "--config", String(configPath),
+    "--state-dir", String(stateDir)
+  ];
+  // Do not use --isolated here. In current OpenClaw, --isolated intentionally
+  // ignores the supplied/ambient config and falls back to exec defaults. V3
+  // instead pins a generated stateless config plus an ephemeral state dir.
+  // OpenClaw 2026.8.1 rejects --config combined with --auth-env-only.
+  // V3 already strips cloud credentials from the child environment and pins
+  // the local model explicitly, so do not add the incompatible CLI flag here.
   args.push("--model", MODEL);
-  if (capabilities.codeMode) args.push("--code-mode", "code");
+  // V3 intentionally uses the direct agent-exec tool path.
+  // Code Mode currently exposes repository file operations through the
+  // isolated control-workspace sandbox rather than the protected worktree.
+  // Repository operations are instead performed through the observed shell
+  // execution harness with an explicit workdir.
   if (capabilities.localModelLean) args.push("--local-model-lean");
   if (capabilities.cwd) args.push("--cwd", controlWorkspace);
   if (capabilities.json) args.push("--json");
@@ -89,8 +126,8 @@ export function buildWorkerExecInvocation({ capabilities, prompt, controlWorkspa
     supported: true,
     reason: null,
     args,
-    mode: capabilities.codeMode ? "AGENT_EXEC_CODE_MODE" : "AGENT_EXEC_DIRECT",
-    codeMode: Boolean(capabilities.codeMode),
+    mode: "AGENT_EXEC_DIRECT",
+    codeMode: false,
     promptIndex: 2,
     sessionKey: null
   };

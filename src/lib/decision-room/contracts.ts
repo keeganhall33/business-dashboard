@@ -1,5 +1,7 @@
 import type { ActionLevel } from "@/lib/actions/action-contract";
 import type { ExplanationConfidence } from "@/lib/intelligence/explanation-contract";
+import type { DecisionConversationViewModelV1 } from "@/components/intelligence/conversation/DecisionConversationViewModel";
+import type { RecommendationRevisionResultV1 } from "@/lib/decision-intelligence/revision/contracts";
 
 export type DecisionRoomTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "CONFLICTED";
 export type DecisionRoomEvidenceProvenanceV1 =
@@ -113,6 +115,11 @@ export type DecisionRoomViewModelV1 = {
   next_action: string;
   approval_class: ActionLevel;
   strategic_context?: DecisionRoomStrategicContextV1;
+  conversation_revision?: {
+    conversation: DecisionConversationViewModelV1;
+    new_information_preview: DecisionConversationViewModelV1;
+    recommendation_revision: RecommendationRevisionResultV1;
+  };
   challenge: {
     active: boolean;
     red_team_summary: string;

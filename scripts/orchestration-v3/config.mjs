@@ -19,7 +19,7 @@ export const ORCHESTRATION_V3 = Object.freeze({
     stateRoot: path.join(OPENCLAW_ROOT, "state", "orchestration-v3"),
     backupRoot: path.join(OPENCLAW_ROOT, "orchestration-v3-backups"),
     logRoot: path.join(os.homedir(), "Library", "Logs"),
-    canonicalRef: "origin/main"
+    canonicalRef: "refs/remotes/origin/main"
   }),
   model: Object.freeze({
     provider: "ollama",
@@ -30,7 +30,15 @@ export const ORCHESTRATION_V3 = Object.freeze({
     "local-a": Object.freeze({ stream: "CORE_INTELLIGENCE", aliases: ["LEARNING_INTELLIGENCE", "FINANCIAL_INTELLIGENCE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-a"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-a") }),
     "local-b": Object.freeze({ stream: "DISCOVERY_INTELLIGENCE", aliases: ["LEARNING_INTELLIGENCE", "FINANCIAL_INTELLIGENCE", "DATA_EVIDENCE_LEARNING"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-b"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-b") }),
     "local-c": Object.freeze({ stream: "INTELLIGENCE_UX", aliases: ["PRODUCTION_VALUE"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-c"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-c") }),
-    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS", "HIGHEST_VALUE_SPECIALIST"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-d"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-d") })
+    "local-d": Object.freeze({ stream: "AGENT_ORCHESTRATION", aliases: ["ORCHESTRATION_SYSTEMS", "HIGHEST_VALUE_SPECIALIST"], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-d"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-d") }),
+    "local-e": Object.freeze({ stream: "INTEGRATION_RELEASE", aliases: [], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-e"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-e") }),
+    "local-f": Object.freeze({ stream: "QA_EVALUATION", aliases: [], worktree: path.join(OPENCLAW_ROOT, "worktrees", "local-f"), agentWorkspace: path.join(OPENCLAW_ROOT, "agent-workspaces-v3", "local-f") })
+  }),
+  capacity: Object.freeze({
+    totalWorkers: 6,
+    productWorkers: Object.freeze(["local-a", "local-b", "local-c", "local-d"]),
+    integrationReleaseWorkers: Object.freeze(["local-e"]),
+    qaEvaluationWorkers: Object.freeze(["local-f"])
   })
 });
 

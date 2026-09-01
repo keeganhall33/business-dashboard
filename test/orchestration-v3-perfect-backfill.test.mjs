@@ -26,16 +26,19 @@ test("V3 backfill reconciles stale leases before ready selection and never overl
   assert.match(watcher, /function reconcileRunningClaims\(\)/);
   assert.match(watcher, /reconcileRunningClaims\(\);[\s\S]*const claimedWorkersThisPass = new Set\(\);[\s\S]*const ready = readyIssues\(\)/);
   assert.match(watcher, /if \(pollInFlight\) \{[\s\S]*pollWakePending = true;[\s\S]*return;[\s\S]*\}/);
-  assert.match(watcher, /do \{[\s\S]*await poll\(\);[\s\S]*\} while \(pollWakePending\);/);
+  assert.match(watcher, /do \{[\s\S]*await poll\(passReason\);[\s\S]*\} while \(pollWakePending\);/);
 });
 
-test("V3 backfill can claim all four dependency-safe workers in one pass without double-claiming", () => {
+test("V3 backfill can claim all six dependency-safe workers in one pass without double-claiming", () => {
   const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
   const config = fs.readFileSync("scripts/orchestration-v3/config.mjs", "utf8");
   assert.match(config, /"local-a"[\s\S]*CORE_INTELLIGENCE/);
   assert.match(config, /"local-b"[\s\S]*DISCOVERY_INTELLIGENCE/);
   assert.match(config, /"local-c"[\s\S]*INTELLIGENCE_UX/);
   assert.match(config, /"local-d"[\s\S]*AGENT_ORCHESTRATION/);
+  assert.match(config, /"local-e"[\s\S]*INTEGRATION_RELEASE/);
+  assert.match(config, /"local-f"[\s\S]*QA_EVALUATION/);
+  assert.match(config, /productWorkers:\s*Object\.freeze\(\["local-a", "local-b", "local-c", "local-d"\]\)/);
   assert.match(watcher, /for \(const candidate of ready\)/);
   assert.match(watcher, /workerCandidatesForStream\(stream\)/);
   assert.match(watcher, /claimedWorkersThisPass\.has\(candidateWorkerId\)/);
@@ -43,12 +46,20 @@ test("V3 backfill can claim all four dependency-safe workers in one pass without
   assert.match(watcher, /claimedWorkersThisPass\.delete\(workerId\);/);
 });
 
+test("V3 backfill quarantines unmapped streams instead of starving valid work", () => {
+  const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
+  assert.match(watcher, /function quarantineUnmappedIssue\(issueNumber, stream\)/);
+  assert.match(watcher, /UNMAPPED_STREAM_QUARANTINED/);
+  assert.match(watcher, /remove: \[ORCHESTRATION_V3\.queue\.ready\], add: \[ORCHESTRATION_V3\.queue\.blocked\]/);
+  assert.match(watcher, /continue;/);
+});
+
 test("V3 backfill never treats a running label alone as an authoritative running claim", () => {
   const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
   assert.match(watcher, /const activeIssues = activeLeaseIssueNumbers\(\);/);
   assert.match(watcher, /if \(activeIssues\.has\(Number\(candidate\.number\)\)\) continue;/);
   assert.match(watcher, /NO_AUTHORITATIVE_LIVE_LEASE/);
-  assert.match(watcher, /--remove-label", ORCHESTRATION_V3\.queue\.running, "--add-label", ORCHESTRATION_V3\.queue\.ready/);
+  assert.match(watcher, /transitionLabels\(candidate\.number, \{ remove: \[ORCHESTRATION_V3\.queue\.running\], add: \[ORCHESTRATION_V3\.queue\.ready\] \}\)/);
 });
 
 test("V3 backfill keeps background Ollama proof behind product priority", () => {

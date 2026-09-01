@@ -1,99 +1,154 @@
-import fs from "node:fs";
-import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3 } from "./config.mjs";
+import {
+  inspectWorktreeIntegrity,
+  recoverDisposableWorktree,
+  emitWorktreeIntegrityEvent
+} from "./worktree-integrity.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
+import { recoverStaleWorkerSafely } from "./stale-worker-recovery.mjs";
 
-const ALLOWED_OPENCLAW_UNTRACKED = new Set([
-  "AGENTS.md",
-  "HEARTBEAT.md",
-  "IDENTITY.md",
-  "SOUL.md",
-  "TOOLS.md",
-  "USER.md",
-  "openclaw-workspace-state.json"
-]);
-
-const RECOVERABLE_IDLE_ERRORS = new Set([
-  "MASS_TRACKED_DELETION",
-  "TRACKED_WORKTREE_DIRTY",
-  "UNEXPECTED_UNTRACKED_FILES"
-]);
-
-function run(cwd, args) {
+function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 }).trim();
 }
 
-export function inspectGitRoot(cwd) {
-  const result = {
-    cwd,
-    exists: fs.existsSync(cwd),
-    gitRoot: null,
-    head: null,
-    branch: null,
-    status: [],
-    trackedChangeCount: 0,
-    trackedDeletionCount: 0,
-    unexpectedUntracked: [],
-    healthy: false,
-    errors: []
-  };
-  if (!result.exists) {
-    result.errors.push("WORKTREE_MISSING");
-    return result;
-  }
-  try {
-    result.gitRoot = run(cwd, ["rev-parse", "--show-toplevel"]);
-    result.head = run(cwd, ["rev-parse", "HEAD"]);
-    result.branch = run(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
-    const status = run(cwd, ["status", "--porcelain=v1"]);
-    result.status = status ? status.split("\n") : [];
-    result.trackedChangeCount = result.status.filter((line) => !line.startsWith("?? ")).length;
-    result.trackedDeletionCount = result.status.filter((line) => /^\s?D\s|^D\s/.test(line)).length;
-    result.unexpectedUntracked = result.status
-      .filter((line) => line.startsWith("?? "))
-      .map((line) => line.slice(3))
-      .filter((rel) => !ALLOWED_OPENCLAW_UNTRACKED.has(path.normalize(rel)));
+function issueFromArgv(argv = process.argv) {
+  const index = argv.indexOf("--issue");
+  if (index < 0 || index + 1 >= argv.length) return null;
+  const value = Number(argv[index + 1]);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
 
-    if (result.gitRoot !== cwd) result.errors.push("WORKTREE_ROOT_MISMATCH");
-    if (result.trackedDeletionCount >= 25) result.errors.push("MASS_TRACKED_DELETION");
-    else if (result.trackedChangeCount > 0) result.errors.push("TRACKED_WORKTREE_DIRTY");
-    if (result.unexpectedUntracked.length > 0) result.errors.push("UNEXPECTED_UNTRACKED_FILES");
-    result.healthy = result.errors.length === 0;
-  } catch (err) {
-    result.errors.push(`GIT_PREFLIGHT_FAILED:${err instanceof Error ? err.message : String(err)}`);
+export function branchMatchesIssue(branch, issueNumber) {
+  const normalized = String(branch ?? "").trim();
+  if (!Number.isInteger(Number(issueNumber)) || Number(issueNumber) <= 0) return false;
+  return normalized === `issue-${issueNumber}` || normalized.startsWith(`issue-${issueNumber}-`);
+}
+
+function remoteContainsHead(cwd, head) {
+  if (!head) return false;
+  try {
+    const branches = git(cwd, ["branch", "-r", "--contains", head]);
+    return branches.split("\n").map((line) => line.trim()).some((line) => line.startsWith("origin/"));
+  } catch {
+    return false;
   }
-  return result;
+}
+
+function issueRemoteBranches(cwd, issueNumber) {
+  try {
+    return git(cwd, ["for-each-ref", "--format=%(refname:short)", `refs/remotes/origin/issue-${issueNumber}*`])
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((name) => branchMatchesIssue(name.replace(/^origin\//, ""), issueNumber))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+export function prepareCleanWorktreeForIssue({ cwd, issueNumber, canonicalRef = "refs/remotes/origin/main" }) {
+  if (!Number.isInteger(Number(issueNumber)) || Number(issueNumber) <= 0) {
+    throw new Error(`INVALID_ISSUE_NUMBER:${issueNumber}`);
+  }
+
+  const before = inspectWorktreeIntegrity(cwd);
+  if (!before.healthy) {
+    throw new Error(`WORKTREE_NOT_CLEAN_FOR_CLAIM:${before.errors.join(",")}`);
+  }
+
+  git(cwd, ["fetch", "origin", "--prune"]);
+  const canonicalHead = git(cwd, ["rev-parse", canonicalRef]);
+  const currentHead = git(cwd, ["rev-parse", "HEAD"]);
+  const currentBranch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+
+  if (branchMatchesIssue(currentBranch, issueNumber)) {
+    emitWorktreeIntegrityEvent("WORKER_ISSUE_BRANCH_CONFIRMED", {
+      issueNumber,
+      cwd,
+      branch: currentBranch,
+      head: currentHead,
+      canonicalRef,
+      canonicalHead
+    });
+    return { prepared: false, issueNumber, branch: currentBranch, head: currentHead, canonicalHead };
+  }
+
+  const uniqueCommits = Number(git(cwd, ["rev-list", "--count", `${canonicalRef}..HEAD`]) || "0");
+  const headPreservedRemotely = remoteContainsHead(cwd, currentHead);
+  if (uniqueCommits > 0 && !headPreservedRemotely) {
+    emitWorktreeIntegrityEvent("WORKER_STALE_BRANCH_QUARANTINED", {
+      issueNumber,
+      cwd,
+      branch: currentBranch,
+      head: currentHead,
+      canonicalRef,
+      canonicalHead,
+      uniqueCommits,
+      reason: "UNPRESERVED_COMMITTED_WORK"
+    });
+    throw new Error(`STALE_BRANCH_HAS_UNPRESERVED_COMMITS:${currentBranch}:${uniqueCommits}`);
+  }
+
+  const remoteBranches = issueRemoteBranches(cwd, issueNumber);
+  let targetBranch;
+  if (remoteBranches.length > 1) {
+    throw new Error(`AMBIGUOUS_REMOTE_ISSUE_BRANCHES:${issueNumber}:${remoteBranches.join(",")}`);
+  }
+
+  if (remoteBranches.length === 1) {
+    const remote = remoteBranches[0];
+    targetBranch = remote.replace(/^origin\//, "");
+    git(cwd, ["switch", "--force-create", targetBranch, "--track", remote]);
+  } else {
+    targetBranch = `issue-${issueNumber}-worker`;
+    git(cwd, ["switch", "--force-create", targetBranch, canonicalRef]);
+  }
+
+  const after = inspectWorktreeIntegrity(cwd);
+  if (!after.healthy) {
+    throw new Error(`WORKTREE_UNHEALTHY_AFTER_ISSUE_PREP:${after.errors.join(",")}`);
+  }
+  if (!branchMatchesIssue(after.branch, issueNumber)) {
+    throw new Error(`CLAIM_BRANCH_IDENTITY_MISMATCH:${issueNumber}:${after.branch}`);
+  }
+
+  emitWorktreeIntegrityEvent("WORKER_ISSUE_BRANCH_PREPARED", {
+    issueNumber,
+    cwd,
+    previousBranch: currentBranch,
+    previousHead: currentHead,
+    branch: after.branch,
+    head: after.head,
+    canonicalRef,
+    canonicalHead,
+    reusedRemoteBranch: remoteBranches.length === 1,
+    previousHeadPreservedRemotely: headPreservedRemotely
+  });
+
+  return {
+    prepared: true,
+    issueNumber,
+    previousBranch: currentBranch,
+    previousHead: currentHead,
+    branch: after.branch,
+    head: after.head,
+    canonicalHead,
+    reusedRemoteBranch: remoteBranches.length === 1
+  };
+}
+
+export function inspectGitRoot(cwd) {
+  return inspectWorktreeIntegrity(cwd);
 }
 
 export function recoverIdleWorker(workerId) {
-  const cfg = ORCHESTRATION_V3.workers[workerId];
-  if (!cfg) throw new Error(`UNKNOWN_WORKER:${workerId}`);
-
-  const before = inspectGitRoot(cfg.worktree);
-  if (before.healthy) return { workerId, recovered: false, recoverable: true, before, after: before };
-
-  const recoverable = before.errors.length > 0 && before.errors.every((error) => RECOVERABLE_IDLE_ERRORS.has(error));
-  if (!recoverable) return { workerId, recovered: false, recoverable: false, before, after: before };
-
-  try {
-    try { run(cfg.worktree, ["fetch", "origin", "main"]); } catch {}
-    run(cfg.worktree, ["reset", "--hard", ORCHESTRATION_V3.runtime.canonicalRef]);
-    run(cfg.worktree, ["clean", "-fd"]);
-    run(cfg.worktree, ["checkout", "--detach", "-f", ORCHESTRATION_V3.runtime.canonicalRef]);
-  } catch (err) {
-    const after = inspectGitRoot(cfg.worktree);
-    return {
-      workerId,
-      recovered: false,
-      recoverable: true,
-      before,
-      after,
-      error: err instanceof Error ? err.message : String(err)
-    };
+  const leaseInspection = inspectLease(workerId);
+  if (leaseInspection.reconciliation_decision === "PROVEN_STALE_RECLAIM") {
+    return recoverStaleWorkerSafely(workerId);
   }
-
-  const after = inspectGitRoot(cfg.worktree);
-  return { workerId, recovered: after.healthy, recoverable: true, before, after };
+  return recoverDisposableWorktree(workerId, { reason: "IDLE_WORKER_RECOVERY" });
 }
 
 export function inspectAllWorkers() {
@@ -111,18 +166,30 @@ export function requireHealthyWorker(workerId) {
     const recovery = recoverIdleWorker(workerId);
     inspection = recovery.after;
     if (recovery.recovered) {
-      console.error(JSON.stringify({
-        event: "WORKTREE_AUTO_RECOVERED",
+      emitWorktreeIntegrityEvent("WORKTREE_AUTO_RECOVERED", {
         workerId,
         previousErrors: recovery.before.errors,
         trackedChangeCount: recovery.before.trackedChangeCount,
-        trackedDeletionCount: recovery.before.trackedDeletionCount
-      }));
+        trackedDeletionCount: recovery.before.trackedDeletionCount,
+        branch: recovery.before.branch,
+        head: recovery.before.head,
+        recoveryResult: "RECOVERED"
+      });
     }
   }
 
   if (!inspection.healthy) {
     throw new Error(`WORKTREE_PREFLIGHT_FAILED:${workerId}:${inspection.errors.join(",")}`);
   }
+
+  const issueNumber = issueFromArgv();
+  if (issueNumber) {
+    prepareCleanWorktreeForIssue({ cwd: cfg.worktree, issueNumber, canonicalRef: ORCHESTRATION_V3.runtime.canonicalRef });
+    inspection = inspectGitRoot(cfg.worktree);
+    if (!branchMatchesIssue(inspection.branch, issueNumber)) {
+      throw new Error(`CLAIM_BRANCH_IDENTITY_MISMATCH:${issueNumber}:${inspection.branch}`);
+    }
+  }
+
   return inspection;
 }

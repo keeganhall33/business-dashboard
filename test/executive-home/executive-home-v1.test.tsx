@@ -11,7 +11,7 @@ import { EXECUTIVE_HOME_FIXTURE_V1, cardsBySection } from "@/lib/executive-home/
 const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
 
 test("Executive Home renders light mode by default with warm canvas", () => {
-  assert.match(html, /bg-\[#f7f2ea\]/);
+  assert.match(html, /bg-\[#f8f4ec\]/);
   assert.match(html, /Light-first intelligence dashboard/);
   assert.match(html, /text-stone-950/);
   assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950|text-zinc-100|text-white\/80/);

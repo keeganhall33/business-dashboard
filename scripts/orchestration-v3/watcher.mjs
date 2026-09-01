@@ -2,8 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
-import { inspectGitRoot } from "./preflight.mjs";
+import { inspectGitRoot, recoverIdleWorker } from "./preflight.mjs";
 import { integrateValidatedPrQueue } from "./integration-queue.mjs";
+import {
+  buildFollowupBody,
+  planFollowupMaterialization
+} from "./followup-materializer.mjs";
+import { buildQueueWatermarkSnapshot, writeQueueWatermarkState } from "./queue-watermarks.mjs";
+import { evaluateRoadmapCandidate, planRoadmapReplenishment } from "./roadmap-replenisher.mjs";
+import { alive, readLease, reconcileLeaseState, writeLease } from "./lease-reconciliation.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -63,7 +70,7 @@ function sleepSync(ms) {
 }
 function isTransientGhError(err) {
   const text = [err?.message, err?.stderr, err?.stdout].filter(Boolean).join("\n");
-  return /\b(429|502|503|504)\b|ETIMEDOUT|TLS handshake timeout|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
+  return /\b(429|502|503|504)\b|ECONNRESET|ECONNABORTED|ETIMEDOUT|socket hang up|TLS handshake timeout|connection reset|temporar|try resubmitting|Service Unavailable|rate limit/i.test(text);
 }
 function gh(args, { attempts = 3 } = {}) {
   let lastError;
@@ -85,13 +92,18 @@ function restIssue(number) {
 }
 function issue(number) {
   const row = restIssue(number);
-  return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title };
+  return { number: row.number, body: row.body, labels: row.labels ?? [], title: row.title, state: row.state };
 }
 function issuesWithLabels(...labels) {
+  let state = "open";
+  if (labels[0] === "__all_states__") {
+    state = "all";
+    labels = labels.slice(1);
+  }
   const rows = JSON.parse(gh([
     "api", "--method", "GET",
     `repos/${ORCHESTRATION_V3.repo}/issues`,
-    "-f", "state=open",
+    "-f", `state=${state}`,
     "-f", `labels=${labels.join(",")}`,
     "-f", "per_page=100"
   ]));
@@ -135,61 +147,99 @@ function priorityRank(body, issueNumber) {
   if (Number(issueNumber) === BACKGROUND_OLLAMA_PROOF_ISSUE) return Number.MAX_SAFE_INTEGER;
   return PRIORITY_RANK[String(field(body, "priority") ?? "P2").toUpperCase()] ?? PRIORITY_RANK.P2;
 }
-function alive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === "EPERM"; }
-}
-function leasePath(workerId) {
-  return path.join(ORCHESTRATION_V3.runtime.stateRoot, "leases", `${workerId}.json`);
-}
-function readLease(workerId) {
-  try { return JSON.parse(fs.readFileSync(leasePath(workerId), "utf8")); } catch { return null; }
-}
-function issueIsRunning(issueNumber) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
-  try {
-    const snapshot = issue(issueNumber);
-    return (snapshot.labels ?? []).some((label) => (typeof label === "string" ? label : label.name) === ORCHESTRATION_V3.queue.running);
-  } catch (err) {
-    if (isTransientGhError(err)) {
-      console.error(JSON.stringify({ event: "ISSUE_RUNNING_STATE_UNKNOWN", issueNumber, reason: "GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
-      return null;
-    }
-    throw err;
-  }
-}
 function reconcileLease(workerId) {
-  const lease = readLease(workerId);
-  if (!lease) return null;
-  const pidAlive = alive(Number(lease.pid));
-  const issueRunning = issueIsRunning(Number(lease.issueNumber));
-  if (pidAlive && issueRunning !== false) return lease;
-  if (issueRunning === null) return lease;
-  try { fs.unlinkSync(leasePath(workerId)); } catch {}
-  console.log(JSON.stringify({
-    event: "STALE_LEASE_RECLAIMED",
-    workerId,
-    issueNumber: Number(lease.issueNumber) || null,
-    pid: Number(lease.pid) || null,
-    pidAlive,
-    issueRunning
-  }));
+  const currentLease = readLease(workerId);
+  if (!currentLease) return null;
+
+  // Local process/worktree evidence is authoritative for lease liveness.
+  // Never require GitHub issue availability before reclaiming a proven-dead
+  // worker lease. Queue-label reconciliation happens separately.
+  const result = reconcileLeaseState(workerId, { recoverIdleWorker });
+  const { inspection, recovery } = result;
+  if (inspection.reconciliation_decision === "LIVE_LEASE_PRESERVED") return result.lease;
+  if (inspection.reconciliation_decision === "INSUFFICIENT_EVIDENCE_PRESERVE") return result.lease;
+  if (inspection.reconciliation_decision === "STALE_RECLAIM_BLOCKED_UNHEALTHY_WORKTREE") {
+    console.error(JSON.stringify({
+      event: "WORKER_LANE_QUARANTINED",
+      workerId,
+      issueNumber: inspection.issue_number,
+      pid: inspection.pid,
+      classification: recovery.after?.classification ?? recovery.before?.classification ?? null,
+      deletionCount: recovery.before?.trackedDeletionCount ?? null,
+      deletionRatio: recovery.before?.deletionRatio ?? null,
+      branch: recovery.before?.branch ?? null,
+      head: recovery.before?.head ?? null,
+      recoveryAttempted: recovery.recoverable,
+      recoveryResult: recovery.error ? "FAILED" : "REFUSED",
+      quarantineResult: "QUARANTINED"
+    }));
+    return result.lease;
+  }
+  if (result.reclaimed) console.log(JSON.stringify({ event: "STALE_LEASE_RECLAIMED", workerId, issueNumber: inspection.issue_number, pid: inspection.pid, evidence: inspection.evidence, heartbeatAgeSeconds: inspection.heartbeat_age_seconds, leaseAgeSeconds: inspection.lease_age_seconds, reconciliationDecision: inspection.reconciliation_decision }));
   return null;
 }
-function activeLeaseIssueNumbers() {
-  const active = new Set();
+function activeLeaseAssignments() {
+  const active = [];
   for (const workerId of Object.keys(ORCHESTRATION_V3.workers)) {
     const lease = reconcileLease(workerId);
-    if (lease && alive(Number(lease.pid))) active.add(Number(lease.issueNumber));
+    if (lease && alive(Number(lease.pid))) {
+      active.push({
+        workerId,
+        issueNumber: Number(lease.issueNumber)
+      });
+    }
   }
   return active;
 }
-function reconcileRunningClaims() {
-  const activeIssues = activeLeaseIssueNumbers();
+
+function activeLeaseIssueNumbers() {
+  return new Set(activeLeaseAssignments().map((entry) => entry.issueNumber));
+}
+function labelSet(snapshot) {
+  return new Set(
+    (snapshot?.labels ?? [])
+      .map((label) => typeof label === "string" ? label : label?.name)
+      .filter(Boolean)
+  );
+}
+
+function humanApprovalRequiredForBody(body) {
+  return String(field(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
+}
+
+function reconcileRunningClaims(activeAssignments = activeLeaseAssignments()) {
+  const activeIssues = new Set(
+    activeAssignments.map((entry) => Number(entry.issueNumber))
+  );
   const candidates = runningIssues();
   for (const candidate of candidates) {
     if (activeIssues.has(Number(candidate.number))) continue;
-    transitionLabels(candidate.number, { remove: [ORCHESTRATION_V3.queue.running], add: [ORCHESTRATION_V3.queue.ready] });
+
+    const fresh = issue(Number(candidate.number));
+    const labels = labelSet(fresh);
+    const gated =
+      labels.has(ORCHESTRATION_V3.queue.blocked) ||
+      labels.has(ORCHESTRATION_V3.queue.awaitingReview) ||
+      labels.has(ORCHESTRATION_V3.queue.humanApproval) ||
+      humanApprovalRequiredForBody(fresh.body);
+
+    if (gated) {
+      transitionLabels(candidate.number, {
+        remove: [ORCHESTRATION_V3.queue.running],
+        add: []
+      });
+      console.log(JSON.stringify({
+        event: "STALE_RUNNING_DEQUEUED_GATED",
+        issueNumber: Number(candidate.number),
+        reason: "NO_AUTHORITATIVE_LIVE_LEASE_AND_CURRENTLY_GATED"
+      }));
+      continue;
+    }
+
+    transitionLabels(candidate.number, {
+      remove: [ORCHESTRATION_V3.queue.running],
+      add: [ORCHESTRATION_V3.queue.ready]
+    });
     console.log(JSON.stringify({
       event: "STALE_RUNNING_REQUEUED",
       issueNumber: Number(candidate.number),
@@ -197,11 +247,195 @@ function reconcileRunningClaims() {
     }));
   }
 }
+
+function revalidateClaim(issueNumber) {
+  const fresh = issue(Number(issueNumber));
+  const labels = labelSet(fresh);
+  const reasons = [];
+
+  if (!labels.has(ORCHESTRATION_V3.queue.base)) reasons.push("MISSING_BASE_LABEL");
+  if (!labels.has(ORCHESTRATION_V3.queue.ready)) reasons.push("READY_LABEL_MISSING");
+  if (labels.has(ORCHESTRATION_V3.queue.running)) reasons.push("ALREADY_RUNNING");
+  if (labels.has(ORCHESTRATION_V3.queue.blocked)) reasons.push("BLOCKED");
+  if (labels.has(ORCHESTRATION_V3.queue.awaitingReview)) reasons.push("AWAITING_REVIEW");
+  if (labels.has(ORCHESTRATION_V3.queue.humanApproval)) reasons.push("AWAITING_HUMAN_APPROVAL");
+  if (humanApprovalRequiredForBody(fresh.body)) reasons.push("HUMAN_APPROVAL_REQUIRED");
+
+  return {
+    claimable: reasons.length === 0,
+    reasons,
+    snapshot: fresh
+  };
+}
+
 function claim(issueNumber) {
-  transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.running] });
+  const validation = revalidateClaim(issueNumber);
+  if (!validation.claimable) {
+    console.log(JSON.stringify({
+      event: "CLAIM_REVALIDATION_SKIPPED",
+      issueNumber: Number(issueNumber),
+      reasons: validation.reasons
+    }));
+    return false;
+  }
+
+  transitionLabels(issueNumber, {
+    remove: [ORCHESTRATION_V3.queue.ready],
+    add: [ORCHESTRATION_V3.queue.running]
+  });
+  return true;
+}
+
+function openOrchestrationIssues() {
+  return issuesWithLabels(ORCHESTRATION_V3.queue.base);
+}
+
+function allOrchestrationIssues() {
+  return issuesWithLabels("__all_states__", ORCHESTRATION_V3.queue.base);
+}
+
+function dependencyStatesForIssues(issues = []) {
+  const refs = new Set();
+  for (const candidate of issues) {
+    const text = String(candidate?.body ?? "");
+    const declarations = [
+      ...text.matchAll(/^\s*(?:\*\*)?(?:depends_on|dependency|dependencies)(?:\*\*)?\s*:\s*(.+)$/gim),
+      ...text.matchAll(/^\s*(?:[-*]\s*)?Depends\s+on\s+(.+)$/gim)
+    ];
+    for (const declaration of declarations) {
+      for (const match of String(declaration[1] ?? "").matchAll(/#(\d+)\b/g)) refs.add(Number(match[1]));
+    }
+  }
+  return new Map([...refs].map((number) => [number, String(restIssue(number).state ?? "unknown").toLowerCase()]));
+}
+
+function replenishProductRoadmap(watermark) {
+  const uncoveredWorkerIds = (watermark?.uncovered_worker_ids ?? []).filter((workerId) =>
+    ORCHESTRATION_V3.capacity.productWorkers.includes(workerId)
+  );
+  if (!watermark?.replenishment_needed || uncoveredWorkerIds.length === 0) {
+    return { selected: [], promoted: [], still_uncovered_worker_ids: uncoveredWorkerIds };
+  }
+
+  const allOpen = openOrchestrationIssues();
+  const occupiedIssues = allOpen.filter((candidate) => {
+    const labels = labelSet(candidate);
+    return labels.has(ORCHESTRATION_V3.queue.ready) || labels.has(ORCHESTRATION_V3.queue.running);
+  });
+  const dependencyStates = dependencyStatesForIssues(allOpen);
+  const plan = planRoadmapReplenishment({
+    openIssues: allOpen,
+    uncoveredWorkerIds,
+    dependencyStates,
+    occupiedIssues
+  });
+
+  for (const rejected of plan.rejected) {
+    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_REJECTED", ...rejected }));
+  }
+
+  const promoted = [];
+  const occupiedNow = [...occupiedIssues];
+  for (const selected of plan.selected) {
+    const fresh = issue(Number(selected.issue_number));
+    const validation = evaluateRoadmapCandidate(fresh, {
+      uncoveredWorkerIds: [selected.worker_id],
+      dependencyStates,
+      occupiedIssues: occupiedNow
+    });
+    if (!validation.eligible) {
+      console.log(JSON.stringify({
+        event: "ROADMAP_REPLENISHMENT_REVALIDATION_SKIPPED",
+        workerId: selected.worker_id,
+        issueNumber: selected.issue_number,
+        reasons: validation.reasons
+      }));
+      continue;
+    }
+    transitionLabels(Number(selected.issue_number), { remove: [], add: [ORCHESTRATION_V3.queue.ready] });
+    occupiedNow.push(fresh);
+    promoted.push(selected);
+    console.log(JSON.stringify({ event: "ROADMAP_REPLENISHMENT_PROMOTED", ...selected }));
+  }
+
+  return { ...plan, promoted };
+}
+
+function createFollowupIssue(work) {
+  const body = buildFollowupBody(work);
+  const args = [
+    "api", "--method", "POST",
+    `repos/${ORCHESTRATION_V3.repo}/issues`,
+    "-f", `title=[P0 ${String(work.stream).toUpperCase() === "QA_EVALUATION" ? "QA" : "Integration"}] ${work.title}`,
+    "-f", `body=${body}`,
+    "-f", `labels[]=${ORCHESTRATION_V3.queue.base}`,
+    "-f", `labels[]=${ORCHESTRATION_V3.queue.ready}`
+  ];
+  return JSON.parse(gh(args));
+}
+
+function materializeIntegrationFollowups(followupWork = []) {
+  for (const work of followupWork) {
+    const currentIssues = allOrchestrationIssues();
+    const plan = planFollowupMaterialization(work, currentIssues);
+
+    if (plan.action === "SKIP") {
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_SKIPPED",
+        identity: plan.identity,
+        reason: plan.reason,
+        ...work
+      }));
+      continue;
+    }
+
+    if (plan.action === "CREATE_READY") {
+      const created = createFollowupIssue(work);
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_ENQUEUED",
+        identity: plan.identity,
+        issueNumber: Number(created.number),
+        reason: plan.reason,
+        ...work
+      }));
+      continue;
+    }
+
+    if (plan.action === "REUSE_AND_READY") {
+      transitionLabels(Number(plan.issue.number), {
+        remove: [ORCHESTRATION_V3.queue.blocked],
+        add: [ORCHESTRATION_V3.queue.ready]
+      });
+      console.log(JSON.stringify({
+        event: "INTEGRATION_FOLLOWUP_REUSED",
+        identity: plan.identity,
+        issueNumber: Number(plan.issue.number),
+        reason: plan.reason,
+        transitionedToReady: true,
+        ...work
+      }));
+      continue;
+    }
+
+    console.log(JSON.stringify({
+      event: "INTEGRATION_FOLLOWUP_REUSED",
+      identity: plan.identity,
+      issueNumber: Number(plan.issue?.number),
+      reason: plan.reason,
+      transitionedToReady: false,
+      ...work
+    }));
+  }
+}
+function quarantineUnmappedIssue(issueNumber, stream) {
+  transitionLabels(issueNumber, { remove: [ORCHESTRATION_V3.queue.ready], add: [ORCHESTRATION_V3.queue.blocked] });
+  gh(["issue", "comment", String(issueNumber), "--repo", ORCHESTRATION_V3.repo, "--body", `V3 quarantined this task because stream \`${stream ?? "UNKNOWN"}\` has no mapped worker. Valid mapped streams must be added to scripts/orchestration-v3/config.mjs before this can re-enter orch:ready.`], { attempts: 2 });
 }
 function launch(workerId, issueNumber) {
-  fs.mkdirSync(path.dirname(leasePath(workerId)), { recursive: true });
+  const recovery = recoverIdleWorker(workerId);
+  if (!recovery.after?.healthy) {
+    throw new Error(`WORKER_LANE_UNHEALTHY:${workerId}:${recovery.after?.errors?.join(",") ?? recovery.before?.errors?.join(",") ?? "UNKNOWN"}`);
+  }
   const logPath = path.join(ORCHESTRATION_V3.runtime.logRoot, `jeeves-orchestration-v3-${workerId}-${issueNumber}.log`);
   fs.mkdirSync(ORCHESTRATION_V3.runtime.logRoot, { recursive: true });
   const fd = fs.openSync(logPath, "a");
@@ -212,7 +446,7 @@ function launch(workerId, issueNumber) {
     env: { ...process.env }
   });
   if (!Number.isInteger(child.pid) || child.pid <= 0) throw new Error(`NO_WORKER_PID:${workerId}:${issueNumber}`);
-  fs.writeFileSync(leasePath(workerId), JSON.stringify({ workerId, issueNumber, pid: child.pid, startedAt: new Date().toISOString(), logPath }, null, 2) + "\n");
+  writeLease(workerId, { issueNumber, pid: child.pid, logPath, worktree: ORCHESTRATION_V3.workers[workerId]?.worktree ?? null });
   child.on("exit", (code, signal) => requestWake("WORKER_EXIT", { workerId, issueNumber, pid: child.pid, code, signal }));
   child.unref();
   fs.closeSync(fd);
@@ -222,16 +456,21 @@ function launch(workerId, issueNumber) {
 const runtime = inspectGitRoot(ORCHESTRATION_V3.runtime.root);
 if (!runtime.healthy) throw new Error(`CANONICAL_RUNTIME_UNHEALTHY:${runtime.errors.join(",")}`);
 
-async function poll() {
+async function poll(reason = "UNKNOWN") {
   try {
     const integration = integrateValidatedPrQueue({ maxMerges: 1 });
     console.log(JSON.stringify(integration));
+    for (const work of integration.followupWork ?? []) {
+      console.log(JSON.stringify({ event: "INTEGRATION_FOLLOWUP_WORK_READY", ...work }));
+    }
+    materializeIntegrationFollowups(integration.followupWork ?? []);
   } catch (err) {
     if (isTransientGhError(err)) console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT", error: err instanceof Error ? err.message : String(err) }));
     else console.error(JSON.stringify({ event: "INTEGRATION_QUEUE_FAILED", error: err instanceof Error ? err.message : String(err) }));
   }
 
-  reconcileRunningClaims();
+  const activeAssignments = activeLeaseAssignments();
+  reconcileRunningClaims(activeAssignments);
   const claimedWorkersThisPass = new Set();
   const ready = readyIssues().sort((left, right) => {
     const leftRecovery = RECOVERY_PRIORITY_ISSUES.get(Number(left.number));
@@ -246,6 +485,31 @@ async function poll() {
     if (leftPriority !== rightPriority) return leftPriority - rightPriority;
     return Number(left.number) - Number(right.number);
   });
+  let watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
+    readyIssues: ready,
+    runningIssues: runningIssues(),
+    activeLeaseAssignments: activeAssignments,
+    lastRecoveryResult: ["STARTUP", "SAFETY_TIMER"].includes(reason) ? "STARTUP_RECONCILIATION_COMPLETE" : reason
+  }));
+  console.log(JSON.stringify({ event: "QUEUE_WATERMARK_STATE", ...watermark }));
+
+  const replenishment = replenishProductRoadmap(watermark);
+  if (replenishment.promoted?.length > 0) {
+    ready.splice(0, ready.length, ...readyIssues().sort((left, right) => {
+      const leftPriority = priorityRank(left.body, left.number);
+      const rightPriority = priorityRank(right.body, right.number);
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return Number(left.number) - Number(right.number);
+    }));
+    watermark = writeQueueWatermarkState(buildQueueWatermarkSnapshot({
+      readyIssues: ready,
+      runningIssues: runningIssues(),
+      activeLeaseAssignments: activeAssignments,
+      lastReplenishAt: new Date().toISOString(),
+      lastRecoveryResult: "PRODUCT_ROADMAP_REPLENISHED"
+    }));
+    console.log(JSON.stringify({ event: "QUEUE_WATERMARK_REPLENISHED", ...watermark }));
+  }
 
   for (const candidate of ready) {
     try {
@@ -253,13 +517,14 @@ async function poll() {
       const stream = field(snapshot.body, "stream");
       const workerCandidates = workerCandidatesForStream(stream);
       if (workerCandidates.length === 0) {
-        console.error(JSON.stringify({ event: "UNMAPPED_STREAM", issueNumber: snapshot.number, stream }));
+        console.error(JSON.stringify({ event: "UNMAPPED_STREAM_QUARANTINED", issueNumber: snapshot.number, stream }));
+        quarantineUnmappedIssue(snapshot.number, stream);
         continue;
       }
       const workerId = workerCandidates.find((candidateWorkerId) => !claimedWorkersThisPass.has(candidateWorkerId) && !reconcileLease(candidateWorkerId));
       if (!workerId) continue;
+      if (!claim(snapshot.number)) continue;
       claimedWorkersThisPass.add(workerId);
-      claim(snapshot.number);
       try {
         launch(workerId, snapshot.number);
       } catch (err) {
@@ -289,7 +554,7 @@ async function runSerializedPoll(reason) {
     do {
       pollWakePending = false;
       try {
-        await poll();
+        await poll(passReason);
       } catch (err) {
         console.error(JSON.stringify({ event: "POLL_FAILED", reason: passReason, error: err instanceof Error ? err.message : String(err) }));
       }

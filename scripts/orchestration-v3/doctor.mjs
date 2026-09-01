@@ -4,10 +4,19 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerForStream } from "./config.mjs";
 import { inspectAllWorkers, inspectGitRoot } from "./preflight.mjs";
+import { readQueueWatermarkState } from "./queue-watermarks.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
 
 const TOLERATED_ACTIVE_WORKER_ERRORS = new Set([
   "TRACKED_WORKTREE_DIRTY",
   "UNEXPECTED_UNTRACKED_FILES"
+]);
+const LEASE_RECONCILIATION_FIELDS = Object.freeze([
+  "lease_age_seconds",
+  "heartbeat_age_seconds",
+  "pid_alive",
+  "worktree_matches",
+  "reconciliation_decision"
 ]);
 
 function command(name, args, options = {}) {
@@ -85,6 +94,14 @@ const legacyProcessCount = Object.values(legacyProcesses).reduce((sum, values) =
 const workerEffectiveHealth = Object.fromEntries(
   Object.entries(workers).map(([workerId, inspection]) => [workerId, workerHealthyForControlPlane(workerId, inspection, activeWorkers)])
 );
+const workerLeaseReconciliation = Object.fromEntries(
+  Object.keys(ORCHESTRATION_V3.workers).map((workerId) => [workerId, inspectLease(workerId)])
+);
+const liveWorkerCount = activeWorkers.size;
+const productLiveWorkerCount = ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const integrationReleaseLiveWorkerCount = ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const qaEvaluationLiveWorkerCount = ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => activeWorkers.has(workerId)).length;
+const queueWatermark = readQueueWatermarkState();
 
 const report = {
   CONTROL_PLANE: "UNKNOWN",
@@ -95,10 +112,32 @@ const report = {
   RUNTIME: runtime,
   WORKERS: workers,
   ACTIVE_WORKERS: [...activeWorkers],
+  CAPACITY: {
+    ACCEPTANCE_PROOF: `${Object.keys(ORCHESTRATION_V3.workers).length}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+    TOTAL_WORKERS: ORCHESTRATION_V3.capacity.totalWorkers,
+    DEFINED_WORKERS: Object.keys(ORCHESTRATION_V3.workers).length,
+    PRODUCT_WORKERS: ORCHESTRATION_V3.capacity.productWorkers,
+    INTEGRATION_RELEASE_WORKERS: ORCHESTRATION_V3.capacity.integrationReleaseWorkers,
+    QA_EVALUATION_WORKERS: ORCHESTRATION_V3.capacity.qaEvaluationWorkers,
+    LIVE_UTILIZATION: `${liveWorkerCount}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+    LIVE_BY_ROLE: {
+      PRODUCT: `${productLiveWorkerCount}/${ORCHESTRATION_V3.capacity.productWorkers.length}`,
+      INTEGRATION_RELEASE: `${integrationReleaseLiveWorkerCount}/${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.length}`,
+      QA_EVALUATION: `${qaEvaluationLiveWorkerCount}/${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.length}`
+    }
+  },
   WORKER_EFFECTIVE_HEALTH: workerEffectiveHealth,
+  LEASE_RECONCILIATION_FIELDS,
+  WORKER_LEASE_RECONCILIATION: workerLeaseReconciliation,
   QUEUE: {
     READY: ready.issues.map((i) => i.number),
-    RUNNING: running.issues.map((i) => i.number)
+    RUNNING: running.issues.map((i) => i.number),
+    ACTIVE_COUNT: queueWatermark?.active_count ?? liveWorkerCount,
+    READY_RESERVE_COUNT: queueWatermark?.ready_reserve_count ?? null,
+    LOW_WATERMARK_STATE: queueWatermark?.low_watermark_state ?? "UNKNOWN",
+    LAST_REPLENISH_AT: queueWatermark?.last_replenish_at ?? null,
+    LAST_RECOVERY_RESULT: queueWatermark?.last_recovery_result ?? null,
+    WATERMARK: queueWatermark
   },
   PROCESSES: {
     V3_WATCHER: watcherProcesses,

@@ -12,15 +12,15 @@
     "test:e2e:ui": "playwright test --ui",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
-    "website:run": "node scripts/run-website-conversion.mjs",
+    "website:run": "node scripts/run-website-conversion.mjs && npm run ga4:ingest",
+    "ga4:ingest": "node scripts/run-ga4-raw-telemetry.mjs && node scripts/sync-website-funnel-snapshot.mjs",
     "meta:run": "node scripts/run-meta-reporting.mjs",
     "industry:run": "node scripts/run-industry-pulse.mjs",
     "social:run": "node scripts/run-social-intelligence.mjs",
     "leads:run": "node scripts/run-lead-intelligence.mjs",
     "cloudflare:run": "node scripts/run-cloudflare-telemetry.mjs",
     "scheduler:status": "node scripts/scheduler-status.mjs",
-    "woo:ingest": "node scripts/run-woo-telemetry.mjs",
-    "orchestration:v3:overnight-report": "node scripts/orchestration-v3/overnight-report.mjs --pretty"
+    "woo:ingest": "node scripts/run-woo-telemetry.mjs"
   },
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
@@ -45,13 +45,13 @@
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react-dom": "^19.2.5",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "react-test-renderer": "19.2.0",
     "storybook": "^8.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.16.2",
-    "typescript": "^5",
-    "react-test-renderer": "19.2.0"
+    "typescript": "^5"
   }
 }

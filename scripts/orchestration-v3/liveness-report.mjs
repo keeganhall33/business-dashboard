@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ORCHESTRATION_V3, workerCandidatesForStream } from "./config.mjs";
+import { inspectGitRoot } from "./preflight.mjs";
+import { readQueueWatermarkState } from "./queue-watermarks.mjs";
+import { inspectLease } from "./lease-reconciliation.mjs";
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name);
@@ -78,17 +81,39 @@ function launchdSnapshot(label) {
 function workerLeaseSnapshot(workerId) {
   const leasePath = path.join(ORCHESTRATION_V3.runtime.stateRoot, "leases", `${workerId}.json`);
   const lease = readJson(leasePath);
-  const pid = Number(lease?.pid);
-  const pidAlive = alive(pid);
+  const leaseInspection = inspectLease(workerId, { lease });
+  const pidAlive = leaseInspection.pid_alive;
+  const cfg = ORCHESTRATION_V3.workers[workerId];
+  let integrity = null;
+  try { integrity = cfg ? inspectGitRoot(cfg.worktree) : null; } catch {}
   return {
     worker_id: workerId,
     issue_number: Number(lease?.issueNumber) || null,
-    pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+    pid: leaseInspection.pid,
     pid_alive: pidAlive,
     started_at: lease?.startedAt ?? null,
+    heartbeat_at: leaseInspection.heartbeat_at,
+    lease_age_seconds: leaseInspection.lease_age_seconds,
+    heartbeat_age_seconds: leaseInspection.heartbeat_age_seconds,
+    worktree_identity: leaseInspection.worktree,
+    expected_worktree: leaseInspection.expected_worktree,
+    worktree_matches: leaseInspection.worktree_matches,
+    command_matches_lease: leaseInspection.command_matches_lease,
+    reconciliation_decision: leaseInspection.reconciliation_decision,
+    reconciliation_evidence: leaseInspection.evidence,
     log_path: lease?.logPath ?? null,
-    process_command: pidAlive ? processCommand(pid) : null,
-    lease_path: fs.existsSync(leasePath) ? leasePath : null
+    process_command: leaseInspection.process_command,
+    lease_path: fs.existsSync(leasePath) ? leasePath : null,
+    health: integrity ? {
+      healthy: integrity.healthy,
+      classification: integrity.classification,
+      recovery_policy: integrity.recoveryPolicy,
+      errors: integrity.errors,
+      deletion_count: integrity.trackedDeletionCount,
+      deletion_ratio: integrity.deletionRatio,
+      branch: integrity.branch,
+      head: integrity.head
+    } : null
   };
 }
 
@@ -164,9 +189,11 @@ function latestHeartbeatSnapshot(now = new Date()) {
 export function buildLivenessReport({ includeGithub = false, launchdLabel = "com.keegan.jeeves.orchestration-v3" } = {}) {
   const workers = Object.keys(ORCHESTRATION_V3.workers).map(workerLeaseSnapshot);
   const liveWorkers = workers.filter((worker) => worker.pid_alive);
+  const liveWorkerIds = new Set(liveWorkers.map((worker) => worker.worker_id));
   const github = githubQueueSnapshot(includeGithub);
   const runningIssuesWithLiveLease = new Set(workers.filter((worker) => worker.pid_alive && worker.issue_number).map((worker) => worker.issue_number));
   const heartbeat = latestHeartbeatSnapshot();
+  const queueWatermark = readQueueWatermarkState();
   return {
     generated_at: new Date().toISOString(),
     runtime_root: ORCHESTRATION_V3.runtime.root,
@@ -176,9 +203,23 @@ export function buildLivenessReport({ includeGithub = false, launchdLabel = "com
     heartbeat,
     workers,
     github,
+    queue_watermark: queueWatermark,
     summary: {
       live_worker_count: liveWorkers.length,
+      active_count: queueWatermark?.active_count ?? liveWorkers.length,
+      ready_reserve_count: queueWatermark?.ready_reserve_count ?? null,
+      low_watermark_state: queueWatermark?.low_watermark_state ?? "UNKNOWN",
+      last_replenish_at: queueWatermark?.last_replenish_at ?? null,
+      last_recovery_result: queueWatermark?.last_recovery_result ?? null,
+      capacity_acceptance_proof: `${workers.length}/${ORCHESTRATION_V3.capacity.totalWorkers}`,
+      utilization_label: `${liveWorkers.length}/${ORCHESTRATION_V3.capacity.totalWorkers} capacity`,
+      role_utilization: {
+        product: `${ORCHESTRATION_V3.capacity.productWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.productWorkers.length}`,
+        integration_release: `${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.integrationReleaseWorkers.length}`,
+        qa_evaluation: `${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.filter((workerId) => liveWorkerIds.has(workerId)).length}/${ORCHESTRATION_V3.capacity.qaEvaluationWorkers.length}`
+      },
       live_worker_ids: liveWorkers.map((worker) => worker.worker_id),
+      unhealthy_worker_ids: workers.filter((worker) => worker.health && !worker.health.healthy).map((worker) => worker.worker_id),
       live_issue_numbers: liveWorkers.map((worker) => worker.issue_number).filter(Boolean),
       running_claims_without_live_lease: github.checked
         ? github.running.map((item) => item.number).filter((issueNumber) => !runningIssuesWithLiveLease.has(issueNumber))

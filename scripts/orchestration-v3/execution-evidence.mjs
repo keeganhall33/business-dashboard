@@ -37,9 +37,32 @@ function runChecked(command, args, cwd, timeout = 180_000) {
 }
 
 function parseHarnessIdentity(journalPath) {
-  const match = String(journalPath ?? "").match(/jeeves-v3-evidence-(\d+)-(local-[abcd])-/);
+  const match = String(journalPath ?? "").match(/jeeves-v3-evidence-(\d+)-(local-[abcdef])-/);
   if (!match) return null;
   return { issue: Number(match[1]), workerId: match[2] };
+}
+
+function referencedPrNumber(body) {
+  const text = String(body ?? "");
+  const direct = text.match(/\bPR\s*#\s*(\d+)\b/i) ?? text.match(/\bpull\s*request\s*#\s*(\d+)\b/i);
+  if (direct) return Number(direct[1]);
+  const url = text.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/i);
+  return url ? Number(url[1]) : null;
+}
+
+export function taskMetadataValue(body, name) {
+  const text = String(body ?? "");
+  const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`^\\s*\\*\\*${escaped}:\\*\\*\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*\\*\\*${escaped}\\*\\*\\s*:\\s*(.+?)\\s*$`, "im"),
+    new RegExp(`^\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, "im")
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
 }
 
 export function classifyChangedTestFiles(files) {
@@ -77,56 +100,135 @@ function hostVerifyCloudFallback(journalPath) {
   const successfulCommands = [];
   const failedCommands = [];
   const errors = [];
+  const baselineFailures = [];
 
   if (!gitExe || !ghExe) {
     return { attempted: true, verified: false, errors: ["HOST_VERIFY_REQUIRED_EXECUTABLE_MISSING"], successfulCommands, failedCommands };
   }
 
-  const run = (command, args, timeout = 180_000) => {
-    const result = runChecked(command, args, repoRoot, timeout);
+  const record = (result) => {
     if (result.ok) successfulCommands.push(result.command);
     else failedCommands.push(`${result.command} [exit ${String(result.status)}] ${result.stderr || result.error || ""}`.trim());
     return result;
   };
+  const runAt = (cwd, command, args, timeout = 180_000) => record(runChecked(command, args, cwd, timeout));
+  const run = (command, args, timeout = 180_000) => runAt(repoRoot, command, args, timeout);
 
   const branchRes = run(gitExe, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const headRes = run(gitExe, ["rev-parse", "HEAD"]);
-  const baseRes = run(gitExe, ["rev-parse", "origin/main"]);
+  const baseRes = run(gitExe, ["rev-parse", "refs/remotes/origin/main"]);
   if (!branchRes.ok || !headRes.ok || !baseRes.ok) errors.push("HOST_VERIFY_GIT_IDENTITY_FAILED");
 
   const branch = branchRes.stdout;
-  const head = headRes.stdout;
+  const persistentHead = headRes.stdout;
   const base = baseRes.stdout;
-  if (!branch || branch === "HEAD") errors.push("HOST_VERIFY_BRANCH_REQUIRED");
-  if (!head || !base || head === base) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
 
   let issueBody = "";
   const issueRes = run(ghExe, ["issue", "view", String(identity.issue), "--repo", ORCHESTRATION_V3.repo, "--json", "body", "--jq", ".body"]);
   if (issueRes.ok) issueBody = issueRes.stdout;
   else errors.push("HOST_VERIFY_ISSUE_READ_FAILED");
 
-  let prs = [];
-  if (branch && branch !== "HEAD") {
-    const prRes = run(ghExe, ["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--head", branch, "--state", "open", "--limit", "10", "--json", "number,headRefName,headRefOid,baseRefName,url"]);
-    if (prRes.ok) {
-      try { prs = JSON.parse(prRes.stdout || "[]"); } catch { errors.push("HOST_VERIFY_PR_JSON_INVALID"); }
+  const taskMutability = String(taskMetadataValue(issueBody, "task_mutability") ?? "").trim().toUpperCase();
+  const stream = String(taskMetadataValue(issueBody, "stream") ?? "").trim().toUpperCase();
+  const explicitEvidenceOnly = taskMutability === "VALIDATION_EVIDENCE_ONLY";
+  const explicitMutationRequired = taskMutability === "IMPLEMENTATION_MUTATION_REQUIRED";
+  const qaEvaluationStream = stream === "QA_EVALUATION";
+  const inferredEvidenceOnly =
+    /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(issueBody) &&
+    /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(issueBody);
+  const mutationRequired = explicitMutationRequired || !(explicitEvidenceOnly || qaEvaluationStream || inferredEvidenceOnly);
+  const integrationReleaseStream = stream === "INTEGRATION_RELEASE";
+  const referencedPr = referencedPrNumber(issueBody);
+  const verifyReferencedMutationPr = mutationRequired && integrationReleaseStream && Boolean(referencedPr);
+
+  if (mutationRequired && !verifyReferencedMutationPr && (!branch || branch === "HEAD")) errors.push("HOST_VERIFY_BRANCH_REQUIRED");
+  if (mutationRequired && !verifyReferencedMutationPr && (!persistentHead || !base || persistentHead === base)) errors.push("HOST_VERIFY_REAL_MUTATION_REQUIRED");
+
+  let matchingPr = null;
+  let targetHead = persistentHead;
+  let targetRoot = repoRoot;
+  let temporaryWorktree = null;
+
+  if (verifyReferencedMutationPr) {
+    const prRes = run(ghExe, ["pr", "view", String(referencedPr), "--repo", ORCHESTRATION_V3.repo, "--json", "number,headRefName,headRefOid,baseRefName,url"]);
+    if (!prRes.ok) {
+      errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_LOOKUP_FAILED");
     } else {
-      errors.push("HOST_VERIFY_PR_LOOKUP_FAILED");
+      try {
+        matchingPr = JSON.parse(prRes.stdout);
+        targetHead = String(matchingPr?.headRefOid ?? "");
+      } catch {
+        errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_JSON_INVALID");
+      }
+    }
+    if (!matchingPr || !targetHead) errors.push("HOST_VERIFY_REFERENCED_MUTATION_PR_REQUIRED");
+  } else if (mutationRequired) {
+    let prs = [];
+    if (branch && branch !== "HEAD") {
+      const prRes = run(ghExe, ["pr", "list", "--repo", ORCHESTRATION_V3.repo, "--head", branch, "--state", "open", "--limit", "10", "--json", "number,headRefName,headRefOid,baseRefName,url"]);
+      if (prRes.ok) {
+        try { prs = JSON.parse(prRes.stdout || "[]"); } catch { errors.push("HOST_VERIFY_PR_JSON_INVALID"); }
+      } else {
+        errors.push("HOST_VERIFY_PR_LOOKUP_FAILED");
+      }
+    }
+    matchingPr = prs.find((pr) => String(pr.headRefOid ?? "") === persistentHead && String(pr.headRefName ?? "") === branch) ?? null;
+    if (!matchingPr) errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
+  } else {
+    const prNumber = referencedPr;
+    if (!prNumber) {
+      errors.push("HOST_VERIFY_REFERENCED_PR_REQUIRED");
+    } else {
+      const prRes = run(ghExe, ["pr", "view", String(prNumber), "--repo", ORCHESTRATION_V3.repo, "--json", "number,headRefName,headRefOid,baseRefName,url"]);
+      if (!prRes.ok) {
+        errors.push("HOST_VERIFY_REFERENCED_PR_LOOKUP_FAILED");
+      } else {
+        try {
+          matchingPr = JSON.parse(prRes.stdout);
+          targetHead = String(matchingPr?.headRefOid ?? "");
+        } catch {
+          errors.push("HOST_VERIFY_REFERENCED_PR_JSON_INVALID");
+        }
+      }
+      if (targetHead) {
+        const fetchRes = run(gitExe, ["fetch", "--no-tags", "origin", `pull/${prNumber}/head`], 180_000);
+        if (!fetchRes.ok) errors.push("HOST_VERIFY_REFERENCED_PR_FETCH_FAILED");
+        const targetRes = run(gitExe, ["cat-file", "-e", `${targetHead}^{commit}`]);
+        if (!targetRes.ok) errors.push("HOST_VERIFY_REFERENCED_PR_HEAD_UNAVAILABLE");
+      }
     }
   }
-  const matchingPr = prs.find((pr) => String(pr.headRefOid ?? "") === head && String(pr.headRefName ?? "") === branch);
-  if (!matchingPr) errors.push("HOST_VERIFY_MATCHING_PR_REQUIRED");
 
-  const changedRes = head && base && head !== base
-    ? run(gitExe, ["diff", "--name-only", `${base}...${head}`])
+  const changedRes = targetHead && base && targetHead !== base
+    ? run(gitExe, ["diff", "--name-only", `${base}...${targetHead}`])
     : { ok: false, stdout: "" };
   const changedFiles = changedRes.ok ? changedRes.stdout.split("\n").filter(Boolean) : [];
-  if (changedFiles.length === 0) errors.push("HOST_VERIFY_CHANGED_FILES_REQUIRED");
+  if (changedFiles.length === 0) errors.push(mutationRequired ? "HOST_VERIFY_CHANGED_FILES_REQUIRED" : "HOST_VERIFY_REFERENCED_PR_CHANGED_FILES_REQUIRED");
 
-  const diffCheckRes = head && base && head !== base
-    ? run(gitExe, ["diff", "--check", `${base}...${head}`])
-    : { ok: false };
+  const diffCheckRes = targetHead && base && targetHead !== base
+    ? run(gitExe, ["diff", "--check", `${base}...${targetHead}`])
+    : run(gitExe, ["diff", "--check"]);
   if (!diffCheckRes.ok) errors.push("HOST_VERIFY_DIFF_CHECK_FAILED");
+
+  if (!mutationRequired && targetHead && errors.every((error) => !error.startsWith("HOST_VERIFY_REFERENCED_PR_"))) {
+    temporaryWorktree = fs.mkdtempSync(path.join(os.tmpdir(), `jeeves-v3-qa-${identity.issue}-`));
+    const addRes = run(gitExe, ["worktree", "add", "--detach", temporaryWorktree, targetHead], 180_000);
+    if (!addRes.ok) {
+      errors.push("HOST_VERIFY_QA_WORKTREE_CREATE_FAILED");
+      temporaryWorktree = null;
+    } else {
+      targetRoot = temporaryWorktree;
+      const lockfile = path.join(targetRoot, "package-lock.json");
+      if (!npmExe) {
+        errors.push("HOST_VERIFY_QA_NPM_REQUIRED");
+      } else if (!fs.existsSync(lockfile)) {
+        errors.push("HOST_VERIFY_QA_DEPENDENCY_LOCK_REQUIRED");
+      } else {
+        const install = runAt(targetRoot, npmExe, ["ci", "--no-audit", "--no-fund"], 600_000);
+        if (!install.ok) errors.push("HOST_VERIFY_QA_DEPENDENCY_INSTALL_FAILED");
+      }
+    }
+  }
 
   const changedTestFiles = classifyChangedTestFiles(changedFiles);
   let focusedTestsOk = true;
@@ -139,9 +241,9 @@ function hostVerifyCloudFallback(journalPath) {
         errors.push("HOST_VERIFY_NPX_REQUIRED_FOR_TS_TEST");
         break;
       }
-      result = run(npxExe, ["tsx", "--test", testFile], 300_000);
+      result = runAt(targetRoot, npxExe, ["tsx", "--test", testFile], 300_000);
     } else {
-      result = run(nodeExe, ["--test", testFile], 300_000);
+      result = runAt(targetRoot, nodeExe, ["--test", testFile], 300_000);
     }
     if (!result.ok) {
       focusedTestsOk = false;
@@ -150,40 +252,55 @@ function hostVerifyCloudFallback(journalPath) {
   }
 
   const testRequired = requiresTestExecution(issueBody);
-  const scripts = packageScripts(repoRoot);
+  const scripts = packageScripts(targetRoot);
   let typecheckOk = true;
   let buildOk = true;
   let supplementalValidationObserved = changedTestFiles.length > 0 && focusedTestsOk;
 
-  if (testRequired && fs.existsSync(path.join(repoRoot, "tsconfig.json")) && npxExe) {
-    const typecheck = run(npxExe, ["tsc", "--noEmit"], 300_000);
-    typecheckOk = typecheck.ok;
+  if (testRequired && fs.existsSync(path.join(targetRoot, "tsconfig.json")) && npxExe) {
+    const typecheck = runAt(targetRoot, npxExe, ["tsc", "--noEmit"], 300_000);
     supplementalValidationObserved = true;
-    if (!typecheck.ok) errors.push("HOST_VERIFY_TYPECHECK_FAILED");
+    if (!typecheck.ok && !mutationRequired) {
+      const baseline = runAt(repoRoot, npxExe, ["tsc", "--noEmit"], 300_000);
+      if (!baseline.ok) baselineFailures.push("HOST_VERIFY_BASELINE_TYPECHECK_FAILED");
+      else {
+        typecheckOk = false;
+        errors.push("HOST_VERIFY_TYPECHECK_REGRESSION");
+      }
+    } else if (!typecheck.ok) {
+      typecheckOk = false;
+      errors.push("HOST_VERIFY_TYPECHECK_FAILED");
+    }
   }
 
   if (testRequired && scripts.build && npmExe) {
-    const build = run(npmExe, ["run", "build"], 600_000);
-    buildOk = build.ok;
+    const build = runAt(targetRoot, npmExe, ["run", "build"], 600_000);
     supplementalValidationObserved = true;
-    if (!build.ok) errors.push("HOST_VERIFY_BUILD_FAILED");
+    if (!build.ok && !mutationRequired) {
+      const baseline = runAt(repoRoot, npmExe, ["run", "build"], 600_000);
+      if (!baseline.ok) baselineFailures.push("HOST_VERIFY_BASELINE_BUILD_FAILED");
+      else {
+        buildOk = false;
+        errors.push("HOST_VERIFY_BUILD_REGRESSION");
+      }
+    } else if (!build.ok) {
+      buildOk = false;
+      errors.push("HOST_VERIFY_BUILD_FAILED");
+    }
   }
 
   if (testRequired && !supplementalValidationObserved) errors.push("HOST_VERIFY_TEST_BUILD_TYPECHECK_NOT_DERIVABLE");
+
+  if (temporaryWorktree) {
+    const cleanup = run(gitExe, ["worktree", "remove", "--force", temporaryWorktree], 180_000);
+    if (!cleanup.ok) errors.push("HOST_VERIFY_QA_WORKTREE_CLEANUP_FAILED");
+  }
 
   const cleanRes = run(gitExe, ["status", "--porcelain"]);
   const clean = cleanRes.ok && cleanRes.stdout.trim() === "";
   if (!clean) errors.push("HOST_VERIFY_WORKTREE_NOT_CLEAN");
 
-  const verified =
-    errors.length === 0 &&
-    Boolean(matchingPr) &&
-    changedFiles.length > 0 &&
-    diffCheckRes.ok &&
-    focusedTestsOk &&
-    typecheckOk &&
-    buildOk &&
-    clean;
+  const verified = errors.length === 0 && Boolean(matchingPr) && changedFiles.length > 0 && diffCheckRes.ok && focusedTestsOk && typecheckOk && buildOk && clean;
 
   return {
     attempted: true,
@@ -192,7 +309,8 @@ function hostVerifyCloudFallback(journalPath) {
     workerId: identity.workerId,
     repoRoot,
     branch,
-    head,
+    head: targetHead,
+    persistentHead,
     base,
     prNumber: matchingPr?.number ?? null,
     prUrl: matchingPr?.url ?? null,
@@ -202,6 +320,7 @@ function hostVerifyCloudFallback(journalPath) {
     focusedTestsPassed: focusedTestsOk,
     typecheckPassed: typecheckOk,
     buildPassed: buildOk,
+    baselineFailures,
     worktreeClean: clean,
     errors,
     successfulCommands,
@@ -222,6 +341,33 @@ export function createObservedExecutionHarness({ issue, workerId }) {
     const real = resolveExecutable(command);
     if (!real) continue;
     resolved[command] = real;
+    const qaReadOnlyGuard = command === "git" && workerId === "local-f" ? [
+      'case "$1" in',
+      '  add|commit|push|merge|rebase|cherry-pick|checkout|switch|reset|clean)',
+      '    printf \'%s\\tgit\\t95\\tGUARD_QA_READ_ONLY blocked=%s\\n\' "$(date +%s)" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
+      '    echo "V3_GUARD_QA_READ_ONLY: local-f may validate but may not mutate the persistent QA worktree" >&2',
+      '    exit 95',
+      '    ;;',
+      'esac'
+    ] : [];
+    const integrationProtectedRoot = workerId === "local-e" ? path.resolve(ORCHESTRATION_V3.workers[workerId]?.worktree ?? "") : null;
+    const integrationIsolationGuard = command === "git" && workerId === "local-e" ? [
+      `PROTECTED_INTEGRATION_ROOT=${shellQuote(integrationProtectedRoot)}`,
+      'dangerous_integration_git=0',
+      'case " $* " in',
+      '  *" rebase "*|*" merge "*|*" cherry-pick "*|*" reset "*|*" clean "*|*" checkout "*|*" switch "*) dangerous_integration_git=1 ;;',
+      'esac',
+      'if [ "$dangerous_integration_git" -eq 1 ]; then',
+      '  effective_cwd="$PWD"',
+      '  if [ "$1" = "-C" ] && [ -n "$2" ]; then effective_cwd="$2"; fi',
+      '  effective_root=$(cd "$effective_cwd" 2>/dev/null && "$REAL" rev-parse --show-toplevel 2>/dev/null || true)',
+      '  if [ -n "$effective_root" ] && [ "$effective_root" = "$PROTECTED_INTEGRATION_ROOT" ]; then',
+      '    printf \'%s\\tgit\\t94\\tGUARD_INTEGRATION_PERSISTENT_WORKTREE blocked=%s root=%s\\n\' "$(date +%s)" "$*" "$effective_root" >> "$ORCH_EXECUTION_JOURNAL"',
+      '    echo "V3_GUARD_INTEGRATION_PERSISTENT_WORKTREE: reconcile in a disposable worktree or temporary clone, never local-e" >&2',
+      '    exit 94',
+      '  fi',
+      'fi'
+    ] : [];
     const guard = command === "git" ? [
       'if "$REAL" rev-parse --is-inside-work-tree >/dev/null 2>&1; then',
       '  worktree_deletions=$("$REAL" diff --name-only --diff-filter=D | /usr/bin/wc -l | /usr/bin/tr -d " ")',
@@ -248,11 +394,11 @@ export function createObservedExecutionHarness({ issue, workerId }) {
       '  fi',
       'fi',
       'if [ "$1" = "push" ]; then',
-      '  if "$REAL" rev-parse --verify origin/main >/dev/null 2>&1; then',
-      '    deletions=$("$REAL" diff --name-only --diff-filter=D origin/main...HEAD | /usr/bin/wc -l | /usr/bin/tr -d " ")',
+      '  if "$REAL" rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then',
+      '    deletions=$("$REAL" diff --name-only --diff-filter=D refs/remotes/origin/main...HEAD | /usr/bin/wc -l | /usr/bin/tr -d " ")',
       '    if [ "${deletions:-0}" -ge 25 ]; then',
       '      printf \'%s\\tgit\\t98\\tGUARD_MASS_TRACKED_DELETION push deletions_vs_origin_main=%s args=%s\\n\' "$(date +%s)" "$deletions" "$*" >> "$ORCH_EXECUTION_JOURNAL"',
-      '      echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git push with $deletions deletions vs origin/main" >&2',
+      '      echo "V3_GUARD_MASS_TRACKED_DELETION: refusing git push with $deletions deletions vs refs/remotes/origin/main" >&2',
       '      exit 98',
       '    fi',
       '  fi',
@@ -261,6 +407,8 @@ export function createObservedExecutionHarness({ issue, workerId }) {
     const shim = [
       "#!/bin/sh",
       `REAL=${shellQuote(real)}`,
+      ...qaReadOnlyGuard,
+      ...integrationIsolationGuard,
       ...guard,
       '"$REAL" "$@"',
       "status=$?",
@@ -322,6 +470,8 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
     gitDiffObserved: succeeded("git", /\bdiff\b/),
     gitDiffCheckObserved: succeeded("git", /\bdiff\s+--check\b/),
     gitMutationCommandObserved: gitEvents.some((event) => event.status === 0 && /\b(add|commit|push|merge|rebase|cherry-pick|checkout|switch)\b/i.test(event.args)),
+    integrationPersistentGuardTriggered: gitEvents.some((event) => event.status === 94 && /GUARD_INTEGRATION_PERSISTENT_WORKTREE/.test(event.args)),
+    qaReadOnlyGuardTriggered: gitEvents.some((event) => event.status === 95 && /GUARD_QA_READ_ONLY/.test(event.args)),
     massDeletionGuardTriggered: gitEvents.some((event) => [96, 97, 98].includes(event.status) && /GUARD_MASS_TRACKED_DELETION/.test(event.args)),
     massDeletionAutoHealed: gitEvents.some((event) => event.status === 96 && /autoheal/.test(event.args)),
     successfulCommands: events.filter((event) => event.status === 0).map((event) => `${event.command} ${event.args}`),
@@ -339,7 +489,6 @@ export function readObservedExecutionEvidence(journalPath, { startLine = 0 } = {
       evidence.testExecutionObserved = true;
       evidence.gitDiffObserved = true;
       evidence.gitDiffCheckObserved = true;
-      evidence.gitMutationCommandObserved = true;
       evidence.successfulCommands = [...evidence.successfulCommands, ...hostVerification.successfulCommands];
       evidence.failedCommands = [...evidence.failedCommands, ...hostVerification.failedCommands];
     } else if (hostVerification.attempted) {

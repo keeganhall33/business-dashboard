@@ -6,8 +6,8 @@ import test from "node:test";
 import { ORCHESTRATION_V3, workerForStream } from "../scripts/orchestration-v3/config.mjs";
 import { readObservedExecutionEvidence, requiresTestExecution, requiresDiffCheck } from "../scripts/orchestration-v3/execution-evidence.mjs";
 
-test("V3 uses one fixed four-worker map", () => {
-  assert.deepEqual(Object.keys(ORCHESTRATION_V3.workers), ["local-a", "local-b", "local-c", "local-d"]);
+test("V3 uses one fixed six-worker map with specialized non-product lanes", () => {
+  assert.deepEqual(Object.keys(ORCHESTRATION_V3.workers), ["local-a", "local-b", "local-c", "local-d", "local-e", "local-f"]);
   assert.equal(workerForStream("CORE_INTELLIGENCE"), "local-a");
   assert.equal(workerForStream("DISCOVERY_INTELLIGENCE"), "local-b");
   assert.equal(workerForStream("DATA_EVIDENCE_LEARNING"), "local-b");
@@ -16,6 +16,12 @@ test("V3 uses one fixed four-worker map", () => {
   assert.equal(workerForStream("AGENT_ORCHESTRATION"), "local-d");
   assert.equal(workerForStream("ORCHESTRATION_SYSTEMS"), "local-d");
   assert.equal(workerForStream("HIGHEST_VALUE_SPECIALIST"), "local-d");
+  assert.equal(workerForStream("INTEGRATION_RELEASE"), "local-e");
+  assert.equal(workerForStream("QA_EVALUATION"), "local-f");
+  assert.equal(workerForStream("NOT_A_REAL_STREAM"), null);
+  assert.deepEqual(ORCHESTRATION_V3.capacity.productWorkers, ["local-a", "local-b", "local-c", "local-d"]);
+  assert.deepEqual(ORCHESTRATION_V3.capacity.integrationReleaseWorkers, ["local-e"]);
+  assert.deepEqual(ORCHESTRATION_V3.capacity.qaEvaluationWorkers, ["local-f"]);
 });
 
 test("V3 acceptance runtime is Ollama-only Qwen 3.5", () => {
@@ -88,12 +94,26 @@ test("V3 worker keeps repo and OpenClaw control workspace isolated", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
   for (const cfg of Object.values(ORCHESTRATION_V3.workers)) {
     assert.notEqual(cfg.agentWorkspace, cfg.worktree);
-    assert.match(cfg.agentWorkspace, /\.openclaw\/agent-workspaces-v3\/local-[abcd]$/);
-    assert.match(cfg.worktree, /\.openclaw\/worktrees\/local-[abcd]$/);
+    assert.match(cfg.agentWorkspace, /\.openclaw\/agent-workspaces-v3\/local-[abcdef]$/);
+    assert.match(cfg.worktree, /\.openclaw\/worktrees\/local-[abcdef]$/);
   }
   assert.match(source, /OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE/);
   assert.match(source, /Protected repository/);
   assert.match(source, /Never initialize, delete, clean, or reseed/);
+});
+
+test("V3 health output exposes machine-readable 6/6 and role capacity", () => {
+  const doctor = fs.readFileSync("scripts/orchestration-v3/doctor.mjs", "utf8");
+  const liveness = fs.readFileSync("scripts/orchestration-v3/liveness-report.mjs", "utf8");
+
+  assert.match(doctor, /ACCEPTANCE_PROOF/);
+  assert.match(doctor, /LIVE_BY_ROLE/);
+  assert.match(doctor, /INTEGRATION_RELEASE/);
+  assert.match(doctor, /QA_EVALUATION/);
+  assert.match(liveness, /capacity_acceptance_proof/);
+  assert.match(liveness, /role_utilization/);
+  assert.match(liveness, /integration_release/);
+  assert.match(liveness, /qa_evaluation/);
 });
 
 test("V3 bootstrap quiesces watcher and workers before worktree preparation", () => {

@@ -7,8 +7,12 @@ import {
   classifyIntegrationCandidate,
   hasHumanOrProductionGate,
   hasRequiredValidationEvidence,
+  integrationFollowupWork,
   isNonAuthoritativeVercelQuotaFailure,
+  isTransientGhError,
   orderIntegrationCandidates,
+  recoverStaleIntegrationLock,
+  reconciliationWorkForCandidate,
   successfulIntegrationLabelEdits
 } from "../scripts/orchestration-v3/integration-queue.mjs";
 
@@ -59,6 +63,25 @@ test("integration queue skips pending checks and conflicting PRs without deletin
   assert.ok(pending.reasons.includes("CHECKS_PENDING"));
   assert.equal(conflicting.eligible, false);
   assert.ok(conflicting.reasons.includes("NOT_MERGEABLE:CONFLICTING"));
+});
+
+test("conflicting PRs create bounded Integration/Release reconciliation work", () => {
+  const conflicting = classifyIntegrationCandidate(pr({ mergeable: "CONFLICTING" }));
+  const work = reconciliationWorkForCandidate(conflicting);
+
+  assert.equal(work?.stream, "INTEGRATION_RELEASE");
+  assert.equal(work?.reason, "MERGE_CONFLICT_RECONCILIATION_REQUIRED");
+  assert.equal(work?.prNumber, 589);
+  assert.equal(work?.issueNumber, 538);
+});
+
+test("missing validation evidence creates bounded QA/Evaluation evidence work", () => {
+  const missingEvidence = classifyIntegrationCandidate(pr({ body: "Validation: git diff --check only" }));
+  const work = reconciliationWorkForCandidate(missingEvidence);
+
+  assert.equal(work?.stream, "QA_EVALUATION");
+  assert.equal(work?.reason, "MISSING_VALIDATION_EVIDENCE");
+  assert.deepEqual(integrationFollowupWork([missingEvidence]), [work]);
 });
 
 test("integration queue rejects stale historical PRs, unverified branches, and missing evidence", () => {
@@ -145,4 +168,23 @@ test("watcher invokes the validated integration queue before claim reconciliatio
   assert.match(watcherSource, /integrateValidatedPrQueue/);
   assert.match(watcherSource, /INTEGRATION_QUEUE_DEFERRED_GITHUB_TRANSIENT/);
   assert.ok(watcherSource.indexOf("integrateValidatedPrQueue") < watcherSource.indexOf("reconcileRunningClaims"));
+});
+
+test("integration lock recovery is guarded by pid liveness and age checks", () => {
+  const source = fs.readFileSync("scripts/orchestration-v3/integration-queue.mjs", "utf8");
+
+  assert.match(source, /LOCK_STALE_MS/);
+  assert.match(source, /function alive\(pid\)/);
+  assert.match(source, /inspectIntegrationLock/);
+  assert.match(source, /!pidAlive && ageMs >= LOCK_STALE_MS/);
+  assert.match(source, /recoverStaleIntegrationLock/);
+  assert.match(source, /fs\.rmSync\(LOCK_PATH, \{ force: true \}\)/);
+  assert.equal(typeof recoverStaleIntegrationLock, "function");
+});
+
+test("GitHub transient classifier covers TLS handshake and connection reset failures", () => {
+  assert.equal(isTransientGhError({ message: "net/http: TLS handshake timeout" }), true);
+  assert.equal(isTransientGhError({ stderr: "read ECONNRESET" }), true);
+  assert.equal(isTransientGhError({ stderr: "GraphQL: rate limit exceeded" }), true);
+  assert.equal(isTransientGhError({ stderr: "validation failed: permanent" }), false);
 });

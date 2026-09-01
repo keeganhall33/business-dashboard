@@ -24,15 +24,24 @@ test("V3 observed git wrapper blocks and auto-heals catastrophic tracked deletio
 
 test("V3 worker preflight repairs an abandoned disposable lane before refusing work", () => {
   const source = fs.readFileSync("scripts/orchestration-v3/preflight.mjs", "utf8");
-  assert.match(source, /RECOVERABLE_IDLE_ERRORS/);
-  assert.match(source, /MASS_TRACKED_DELETION/);
-  assert.match(source, /TRACKED_WORKTREE_DIRTY/);
-  assert.match(source, /UNEXPECTED_UNTRACKED_FILES/);
+  const integrity = fs.readFileSync("scripts/orchestration-v3/worktree-integrity.mjs", "utf8");
   assert.match(source, /recoverIdleWorker/);
-  assert.match(source, /fetch.*origin.*main/s);
-  assert.match(source, /reset.*--hard/s);
-  assert.match(source, /clean.*-fd/s);
-  assert.match(source, /checkout.*--detach.*-f/s);
+  assert.match(integrity, /CATASTROPHIC_WORKTREE_CORRUPTION/);
+  assert.match(integrity, /AMBIGUOUS_WORKTREE_CORRUPTION/);
+  assert.match(integrity, /AUTO_RESET_ALLOWED/);
+  assert.match(integrity, /HUMAN_ACTION_REQUIRED/);
+  assert.match(integrity, /reset", "--hard", "HEAD"/);
+  assert.match(integrity, /clean", "-fd"/);
+  assert.match(integrity, /REFUSE_NON_DISPOSABLE_WORKTREE/);
   assert.match(source, /WORKTREE_AUTO_RECOVERED/);
   assert.match(source, /const recovery = recoverIdleWorker\(workerId\)/);
+});
+
+test("V3 lifecycle checks run before launch and after model process exit", () => {
+  const watcher = fs.readFileSync("scripts/orchestration-v3/watcher.mjs", "utf8");
+  const worker = fs.readFileSync("scripts/orchestration-v3/worker.mjs", "utf8");
+  assert.match(watcher, /recoverIdleWorker\(workerId\)/);
+  assert.match(watcher, /WORKER_LANE_QUARANTINED/);
+  assert.match(worker, /postModelIntegrity = recoverIdleWorker\(workerId\)/);
+  assert.match(worker, /POST_MODEL_WORKTREE_INTEGRITY_FAILED/);
 });

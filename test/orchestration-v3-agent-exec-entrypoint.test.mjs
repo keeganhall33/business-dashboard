@@ -12,22 +12,52 @@ test("V3 real worker uses capability-aware invocation instead of hard-coding a C
   assert.match(source, /probeWorkerExecCapabilities/);
   assert.match(source, /buildWorkerExecInvocation/);
   assert.match(source, /codeModeShellInstruction/);
-  assert.match(source, /invocation\.args/);
+  assert.match(source, /executeLocalRound/);
+  assert.match(source, /roundInvocation\.args/);
   assert.doesNotMatch(source, /"agent", "--local"/);
 });
 
-test("worker exec helper enables Code Mode and local-model-lean when available", () => {
-  const help = `Usage: openclaw agent exec <prompt>\nOptions:\n  --isolated\n  --auth-env-only\n  --model <id>\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <dir>\n  --json\n  --timeout <seconds>`;
+test("worker exec helper uses direct agent exec and preserves isolated control workspace", () => {
+  const help = `Usage: openclaw agent exec <prompt>\nOptions:\n  --isolated\n  --config <path>\n  --state-dir <dir>\n  --auth-env-only\n  --model <id>\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <dir>\n  --json\n  --timeout <seconds>`;
   const capabilities = parseWorkerExecCapabilities(help);
-  const invocation = buildWorkerExecInvocation({ capabilities, prompt: "do work", controlWorkspace: "/tmp/control", timeoutSeconds: 900 });
+  const invocation = buildWorkerExecInvocation({
+    capabilities,
+    prompt: "do work",
+    controlWorkspace: "/tmp/control",
+    configPath: "/tmp/openclaw.json",
+    stateDir: "/tmp/openclaw-state",
+    timeoutSeconds: 900
+  });
   assert.equal(invocation.supported, true);
-  assert.equal(invocation.mode, "AGENT_EXEC_CODE_MODE");
+  assert.equal(invocation.mode, "AGENT_EXEC_DIRECT");
+  assert.equal(invocation.codeMode, false);
   assert.deepEqual(invocation.args.slice(0, 3), ["agent", "exec", "do work"]);
-  assert.ok(invocation.args.includes("--isolated"));
-  assert.ok(invocation.args.includes("--auth-env-only"));
-  assert.ok(invocation.args.includes("--code-mode"));
+  assert.equal(invocation.args.includes("--isolated"), false);
+  assert.ok(invocation.args.includes("--config"));
+  assert.ok(invocation.args.includes("/tmp/openclaw.json"));
+  assert.ok(invocation.args.includes("--state-dir"));
+  assert.ok(invocation.args.includes("/tmp/openclaw-state"));
+  assert.equal(invocation.args.includes("--auth-env-only"), false);
   assert.ok(invocation.args.includes("--local-model-lean"));
+  assert.ok(invocation.args.includes("--cwd"));
+  assert.ok(invocation.args.includes("/tmp/control"));
   assert.ok(invocation.args.includes("ollama/qwen3.5:9b"));
+  assert.equal(invocation.args.includes("--code-mode"), false);
+});
+
+test("agent exec fails closed when stateless config/state flags are unavailable", () => {
+  const help = `Usage: openclaw agent exec <prompt>\nOptions:\n  --auth-env-only\n  --model <id>\n  --cwd <dir>\n  --json`;
+
+  const invocation = buildWorkerExecInvocation({
+    capabilities: parseWorkerExecCapabilities(help),
+    prompt: "x",
+    controlWorkspace: "/tmp/control",
+    configPath: "/tmp/openclaw.json",
+    stateDir: "/tmp/openclaw-state"
+  });
+
+  assert.equal(invocation.supported, false);
+  assert.equal(invocation.reason, "OPENCLAW_AGENT_EXEC_MISSING_CONFIG_FLAG");
 });
 
 test("V3 worker uses installed legacy local-message path when agent exec is unavailable", () => {
@@ -67,7 +97,7 @@ test("V3 worker gives Qwen absolute observed command wrappers", () => {
   assert.match(source, /For every git command use this exact executable/);
   assert.match(source, /For every pnpm command use/);
   assert.match(source, /actually execute and inspect/);
-  assert.match(source, /perform a real git mutation/);
+  assert.match(source, /perform a real (?:focused )?git mutation/);
 });
 
 test("V3 worker requires machine provider/model/fallback and observed stages", () => {

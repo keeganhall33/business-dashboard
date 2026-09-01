@@ -1,10 +1,10 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ORCHESTRATION_V3 } from "./config.mjs";
 import { extractOrchestrationResult } from "./result-contract.mjs";
-import { requireHealthyWorker } from "./preflight.mjs";
+import { requireHealthyWorker, recoverIdleWorker } from "./preflight.mjs";
 import {
   createObservedExecutionHarness,
   readObservedExecutionEvidence,
@@ -17,6 +17,14 @@ import {
   buildWorkerExecInvocation,
   codeModeShellInstruction
 } from "./worker-exec-invocation.mjs";
+import { LEASE_TTL_CONTRACT, touchLeaseHeartbeat } from "./lease-reconciliation.mjs";
+import { runBufferedChild } from "./buffered-child-process.mjs";
+import {
+  MAX_LOCAL_ROUNDS,
+  buildContinuationPrompt,
+  missingImplementationEvidence,
+  shouldContinueLocalRun
+} from "./continuation-policy.mjs";
 
 const CLOUD_CREDENTIAL_PREFIXES = [
   "OPENAI_", "ANTHROPIC_", "CODEX_", "GOOGLE_", "GEMINI_", "XAI_", "MISTRAL_",
@@ -106,6 +114,35 @@ function taskField(body, name) {
 function humanApprovalRequired(body) {
   return String(taskField(body, "human_approval_required") ?? "false").trim().toLowerCase() === "true";
 }
+
+function referencedPrNumber(body) {
+  const text = String(body ?? "");
+  const direct =
+    text.match(/\bPR\s*#\s*(\d+)\b/i) ??
+    text.match(/\bpull\s*request\s*#\s*(\d+)\b/i);
+  if (direct) return Number(direct[1]);
+  const url = text.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/i);
+  return url ? Number(url[1]) : null;
+}
+
+function taskMutability(body) {
+  const text = String(body ?? "");
+  const explicit = String(taskField(text, "task_mutability") ?? "").trim().toUpperCase();
+
+  if (explicit === "VALIDATION_EVIDENCE_ONLY") return "VALIDATION_EVIDENCE_ONLY";
+  if (explicit === "IMPLEMENTATION_MUTATION_REQUIRED") return "IMPLEMENTATION_MUTATION_REQUIRED";
+
+  const stream = String(taskField(text, "stream") ?? "").trim().toUpperCase();
+  if (stream === "QA_EVALUATION") return "VALIDATION_EVIDENCE_ONLY";
+
+  const evidenceOnly =
+    /\b(evidence[- ]only|validation[- ]only|tests?\/evidence[- ]only|QA tests?\/evidence[- ]only)\b/i.test(text) &&
+    /\b(no (?:product |repository |code )?mutation|zero repository mutation|without (?:a )?(?:git |repository )?mutation|do not (?:require|fabricate) (?:a )?git mutation)\b/i.test(text);
+
+  return evidenceOnly
+    ? "VALIDATION_EVIDENCE_ONLY"
+    : "IMPLEMENTATION_MUTATION_REQUIRED";
+}
 function requiresArchitectureGrounding(snapshot) {
   const body = String(snapshot?.body ?? "");
   const stream = String(taskField(body, "stream") ?? "").trim().toUpperCase();
@@ -160,15 +197,137 @@ function sanitizeCloudEnv(baseEnv) {
 function q(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
+function localRuntimePolicyProvesNoCloud(runtimeEnv) {
+  const cloudCredentialPresent = Object.keys(runtimeEnv ?? {}).some((key) =>
+    CLOUD_CREDENTIAL_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+    /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key)
+  );
+  return ORCHESTRATION_V3.model.cloudFallbackAllowed === false &&
+    String(runtimeEnv?.OPENCLAW_FALLBACK_MODELS ?? "") === "" &&
+    !cloudCredentialPresent;
+}
+function recoveryObservedPersistentMutation(recovery, expectedHead) {
+  const before = recovery?.before;
+  if (!before) return false;
+  return before.healthy === false ||
+    Number(before.trackedChangeCount ?? 0) > 0 ||
+    Number(before.untrackedCount ?? 0) > 0 ||
+    Boolean(before.head && expectedHead && before.head !== expectedHead);
+}
 
 const preflight = requireHealthyWorker(workerId);
 const cfg = ORCHESTRATION_V3.workers[workerId];
-const repoRoot = path.resolve(cfg.worktree);
+const persistentRepoRoot = path.resolve(cfg.worktree);
+let repoRoot = persistentRepoRoot;
+let integrationWorktreeRoot = null;
+let integrationTarget = null;
+
 const controlWorkspace = path.resolve(cfg.agentWorkspace);
-if (repoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
+if (persistentRepoRoot === controlWorkspace) throw new Error(`OPENCLAW_WORKSPACE_MUST_NOT_EQUAL_GIT_WORKTREE:${workerId}`);
 fs.mkdirSync(controlWorkspace, { recursive: true });
+touchLeaseHeartbeat(workerId);
+const leaseHeartbeatTimer = setInterval(() => {
+  touchLeaseHeartbeat(workerId);
+}, LEASE_TTL_CONTRACT.workerHeartbeatIntervalMs);
+leaseHeartbeatTimer.unref();
 
 const snapshot = issueSnapshot();
+
+const snapshotStream = String(taskField(snapshot.body, "stream") ?? "").trim().toUpperCase();
+const snapshotMutability = taskMutability(snapshot.body);
+const integrationReferencedPr = referencedPrNumber(snapshot.body);
+
+if (
+  workerId === "local-e" &&
+  snapshotStream === "INTEGRATION_RELEASE" &&
+  snapshotMutability === "IMPLEMENTATION_MUTATION_REQUIRED"
+) {
+  if (!integrationReferencedPr) {
+    throw new Error("INTEGRATION_REFERENCED_PR_REQUIRED");
+  }
+
+  const pr = JSON.parse(
+    gh([
+      "api",
+      "--method",
+      "GET",
+      `repos/${ORCHESTRATION_V3.repo}/pulls/${integrationReferencedPr}`
+    ])
+  );
+
+  const headRefName = String(pr?.head?.ref ?? "").trim();
+  const headRefOid = String(pr?.head?.sha ?? "").trim();
+  const headRepoFullName = String(pr?.head?.repo?.full_name ?? "").trim();
+
+  if (!headRefName || !headRefOid) {
+    throw new Error(`INTEGRATION_REFERENCED_PR_HEAD_REQUIRED:${integrationReferencedPr}`);
+  }
+
+  if (headRepoFullName && headRepoFullName !== ORCHESTRATION_V3.repo) {
+    throw new Error(`INTEGRATION_CROSS_REPO_PR_UNSUPPORTED:${integrationReferencedPr}:${headRepoFullName}`);
+  }
+
+  git(["fetch", "--no-tags", "origin", `pull/${integrationReferencedPr}/head`], persistentRepoRoot);
+  const fetchedHead = git(["rev-parse", "FETCH_HEAD"], persistentRepoRoot);
+
+  if (fetchedHead !== headRefOid) {
+    throw new Error(
+      `INTEGRATION_REFERENCED_PR_HEAD_MISMATCH:${integrationReferencedPr}:${headRefOid}:${fetchedHead}`
+    );
+  }
+
+  const disposableParent = fs.mkdtempSync(
+    path.join(os.tmpdir(), `jeeves-v3-integration-${issue}-pr-${integrationReferencedPr}-`)
+  );
+  integrationWorktreeRoot = path.join(disposableParent, "repo");
+
+  const localBranch = `reconcile-issue-${issue}-pr-${integrationReferencedPr}-${process.pid}`;
+
+  git(
+    ["worktree", "add", "-b", localBranch, integrationWorktreeRoot, headRefOid],
+    persistentRepoRoot
+  );
+
+  repoRoot = path.resolve(integrationWorktreeRoot);
+  integrationTarget = {
+    prNumber: integrationReferencedPr,
+    headRefName,
+    headRefOid,
+    localBranch
+  };
+
+  console.log(JSON.stringify({
+    event: "WORKER_INTEGRATION_PR_CONTEXT_PREPARED",
+    issue,
+    workerId,
+    prNumber: integrationReferencedPr,
+    headRefName,
+    headRefOid,
+    localBranch,
+    persistentRepoRoot,
+    repoRoot
+  }));
+}
+
+function cleanupIntegrationWorktree() {
+  if (!integrationWorktreeRoot) return;
+
+  try {
+    git(["worktree", "remove", "--force", integrationWorktreeRoot], persistentRepoRoot);
+  } catch {}
+
+  if (integrationTarget?.localBranch) {
+    try {
+      git(["branch", "-D", integrationTarget.localBranch], persistentRepoRoot);
+    } catch {}
+  }
+
+  try {
+    fs.rmSync(path.dirname(integrationWorktreeRoot), { recursive: true, force: true });
+  } catch {}
+}
+
+process.on("exit", cleanupIntegrationWorktree);
 if (humanApprovalRequired(snapshot.body)) {
   const value = { ...resultBase("BLOCKED", "Human approval required; V3 worker refused autonomous execution"), STATUS: "AWAITING_HUMAN_APPROVAL", DECISIONS_REQUIRED: ["KEEGAN_APPROVAL_REQUIRED"] };
   postResult(value);
@@ -180,7 +339,9 @@ const architectureGroundingRequired = requiresArchitectureGrounding(snapshot);
 const architectureGroundingInstructions = architectureGroundingRequired
   ? [
       "CANONICAL PRODUCT ARCHITECTURE GROUNDING REQUIRED.",
-      "Before planning or editing product/system behavior, read docs/ARCHITECTURE.md from the protected repository.",
+      "Before planning or editing product/system behavior, inspect docs/ARCHITECTURE.md from the protected repository using the shell exec tool with the protected repository as workdir.",
+      "Do NOT use OpenClaw read/write/edit file tools for protected-repository paths; those tools are intentionally sandboxed to the separate control workspace.",
+      "Use shell exec for every protected-repository read, search, edit, test, git operation, and diff.",
       "Follow its canonical source hierarchy when older docs, local workspace files, memories, or generated AGENTS.md content conflict.",
       "Do not create a parallel recommendation engine, scheduler, memory store, deployment path, agent role, or source-of-truth boundary without first checking the canonical owner in docs/ARCHITECTURE.md."
     ]
@@ -191,6 +352,9 @@ const architectureGroundingInstructions = architectureGroundingRequired
 
 const beforeHead = git(["rev-parse", "HEAD"], repoRoot);
 const beforePrs = openPrSnapshot();
+const beforeMap = new Map(
+  beforePrs.map((pr) => [Number(pr.number), pr])
+);
 const harness = createObservedExecutionHarness({ issue, workerId });
 const observed = Object.fromEntries(["git", "pnpm", "npm", "npx"].map((name) => [name, path.join(harness.shimRoot, name)]));
 if (!fs.existsSync(observed.git)) throw new Error("OBSERVED_GIT_WRAPPER_MISSING");
@@ -224,7 +388,11 @@ const capabilities = probeWorkerExecCapabilities(openclaw);
 const preflightCommand = `${q(observed.git)} rev-parse --show-toplevel && ${q(observed.git)} status --short --branch && ${q(observed.git)} remote -v`;
 const testRequired = requiresTestExecution(snapshot.body);
 const diffCheckRequired = requiresDiffCheck(snapshot.body);
-const codeModeBridge = capabilities.codeMode;
+const mutability = taskMutability(snapshot.body);
+const mutationRequired = mutability === "IMPLEMENTATION_MUTATION_REQUIRED";
+// V3 canonical execution is currently AGENT_EXEC_DIRECT.
+// Do not advertise Code Mode merely because the installed CLI supports it.
+const codeModeBridge = false;
 const firstToolInstruction = codeModeBridge
   ? [
       "MANDATORY FIRST TOOL ACTION: invoke the outer Code Mode exec tool exactly once with this JavaScript:",
@@ -242,7 +410,13 @@ const shellExecutionInstruction = codeModeBridge
       `Every repository command must use workdir ${repoRoot}.`,
       "Do not narrate a command instead of invoking the bridge. Do not claim success from command text you did not execute."
     ].join("\n")
-  : "Use the shell exec tool for shell commands and the exact protected repository as workdir.";
+  : [
+      "DIRECT SHELL EXECUTION IS AUTHORITATIVE.",
+      `Use the shell exec tool for EVERY protected-repository operation with exact workdir ${repoRoot}.`,
+      "Do NOT invoke read, write, edit, or other workspace-file tools against protected-repository paths.",
+      "For repository file reads use shell commands such as cat/sed/grep through exec.",
+      "For repository edits use shell commands or scripts through exec, then verify with the observed git wrapper."
+    ].join("\n");
 
 const prompt = [
   `You are Jeeves executing GitHub issue #${issue} in ${ORCHESTRATION_V3.repo}.`,
@@ -252,7 +426,24 @@ const prompt = [
   String(snapshot.body ?? "").slice(0, 12000),
   "",
   `PROTECTED REPOSITORY ROOT: ${repoRoot}`,
-  "This is a real implementation run. Do not merely review or narrate commands.",
+  integrationTarget
+    ? `INTEGRATION TARGET PR: #${integrationTarget.prNumber}`
+    : null,
+  integrationTarget
+    ? `INTEGRATION TARGET HEAD BRANCH: ${integrationTarget.headRefName}`
+    : null,
+  integrationTarget
+    ? `INTEGRATION DISPOSABLE WORKTREE: ${repoRoot}`
+    : null,
+  integrationTarget
+    ? `Perform all reconciliation work only in this disposable worktree. Never checkout, merge, rebase, reset, clean, or otherwise mutate the persistent local-e worktree at ${persistentRepoRoot}.`
+    : null,
+  integrationTarget
+    ? `Update the existing PR branch with: ${q(observed.git)} push origin HEAD:${integrationTarget.headRefName}. Do not create a duplicate PR.`
+    : null,
+  mutationRequired
+    ? "This is a real implementation run. Perform the focused repository work required by the task."
+    : "This is a real validation/evidence run. Execute and record the required verification without fabricating repository mutation.",
   ...architectureGroundingInstructions,
   shellExecutionInstruction,
   firstToolInstruction,
@@ -265,7 +456,9 @@ const prompt = [
   testRequired ? "The issue requires tests/build/typecheck. Actually execute the relevant successful command through one of the observed package-manager wrappers before PASS." : null,
   `Before PASS, actually execute and inspect: ${q(observed.git)} diff`,
   diffCheckRequired ? `Before PASS, actually execute: ${q(observed.git)} diff --check` : null,
-  "Before PASS, perform a real git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue.",
+  mutationRequired
+    ? "Before PASS, perform a real focused git mutation using the observed git wrapper: add/commit and push the focused branch or update the existing PR branch required by the issue."
+    : "TASK MUTABILITY: VALIDATION_EVIDENCE_ONLY. Do NOT create, stage, commit, push, or fabricate a repository mutation merely to satisfy PASS. PASS is allowed with zero mutation when all applicable host-observed validation evidence is present.",
   "Use gh inside the same shell bridge when PR inspection or PR creation/update is required. Do not create a duplicate PR when the issue names an existing PR.",
   "Cloud use is forbidden. Do not request or use OpenAI/Anthropic/Gemini/etc.",
   "After the bounded implementation attempt, return ONLY one strict JSON object with this exact uppercase-key shape:",
@@ -275,7 +468,42 @@ const prompt = [
   "No prose and no markdown fences."
 ].filter(Boolean).join("\n");
 
-const invocation = buildWorkerExecInvocation({ capabilities, prompt, controlWorkspace, timeoutSeconds: 900 });
+const qaProviderPrompt = [
+  "V3_QA_PROVIDER_PROBE_V1.",
+  "This probe exists only to prove the local model/provider path before deterministic host QA verification.",
+  "Do not inspect, read, write, or modify any repository. Do not use shell or file tools.",
+  "Cloud use is forbidden.",
+  "Return ONLY one strict JSON object with this exact uppercase-key shape:",
+  JSON.stringify({
+    TASK_ID: `issue-${issue}`,
+    STATUS: "PASS",
+    SUMMARY: "Local QA provider probe complete",
+    CHANGES: [],
+    FILES_CHANGED: [],
+    DB_CHANGES: "NO",
+    MIGRATION: null,
+    TESTS: "HOST_VERIFICATION_PENDING",
+    PR: null,
+    MERGE_STATUS: "N/A",
+    PRODUCTION_CHANGE: "NO",
+    UNEXPECTED_RESULTS: [],
+    DECISIONS_REQUIRED: [],
+    BLOCKERS: [],
+    NEXT_RECOMMENDED_TASK: null,
+    SESSION_HEALTH: "GOOD",
+    SESSION_CONTEXT: `v3/${workerId}/issue-${issue}`
+  }),
+  "No prose and no markdown fences."
+].join("\n");
+
+const invocation = buildWorkerExecInvocation({
+  capabilities,
+  prompt: mutationRequired ? prompt : qaProviderPrompt,
+  controlWorkspace,
+  configPath,
+  stateDir,
+  timeoutSeconds: 900
+});
 if (!invocation.supported) {
   const value = { ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"), BLOCKERS: [invocation.reason] };
   postResult(value, { provider: null, model: null, fallbackUsed: null, capabilities, invocation });
@@ -286,65 +514,323 @@ if (!invocation.supported) {
 
 console.log(JSON.stringify({ event: "WORKER_START", issue, workerId, preflight, repoRoot, model: ORCHESTRATION_V3.model.id, cloudFallbackAllowed: false, observed, beforeHead, capabilities, invocationMode: invocation.mode }));
 
-const run = spawnSync(openclaw, invocation.args, {
-  cwd: controlWorkspace,
-  env,
-  encoding: "utf8",
-  timeout: 950_000,
-  maxBuffer: 24 * 1024 * 1024,
-  stdio: ["ignore", "pipe", "pipe"]
-});
+async function executeLocalRound(roundPrompt, roundNumber) {
+  const roundInvocation = buildWorkerExecInvocation({
+    capabilities,
+    prompt: roundPrompt,
+    controlWorkspace,
+    configPath,
+    stateDir,
+    timeoutSeconds: 900
+  });
 
-const executionEvidence = readObservedExecutionEvidence(harness.journalPath);
-const machine = parseMachineEnvelope(run.stdout);
-const afterHead = git(["rev-parse", "HEAD"], repoRoot);
-const afterPrs = openPrSnapshot();
-const beforeMap = mapPrs(beforePrs);
-const changedPrs = afterPrs.filter((pr) => !beforeMap.has(Number(pr.number)) || beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid);
-const realMutationObserved = beforeHead !== afterHead || changedPrs.length > 0;
-const providerOk = String(machine.provider ?? "").toLowerCase() === "ollama";
-const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(String(machine.model ?? "").toLowerCase());
-const fallbackOk = machine.fallbackUsed === false;
+  if (!roundInvocation.supported) {
+    return {
+      run: { status: 1, stdout: "", stderr: "", error: null },
+      invocation: roundInvocation,
+      machine: {},
+      executionEvidence: readObservedExecutionEvidence(harness.journalPath),
+      realMutationObserved: false,
+      persistentMutationObserved: false,
+      changedPrs: [],
+      finalValue: {
+        ...resultBase("BLOCKED", "Installed OpenClaw cannot provide the V3 agent-exec tool path"),
+        BLOCKERS: [roundInvocation.reason]
+      }
+    };
+  }
 
-let parsed;
-try {
-  const envelope = JSON.parse(String(run.stdout ?? ""));
-  const value = extractOrchestrationResult(envelope);
-  parsed = { ...resultBase(value.STATUS, String(value.SUMMARY ?? "")), ...value };
-} catch (error) {
-  parsed = { ...resultBase("BLOCKED", "Local model output could not be parsed as OrchestrationResultContractV1"), BLOCKERS: [error?.message ?? String(error)] };
-}
+  console.log(JSON.stringify({
+    event: roundNumber === 1 ? "WORKER_LOCAL_ROUND_START" : "WORKER_REPAIR_ROUND_EXEC",
+    issue,
+    workerId,
+    round: roundNumber,
+    invocationMode: roundInvocation.mode
+  }));
 
-const evidenceErrors = [];
-if (run.error?.code === "ETIMEDOUT") evidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
-else if (run.status !== 0) evidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${run.status}`);
-if (!providerOk) evidenceErrors.push(`PROVIDER_MISMATCH:${machine.provider}`);
-if (!modelOk) evidenceErrors.push(`MODEL_MISMATCH:${machine.model}`);
-if (!fallbackOk) evidenceErrors.push(`FALLBACK_NOT_PROVEN_FALSE:${machine.fallbackUsed}`);
-if (!executionEvidence.repoPreflightObserved) evidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
-if (testRequired && !executionEvidence.testExecutionObserved) evidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
-if (!executionEvidence.gitDiffObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
-if (diffCheckRequired && !executionEvidence.gitDiffCheckObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
-if (!executionEvidence.gitMutationCommandObserved) evidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
-if (!realMutationObserved) evidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
+  const roundRun = await runBufferedChild(openclaw, roundInvocation.args, {
+    cwd: controlWorkspace,
+    env,
+    timeout: 950_000,
+    maxBuffer: 24 * 1024 * 1024
+  });
 
-let finalValue = { ...parsed, ROUTING_TIER: "LOCAL_FIRST", MODEL_USED: machine.model, LOCAL_ATTEMPTED: true, LOCAL_RESULT: parsed.STATUS === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED", ESCALATED_TO_CLOUD: false, ESCALATION_REASON: null, CLOUD_USAGE: null, CLOUD_COST: null };
-if (parsed.STATUS === "PASS" && evidenceErrors.length > 0) {
-  finalValue = {
-    ...resultBase("BLOCKED", "Machine evidence rejected an unproven model PASS"),
-    BLOCKERS: evidenceErrors,
-    UNEXPECTED_RESULTS: [JSON.stringify({ machine, executionEvidence, beforeHead, afterHead, changedPrNumbers: changedPrs.map((pr) => pr.number) })]
+  const postModelIntegrity = recoverIdleWorker(workerId);
+  const persistentMutationObserved = !mutationRequired && recoveryObservedPersistentMutation(postModelIntegrity, beforeHead);
+  const roundExecutionEvidence = readObservedExecutionEvidence(harness.journalPath);
+  const roundMachine = parseMachineEnvelope(roundRun.stdout);
+
+  const roundAfterHead = git(["rev-parse", "HEAD"], repoRoot);
+  const roundAfterPrs = openPrSnapshot();
+  const allRoundChangedPrs = roundAfterPrs.filter(
+    (pr) =>
+      !beforeMap.has(Number(pr.number)) ||
+      beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
+  );
+
+  const roundChangedPrs = integrationTarget
+    ? allRoundChangedPrs.filter(
+        (pr) => Number(pr.number) === Number(integrationTarget.prNumber)
+      )
+    : allRoundChangedPrs;
+
+  const referencedIntegrationPrChanged = integrationTarget
+    ? roundChangedPrs.some(
+        (pr) =>
+          Number(pr.number) === Number(integrationTarget.prNumber) &&
+          String(pr.headRefOid ?? "") !== String(integrationTarget.headRefOid ?? "")
+      )
+    : false;
+
+  const roundRealMutationObserved = integrationTarget
+    ? referencedIntegrationPrChanged
+    : beforeHead !== roundAfterHead || roundChangedPrs.length > 0;
+
+  const providerOk =
+    String(roundMachine.provider ?? "").toLowerCase() === "ollama";
+  const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(
+    String(roundMachine.model ?? "").toLowerCase()
+  );
+  const fallbackPolicyOk = !mutationRequired && providerOk && localRuntimePolicyProvesNoCloud(env);
+  const fallbackOk = roundMachine.fallbackUsed === false || fallbackPolicyOk;
+
+  let roundParsed;
+
+  try {
+    const envelope = JSON.parse(String(roundRun.stdout ?? ""));
+    const value = extractOrchestrationResult(envelope);
+    roundParsed = {
+      ...resultBase(value.STATUS, String(value.SUMMARY ?? "")),
+      ...value
+    };
+  } catch (error) {
+    roundParsed = {
+      ...resultBase(
+        "BLOCKED",
+        "Local model output could not be parsed as OrchestrationResultContractV1"
+      ),
+      BLOCKERS: [
+        "NO_VALID_ORCHESTRATION_RESULT",
+        error?.message ?? String(error)
+      ]
+    };
+  }
+
+  const roundEvidenceErrors = [];
+
+  if (roundRun.error?.code === "ETIMEDOUT") {
+    roundEvidenceErrors.push("OPENCLAW_PROCESS_TIMEOUT");
+  } else if (roundRun.status !== 0) {
+    roundEvidenceErrors.push(`OPENCLAW_PROCESS_FAILED:${roundRun.status}`);
+  }
+
+  if (!postModelIntegrity.after?.healthy) {
+    roundEvidenceErrors.push(
+      `POST_MODEL_WORKTREE_INTEGRITY_FAILED:${
+        postModelIntegrity.after?.errors?.join(",") ??
+        postModelIntegrity.before?.errors?.join(",") ??
+        "UNKNOWN"
+      }`
+    );
+  }
+  if (persistentMutationObserved) {
+    roundEvidenceErrors.push("HOST_VERIFY_QA_PERSISTENT_MUTATION");
+  }
+
+  if (!providerOk) {
+    roundEvidenceErrors.push(`PROVIDER_MISMATCH:${roundMachine.provider}`);
+  }
+  if (!modelOk) {
+    roundEvidenceErrors.push(`MODEL_MISMATCH:${roundMachine.model}`);
+  }
+  if (!fallbackOk) {
+    roundEvidenceErrors.push(
+      `FALLBACK_NOT_PROVEN_FALSE:${roundMachine.fallbackUsed}`
+    );
+  }
+  if (mutationRequired && !roundExecutionEvidence.repoPreflightObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
+  }
+  if (mutationRequired && testRequired && !roundExecutionEvidence.testExecutionObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_TEST_BUILD_TYPECHECK");
+  }
+  if (mutationRequired && !roundExecutionEvidence.gitDiffObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF");
+  }
+  if (mutationRequired && diffCheckRequired && !roundExecutionEvidence.gitDiffCheckObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
+  }
+  if (mutationRequired && !roundExecutionEvidence.gitMutationCommandObserved) {
+    roundEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
+  }
+  if (mutationRequired && !roundRealMutationObserved) {
+    roundEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
+  }
+
+  let roundFinalValue = {
+    ...roundParsed,
+    ROUTING_TIER: "LOCAL_FIRST",
+    MODEL_USED: roundMachine.model,
+    LOCAL_ATTEMPTED: true,
+    LOCAL_RESULT:
+      roundParsed.STATUS === "PASS" ? "SUCCESS" : "EVIDENCE_REJECTED",
+    ESCALATED_TO_CLOUD: false,
+    ESCALATION_REASON: null,
+    CLOUD_USAGE: null,
+    CLOUD_COST: null
+  };
+
+  if (roundParsed.STATUS === "PASS" && roundEvidenceErrors.length > 0) {
+    roundFinalValue = {
+      ...resultBase(
+        "BLOCKED",
+        "Machine evidence rejected an unproven model PASS"
+      ),
+      BLOCKERS: roundEvidenceErrors,
+      UNEXPECTED_RESULTS: [
+        JSON.stringify({
+          machine: roundMachine,
+          executionEvidence: roundExecutionEvidence,
+          beforeHead,
+          afterHead: roundAfterHead,
+          changedPrNumbers: roundChangedPrs.map((pr) => pr.number)
+        })
+      ]
+    };
+  } else if (roundParsed.STATUS !== "PASS" && roundEvidenceErrors.length > 0) {
+    roundFinalValue.BLOCKERS = [
+      ...new Set([
+        ...(roundFinalValue.BLOCKERS ?? []),
+        ...roundEvidenceErrors
+      ])
+    ];
+  }
+
+  return {
+    run: roundRun,
+    invocation: roundInvocation,
+    machine: roundMachine,
+    executionEvidence: roundExecutionEvidence,
+    realMutationObserved: roundRealMutationObserved,
+    persistentMutationObserved,
+    changedPrs: roundChangedPrs,
+    finalValue: roundFinalValue
   };
 }
-if (parsed.STATUS !== "PASS" && evidenceErrors.length > 0) {
-  finalValue.BLOCKERS = [...new Set([...(finalValue.BLOCKERS ?? []), ...evidenceErrors])];
+
+let localRound = 1;
+let localResult = await executeLocalRound(mutationRequired ? prompt : qaProviderPrompt, localRound);
+
+let run = localResult.run;
+let finalValue = localResult.finalValue;
+let resultMachine = localResult.machine;
+let resultExecutionEvidence = localResult.executionEvidence;
+let resultInvocationMode = localResult.invocation.mode;
+let resultRealMutationObserved = localResult.realMutationObserved;
+let resultChangedPrs = localResult.changedPrs;
+let qaPersistentMutationObserved = Boolean(localResult.persistentMutationObserved);
+
+while (
+  mutationRequired && shouldContinueLocalRun({
+    completedRound: localRound,
+    status: finalValue.STATUS,
+    blockers: finalValue.BLOCKERS ?? []
+  })
+) {
+  const nextRound = localRound + 1;
+  const missingEvidence = missingImplementationEvidence(
+    finalValue.BLOCKERS ?? []
+  );
+
+  console.log(JSON.stringify({
+    event: "WORKER_REPAIR_ROUND_START",
+    issue,
+    workerId,
+    round: nextRound,
+    missingEvidence,
+    invocationMode: "AGENT_EXEC_DIRECT"
+  }));
+
+  const continuationPrompt = buildContinuationPrompt(prompt, {
+    nextRound,
+    blockers: finalValue.BLOCKERS ?? []
+  });
+
+  localResult = await executeLocalRound(continuationPrompt, nextRound);
+  localRound = nextRound;
+
+  run = localResult.run;
+  finalValue = localResult.finalValue;
+  resultMachine = localResult.machine;
+  resultExecutionEvidence = localResult.executionEvidence;
+  resultInvocationMode = localResult.invocation.mode;
+  resultRealMutationObserved = localResult.realMutationObserved;
+  resultChangedPrs = localResult.changedPrs;
+  qaPersistentMutationObserved = qaPersistentMutationObserved || Boolean(localResult.persistentMutationObserved);
+
+  if (localRound >= MAX_LOCAL_ROUNDS) break;
 }
 
-let resultMachine = machine;
-let resultExecutionEvidence = executionEvidence;
-let resultInvocationMode = invocation.mode;
-let resultRealMutationObserved = realMutationObserved;
-let resultChangedPrs = changedPrs;
+if (!mutationRequired) {
+  // A second evidence read activates deterministic host verification. For QA,
+  // that host proof is authoritative; the model is only a local provider probe.
+  const authoritativeEvidence = readObservedExecutionEvidence(harness.journalPath);
+  const hostVerification = authoritativeEvidence.hostVerification;
+  const providerOk = String(resultMachine.provider ?? "").toLowerCase() === "ollama";
+  const modelOk = ["qwen3.5:9b", ORCHESTRATION_V3.model.id].includes(
+    String(resultMachine.model ?? "").toLowerCase()
+  );
+  const runtimeNoCloud = providerOk && localRuntimePolicyProvesNoCloud(env);
+  const fallbackProvenFalse = resultMachine.fallbackUsed === false || runtimeNoCloud;
+  const currentHead = git(["rev-parse", "HEAD"], repoRoot);
+  qaPersistentMutationObserved = qaPersistentMutationObserved || currentHead !== beforeHead;
+
+  const qaBlockers = [];
+  if (!hostVerification?.verified) qaBlockers.push("HOST_VERIFY_QA_NOT_VERIFIED");
+  if (!providerOk) qaBlockers.push(`PROVIDER_MISMATCH:${resultMachine.provider}`);
+  if (!modelOk) qaBlockers.push(`MODEL_MISMATCH:${resultMachine.model}`);
+  if (!fallbackProvenFalse) qaBlockers.push(`FALLBACK_NOT_PROVEN_FALSE:${resultMachine.fallbackUsed}`);
+  if (qaPersistentMutationObserved) qaBlockers.push("HOST_VERIFY_QA_PERSISTENT_MUTATION");
+
+  resultExecutionEvidence = authoritativeEvidence;
+  resultMachine = {
+    ...resultMachine,
+    fallbackUsed: fallbackProvenFalse ? false : resultMachine.fallbackUsed
+  };
+  resultInvocationMode = "QA_HOST_VERIFICATION_WITH_LOCAL_PROVIDER_PROBE";
+  resultRealMutationObserved = qaPersistentMutationObserved;
+  resultChangedPrs = [];
+
+  if (qaBlockers.length === 0) {
+    finalValue = {
+      ...resultBase("PASS", `Deterministic QA verification passed for PR #${hostVerification.prNumber}`),
+      TESTS: [
+        `focused=${hostVerification.focusedTestsPassed ? "PASS" : "FAIL"}`,
+        `typecheck=${hostVerification.typecheckPassed ? "PASS" : "FAIL"}`,
+        `build=${hostVerification.buildPassed ? "PASS" : "FAIL"}`,
+        `diffCheck=${hostVerification.diffCheckPassed ? "PASS" : "FAIL"}`
+      ].join("; "),
+      PR: hostVerification.prUrl,
+      MODEL_USED: resultMachine.model,
+      LOCAL_RESULT: "SUCCESS",
+      BLOCKERS: []
+    };
+  } else {
+    finalValue = {
+      ...resultBase("BLOCKED", "Evidence-only QA did not satisfy authoritative host/local-safety proof"),
+      MODEL_USED: resultMachine.model,
+      BLOCKERS: qaBlockers,
+      UNEXPECTED_RESULTS: [JSON.stringify({
+        hostVerification,
+        provider: resultMachine.provider,
+        model: resultMachine.model,
+        fallbackUsed: resultMachine.fallbackUsed,
+        runtimeNoCloud,
+        qaPersistentMutationObserved
+      })]
+    };
+  }
+}
 
 /*
  * Product delivery and the background 4/4 Ollama proof are intentionally
@@ -352,9 +838,10 @@ let resultChangedPrs = changedPrs;
  *
  * #337 remains strict Ollama-only acceptance.
  * Every other non-human task may use the approved stronger coding path after
- * one bounded local failure.
+ * one bounded local failure, but only when the central model policy explicitly
+ * permits cloud fallback. The production default is false/$0 autonomous spend.
  */
-if (finalValue.STATUS !== "PASS" && issue !== 337) {
+if (mutationRequired && finalValue.STATUS !== "PASS" && issue !== 337 && ORCHESTRATION_V3.model.cloudFallbackAllowed) {
   const localFailureReason =
     (finalValue.BLOCKERS ?? [])[0] ??
     (run.error?.code === "ETIMEDOUT" ? "OPENCLAW_PROCESS_TIMEOUT" : null) ??
@@ -387,7 +874,7 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
     cloudAgent: "main"
   }));
 
-  const cloudRun = spawnSync(
+  const cloudRun = await runBufferedChild(
     openclaw,
     [
       "agent",
@@ -399,27 +886,41 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
     {
       cwd: controlWorkspace,
       env: cloudEnv,
-      encoding: "utf8",
       timeout: 950_000,
-      maxBuffer: 24 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"]
+      maxBuffer: 24 * 1024 * 1024
     }
   );
 
+  const postCloudIntegrity = recoverIdleWorker(workerId);
   const cloudExecutionEvidence =
     readObservedExecutionEvidence(harness.journalPath);
   const cloudMachine = parseMachineEnvelope(cloudRun.stdout);
 
   const cloudAfterHead = git(["rev-parse", "HEAD"], repoRoot);
   const cloudAfterPrs = openPrSnapshot();
-  const cloudChangedPrs = cloudAfterPrs.filter(
+  const allCloudChangedPrs = cloudAfterPrs.filter(
     (pr) =>
       !beforeMap.has(Number(pr.number)) ||
       beforeMap.get(Number(pr.number))?.headRefOid !== pr.headRefOid
   );
 
-  const cloudRealMutationObserved =
-    beforeHead !== cloudAfterHead || cloudChangedPrs.length > 0;
+  const cloudChangedPrs = integrationTarget
+    ? allCloudChangedPrs.filter(
+        (pr) => Number(pr.number) === Number(integrationTarget.prNumber)
+      )
+    : allCloudChangedPrs;
+
+  const referencedIntegrationPrChanged = integrationTarget
+    ? cloudChangedPrs.some(
+        (pr) =>
+          Number(pr.number) === Number(integrationTarget.prNumber) &&
+          String(pr.headRefOid ?? "") !== String(integrationTarget.headRefOid ?? "")
+      )
+    : false;
+
+  const cloudRealMutationObserved = integrationTarget
+    ? referencedIntegrationPrChanged
+    : beforeHead !== cloudAfterHead || cloudChangedPrs.length > 0;
 
   let cloudParsed;
   try {
@@ -446,6 +947,9 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
   } else if (cloudRun.status !== 0) {
     cloudEvidenceErrors.push(`CLOUD_OPENCLAW_PROCESS_FAILED:${cloudRun.status}`);
   }
+  if (!postCloudIntegrity.after?.healthy) {
+    cloudEvidenceErrors.push(`POST_CLOUD_WORKTREE_INTEGRITY_FAILED:${postCloudIntegrity.after?.errors?.join(",") ?? postCloudIntegrity.before?.errors?.join(",") ?? "UNKNOWN"}`);
+  }
 
   if (!cloudExecutionEvidence.repoPreflightObserved) {
     cloudEvidenceErrors.push("MISSING_OBSERVED_REPO_PREFLIGHT");
@@ -459,10 +963,10 @@ if (finalValue.STATUS !== "PASS" && issue !== 337) {
   if (diffCheckRequired && !cloudExecutionEvidence.gitDiffCheckObserved) {
     cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_DIFF_CHECK");
   }
-  if (!cloudExecutionEvidence.gitMutationCommandObserved) {
+  if (mutationRequired && !cloudExecutionEvidence.gitMutationCommandObserved) {
     cloudEvidenceErrors.push("MISSING_OBSERVED_GIT_MUTATION_COMMAND");
   }
-  if (!cloudRealMutationObserved) {
+  if (mutationRequired && !cloudRealMutationObserved) {
     cloudEvidenceErrors.push("NO_REAL_GIT_OR_PR_STATE_MUTATION");
   }
 
