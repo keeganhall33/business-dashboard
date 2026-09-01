@@ -68,6 +68,19 @@ export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) 
 export function productionAgentConfig() {
   return Object.freeze({
     memory: { search: { enabled: false } },
+    agents: {
+      defaults: {
+        models: {
+          [DEFAULT_MODEL]: {
+            params: {
+              extra_body: {
+                tool_choice: 'required',
+              },
+            },
+          },
+        },
+      },
+    },
     tools: {
       profile: 'coding',
       deny: ['write', 'edit'],
