@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 
 const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED','TEST_RESULT','BUILD_RESULT','TYPECHECK_RESULT','MODEL_RESULT','PR_MUTATION']);
 const OUTPUT_TAIL_LIMIT = 16_384;
+const TERMINATION_REAP_GRACE_MS = 2000;
 
 export function signalGroup(pgid, signal, killImpl = process.kill) {
   if (!Number.isInteger(pgid) || pgid <= 0) return false;
@@ -43,6 +44,9 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     let lastSemanticAt = startedAt;
     let lastObserverAt = startedAt;
     let settled = false;
+    let terminationResult = null;
+    let killTimer = null;
+    let reapTimer = null;
     let stdoutBuffer = '';
     let stdoutTail = '';
     let stderrTail = '';
@@ -68,7 +72,20 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       if (settled) return;
       settled = true;
       clearInterval(timer);
+      if (killTimer) clearTimeout(killTimer);
+      if (reapTimer) clearTimeout(reapTimer);
       resolve({ ...result, stdoutTail, stderrTail, childPid: child.pid, processGroupId: pgid, startedAt, endedAt: now() });
+    };
+
+    const requestTermination = (result) => {
+      if (settled || terminationResult) return;
+      terminationResult = result;
+      clearInterval(timer);
+      signalGroup(pgid, 'SIGTERM');
+      killTimer = setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250);
+      killTimer.unref?.();
+      reapTimer = setTimeout(() => finish(result), TERMINATION_REAP_GRACE_MS);
+      reapTimer.unref?.();
     };
 
     child.stdout?.on('data', (chunk) => {
@@ -93,10 +110,16 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       if (settled) return;
       settled = true;
       clearInterval(timer);
+      if (killTimer) clearTimeout(killTimer);
+      if (reapTimer) clearTimeout(reapTimer);
       reject(error);
     });
     child.on('exit', (code, signal) => {
       sampleSemantic(new Date(now()).toISOString());
+      if (terminationResult) {
+        finish({ ...terminationResult, code, observedSignal: signal });
+        return;
+      }
       finish({ status: code === 0 ? 'COMPLETE' : 'FAILED', code, signal, reason: code === 0 ? null : `EXIT_${code ?? signal}` });
     });
 
@@ -109,15 +132,11 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
         sampleSemantic(new Date(current).toISOString());
       }
       if (elapsed >= timeoutMs) {
-        signalGroup(pgid, 'SIGTERM');
-        setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250).unref?.();
-        finish({ status: 'TIMED_OUT', code: null, signal: 'SIGTERM', reason: 'HARD_DEADLINE' });
+        requestTermination({ status: 'TIMED_OUT', code: null, signal: 'SIGTERM', reason: 'HARD_DEADLINE' });
         return;
       }
       if (current - lastSemanticAt >= stallMs) {
-        signalGroup(pgid, 'SIGTERM');
-        setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250).unref?.();
-        finish({ status: 'BLOCKED', code: null, signal: 'SIGTERM', reason: 'SEMANTIC_PROGRESS_STALL' });
+        requestTermination({ status: 'BLOCKED', code: null, signal: 'SIGTERM', reason: 'SEMANTIC_PROGRESS_STALL' });
       }
     }, Math.min(250, Math.max(25, Math.floor(stallMs / 4))));
     timer.unref?.();
