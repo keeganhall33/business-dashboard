@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const MODEL = 'ollama/qwen3.5:9b';
+const DEFAULT_MODEL = 'ollama/qwen2.5-coder:14b';
 
 function hasFlag(helpText, flag) {
   const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -32,22 +32,27 @@ export function probeAgentCapabilities(openclaw = '/opt/homebrew/bin/openclaw', 
   return parseAgentCapabilities(`${result.stdout ?? ''}\n${result.stderr ?? ''}`);
 }
 
-export function buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds = 900, openclaw = '/opt/homebrew/bin/openclaw' }) {
+export function resolveAgentModel(env = process.env) {
+  return String(env.V4_AGENT_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+}
+
+export function buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds = 900, openclaw = '/opt/homebrew/bin/openclaw', model = resolveAgentModel() }) {
   if (!capabilities?.execSubcommand) throw new Error('V4_AGENT_EXEC_SUBCOMMAND_REQUIRED');
   if (!capabilities?.stateDir || !capabilities?.model || !capabilities?.config) throw new Error('V4_AGENT_REQUIRED_FLAGS_MISSING');
   if (!workspacePath || !path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_WORKSPACE_REQUIRED');
   if (!configPath || !path.isAbsolute(configPath)) throw new Error('V4_AGENT_CONFIG_REQUIRED');
   if (!stateDir || !path.isAbsolute(stateDir)) throw new Error('V4_AGENT_STATE_DIR_REQUIRED');
   if (!prompt) throw new Error('V4_AGENT_PROMPT_REQUIRED');
+  if (!model) throw new Error('V4_AGENT_MODEL_REQUIRED');
 
   const args = ['agent', 'exec', String(prompt), '--config', configPath];
-  args.push('--state-dir', stateDir, '--model', MODEL);
+  args.push('--state-dir', stateDir, '--model', model);
   if (capabilities.codeMode) args.push('--code-mode', 'direct');
   if (capabilities.localModelLean) args.push('--local-model-lean');
   if (capabilities.cwd) args.push('--cwd', workspacePath);
   if (capabilities.json) args.push('--json');
   if (capabilities.timeout) args.push('--timeout', String(timeoutSeconds));
-  return Object.freeze({ command: openclaw, args, model: MODEL });
+  return Object.freeze({ command: openclaw, args, model });
 }
 
 export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) {
@@ -85,4 +90,4 @@ export function cleanupEphemeralAgentState(state) {
   if (state?.stateDir) fs.rmSync(state.stateDir, { recursive: true, force: true });
 }
 
-export { MODEL as V4_AGENT_MODEL };
+export { DEFAULT_MODEL as V4_AGENT_MODEL };
