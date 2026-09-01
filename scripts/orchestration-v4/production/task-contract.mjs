@@ -21,7 +21,7 @@ export function validateTaskContract(issue) {
   if (!fields.task_mutability) errors.push('TASK_MUTABILITY_REQUIRED');
   else if (!ALLOWED_TASK_MUTABILITY.has(fields.task_mutability)) errors.push('TASK_MUTABILITY_INVALID');
   if (!fields.file_ownership || fields.file_ownership.trim() === '') errors.push('FILE_OWNERSHIP_REQUIRED');
-  if (fields.stream === 'INTEGRATION_RELEASE' && !/pr|pull request/i.test(String(issue?.body ?? ''))) errors.push('INTEGRATION_REFERENCED_PR_REQUIRED');
+  if (fields.stream === 'INTEGRATION_RELEASE' && !/(?:PR|pull request)\s*:?\s*#?\s*\d+/i.test(String(issue?.body ?? ''))) errors.push('INTEGRATION_REFERENCED_PR_REQUIRED');
   return {
     ok: errors.length === 0,
     errors,
