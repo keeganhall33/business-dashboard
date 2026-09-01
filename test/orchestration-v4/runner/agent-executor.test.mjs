@@ -7,7 +7,7 @@ import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentSta
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter defaults to coding-tuned local Ollama model and task-scoped config in forced code mode', () => {
+test('adapter defaults to tool-capable local Ollama model and task-scoped config in forced code mode', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -18,8 +18,8 @@ test('adapter defaults to coding-tuned local Ollama model and task-scoped config
     timeoutSeconds: 90,
     openclaw: '/opt/homebrew/bin/openclaw',
   });
-  assert.equal(invocation.model, 'ollama/qwen2.5-coder:14b');
-  assert.equal(V4_AGENT_MODEL, 'ollama/qwen2.5-coder:14b');
+  assert.equal(invocation.model, 'ollama/qwen3.5:9b');
+  assert.equal(V4_AGENT_MODEL, 'ollama/qwen3.5:9b');
   assert.equal(invocation.args.includes('--isolated'), false);
   const configIndex = invocation.args.indexOf('--config');
   assert.notEqual(configIndex, -1);
@@ -55,23 +55,20 @@ test('production config pins the native Ollama API and never the OpenAI-compatib
   assert.equal(config.models.providers.ollama.api, 'ollama');
   assert.equal(config.models.providers.ollama.apiKey, 'OLLAMA_API_KEY');
   assert.equal(config.models.providers.ollama.baseUrl.includes('/v1'), false);
-  assert.equal(config.models.providers.ollama.models[0].id, 'qwen2.5-coder:14b');
+  assert.equal(config.models.providers.ollama.models[0].id, 'qwen3.5:9b');
 });
 
 test('production config forces structured tool calls for the dedicated V4 Ollama model', () => {
   const config = productionAgentConfig();
-  assert.equal(config.agents.defaults.models['ollama/qwen2.5-coder:14b'].params.extra_body.tool_choice, 'required');
+  assert.equal(config.agents.defaults.models['ollama/qwen3.5:9b'].params.extra_body.tool_choice, 'required');
 });
 
-test('production config disables semantic memory and native write/edit while preserving cwd-bound mutation tools', () => {
+test('production config preserves isolated-worktree mutation tools for the tool-capable model', () => {
   const config = productionAgentConfig();
   assert.deepEqual(config.memory, { search: { enabled: false } });
   assert.equal(config.tools.profile, 'coding');
-  assert.deepEqual(config.tools.deny, ['write', 'edit']);
+  assert.equal(Object.hasOwn(config.tools, 'deny'), false);
   assert.deepEqual(config.tools.exec.applyPatch, { enabled: true, workspaceOnly: true });
-  assert.equal(config.tools.deny.includes('exec'), false);
-  assert.equal(config.tools.deny.includes('apply_patch'), false);
-  assert.equal(config.tools.deny.includes('read'), false);
 });
 
 test('task-scoped config writes the production tool policy', () => {
