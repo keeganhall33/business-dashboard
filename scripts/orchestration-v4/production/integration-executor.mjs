@@ -1,4 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { prepareIntegrationWorkspace, reconcileAgainstCanonicalMain, assertPushTarget, cleanupIntegrationWorkspace } from '../integration/reconciler.mjs';
 import { classifyProgress } from '../progress.mjs';
 import { runBoundedProcess } from '../runner/bounded-process.mjs';
@@ -45,8 +47,55 @@ function ensureIdentity(cwd) {
   if (!gitMaybe(cwd, 'config', '--get', 'user.email')) git(cwd, 'config', 'user.email', 'jeeves-v4@local.invalid');
 }
 
+function unresolvedPaths(workspacePath) {
+  return gitMaybe(workspacePath, 'diff', '--name-only', '--diff-filter=U').split(/\r?\n/).filter(Boolean);
+}
+
+function parseResolutionProposal(stdoutTail) {
+  const lines = String(stdoutTail || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const line = [...lines].reverse().find((candidate) => candidate.startsWith('V4_RESOLUTION '));
+  if (!line) throw new Error('V4_INTEGRATION_RESOLUTION_PROPOSAL_MISSING');
+  let parsed;
+  try { parsed = JSON.parse(line.slice('V4_RESOLUTION '.length)); }
+  catch { throw new Error('V4_INTEGRATION_RESOLUTION_PROPOSAL_INVALID_JSON'); }
+  if (!Array.isArray(parsed?.files)) throw new Error('V4_INTEGRATION_RESOLUTION_PROPOSAL_FILES_REQUIRED');
+  return parsed.files;
+}
+
+function applyResolutionProposal({ workspacePath, contract, resolverResult }) {
+  const unresolved = unresolvedPaths(workspacePath);
+  if (!unresolved.length) return false;
+  const owned = new Set(String(contract?.fileOwnership || '').split(',').map((value) => value.trim()).filter(Boolean));
+  for (const relativePath of unresolved) {
+    if (!owned.has(relativePath)) throw new Error(`V4_INTEGRATION_CONFLICT_OUTSIDE_OWNERSHIP:${relativePath}`);
+  }
+
+  const files = parseResolutionProposal(resolverResult?.stdoutTail);
+  const proposals = new Map();
+  for (const item of files) {
+    const relativePath = String(item?.path || '').trim();
+    if (!relativePath || typeof item?.content !== 'string') throw new Error('V4_INTEGRATION_RESOLUTION_PROPOSAL_ENTRY_INVALID');
+    if (proposals.has(relativePath)) throw new Error(`V4_INTEGRATION_RESOLUTION_PROPOSAL_DUPLICATE:${relativePath}`);
+    if (!unresolved.includes(relativePath)) throw new Error(`V4_INTEGRATION_RESOLUTION_PROPOSAL_PATH_NOT_CONFLICTED:${relativePath}`);
+    if (!owned.has(relativePath)) throw new Error(`V4_INTEGRATION_RESOLUTION_PROPOSAL_PATH_NOT_OWNED:${relativePath}`);
+    if (/^(<<<<<<<|=======|>>>>>>>)/m.test(item.content)) throw new Error(`V4_INTEGRATION_RESOLUTION_PROPOSAL_MARKERS:${relativePath}`);
+    proposals.set(relativePath, item.content);
+  }
+  for (const relativePath of unresolved) {
+    if (!proposals.has(relativePath)) throw new Error(`V4_INTEGRATION_RESOLUTION_PROPOSAL_MISSING_FILE:${relativePath}`);
+  }
+
+  for (const relativePath of unresolved) {
+    const absolutePath = path.resolve(workspacePath, relativePath);
+    if (!absolutePath.startsWith(`${workspacePath}${path.sep}`)) throw new Error(`V4_INTEGRATION_RESOLUTION_PATH_ESCAPE:${relativePath}`);
+    fs.writeFileSync(absolutePath, proposals.get(relativePath));
+    git(workspacePath, 'add', '--', relativePath);
+  }
+  return true;
+}
+
 function assertResolvedWorkspace({ workspacePath, canonicalMainSha }) {
-  const unresolved = gitMaybe(workspacePath, 'diff', '--name-only', '--diff-filter=U');
+  const unresolved = unresolvedPaths(workspacePath).join('\n');
   if (unresolved) throw new Error(`V4_INTEGRATION_UNRESOLVED_CONFLICTS:${unresolved.replace(/\n/g, ',')}`);
 
   const worktreeCheck = spawnSync('git', ['-C', workspacePath, 'diff', '--check'], { encoding: 'utf8' });
@@ -154,6 +203,7 @@ export async function runIntegrationTask({
         transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: terminalState, patch: { terminalReason: resolverResult.reason ?? resolverResult.status ?? 'INTEGRATION_RESOLVER_FAILED' }, now: now() });
         return getTask(db, taskId);
       }
+      applyResolutionProposal({ workspacePath: context.workspacePath, contract, resolverResult });
     }
 
     assertPushTarget({ context, remoteRepoFullName: repoFullName, branchName: pr.headBranch });
