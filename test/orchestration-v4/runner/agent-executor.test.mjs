@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, V4_AGENT_MODEL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter pins local Ollama model and task-scoped config in direct tool mode', () => {
+test('adapter defaults to coding-tuned local Ollama model and task-scoped config in direct tool mode', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -18,8 +18,8 @@ test('adapter pins local Ollama model and task-scoped config in direct tool mode
     timeoutSeconds: 90,
     openclaw: '/opt/homebrew/bin/openclaw',
   });
-  assert.equal(invocation.model, 'ollama/qwen3.5:9b');
-  assert.equal(V4_AGENT_MODEL, 'ollama/qwen3.5:9b');
+  assert.equal(invocation.model, 'ollama/qwen2.5-coder:14b');
+  assert.equal(V4_AGENT_MODEL, 'ollama/qwen2.5-coder:14b');
   assert.equal(invocation.args.includes('--isolated'), false);
   const configIndex = invocation.args.indexOf('--config');
   assert.notEqual(configIndex, -1);
@@ -32,6 +32,20 @@ test('adapter pins local Ollama model and task-scoped config in direct tool mode
   const codeModeIndex = invocation.args.indexOf('--code-mode');
   assert.notEqual(codeModeIndex, -1);
   assert.equal(invocation.args[codeModeIndex + 1], 'direct');
+});
+
+test('agent model can be overridden without changing code', () => {
+  assert.equal(resolveAgentModel({ V4_AGENT_MODEL: 'ollama/custom-coder:latest' }), 'ollama/custom-coder:latest');
+  const invocation = buildAgentInvocation({
+    capabilities: parseAgentCapabilities(help),
+    prompt: 'do work',
+    workspacePath: path.resolve('/tmp/v4-workspace'),
+    configPath: path.resolve('/tmp/v4-config.json'),
+    stateDir: path.resolve('/tmp/v4-state'),
+    model: 'ollama/custom-coder:latest',
+  });
+  assert.equal(invocation.model, 'ollama/custom-coder:latest');
+  assert.equal(invocation.args[invocation.args.indexOf('--model') + 1], 'ollama/custom-coder:latest');
 });
 
 test('production config disables semantic memory and native write/edit while preserving cwd-bound mutation tools', () => {
