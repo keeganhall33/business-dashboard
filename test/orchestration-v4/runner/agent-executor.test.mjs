@@ -7,7 +7,7 @@ import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentSta
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter defaults to coding-tuned local Ollama model and task-scoped config in direct tool mode', () => {
+test('adapter defaults to coding-tuned local Ollama model and task-scoped config in forced code mode', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -31,7 +31,7 @@ test('adapter defaults to coding-tuned local Ollama model and task-scoped config
   assert.ok(invocation.args.includes('--local-model-lean'));
   const codeModeIndex = invocation.args.indexOf('--code-mode');
   assert.notEqual(codeModeIndex, -1);
-  assert.equal(invocation.args[codeModeIndex + 1], 'direct');
+  assert.equal(invocation.args[codeModeIndex + 1], 'code');
 });
 
 test('agent model can be overridden without changing code', () => {
