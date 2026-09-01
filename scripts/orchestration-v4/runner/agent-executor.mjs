@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const DEFAULT_MODEL = 'ollama/qwen2.5-coder:14b';
+const DEFAULT_MODEL = 'ollama/qwen3.5:9b';
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 function hasFlag(helpText, flag) {
@@ -77,8 +77,8 @@ export function productionAgentConfig() {
           api: 'ollama',
           models: [
             {
-              id: 'qwen2.5-coder:14b',
-              name: 'qwen2.5-coder:14b',
+              id: 'qwen3.5:9b',
+              name: 'qwen3.5:9b',
               input: ['text'],
               contextTokens: 32768,
             },
@@ -101,7 +101,6 @@ export function productionAgentConfig() {
     },
     tools: {
       profile: 'coding',
-      deny: ['write', 'edit'],
       exec: { applyPatch: { enabled: true, workspaceOnly: true } },
     },
   });
