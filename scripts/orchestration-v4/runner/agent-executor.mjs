@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const DEFAULT_MODEL = 'ollama/qwen2.5-coder:14b';
+const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 function hasFlag(helpText, flag) {
   const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -68,6 +69,23 @@ export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) 
 export function productionAgentConfig() {
   return Object.freeze({
     memory: { search: { enabled: false } },
+    models: {
+      providers: {
+        ollama: {
+          baseUrl: DEFAULT_OLLAMA_BASE_URL,
+          apiKey: 'OLLAMA_API_KEY',
+          api: 'ollama',
+          models: [
+            {
+              id: 'qwen2.5-coder:14b',
+              name: 'qwen2.5-coder:14b',
+              input: ['text'],
+              contextTokens: 32768,
+            },
+          ],
+        },
+      },
+    },
     agents: {
       defaults: {
         models: {
@@ -103,4 +121,4 @@ export function cleanupEphemeralAgentState(state) {
   if (state?.stateDir) fs.rmSync(state.stateDir, { recursive: true, force: true });
 }
 
-export { DEFAULT_MODEL as V4_AGENT_MODEL };
+export { DEFAULT_MODEL as V4_AGENT_MODEL, DEFAULT_OLLAMA_BASE_URL as V4_OLLAMA_BASE_URL };
