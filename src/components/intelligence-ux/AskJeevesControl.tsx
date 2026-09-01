@@ -10,13 +10,13 @@ export function AskJeevesControl({ control, compact = false }: { control: AskJee
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Ask Jeeves</div>
           {!compact && <div className="mt-1 text-sm text-stone-700">{control.placeholder}</div>}
         </div>
-        <button type="button" aria-pressed={control.voice_state === "LISTENING_MOCK"} className="h-10 w-10 rounded-full border border-stone-300 bg-stone-950 text-sm font-semibold text-white shadow-sm" title={voiceLabel}>
+        <button type="button" aria-pressed={control.voice_state === "LISTENING_MOCK"} className="h-10 w-10 rounded-full border border-stone-300 bg-white text-sm font-semibold text-stone-900 shadow-sm" title={voiceLabel}>
           Mic
         </button>
       </div>
       <div className="mt-3 flex gap-2">
         <input aria-label={control.placeholder} className="min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-950 outline-none" defaultValue={control.transcript} placeholder={control.placeholder} readOnly />
-        <button type="button" className="rounded-xl bg-stone-950 px-3 py-2 text-sm font-semibold text-white">Ask</button>
+        <button type="button" className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-900 shadow-sm">Ask</button>
       </div>
       <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Voice and text share the same canonical pipeline. Ambiguous statements are not written to memory without classification.</div>
       {!compact && (

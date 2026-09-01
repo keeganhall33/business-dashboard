@@ -23,6 +23,13 @@ test("home summary card links to recommendation detail and Decision Room", () =>
   assert.match(html, /Summary moves to explanation, evidence, specialist analysis/);
 });
 
+test("responsive shell uses visual scan blocks instead of dense text lists", () => {
+  assert.match(html, /Change scan/);
+  assert.match(html, /Step/);
+  assert.match(html, /grid-cols-\[auto_minmax\(0,1fr\)\]/);
+  assert.match(html, /h-full w-2 rounded-full bg-stone-300/);
+});
+
 test("persistent global and contextual Ask Jeeves controls share canonical classifications", () => {
   assert.match(html, /Global Ask Jeeves/);
   assert.match(html, /Contextual Ask Jeeves/);
@@ -50,4 +57,10 @@ test("mobile and desktop layout semantics are intentionally different", () => {
   assert.match(html, /Mobile behavior/);
   assert.match(html, /Desktop behavior/);
   assert.notEqual(INTELLIGENCE_UX_SHELL_FIXTURE_V1.responsive_behavior.mobile.join(" "), INTELLIGENCE_UX_SHELL_FIXTURE_V1.responsive_behavior.desktop.join(" "));
+});
+
+test("shared executive shell controls remain light-mode-only", () => {
+  assert.doesNotMatch(html, /bg-stone-950|text-white|dark:|bg-zinc-950|bg-slate-950/);
+  assert.match(html, /border border-stone-300 bg-white/);
+  assert.match(html, /bg-emerald-50/);
 });

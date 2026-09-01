@@ -5,7 +5,7 @@ import React from "react";
 import { renderToString } from "react-dom/server";
 
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
-import { approvalTone, confidenceTone, freshnessTone, stateTone } from "@/components/executive-home/IntelligencePrimitives";
+import { approvalTone, confidenceEmphasis, confidenceTone, freshnessTone, priorityEmphasis, stateTone } from "@/components/executive-home/IntelligencePrimitives";
 import { EXECUTIVE_HOME_FIXTURE_V1, cardsBySection } from "@/lib/executive-home/fixtures";
 
 const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
@@ -41,6 +41,18 @@ test("cards expose WHY EVIDENCE NEXT ACTION through progressive disclosure", () 
   assert.match(html, /Next action:/);
 });
 
+test("Executive Home uses visual scan primitives without hiding evidence details", () => {
+  assert.match(html, /Executive Home visual scan/);
+  assert.match(html, /Do now/);
+  assert.match(html, /Evidence watch/);
+  assert.match(html, /UNKNOWN \/ STALE \/ CONFLICTED/);
+  assert.match(html, /Priority/);
+  assert.match(html, /Evidence state/);
+  assert.match(html, /Confidence/);
+  assert.match(html, /Urgency/);
+  assert.match(html, /1 signals/);
+});
+
 test("light-first primitives preserve semantic state distinction", () => {
   assert.equal(stateTone("FACT"), "emerald");
   assert.equal(stateTone("HYPOTHESIS"), "sky");
@@ -50,6 +62,10 @@ test("light-first primitives preserve semantic state distinction", () => {
   assert.equal(confidenceTone("UNKNOWN"), "amber");
   assert.equal(freshnessTone("STALE"), "amber");
   assert.equal(approvalTone("KEEGAN_ACTION_REQUIRED"), "rose");
+  assert.equal(confidenceEmphasis("HIGH"), "high");
+  assert.equal(confidenceEmphasis("UNKNOWN"), "low");
+  assert.equal(priorityEmphasis("DO_NOW"), "high");
+  assert.equal(priorityEmphasis("MONITOR"), "low");
 });
 
 test("fixture preserves explicit UNKNOWN and non-required Keegan action state", () => {

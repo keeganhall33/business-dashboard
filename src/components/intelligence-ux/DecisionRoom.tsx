@@ -232,7 +232,7 @@ export function DecisionRoom({ decision }: { decision: DecisionRoomDashboardMode
             <article className="rounded-2xl border border-stone-200 bg-white p-4"><h3 className="text-sm font-semibold text-stone-950">Opportunity cost</h3><p className="mt-2 text-sm leading-6 text-stone-700">{viewModel.opportunity_cost_note}</p></article>
             {viewModel.challenge.active ? <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4"><h3 className="text-sm font-semibold text-rose-950">Red-team challenge</h3><p className="mt-2 text-sm leading-6 text-rose-900">{viewModel.challenge.red_team_summary}</p><p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Recommendation overwritten: {String(viewModel.challenge.recommendation_overwritten)}</p></article> : null}
           </div>
-          <div className="mt-5 rounded-2xl bg-stone-950 p-4 text-white"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-300">Next high-leverage move</div><p className="mt-2 text-sm leading-6">{viewModel.next_action}</p></div>
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next high-leverage move</div><p className="mt-2 text-sm leading-6">{viewModel.next_action}</p></div>
           {viewModel.conversation_revision ? (
             <div className="mt-5 space-y-4">
               <DecisionConversationPanel viewModel={viewModel.conversation_revision.conversation} />

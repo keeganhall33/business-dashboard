@@ -8,6 +8,7 @@ import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { ExecutiveCommandCenter } from "./ExecutiveCommandCenter";
 import { ExecutiveIntelligenceCard } from "./ExecutiveIntelligenceCard";
+import { LightBadge, VisualSignalPill, priorityTone, stateTone } from "./IntelligencePrimitives";
 
 const sections: Array<{ id: ExecutiveIntelligenceCardV1["section"]; label: string; description: string }> = [
   { id: "WHAT_MATTERS_NOW", label: "What matters now", description: "The smallest set of high-value changes and decisions." },
@@ -29,6 +30,9 @@ export function ExecutiveHomeShell({
 }) {
   const [activeDecisionRoomId, setActiveDecisionRoomId] = useState<string | null>(null);
   const isDecisionRoomOpen = activeDecisionRoomId === decisionRoom.decision_id;
+  const doNowCount = data.cards.filter((card) => card.priority === "DO_NOW").length;
+  const uncertainCount = data.cards.filter((card) => card.state === "UNKNOWN" || card.state === "STALE" || card.state === "CONFLICTED").length;
+  const approvalCount = data.cards.filter((card) => card.approval_state === "KEEGAN_ACTION_REQUIRED").length;
 
   return (
     <main className="min-h-screen bg-[#f8f4ec] text-stone-950">
@@ -42,6 +46,11 @@ export function ExecutiveHomeShell({
             <StatePlaceholder label="Loading" value={data.loading_state} />
             <StatePlaceholder label="Empty" value={data.empty_state} />
             <StatePlaceholder label="Error" value={data.error_state} />
+          </div>
+          <div aria-label="Executive Home visual scan" className="mt-5 grid gap-3 md:grid-cols-3">
+            <VisualSignalPill label="Do now" value={`${doNowCount} active`} tone={priorityTone("DO_NOW")} />
+            <VisualSignalPill label="Evidence watch" value={`${uncertainCount} UNKNOWN / STALE / CONFLICTED`} tone={uncertainCount > 0 ? "amber" : "emerald"} />
+            <VisualSignalPill label="Keegan action" value={approvalCount === 0 ? "NONE" : `${approvalCount} required`} tone={approvalCount === 0 ? "stone" : "rose"} />
           </div>
         </header>
 
@@ -76,9 +85,15 @@ export function ExecutiveHomeShell({
             const cards = data.cards.filter((card) => card.section === section.id);
             return (
               <section key={section.id} id={section.id}>
-                <div className="mb-3 max-w-3xl">
-                  <h2 className="text-xl font-semibold tracking-normal text-stone-950">{section.label}</h2>
-                  <p className="mt-1 text-sm leading-6 text-stone-600">{section.description}</p>
+                <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div className="max-w-3xl">
+                    <h2 className="text-xl font-semibold tracking-normal text-stone-950">{section.label}</h2>
+                    <p className="mt-1 text-sm leading-6 text-stone-600">{section.description}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <LightBadge label={`${cards.length} signals`} tone="stone" />
+                    {cards[0] ? <LightBadge label={cards[0].state} tone={stateTone(cards[0].state)} /> : null}
+                  </div>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
                   {cards.map((card) => (
