@@ -37,6 +37,31 @@ export function promptForTask(task) {
   ].join('\n');
 }
 
+export function promptForIntegrationConflict(task) {
+  const contract = getTaskContract(task);
+  if (!contract?.title || !contract?.body || !contract?.fileOwnership) {
+    throw new Error(`V4_INTEGRATION_CONTRACT_INCOMPLETE:${task.task_id}`);
+  }
+  return [
+    `You are resolving a real Git merge conflict for Orchestration V4 integration task ${task.task_id}.`,
+    `Issue: #${task.issue_number}`,
+    `Title: ${contract.title}`,
+    `File ownership: ${contract.fileOwnership}`,
+    '',
+    'Authoritative integration request:',
+    contract.body,
+    '',
+    'The disposable workspace is already in the middle of merging current canonical main into the referenced PR head.',
+    'Begin with pwd, git status --short, git diff --name-only --diff-filter=U, and inspect every conflict marker.',
+    'Resolve conflicts semantically: preserve the PR intent while retaining newer compatible functionality from main.',
+    'Do not abort the merge. Do not create another PR. Do not switch branches. Do not commit and do not push.',
+    'Stage every resolved conflict with git add.',
+    'Run targeted tests/typecheck/build checks that are practical for the touched area and run git diff --check plus git diff --cached --check.',
+    'Finish only when git diff --name-only --diff-filter=U prints nothing and there are no conflict markers left.',
+    'The V4 integration executor will perform the authoritative merge commit and push after your resolution validates.',
+  ].join('\n');
+}
+
 export async function runProductionPoll({
   db,
   repoRoot,
@@ -91,8 +116,23 @@ export async function runProductionPoll({
 
     const integrationSettled = [];
     for (const task of integrationReady) {
+      const state = createEphemeralAgentState({ taskId: `${task.task_id}-integration-resolver` });
+      ephemeral.push(state);
+      const resolverPrompt = promptForIntegrationConflict(task);
       try {
-        const result = runIntegrationTask({ db, repoRoot, repoFullName, workspaceRoot, taskId: task.task_id, canonicalMainSha: baseSha, gh, timeoutMs });
+        const result = await runIntegrationTask({
+          db,
+          repoRoot,
+          repoFullName,
+          workspaceRoot,
+          taskId: task.task_id,
+          canonicalMainSha: baseSha,
+          resolverCommand: process.execPath,
+          resolverArgs: [ENTRYPOINT, resolverPrompt, state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
+          gh,
+          timeoutMs,
+          stallMs,
+        });
         integrationSettled.push({ status: 'fulfilled', value: result });
       } catch (error) {
         integrationSettled.push({ status: 'rejected', reason: String(error?.message || error) });
