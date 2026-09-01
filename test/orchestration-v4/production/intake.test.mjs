@@ -45,16 +45,18 @@ test('production worker prompt contains persisted title body ownership and mutab
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('malformed, human-gated, and non-watcher-visible tasks fail closed', () => {
+test('malformed, human-gated, ambiguous-mutability, and non-watcher-visible tasks fail closed', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-reject-'));
   const db = openV4StateStore(path.join(root, 'state.sqlite'));
   try {
     const human = issue(20, { body: issue(20).body.replace('human_approval_required:** false', 'human_approval_required:** true') });
     const unlabeled = issue(21, { labels: [{ name: 'orch:ready' }] });
     const missingOwnership = issue(22, { body: issue(22).body.replace('**file_ownership:** src/example/**', '') });
-    const result = importReadyIssues({ db, issues: [human, unlabeled, missingOwnership], baseSha: 'c'.repeat(40) });
+    const ambiguousMutability = issue(23, { body: issue(23).body.replace('IMPLEMENTATION_MUTATION_REQUIRED', 'write') });
+    const result = importReadyIssues({ db, issues: [human, unlabeled, missingOwnership, ambiguousMutability], baseSha: 'c'.repeat(40) });
     assert.equal(result.imported.length, 0);
-    assert.equal(result.rejected.length, 3);
+    assert.equal(result.rejected.length, 4);
+    assert.ok(result.rejected.find((entry) => entry.issueNumber === 23)?.errors.includes('TASK_MUTABILITY_INVALID'));
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 

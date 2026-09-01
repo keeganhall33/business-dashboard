@@ -1,4 +1,9 @@
 const FIELD = /^\*\*([a-zA-Z0-9_]+):\*\*\s*(.+?)\s*$/gm;
+const ALLOWED_TASK_MUTABILITY = new Set([
+  'IMPLEMENTATION_MUTATION_REQUIRED',
+  'VALIDATION_EVIDENCE_ONLY',
+  'EVIDENCE_ONLY',
+]);
 
 export function parseTaskContract(body = '') {
   const fields = {};
@@ -14,6 +19,7 @@ export function validateTaskContract(issue) {
   if (!fields.stream) errors.push('STREAM_REQUIRED');
   if (fields.human_approval_required !== 'false') errors.push('HUMAN_APPROVAL_REQUIRED_OR_UNKNOWN');
   if (!fields.task_mutability) errors.push('TASK_MUTABILITY_REQUIRED');
+  else if (!ALLOWED_TASK_MUTABILITY.has(fields.task_mutability)) errors.push('TASK_MUTABILITY_INVALID');
   if (!fields.file_ownership || fields.file_ownership.trim() === '') errors.push('FILE_OWNERSHIP_REQUIRED');
   if (fields.stream === 'INTEGRATION_RELEASE' && !/pr|pull request/i.test(String(issue?.body ?? ''))) errors.push('INTEGRATION_REFERENCED_PR_REQUIRED');
   return {

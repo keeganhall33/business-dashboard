@@ -4,14 +4,13 @@ export const SEMANTIC_PROGRESS_KINDS = Object.freeze(new Set([
   'TEST_RESULT',
   'BUILD_RESULT',
   'TYPECHECK_RESULT',
-  'MODEL_RESULT',
   'PR_MUTATION',
 ]));
 
 export function classifyProgress(event = {}) {
   const kind = String(event.kind ?? '');
   if (SEMANTIC_PROGRESS_KINDS.has(kind)) return 'SEMANTIC';
-  if (kind.startsWith('GIT_READ_') || kind === 'STDOUT' || kind === 'STDERR' || kind === 'TOOL_JOURNAL') return 'TELEMETRY';
+  if (kind.startsWith('GIT_READ_') || kind === 'STDOUT' || kind === 'STDERR' || kind === 'TOOL_JOURNAL' || kind === 'MODEL_RESULT') return 'TELEMETRY';
   return 'UNKNOWN';
 }
 
