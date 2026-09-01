@@ -60,6 +60,16 @@ export function promptForIntegrationConflict(task) {
   ].join('\n');
 }
 
+export async function runConcurrentProductionQueues({ runExecutableQueue, runIntegrationQueue }) {
+  if (typeof runExecutableQueue !== 'function' || typeof runIntegrationQueue !== 'function') {
+    throw new Error('V4_PRODUCTION_QUEUE_RUNNERS_REQUIRED');
+  }
+  const executablePromise = Promise.resolve().then(runExecutableQueue);
+  const integrationPromise = Promise.resolve().then(runIntegrationQueue);
+  const [settled, integrationSettled] = await Promise.all([executablePromise, integrationPromise]);
+  return Object.freeze({ settled, integrationSettled });
+}
+
 export async function runProductionPoll({
   db,
   repoRoot,
@@ -102,39 +112,43 @@ export async function runProductionPoll({
       };
     }
 
-    const settled = await runReadyBatch({
-      db,
-      registry: createSlotRegistry(),
-      repoRoot,
-      workspaceRoot,
-      commandsByTaskId,
-      timeoutMs,
-      stallMs,
-      finalizeSuccess: ({ task, workspace }) => publishImplementationResult({ task, workspace, repoFullName, gh }),
+    const { settled, integrationSettled } = await runConcurrentProductionQueues({
+      runExecutableQueue: () => runReadyBatch({
+        db,
+        registry: createSlotRegistry(),
+        repoRoot,
+        workspaceRoot,
+        commandsByTaskId,
+        timeoutMs,
+        stallMs,
+        finalizeSuccess: ({ task, workspace }) => publishImplementationResult({ task, workspace, repoFullName, gh }),
+      }),
+      runIntegrationQueue: async () => {
+        const results = [];
+        for (const task of integrationReady) {
+          const resolverPrompt = promptForIntegrationConflict(task);
+          try {
+            const result = await runIntegrationTask({
+              db,
+              repoRoot,
+              repoFullName,
+              workspaceRoot,
+              taskId: task.task_id,
+              canonicalMainSha: baseSha,
+              resolverCommand: process.execPath,
+              resolverArgs: [INTEGRATION_PROPOSAL_ENTRYPOINT, resolverPrompt, String(Math.ceil(agentTimeoutMs / 1000)), ollama, 'qwen2.5-coder:14b'],
+              gh,
+              timeoutMs,
+              stallMs,
+            });
+            results.push({ status: 'fulfilled', value: result });
+          } catch (error) {
+            results.push({ status: 'rejected', reason: String(error?.message || error) });
+          }
+        }
+        return results;
+      },
     });
-
-    const integrationSettled = [];
-    for (const task of integrationReady) {
-      const resolverPrompt = promptForIntegrationConflict(task);
-      try {
-        const result = await runIntegrationTask({
-          db,
-          repoRoot,
-          repoFullName,
-          workspaceRoot,
-          taskId: task.task_id,
-          canonicalMainSha: baseSha,
-          resolverCommand: process.execPath,
-          resolverArgs: [INTEGRATION_PROPOSAL_ENTRYPOINT, resolverPrompt, String(Math.ceil(agentTimeoutMs / 1000)), ollama, 'qwen2.5-coder:14b'],
-          gh,
-          timeoutMs,
-          stallMs,
-        });
-        integrationSettled.push({ status: 'fulfilled', value: result });
-      } catch (error) {
-        integrationSettled.push({ status: 'rejected', reason: String(error?.message || error) });
-      }
-    }
 
     const terminal = db.prepare("SELECT * FROM tasks WHERE state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT') ORDER BY updated_at,task_id").all();
     const githubSync = [];
