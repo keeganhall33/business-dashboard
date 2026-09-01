@@ -4,7 +4,7 @@ const ALLOWED_TASK_MUTABILITY = new Set([
   'VALIDATION_EVIDENCE_ONLY',
   'EVIDENCE_ONLY',
 ]);
-const INTEGRATION_PR_REFERENCE = /(?:\bPR\s*#?\s*\d+\b|\bpull request\s*#?\s*\d+\b)/i;
+const INTEGRATION_PR_REFERENCE = /(?:\bPR\b|\bpull request\b)\s*[:=-]?\s*#?\s*\d+\b/i;
 
 export function parseTaskContract(body = '') {
   const fields = {};
