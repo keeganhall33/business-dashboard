@@ -1,7 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { openV4StateStore } from '../state-store/sqlite-store.mjs';
+import { openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
+
+function pidIsLive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return true;
+  }
+}
 
 function lockPidIsLive(lockPath) {
   let raw;
@@ -11,14 +23,7 @@ function lockPidIsLive(lockPath) {
     return true;
   }
   const pid = Number(raw);
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error?.code === 'ESRCH') return false;
-    return true;
-  }
+  return pidIsLive(pid);
 }
 
 function acquireHostLock(lockPath) {
@@ -37,6 +42,36 @@ function acquireHostLock(lockPath) {
   }
 }
 
+export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive = pidIsLive } = {}) {
+  const active = db.prepare("SELECT * FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY updated_at,task_id").all();
+  const recovered = [];
+  for (const task of active) {
+    const pid = Number(task.child_pid);
+    if (Number.isInteger(pid) && pid > 0 && isPidLive(pid)) continue;
+    const reason = 'V4_STALE_PROCESS_AFTER_HOST_RESTART';
+    recordTaskResult(db, {
+      taskId: task.task_id,
+      result: {
+        error: reason,
+        staleState: task.state,
+        staleChildPid: Number.isInteger(pid) && pid > 0 ? pid : null,
+        workspacePreserved: Boolean(task.workspace_path),
+      },
+      now: now(),
+    });
+    transitionTask(db, {
+      taskId: task.task_id,
+      expectedState: task.state,
+      toState: V4_STATES.FAILED,
+      patch: { terminalReason: reason },
+      now: now(),
+    });
+    releaseSlotForTerminalTask(db, task.task_id);
+    recovered.push(task.task_id);
+  }
+  return Object.freeze(recovered);
+}
+
 export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
@@ -45,11 +80,13 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   const lockFd = acquireHostLock(lockPath);
   fs.writeFileSync(lockFd, `${process.pid}\n`);
   const db = openV4StateStore(path.join(stateRoot, 'state.sqlite'));
+  const recoveredStaleTasks = recoverStaleActiveTasks(db);
   let stopped = false;
   const stop = () => { stopped = true; };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   let cycles = 0;
+  let skippedPolls = 0;
   let lastPollError = null;
   const inFlightPolls = new Set();
 
@@ -72,11 +109,14 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   try {
     while (!stopped && cycles < maxCycles) {
       cycles += 1;
-      launchPoll();
+      if (inFlightPolls.size === 0) launchPoll();
+      else skippedPolls += 1;
       fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
         pid: process.pid,
         cycles,
         inFlightPolls: inFlightPolls.size,
+        skippedPolls,
+        recoveredStaleTasks: recoveredStaleTasks.length,
         lastPollError,
         generatedAt: new Date().toISOString(),
       })}\n`);
@@ -88,7 +128,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       if (shutdownDrainMs === 0) drained = false;
       else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
     }
-    return { ok: true, cycles, stopped, lastPollError, drained };
+    return { ok: true, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, drained };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
