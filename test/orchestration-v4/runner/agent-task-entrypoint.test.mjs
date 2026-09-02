@@ -18,6 +18,7 @@ function makeFake(root, exitCode, capturePath = null) {
 test('successful adapter emits trusted MODEL_RESULT event and injects exact absolute workspace mutation guidance', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-entrypoint-'));
   try {
+    const canonicalRoot = fs.realpathSync(root);
     const config = path.join(root, 'config.json');
     const state = path.join(root, 'state');
     const capture = path.join(root, 'args.txt');
@@ -26,7 +27,7 @@ test('successful adapter emits trusted MODEL_RESULT event and injects exact abso
     const output = execFileSync(process.execPath, [entrypoint, 'test prompt', config, state, '5', makeFake(root, 0, capture)], { cwd: root, encoding: 'utf8' });
     assert.match(output, /V4_EVENT \{"kind":"MODEL_RESULT","data":"OPENCLAW_EXIT_0"\}/);
     const args = fs.readFileSync(capture, 'utf8');
-    assert.match(args, new RegExp(`V4_RUNTIME_WORKSPACE_ROOT: ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(args, new RegExp(`V4_RUNTIME_WORKSPACE_ROOT: ${canonicalRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(args, /Use exec for pwd, git status, ls, find, directory inspection/i);
     assert.match(args, /Use read only for a specific file path that you already know exists/i);
     assert.match(args, /Never use read on a directory, on pwd, or as a substitute for ls\/find/i);
