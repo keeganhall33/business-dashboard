@@ -7,7 +7,7 @@ import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentSta
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
-test('adapter defaults to tool-capable local Ollama model and task-scoped config in forced code mode', () => {
+test('adapter defaults to tool-capable local Ollama model and task-scoped config without forcing code mode', () => {
   const capabilities = parseAgentCapabilities(help);
   const invocation = buildAgentInvocation({
     capabilities,
@@ -29,9 +29,7 @@ test('adapter defaults to tool-capable local Ollama model and task-scoped config
   assert.ok(invocation.args.includes('--cwd'));
   assert.ok(invocation.args.includes('/tmp/v4-workspace'));
   assert.ok(invocation.args.includes('--local-model-lean'));
-  const codeModeIndex = invocation.args.indexOf('--code-mode');
-  assert.notEqual(codeModeIndex, -1);
-  assert.equal(invocation.args[codeModeIndex + 1], 'code');
+  assert.equal(invocation.args.includes('--code-mode'), false);
 });
 
 test('agent model can be overridden without changing code', () => {
@@ -63,11 +61,14 @@ test('production config forces structured tool calls for the dedicated V4 Ollama
   assert.equal(config.agents.defaults.models['ollama/qwen3.5:9b'].params.extra_body.tool_choice, 'required');
 });
 
-test('production config preserves isolated-worktree mutation tools for the tool-capable model', () => {
+test('production config exposes direct workspace-scoped coding tools', () => {
   const config = productionAgentConfig();
   assert.deepEqual(config.memory, { search: { enabled: false } });
   assert.equal(config.tools.profile, 'coding');
   assert.equal(Object.hasOwn(config.tools, 'deny'), false);
+  assert.deepEqual(config.tools.codeMode, { enabled: false });
+  assert.deepEqual(config.tools.fs, { workspaceOnly: true });
+  assert.equal(config.tools.exec.mode, 'full');
   assert.deepEqual(config.tools.exec.applyPatch, { enabled: true, workspaceOnly: true });
 });
 
@@ -94,6 +95,17 @@ test('adapter fails closed when pinned config flag is unavailable', () => {
     configPath: path.resolve('/tmp/v4-config.json'),
     stateDir: path.resolve('/tmp/v4-state'),
   }), /V4_AGENT_REQUIRED_FLAGS_MISSING/);
+});
+
+test('adapter does not add code mode even when the installed CLI advertises it', () => {
+  const invocation = buildAgentInvocation({
+    capabilities: parseAgentCapabilities(help),
+    prompt: 'do work',
+    workspacePath: path.resolve('/tmp/v4-workspace'),
+    configPath: path.resolve('/tmp/v4-config.json'),
+    stateDir: path.resolve('/tmp/v4-state'),
+  });
+  assert.equal(invocation.args.includes('--code-mode'), false);
 });
 
 test('adapter remains compatible when code mode flag is unavailable', () => {
