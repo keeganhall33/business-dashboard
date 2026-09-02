@@ -48,7 +48,9 @@ export function buildAgentInvocation({ capabilities, prompt, workspacePath, conf
 
   const args = ['agent', 'exec', String(prompt), '--config', configPath];
   args.push('--state-dir', stateDir, '--model', model);
-  if (capabilities.codeMode) args.push('--code-mode', 'code');
+  // Do not force OpenClaw Code Mode for the local coding worker. In Code Mode,
+  // the model-visible exec tool is a JavaScript/TypeScript guest runtime rather
+  // than the normal shell exec tool, which is a poor fit for bounded repo edits.
   if (capabilities.localModelLean) args.push('--local-model-lean');
   if (capabilities.cwd) args.push('--cwd', workspacePath);
   if (capabilities.json) args.push('--json');
@@ -101,7 +103,12 @@ export function productionAgentConfig() {
     },
     tools: {
       profile: 'coding',
-      exec: { applyPatch: { enabled: true, workspaceOnly: true } },
+      codeMode: { enabled: false },
+      fs: { workspaceOnly: true },
+      exec: {
+        mode: 'full',
+        applyPatch: { enabled: true, workspaceOnly: true },
+      },
     },
   });
 }
