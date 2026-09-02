@@ -27,10 +27,17 @@ test('successful adapter emits trusted MODEL_RESULT event and injects exact abso
     assert.match(output, /V4_EVENT \{"kind":"MODEL_RESULT","data":"OPENCLAW_EXIT_0"\}/);
     const args = fs.readFileSync(capture, 'utf8');
     assert.match(args, new RegExp(`V4_RUNTIME_WORKSPACE_ROOT: ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(args, /Use exec for pwd, git status, ls, find, directory inspection/i);
+    assert.match(args, /Use read only for a specific file path that you already know exists/i);
+    assert.match(args, /Never use read on a directory, on pwd, or as a substitute for ls\/find/i);
+    assert.match(args, /target file does not exist yet, create it with apply_patch or exec/i);
+    assert.match(args, /After any tool failure, inspect the failure and switch strategy/i);
+    assert.match(args, /Do not repeat the same invalid read or path pattern/i);
     assert.match(args, /Native write and edit tools are intentionally disabled/i);
     assert.match(args, /Perform file mutations only with apply_patch or exec/i);
     assert.match(args, /verify pwd equals V4_RUNTIME_WORKSPACE_ROOT/i);
     assert.match(args, /confirm git status shows the intended change/i);
+    assert.match(args, /IMPLEMENTATION_MUTATION_REQUIRED tasks, do not finish successfully until the workspace contains an intended mutation/i);
     assert.match(args, /test prompt/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
