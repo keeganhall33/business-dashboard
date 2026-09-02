@@ -56,9 +56,9 @@ test('production config pins the native Ollama API and never the OpenAI-compatib
   assert.equal(config.models.providers.ollama.models[0].id, 'qwen3.5:9b');
 });
 
-test('production config forces structured tool calls for the dedicated V4 Ollama model', () => {
+test('production config allows the dedicated V4 Ollama model to stop after tool use', () => {
   const config = productionAgentConfig();
-  assert.equal(config.agents.defaults.models['ollama/qwen3.5:9b'].params.extra_body.tool_choice, 'required');
+  assert.equal(config.agents.defaults.models['ollama/qwen3.5:9b'].params.extra_body.tool_choice, 'auto');
 });
 
 test('production config exposes direct workspace-scoped coding tools', () => {
