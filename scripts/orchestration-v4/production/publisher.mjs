@@ -23,12 +23,45 @@ function ensureIdentity(cwd) {
   if (!gitMaybe(cwd, 'config', '--get', 'user.email')) git(cwd, 'config', 'user.email', 'jeeves-v4@local.invalid');
 }
 
+function normalizeOwnedPath(value) {
+  const normalized = path.posix.normalize(String(value || '').trim().replaceAll('\\', '/')).replace(/^\.\//, '');
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) return null;
+  return normalized;
+}
+
 function ownedPaths(fileOwnership = '') {
   return String(fileOwnership)
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => normalizeOwnedPath(value))
     .filter(Boolean)
     .slice(0, 20);
+}
+
+function mutationPaths(workspacePath) {
+  const tracked = gitMaybe(workspacePath, 'diff', '--name-only', '--relative', 'HEAD', '--')
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const untracked = gitMaybe(workspacePath, 'ls-files', '--others', '--exclude-standard')
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([...tracked, ...untracked])].sort();
+}
+
+function pathIsOwned(relativePath, ownership) {
+  const normalized = normalizeOwnedPath(relativePath);
+  if (!normalized) return false;
+  return ownership.some((owned) => normalized === owned || normalized.startsWith(`${owned}/`));
+}
+
+export function classifyImplementationMutations({ workspacePath, fileOwnership = '' }) {
+  const normalizedWorkspace = path.resolve(workspacePath);
+  const ownership = ownedPaths(fileOwnership);
+  const changedPaths = mutationPaths(normalizedWorkspace);
+  const ownedChangedPaths = changedPaths.filter((relativePath) => pathIsOwned(relativePath, ownership));
+  const unownedChangedPaths = changedPaths.filter((relativePath) => !pathIsOwned(relativePath, ownership));
+  return { changedPaths, ownedChangedPaths, unownedChangedPaths, ownership };
 }
 
 function fileSnapshot(workspacePath, relativePath) {
@@ -98,6 +131,7 @@ export function collectZeroMutationDiagnostics({ workspacePath, fileOwnership = 
     gitTopLevel: gitMaybe(normalizedWorkspace, 'rev-parse', '--show-toplevel') || null,
     headSha: gitMaybe(normalizedWorkspace, 'rev-parse', 'HEAD') || null,
     gitStatusPorcelain: gitMaybe(normalizedWorkspace, 'status', '--porcelain'),
+    mutationClassification: classifyImplementationMutations({ workspacePath: normalizedWorkspace, fileOwnership }),
     ownedPaths: ownedPaths(fileOwnership).map((relativePath) => fileSnapshot(normalizedWorkspace, relativePath)),
     recentWorkspaceFiles: recentWorkspaceFiles(normalizedWorkspace),
   };
@@ -110,11 +144,18 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
   }
 
   const cwd = workspace.workspacePath;
-  const status = git(cwd, 'status', '--porcelain');
-  if (!status) {
+  const mutations = classifyImplementationMutations({ workspacePath: cwd, fileOwnership: contract.fileOwnership });
+  if (mutations.changedPaths.length === 0) {
     return {
       ok: false,
       reason: 'V4_IMPLEMENTATION_ZERO_EXIT_NO_MUTATION',
+      diagnostics: collectZeroMutationDiagnostics({ workspacePath: cwd, fileOwnership: contract.fileOwnership }),
+    };
+  }
+  if (mutations.ownedChangedPaths.length === 0) {
+    return {
+      ok: false,
+      reason: 'V4_IMPLEMENTATION_NO_OWNED_MUTATION',
       diagnostics: collectZeroMutationDiagnostics({ workspacePath: cwd, fileOwnership: contract.fileOwnership }),
     };
   }
@@ -122,10 +163,19 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
   ensureIdentity(cwd);
   const branch = taskBranchName(task.issue_number, task.task_id);
   git(cwd, 'switch', '-c', branch);
-  git(cwd, 'add', '-A');
+  git(cwd, 'add', '--', ...mutations.ownedChangedPaths);
   git(cwd, 'commit', '-m', `feat(v4-task): complete #${task.issue_number}`);
   const headSha = git(cwd, 'rev-parse', 'HEAD');
   if (headSha === task.base_sha) return { ok: false, reason: 'V4_IMPLEMENTATION_COMMIT_MISSING' };
+
+  const committedPaths = git(cwd, 'diff', '--name-only', `${task.base_sha}..HEAD`, '--')
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (committedPaths.length === 0 || committedPaths.some((relativePath) => !pathIsOwned(relativePath, mutations.ownership))) {
+    return { ok: false, reason: 'V4_IMPLEMENTATION_COMMIT_OWNERSHIP_VIOLATION', committedPaths, ownership: mutations.ownership };
+  }
+
   git(cwd, 'push', 'origin', `HEAD:refs/heads/${branch}`);
 
   let matches = ghJson(['pr','list','--repo',repoFullName,'--state','open','--head',branch,'--json','number,url,headRefOid'], gh);
@@ -147,5 +197,7 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
     headSha,
     branch,
     created,
+    committedPaths,
+    ignoredUnownedPaths: mutations.unownedChangedPaths,
   };
 }
