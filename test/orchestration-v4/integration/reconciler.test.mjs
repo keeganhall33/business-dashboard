@@ -58,6 +58,57 @@ test('integration workspace starts from exact PR head and ignores persistent loc
   }
 });
 
+test('integration workspace fetches an exact PR head that is missing from the runtime repo', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-int-fetch-'));
+  const remote = path.join(root, 'remote.git');
+  const source = path.join(root, 'source');
+  const repo = path.join(root, 'runtime');
+  fs.mkdirSync(remote);
+  fs.mkdirSync(source);
+  fs.mkdirSync(repo);
+  git(remote, 'init', '--bare');
+  git(source, 'init');
+  git(source, 'config', 'user.email', 'v4@test.invalid');
+  git(source, 'config', 'user.name', 'V4 Test');
+  git(source, 'branch', '-M', 'main');
+  git(source, 'remote', 'add', 'origin', remote);
+  fs.writeFileSync(path.join(source, 'base.txt'), 'base\n');
+  git(source, 'add', '.');
+  git(source, 'commit', '-m', 'base');
+  git(source, 'push', '-u', 'origin', 'main');
+  git(source, 'checkout', '-b', 'pr-branch');
+  fs.writeFileSync(path.join(source, 'pr.txt'), 'pr\n');
+  git(source, 'add', '.');
+  git(source, 'commit', '-m', 'pr head');
+  const headSha = git(source, 'rev-parse', 'HEAD');
+  git(source, 'push', '-u', 'origin', 'pr-branch');
+
+  git(repo, 'init');
+  git(repo, 'remote', 'add', 'origin', remote);
+  git(repo, 'fetch', '--no-tags', 'origin', 'main');
+  git(repo, 'checkout', '--detach', 'FETCH_HEAD');
+  const missingBefore = spawnSync('git', ['-C', repo, 'cat-file', '-e', `${headSha}^{commit}`], { encoding: 'utf8' });
+  assert.notEqual(missingBefore.status, 0);
+
+  const target = {
+    issueNumber: 960,
+    prNumber: 705,
+    headSha,
+    headBranch: 'pr-branch',
+    headRepoFullName: 'keeganhall33/business-dashboard',
+    canonicalRepoFullName: 'keeganhall33/business-dashboard',
+  };
+
+  try {
+    const context = prepareIntegrationWorkspace({ repoRoot: repo, workspaceRoot: path.join(root, 'ws'), timeoutMs: 60000, target });
+    assert.equal(context.workspaceHead, headSha);
+    assert.equal(git(repo, 'rev-parse', 'FETCH_HEAD'), headSha);
+    cleanupIntegrationWorkspace({ repoRoot: repo, context });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('cross-repo targets and wrong push branches fail closed', () => {
   const good = {
     issueNumber: 960,
