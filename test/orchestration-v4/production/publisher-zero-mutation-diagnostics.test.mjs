@@ -10,10 +10,13 @@ function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
 }
 
+function sameRealPath(actual, expected) {
+  assert.equal(fs.realpathSync(actual), fs.realpathSync(expected));
+}
+
 test('collectZeroMutationDiagnostics captures exact workspace, git state, ownership and bounded recent files', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-publisher-diag-'));
   try {
-    const canonicalRoot = fs.realpathSync(root);
     git(root, 'init');
     git(root, 'config', 'user.name', 'Test');
     git(root, 'config', 'user.email', 'test@example.invalid');
@@ -29,8 +32,8 @@ test('collectZeroMutationDiagnostics captures exact workspace, git state, owners
       fileOwnership: 'tmp/v4-smoke-fixture.txt, missing.txt',
     });
 
-    assert.equal(diagnostics.workspacePath, canonicalRoot);
-    assert.equal(diagnostics.gitTopLevel, canonicalRoot);
+    sameRealPath(diagnostics.workspacePath, root);
+    sameRealPath(diagnostics.gitTopLevel, root);
     assert.match(diagnostics.headSha, /^[0-9a-f]{40}$/);
     assert.match(diagnostics.gitStatusPorcelain, /tmp\/v4-smoke-fixture\.txt/);
     assert.deepEqual(diagnostics.ownedPaths.map((entry) => [entry.path, entry.exists]), [
