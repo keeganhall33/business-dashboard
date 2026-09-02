@@ -16,7 +16,7 @@ const RESOLVER_RESULT_TO_STATE = Object.freeze({
 
 function parseReferencedPr(contract) {
   const text = `${contract?.title || ''}\n${contract?.body || ''}`;
-  const patterns = [/(?:PR|pull request)\s*#?(\d+)/i, /#(\d+)\s+(?:PR|pull request)/i];
+  const patterns = [/(?:PR|pull request)\s*[:=-]?\s*#?(\d+)/i, /#(\d+)\s+(?:PR|pull request)/i];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return Number(match[1]);

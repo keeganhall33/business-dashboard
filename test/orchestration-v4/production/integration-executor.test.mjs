@@ -64,7 +64,7 @@ function makeIntegrationFixture({ conflict = true } = {}) {
     baseSha: mainSha,
     contract: {
       title: 'Reconcile PR #77',
-      body: 'Target PR #77 and preserve the PR behavior while integrating current main.',
+      body: 'Target PR: #77 and preserve the PR behavior while integrating current main.',
       fileOwnership: 'shared.txt,pr-only.txt,main-only.txt',
       taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED',
     },

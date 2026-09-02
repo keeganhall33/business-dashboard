@@ -14,6 +14,11 @@ function runGit(repoRoot, args, spawn = spawnSync) {
   return String(result.stdout || '').trim();
 }
 
+function commitExists(repoRoot, sha, spawn = spawnSync) {
+  const result = spawn('git', ['-C', repoRoot, 'cat-file', '-e', `${sha}^{commit}`], { encoding: 'utf8' });
+  return result.status === 0;
+}
+
 export function validateIntegrationTarget({ issueNumber, prNumber, headSha, headBranch, headRepoFullName, canonicalRepoFullName }) {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error('V4_INTEGRATION_INVALID_ISSUE');
   if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error('V4_INTEGRATION_INVALID_PR');
@@ -32,6 +37,11 @@ export function prepareIntegrationWorkspace({
   spawn = spawnSync,
 }) {
   const validated = validateIntegrationTarget(target);
+  if (!commitExists(repoRoot, validated.headSha, spawn)) {
+    runGit(repoRoot, ['fetch', '--no-tags', 'origin', validated.headBranch], spawn);
+    const fetchedHead = runGit(repoRoot, ['rev-parse', 'FETCH_HEAD'], spawn);
+    if (fetchedHead !== validated.headSha) throw new Error('V4_INTEGRATION_FETCHED_HEAD_MISMATCH');
+  }
   runGit(repoRoot, ['cat-file', '-e', `${validated.headSha}^{commit}`], spawn);
 
   const context = createExecutionContext({

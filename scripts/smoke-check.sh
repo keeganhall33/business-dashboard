@@ -16,6 +16,11 @@ if [ -z "$BASE_URL" ]; then
   exit 2
 fi
 
+CURL_RETRIES="${SMOKE_CURL_RETRIES:-4}"
+CURL_RETRY_DELAY_SECONDS="${SMOKE_CURL_RETRY_DELAY_SECONDS:-2}"
+CURL_CONNECT_TIMEOUT_SECONDS="${SMOKE_CURL_CONNECT_TIMEOUT_SECONDS:-10}"
+CURL_MAX_TIME_SECONDS="${SMOKE_CURL_MAX_TIME_SECONDS:-30}"
+
 fail() {
   local msg="$1"
   echo "[smoke-check] FAIL: $msg" >&2
@@ -32,10 +37,20 @@ ok_note() {
   echo "[smoke-check] OK: $msg"
 }
 
+curl_smoke() {
+  curl -sS \
+    --retry "$CURL_RETRIES" \
+    --retry-delay "$CURL_RETRY_DELAY_SECONDS" \
+    --retry-all-errors \
+    --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
+    --max-time "$CURL_MAX_TIME_SECONDS" \
+    "$@"
+}
+
 # 1) The server-rendered dashboard must load successfully. In production this
 # exercises the protected overview API through the app's server-side
 # x-dashboard-secret path without exposing DASHBOARD_ADMIN_TOKEN to CI.
-dashboard_status=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
+dashboard_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
 [ "$dashboard_status" = "200" ] || fail "GET /dashboard returned $dashboard_status"
 ok_note "GET /dashboard"
 
@@ -46,7 +61,7 @@ ok_note "GET /dashboard"
 # step 1 already proved the SSR dashboard could reach the protected API correctly.
 overview_body=$(mktemp)
 trap 'rm -f "$overview_body"' EXIT
-overview_status=$(curl -sS -o "$overview_body" -w "%{http_code}" "$BASE_URL/api/dashboard/overview")
+overview_status=$(curl_smoke -o "$overview_body" -w "%{http_code}" "$BASE_URL/api/dashboard/overview")
 
 case "$overview_status" in
   200)
