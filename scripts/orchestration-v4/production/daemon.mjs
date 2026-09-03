@@ -74,7 +74,7 @@ export async function syncPendingGithubTasks({
   db,
   repoFullName,
   gh = 'gh',
-  limit = 10,
+  limit = 1,
   sync = syncTerminalTaskToGitHub,
 }) {
   const pending = listTasksPendingGithubSync(db, { limit });
