@@ -39,6 +39,11 @@ export function openV4StateStore(dbPath) {
     CREATE UNIQUE INDEX IF NOT EXISTS tasks_live_slot_unique
       ON tasks(slot_id)
       WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED');
+    CREATE TABLE IF NOT EXISTS github_sync_markers (
+      task_id TEXT PRIMARY KEY,
+      last_state TEXT NOT NULL,
+      synced_at TEXT NOT NULL
+    );
   `);
   ensureColumn(db, 'contract_json', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'result_json', 'TEXT');
@@ -134,4 +139,45 @@ export function releaseSlotForTerminalTask(db, taskId) {
   if (![V4_STATES.COMPLETE,V4_STATES.BLOCKED,V4_STATES.FAILED,V4_STATES.TIMED_OUT].includes(task.state)) throw new Error('V4_STATE_RELEASE_REQUIRES_TERMINAL');
   db.prepare('UPDATE tasks SET slot_id=NULL, process_group_id=NULL, child_pid=NULL WHERE task_id=?').run(taskId);
   return getTask(db, taskId);
+}
+
+
+const GITHUB_SYNC_TERMINAL_STATES = Object.freeze([
+  V4_STATES.COMPLETE,
+  V4_STATES.BLOCKED,
+  V4_STATES.FAILED,
+  V4_STATES.TIMED_OUT,
+]);
+
+export function listTasksPendingGithubSync(db, { limit = 10 } = {}) {
+  if (!Number.isInteger(limit) || limit <= 0) throw new Error('V4_GITHUB_SYNC_LIMIT_INVALID');
+  return db.prepare(`
+    SELECT tasks.*
+    FROM tasks
+    LEFT JOIN github_sync_markers AS markers ON markers.task_id = tasks.task_id
+    WHERE tasks.state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT')
+      AND (markers.task_id IS NULL OR markers.last_state <> tasks.state)
+    ORDER BY tasks.updated_at DESC, tasks.task_id
+    LIMIT ?
+  `).all(limit);
+}
+
+export function getGithubSyncMarker(db, taskId) {
+  return db.prepare('SELECT task_id,last_state,synced_at FROM github_sync_markers WHERE task_id=?').get(taskId) ?? null;
+}
+
+export function markGithubTaskStateSynced(db, { taskId, state, syncedAt = new Date() }) {
+  if (!taskId) throw new Error('V4_GITHUB_SYNC_TASK_ID_REQUIRED');
+  if (!GITHUB_SYNC_TERMINAL_STATES.includes(state)) throw new Error('V4_GITHUB_SYNC_STATE_INVALID');
+  const current = getTask(db, taskId);
+  if (!current) throw new Error('V4_STATE_TASK_NOT_FOUND');
+  if (current.state !== state) throw new Error(`V4_GITHUB_SYNC_STATE_CHANGED:${current.state}:${state}`);
+  db.prepare(`
+    INSERT INTO github_sync_markers(task_id,last_state,synced_at)
+    VALUES(?,?,?)
+    ON CONFLICT(task_id) DO UPDATE SET
+      last_state=excluded.last_state,
+      synced_at=excluded.synced_at
+  `).run(taskId, state, nowIso(syncedAt));
+  return getGithubSyncMarker(db, taskId);
 }
