@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
 import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
-import { getTaskContract } from '../state-store/sqlite-store.mjs';
+import { getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
@@ -68,6 +68,30 @@ export async function runConcurrentProductionQueues({ runExecutableQueue, runInt
   const integrationPromise = Promise.resolve().then(runIntegrationQueue);
   const [settled, integrationSettled] = await Promise.all([executablePromise, integrationPromise]);
   return Object.freeze({ settled, integrationSettled });
+}
+
+export async function syncPendingGithubTasks({
+  db,
+  repoFullName,
+  gh = 'gh',
+  limit = 10,
+  sync = syncTerminalTaskToGitHub,
+}) {
+  const pending = listTasksPendingGithubSync(db, { limit });
+  const results = [];
+  for (const task of pending) {
+    if (!TERMINAL_STATES.has(task.state)) continue;
+    try {
+      const result = await sync({ task, repoFullName, gh });
+      if (result?.ok && !result?.skipped) {
+        markGithubTaskStateSynced(db, { taskId: task.task_id, state: task.state });
+      }
+      results.push(result);
+    } catch (error) {
+      results.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) });
+    }
+  }
+  return results;
 }
 
 export async function runProductionPoll({
@@ -150,13 +174,7 @@ export async function runProductionPoll({
       },
     });
 
-    const terminal = db.prepare("SELECT * FROM tasks WHERE state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT') ORDER BY updated_at,task_id").all();
-    const githubSync = [];
-    for (const task of terminal) {
-      if (!TERMINAL_STATES.has(task.state)) continue;
-      try { githubSync.push(syncTerminalTaskToGitHub({ task, repoFullName, gh })); }
-      catch (error) { githubSync.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) }); }
-    }
+    const githubSync = await syncPendingGithubTasks({ db, repoFullName, gh });
 
     return Object.freeze({
       baseSha,
