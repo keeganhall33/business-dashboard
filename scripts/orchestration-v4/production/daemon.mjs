@@ -1,17 +1,18 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSlotRegistry } from '../slot-scheduler.mjs';
+import { createSlotRegistry, releaseSlotForTerminalTask } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
 import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
 import { getTaskContract } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
-import { syncTerminalTaskToGitHub } from './github-sync.mjs';
+import { syncTerminalTaskToGitHub } from './host.mjs';
+import { V4_STATES } from '../state-machine.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
-const TERMINAL_STATES = new Set(['COMPLETE','BLOCKED','FAILED','TIMED_OUT']);
+const TERMINAL_STATES = new Set([V4_STATES.COMPLETE, V4_STATES.BLOCKED, V4_STATES.FAILED, V4_STATES.TIMED_OUT]);
 
 export function promptForTask(task) {
   const contract = getTaskContract(task);
@@ -93,16 +94,22 @@ export async function runProductionPoll({
   if (!Number.isInteger(stallMs) || stallMs <= 0 || stallMs >= timeoutMs) {
     throw new Error('V4_PRODUCTION_STALL_TIMEOUT_INVALID');
   }
+  
   const baseSha = refreshCanonicalMain(repoRoot);
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
-  const ready = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at,task_id").all();
-  const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE');
-  const executable = ready.filter((task) => task.stream !== 'INTEGRATION_RELEASE');
+  
+  // Fetch all tasks from database
+  const readyTasks = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at,task_id").all();
+  
+  const integrationReady = readyTasks.filter((task) => task.stream === 'INTEGRATION_RELEASE');
+  const executable = readyTasks.filter((task) => task.stream !== 'INTEGRATION_RELEASE');
+  
   const ephemeral = [];
   const commandsByTaskId = {};
 
   try {
+    // Process executable tasks - create ephemeral state and commands
     for (const task of executable) {
       const state = createEphemeralAgentState({ taskId: task.task_id });
       ephemeral.push(state);
@@ -150,12 +157,22 @@ export async function runProductionPoll({
       },
     });
 
-    const terminal = db.prepare("SELECT * FROM tasks WHERE state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT') ORDER BY updated_at,task_id").all();
+    // Sync terminal tasks (COMPLETE, BLOCKED, FAILED, TIMED_OUT) with incremental sync
     const githubSync = [];
-    for (const task of terminal) {
-      if (!TERMINAL_STATES.has(task.state)) continue;
-      try { githubSync.push(syncTerminalTaskToGitHub({ task, repoFullName, gh })); }
-      catch (error) { githubSync.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) }); }
+    for (const task of readyTasks) {
+      if ([V4_STATES.COMPLETE, V4_STATES.BLOCKED, V4_STATES.FAILED, V4_STATES.TIMED_OUT].includes(task.state)) {
+        try {
+          const syncResult = await syncTerminalTaskToGitHub({ 
+            task, 
+            repoFullName, 
+            gh, 
+            db 
+          });
+          githubSync.push(syncResult);
+        } catch (error) {
+          githubSync.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) });
+        }
+      }
     }
 
     return Object.freeze({

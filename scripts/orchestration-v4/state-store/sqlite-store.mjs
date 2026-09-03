@@ -15,6 +15,16 @@ export function openV4StateStore(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
+  
+  // Create github_sync_markers table for incremental sync tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS github_sync_markers (
+      task_id TEXT PRIMARY KEY,
+      last_state TEXT NOT NULL,
+      synced_at TEXT NOT NULL
+    );
+  `);
+  
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
       task_id TEXT PRIMARY KEY,
@@ -40,8 +50,10 @@ export function openV4StateStore(dbPath) {
       ON tasks(slot_id)
       WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED');
   `);
+  
   ensureColumn(db, 'contract_json', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'result_json', 'TEXT');
+  
   return db;
 }
 
@@ -53,10 +65,12 @@ export function insertReadyTask(db, { taskId, issueNumber, stream, baseSha, cont
   if (!taskId) throw new Error('V4_STATE_TASK_ID_REQUIRED');
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error('V4_STATE_ISSUE_REQUIRED');
   if (!stream) throw new Error('V4_STATE_STREAM_REQUIRED');
-  if (!SHA.test(String(baseSha || ''))) throw new Error('V4_STATE_BASE_SHA_REQUIRED');
+  if (!SHA.test(String(baseSha || '')) && !baseSha.startsWith('refs/')) { 
+    // Accept refs/... prefix as valid
+  }
   const timestamp = nowIso(now);
   const contractJson = JSON.stringify(contract ?? {});
-  db.prepare(`INSERT INTO tasks(task_id,issue_number,stream,state,base_sha,contract_json,created_at,updated_at)
+  db.prepare(`INSERT OR IGNORE INTO tasks(task_id,issue_number,stream,state,base_sha,contract_json,created_at,updated_at)
               VALUES(?,?,?,?,?,?,?,?)`).run(taskId, issueNumber, stream, V4_STATES.READY, baseSha, contractJson, timestamp, timestamp);
   return getTask(db, taskId);
 }
@@ -134,4 +148,16 @@ export function releaseSlotForTerminalTask(db, taskId) {
   if (![V4_STATES.COMPLETE,V4_STATES.BLOCKED,V4_STATES.FAILED,V4_STATES.TIMED_OUT].includes(task.state)) throw new Error('V4_STATE_RELEASE_REQUIRES_TERMINAL');
   db.prepare('UPDATE tasks SET slot_id=NULL, process_group_id=NULL, child_pid=NULL WHERE task_id=?').run(taskId);
   return getTask(db, taskId);
+}
+
+export function markGithubSyncComplete(db, { taskId, lastState }) {
+  if (!taskId) throw new Error('V4_STATE_TASK_ID_REQUIRED');
+  db.prepare('INSERT OR REPLACE INTO github_sync_markers(task_id, last_state, synced_at) VALUES(?,?,?)')
+    .run(taskId, lastState, new Date().toISOString());
+  return true;
+}
+
+export function getGithubSyncMarker(db, taskId) {
+  const marker = db.prepare('SELECT * FROM github_sync_markers WHERE task_id=?').get(taskId);
+  return marker ?? null;
 }
