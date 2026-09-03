@@ -149,7 +149,7 @@ const GITHUB_SYNC_TERMINAL_STATES = Object.freeze([
   V4_STATES.TIMED_OUT,
 ]);
 
-export function listTasksPendingGithubSync(db, { limit = 10 } = {}) {
+export function listTasksPendingGithubSync(db, { limit = 1 } = {}) {
   if (!Number.isInteger(limit) || limit <= 0) throw new Error('V4_GITHUB_SYNC_LIMIT_INVALID');
   return db.prepare(`
     SELECT tasks.*
