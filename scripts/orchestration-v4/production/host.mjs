@@ -72,9 +72,10 @@ export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive 
   return Object.freeze(recovered);
 }
 
-export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
+  if (!Number.isInteger(emptyPollTimeoutMs) || emptyPollTimeoutMs <= 0) throw new Error('V4_HOST_EMPTY_POLL_TIMEOUT_INVALID');
   fs.mkdirSync(stateRoot, { recursive: true });
   const lockPath = path.join(stateRoot, 'host.lock');
   const lockFd = acquireHostLock(lockPath);
@@ -88,10 +89,13 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let cycles = 0;
   let skippedPolls = 0;
   let lastPollError = null;
+  let pollStartedAt = null;
+  let stalledReason = null;
   const inFlightPolls = new Set();
 
   const launchPoll = () => {
     let tracked;
+    pollStartedAt = now();
     tracked = Promise.resolve()
       .then(() => poll({ db, ...pollArgs }))
       .then(
@@ -101,7 +105,10 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
           return { ok: false, error: lastPollError };
         },
       )
-      .finally(() => inFlightPolls.delete(tracked));
+      .finally(() => {
+        inFlightPolls.delete(tracked);
+        if (inFlightPolls.size === 0) pollStartedAt = null;
+      });
     inFlightPolls.add(tracked);
     return tracked;
   };
@@ -110,7 +117,17 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
     while (!stopped && cycles < maxCycles) {
       cycles += 1;
       if (inFlightPolls.size === 0) launchPoll();
-      else skippedPolls += 1;
+      else {
+        skippedPolls += 1;
+        const activeTasks = db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").get().count;
+        const elapsedMs = pollStartedAt === null ? 0 : Math.max(0, now() - pollStartedAt);
+        if (activeTasks === 0 && elapsedMs >= emptyPollTimeoutMs) {
+          stalledReason = 'V4_STUCK_EMPTY_POLL';
+          lastPollError = stalledReason;
+          stopped = true;
+        }
+      }
+      const generatedAtMs = now();
       fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
         pid: process.pid,
         cycles,
@@ -118,7 +135,11 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         skippedPolls,
         recoveredStaleTasks: recoveredStaleTasks.length,
         lastPollError,
-        generatedAt: new Date().toISOString(),
+        pollState: stalledReason ? 'STALLED' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
+        stalledReason,
+        pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
+        currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
+        generatedAt: new Date(generatedAtMs).toISOString(),
       })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
     }
@@ -128,7 +149,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       if (shutdownDrainMs === 0) drained = false;
       else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
     }
-    return { ok: true, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, drained };
+    return { ok: !stalledReason, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
@@ -143,5 +164,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const repoRoot = path.resolve(process.env.JEEVES_V4_REPO_ROOT || path.join(process.env.HOME || '.', '.openclaw/runtime-v4/business-dashboard'));
   const workspaceRoot = path.resolve(process.env.JEEVES_V4_WORKSPACE_ROOT || path.join(process.env.HOME || '.', '.openclaw/workspaces-v4'));
   const configPath = path.resolve(process.env.JEEVES_V4_CONFIG || process.env.OPENCLAW_CONFIG_PATH || path.join(process.env.HOME || '.', '.openclaw/openclaw.json'));
-  await runProductionHost({ stateRoot, pollArgs: { repoRoot, repoFullName: 'keeganhall33/business-dashboard', workspaceRoot, configPath } });
+  const result = await runProductionHost({ stateRoot, pollArgs: { repoRoot, repoFullName: 'keeganhall33/business-dashboard', workspaceRoot, configPath } });
+  if (!result.ok) process.exitCode = 75;
 }

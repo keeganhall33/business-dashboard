@@ -53,6 +53,32 @@ test('host keeps production polls single-flight while a prior poll is unresolved
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('host exits distinctly when a poll is stuck after all workers are terminal', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stuck-empty-poll-'));
+  const never = new Promise(() => {});
+  let nowMs = 0;
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      poll: async () => never,
+      maxCycles: 3,
+      intervalMs: 1,
+      shutdownDrainMs: 0,
+      emptyPollTimeoutMs: 120_000,
+      now: () => nowMs,
+      sleep: async () => { nowMs += 60_000; },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.stalledReason, 'V4_STUCK_EMPTY_POLL');
+    assert.equal(result.drained, false);
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.equal(heartbeat.pollState, 'STALLED');
+    assert.equal(heartbeat.stalledReason, 'V4_STUCK_EMPTY_POLL');
+    assert.equal(heartbeat.currentPollElapsedMs, 120_000);
+    assert.equal(heartbeat.inFlightPolls, 1);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('host startup fails stale running task with dead child and releases its slot before polling', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stale-task-'));
   const dbPath = path.join(root, 'state.sqlite');
