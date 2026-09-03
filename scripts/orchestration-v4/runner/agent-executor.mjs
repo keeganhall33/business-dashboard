@@ -94,7 +94,7 @@ export function productionAgentConfig() {
           [DEFAULT_MODEL]: {
             params: {
               extra_body: {
-                tool_choice: 'required',
+                tool_choice: 'auto',
               },
             },
           },
