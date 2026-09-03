@@ -32,6 +32,32 @@ test('ready intake is idempotent and preserves immutable admitted SHA', () => {
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('duplicate task id on a different issue is isolated and does not block later intake', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-task-id-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    importReadyIssues({ db, issues: [issue(40)], baseSha: 'a'.repeat(40) });
+    const duplicateTaskId = issue(41, {
+      body: issue(41).body.replace('task-41', 'task-40'),
+    });
+    const result = importReadyIssues({
+      db,
+      issues: [duplicateTaskId, issue(42)],
+      baseSha: 'b'.repeat(40),
+    });
+
+    assert.equal(result.imported.length, 1);
+    assert.equal(result.imported[0].taskId, 'task-42');
+    assert.deepEqual(result.duplicates, [{
+      issueNumber: 41,
+      taskId: 'task-40',
+      state: 'READY',
+      conflict: 'TASK_ID',
+    }]);
+    assert.equal(getTask(db, 'task-42').base_sha, 'b'.repeat(40));
+  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('production worker prompt contains persisted title body ownership and mutability', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-prompt-'));
   const db = openV4StateStore(path.join(root, 'state.sqlite'));
