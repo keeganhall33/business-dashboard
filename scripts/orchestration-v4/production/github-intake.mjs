@@ -34,12 +34,22 @@ export function importReadyIssues({ db, issues, baseSha }) {
       rejected.push({ issueNumber: issue.number, errors: validation.errors });
       continue;
     }
-    const existing = db.prepare('SELECT task_id,state FROM tasks WHERE issue_number=?').get(issue.number);
+    const task = validation.task;
+    const existing = db.prepare(`
+      SELECT task_id,issue_number,state
+      FROM tasks
+      WHERE issue_number=? OR task_id=?
+      LIMIT 1
+    `).get(issue.number, task.taskId);
     if (existing) {
-      duplicates.push({ issueNumber: issue.number, taskId: existing.task_id, state: existing.state });
+      duplicates.push({
+        issueNumber: issue.number,
+        taskId: existing.task_id,
+        state: existing.state,
+        conflict: existing.issue_number === issue.number ? 'ISSUE_NUMBER' : 'TASK_ID',
+      });
       continue;
     }
-    const task = validation.task;
     insertReadyTask(db, {
       taskId: task.taskId,
       issueNumber: task.issueNumber,
