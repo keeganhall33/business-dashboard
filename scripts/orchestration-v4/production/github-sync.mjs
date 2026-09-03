@@ -16,7 +16,7 @@ export const ALL_STATE_LABELS = Object.freeze([
   'orch:timed-out',
 ]);
 
-const DEFAULT_GITHUB_TIMEOUT_MS = 15_000;
+const DEFAULT_GITHUB_TIMEOUT_MS = 10_000;
 
 function runGithubCommand(args, {
   gh = 'gh',
