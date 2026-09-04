@@ -40,6 +40,16 @@ test('clean workspace is unchanged until tracked content mutates', () => withRep
   assert.equal(observe(), null);
 }));
 
+test('staged changes remain observable', () => withRepo((root) => {
+  const observe = createWorkspaceProgressObserver(root);
+  fs.writeFileSync(path.join(root, 'base.txt'), 'staged edit\n');
+  git(root, 'add', 'base.txt');
+
+  const event = observe();
+  assert.equal(event.kind, 'WORKTREE_MUTATION');
+  assert.equal(observe(), null);
+}));
+
 test('untracked creation and later content edit are separately observable', () => withRepo((root) => {
   const observe = createWorkspaceProgressObserver(root);
   const file = path.join(root, 'new.txt');
