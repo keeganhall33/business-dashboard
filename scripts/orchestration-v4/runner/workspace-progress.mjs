@@ -11,14 +11,19 @@ function git(cwd, ...args) {
   }
 }
 
+function nulPaths(output) {
+  return output ? output.split('\0').filter(Boolean) : [];
+}
+
 function changedPaths(cwd) {
-  const output = git(cwd, 'ls-files', '-m', '-d', '-o', '--exclude-standard', '-z');
-  if (!output) return [];
-  return output
-    .split('\0')
-    .filter(Boolean)
-    .sort()
-    .slice(0, MAX_CHANGED_PATHS);
+  const worktree = nulPaths(git(cwd, 'ls-files', '-m', '-d', '-o', '--exclude-standard', '-z'));
+  const staged = nulPaths(git(cwd, 'diff', '--cached', '--name-only', '-z'));
+  const all = [...new Set([...worktree, ...staged])].sort();
+
+  return {
+    paths: all.slice(0, MAX_CHANGED_PATHS),
+    truncated: all.length > MAX_CHANGED_PATHS,
+  };
 }
 
 function contentIdentity(cwd, filePath) {
@@ -28,12 +33,13 @@ function contentIdentity(cwd, filePath) {
 
 function workspaceSnapshot(cwd) {
   const head = git(cwd, 'rev-parse', 'HEAD');
-  const paths = changedPaths(cwd);
+  const changed = changedPaths(cwd);
   const parts = [head];
 
-  for (const filePath of paths) {
+  for (const filePath of changed.paths) {
     parts.push(filePath, contentIdentity(cwd, filePath));
   }
+  if (changed.truncated) parts.push('CHANGED_PATHS_TRUNCATED');
 
   const fingerprint = crypto
     .createHash('sha256')
@@ -43,8 +49,8 @@ function workspaceSnapshot(cwd) {
   return {
     fingerprint,
     head,
-    changedFileCount: paths.length,
-    changedPathsTruncated: paths.length === MAX_CHANGED_PATHS,
+    changedFileCount: changed.paths.length,
+    changedPathsTruncated: changed.truncated,
   };
 }
 
