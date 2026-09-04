@@ -1,47 +1,43 @@
-/** Decision feedback normalizer with type-safe dispositions/reasons */
+export type DecisionDisposition = "ACCEPTED" | "REJECTED" | "DEFERRED" | "UNKNOWN"
+export type DecisionFeedbackReason =
+  | "PREFERENCE"
+  | "FEASIBILITY"
+  | "TIMING"
+  | "EVIDENCE_DISAGREEMENT"
+  | "OTHER"
+  | "UNKNOWN"
 
-type Disposition = "ACCEPTED" | "REJECTED" | "DEFERRED" | "UNKNOWN";
-type Reason = "PREFERENCE" | "FEASIBILITY" | "TIMING" | "EVIDENCE_DISAGREEMENT" | "OTHER" | "UNKNOWN";
-
-interface DecisionFeedback {
-  disposition: Disposition;
-  reason?: Reason;
-  valid: boolean;
+const KNOWN_DISPOSITIONS: Record<string, DecisionDisposition> = {
+  ACCEPTED: "ACCEPTED",
+  REJECTED: "REJECTED",
+  DEFERRED: "DEFERRED",
 }
 
-function normalize(input: string): DecisionFeedback {
-  const trimmed = (input || "").trim().toUpperCase();
-  const parts = trimmed.split(" ");
-  
-  // Valid known dispositions and reasons for mapping
-  const validDispositions = ["ACCEPTED", "REJECTED", "DEFERRED"];
-  const validReasons = [
-    "PREFERENCE", "FEASIBILITY", "TIMING",
-    "EVIDENCE_DISAGREEMENT", "OTHER"
-  ];
-  
-  // Check if first word is a known disposition (early exit for unknown)
-  if (!validDispositions.includes(parts[0])) {
-    return { disposition: "UNKNOWN", reason: "UNKNOWN", valid: false };
-  }
-  
-  // Known disposition found - extract reason if available
-  const disposition = parts[0] as Disposition;
-  let reason: Reason = "UNKNOWN";
-  
-  if (parts.length > 1) {
-    for (const r of validReasons) {
-      if (parts[1] === r) {
-        reason = r as Reason;
-        break;
-      }
-    }
-  }
-  
-  // Compute valid solely based on reason !== "UNKNOWN"
-  const valid = reason !== "UNKNOWN";
-  
-  return { disposition, reason, valid };
+const KNOWN_REASONS: Record<string, DecisionFeedbackReason> = {
+  PREFERENCE: "PREFERENCE",
+  FEASIBILITY: "FEASIBILITY",
+  TIMING: "TIMING",
+  EVIDENCE_DISAGREEMENT: "EVIDENCE_DISAGREEMENT",
+  OTHER: "OTHER",
 }
 
-export { normalize, type Disposition, type Reason, type DecisionFeedback };
+export function normalizeDecisionFeedback(input: {
+  disposition: unknown
+  reason: unknown
+}): {
+  disposition: DecisionDisposition
+  reason: DecisionFeedbackReason
+  valid: boolean
+} {
+  const normalize = (value: unknown): string =>
+    typeof value === "string" ? value.trim().toUpperCase() : ""
+
+  const disposition = KNOWN_DISPOSITIONS[normalize(input.disposition)] || "UNKNOWN"
+  const reason = KNOWN_REASONS[normalize(input.reason)] || "UNKNOWN"
+
+  if (disposition === "UNKNOWN") {
+    return { disposition: "UNKNOWN", reason: "UNKNOWN", valid: false }
+  }
+
+  return { disposition, reason, valid: reason !== "UNKNOWN" }
+}
