@@ -1,63 +1,54 @@
-/**
- * Checkout Error Summary Helper
- * Determines the dominant error class from checkout diagnostic data.
- */
-
 export type CheckoutErrorClass = "VALIDATION" | "PAYMENT" | "AJAX" | "TIE" | "NONE";
 
-interface CountInput {
-  validation?: number;
-  payment?: number;
-  ajax?: number;
+export interface CheckoutErrorSummary {
+  validation_errors: number;
+  payment_errors: number;
+  checkout_ajax_errors: number;
+  total_errors: number;
+  has_errors: boolean;
+  dominant_error_class: CheckoutErrorClass;
 }
 
-/**
- * Summarize checkout errors from raw input.
- * Normalizes invalid values to 0, computes total, determines dominant class.
- * A valid count is a finite nonnegative integer. Invalid values normalize to 0.
- */
-export function summarizeCheckoutErrors(input: CountInput | undefined): CheckoutErrorClass {
-  // Handle undefined input gracefully
-  if (typeof input === "undefined") {
-    return "NONE";
-  }
+type CheckoutErrorInput = {
+  validationErrors?: unknown;
+  paymentErrors?: unknown;
+  checkoutAjaxErrors?: unknown;
+};
 
-  // Normalize counts - treat undefined and non-finite as 0
-  const validation =
-    typeof input.validation === "number" && Number.isFinite(input.validation) && input.validation >= 0
-      ? Math.floor(input.validation)
-      : 0;
+function normalizeCount(value: unknown): number {
+  return typeof value === "number"
+    && Number.isFinite(value)
+    && Number.isInteger(value)
+    && value >= 0
+    ? value
+    : 0;
+}
 
-  const payment =
-    typeof input.payment === "number" && Number.isFinite(input.payment) && input.payment >= 0
-      ? Math.floor(input.payment)
-      : 0;
-
-  const ajax =
-    typeof input.ajax === "number" && Number.isFinite(input.ajax) && input.ajax >= 0
-      ? Math.floor(input.ajax)
-      : 0;
-
-  // Calculate total (all counts are now nonnegative integers)
+export function summarizeCheckoutErrors(input: CheckoutErrorInput = {}): CheckoutErrorSummary {
+  const validation = normalizeCount(input.validationErrors);
+  const payment = normalizeCount(input.paymentErrors);
+  const ajax = normalizeCount(input.checkoutAjaxErrors);
   const total = validation + payment + ajax;
 
-  if (total === 0) {
-    return "NONE";
+  let dominant: CheckoutErrorClass = "NONE";
+  if (total > 0) {
+    const max = Math.max(validation, payment, ajax);
+    const leaders = [validation === max, payment === max, ajax === max].filter(Boolean).length;
+    dominant = leaders > 1
+      ? "TIE"
+      : validation === max
+        ? "VALIDATION"
+        : payment === max
+          ? "PAYMENT"
+          : "AJAX";
   }
 
-  // Find dominant class(es) among normalized counts
-  const maxCount = Math.max(validation, payment, ajax);
-
-  const dominatingClasses: CheckoutErrorClass[] = [];
-  if (validation === maxCount && validation > 0) dominatingClasses.push("VALIDATION");
-  if (payment === maxCount && payment > 0) dominatingClasses.push("PAYMENT");
-  if (ajax === maxCount && ajax > 0) dominatingClasses.push("AJAX");
-
-  // If only one class has the maximum positive count, it's dominant
-  if (dominatingClasses.length === 1) {
-    return dominatingClasses[0];
-  }
-
-  // Multiple classes tied at max - return TIE
-  return "TIE";
+  return {
+    validation_errors: validation,
+    payment_errors: payment,
+    checkout_ajax_errors: ajax,
+    total_errors: total,
+    has_errors: total > 0,
+    dominant_error_class: dominant,
+  };
 }
