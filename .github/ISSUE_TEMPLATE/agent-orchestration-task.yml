@@ -12,6 +12,15 @@ body:
 
         - Use durable references (e.g. `docs/intelligence/ROADMAP.md`) and specify a small delta.
         - Keep it bounded. No credentials. No outreach.
+        - New tasks use the Business Value V2 contract so technical output stays tied to a measurable business result.
+
+  - type: input
+    id: contract_version
+    attributes:
+      label: contract_version
+      value: BUSINESS_VALUE_V2
+    validations:
+      required: true
 
   - type: input
     id: task_id
@@ -40,6 +49,50 @@ body:
         - INTELLIGENCE_UX
         - AGENT_ORCHESTRATION
         - OTHER
+    validations:
+      required: true
+
+  - type: dropdown
+    id: verification_owner
+    attributes:
+      label: verification_owner
+      description: The implementer may not certify its own work.
+      options:
+        - INDEPENDENT
+    validations:
+      required: true
+
+  - type: textarea
+    id: business_outcome
+    attributes:
+      label: Business outcome
+      description: The observable business state this task must improve or enable.
+      placeholder: Keegan can identify the highest-value next action without reviewing multiple reports.
+    validations:
+      required: true
+
+  - type: textarea
+    id: business_reason
+    attributes:
+      label: Business reason
+      description: Why this work matters now, including the decision, revenue, time, risk, or relationship it supports.
+    validations:
+      required: true
+
+  - type: textarea
+    id: success_metric
+    attributes:
+      label: Success metric
+      description: A measurable threshold or binary outcome. Avoid vague terms such as improved or optimized.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proof_required
+    attributes:
+      label: Proof required
+      description: Current-run evidence an independent verifier must inspect before approval.
+      placeholder: Exact test output, current screenshots, stored record, or source-linked decision evidence.
     validations:
       required: true
 

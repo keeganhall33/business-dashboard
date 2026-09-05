@@ -25,6 +25,12 @@ export function promptForTask(task) {
     `Title: ${contract.title}`,
     `Task mutability: ${contract.taskMutability}`,
     `File ownership: ${contract.fileOwnership}`,
+    `Contract version: ${contract.contractVersion || 'LEGACY_V1'}`,
+    `Business outcome: ${contract.businessOutcome || 'Not separately declared; preserve the authoritative issue goal.'}`,
+    `Business reason: ${contract.businessReason || 'Not separately declared.'}`,
+    `Success metric: ${contract.successMetric || 'Use the issue acceptance criteria.'}`,
+    `Proof required: ${contract.proofRequired || 'Use the issue acceptance criteria and current-run evidence.'}`,
+    `Verification owner: ${contract.verificationOwner || 'UNSPECIFIED'}`,
     '',
     'Authoritative issue body and acceptance criteria:',
     contract.body,
@@ -35,6 +41,8 @@ export function promptForTask(task) {
     'Use read/exec/find for repository discovery. Do not use tool-search to discover repository files.',
     'If an owned file named by the acceptance criteria does not exist yet, create it rather than repeatedly searching for it.',
     'Use local tools and complete the implementation, tests, and validation required by the issue.',
+    'Do not optimize for activity or code volume. Prefer the smallest complete change that advances the declared business outcome.',
+    'Every completion claim must cite evidence produced or inspected during this run. Never treat your own confidence as verification.',
   ].join('\n');
 }
 

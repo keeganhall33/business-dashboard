@@ -41,6 +41,7 @@ External research does not bypass Fusion to become an operating recommendation. 
 
 ### Decision governance
 - `docs/intelligence/AI_DECISION_CONSTITUTION.md`
+- `docs/intelligence/BUSINESS_VALUE_EXECUTION_CONTRACT.md`
 - `config/strategic_constraints_v1.json`
 
 ### Career operating system
