@@ -104,8 +104,8 @@ export async function runProductionPoll({
   openclaw = '/opt/homebrew/bin/openclaw',
   ollama = '/opt/homebrew/bin/ollama',
   gh = 'gh',
-  timeoutMs = 50 * 60_000,
-  agentTimeoutMs = 45 * 60_000,
+  timeoutMs = 100 * 60_000,
+  agentTimeoutMs = 90 * 60_000,
   stallMs = 30 * 60_000,
 }) {
   if (!path.isAbsolute(repoRoot) || !path.isAbsolute(workspaceRoot) || !path.isAbsolute(configPath)) {
