@@ -7,6 +7,11 @@ if (!prompt || !configPath || !stateDir) throw new Error('V4_AGENT_ENTRYPOINT_AR
 
 const workspacePath = process.cwd();
 if (!path.isAbsolute(workspacePath)) throw new Error('V4_AGENT_ENTRYPOINT_CWD_REQUIRED');
+
+// Apply patch header grammar: payloads must use valid headers like *** Begin Patch, *** Update File:<path>, *** End Patch.
+// Do not place a bare path immediately after *** Begin Patch - that is invalid and will be rejected.
+// When CWD equals V4_RUNTIME_WORKSPACE_ROOT, prefer repository-relative paths for apply_patch mutations.
+// After the first apply_patch format/parser failure, do not retry the same patch shape; correct the header or switch to deterministic shell exec mutation.
 const runtimePrompt = [
   `V4_RUNTIME_WORKSPACE_ROOT: ${workspacePath}`,
   'This absolute directory is the only authoritative workspace for this task.',
@@ -17,15 +22,35 @@ const runtimePrompt = [
   'When a requested target file does not exist yet, create it immediately with shell exec. A safe pattern is: mkdir -p "$(dirname ABSOLUTE_TARGET)" && cat > "ABSOLUTE_TARGET" <<\'EOF\' ... EOF.',
   'For edits to existing files, use apply_patch when convenient or use shell exec with a deterministic script. Do not search for a separate write tool.',
   'After any tool failure, inspect the failure and switch strategy. Do not repeat the same invalid read, code-mode, or path pattern.',
+  '',
+  '',
+  '',
+  '',
+  '',
+  'apply_patch header grammar:',
+  '  - *** Begin Patch',
+  '  - *** Update File: <relative-or-absolute-path>',
+  '  - *** Add File: <relative-or-absolute-path>',
+  '  - *** Delete File: <relative-or-absolute-path>',
+  '  - patch hunks/content',
+  '  - *** End Patch',
+  '',
+  'Bare paths immediately after *** Begin Patch are rejected. Do not emit malformed apply_patch payloads.',
+  '',
+  'Repository-relative paths are preferred for apply_patch when the process CWD equals V4_RUNTIME_WORKSPACE_ROOT.',
+  'Absolute paths remain allowed only when expressed in a valid patch header, not as bare text.',
+  '',
+  'After the first apply_patch format/parser failure, do not retry the same patch shape. Correct the header grammar once or immediately switch to deterministic shell exec mutation.',
+  '',
   'Native write and edit tools are intentionally disabled for production coding agents.',
   'Perform file mutations only with apply_patch or shell exec, rooted at V4_RUNTIME_WORKSPACE_ROOT.',
   'When using exec for a mutation, use the exact absolute target path under V4_RUNTIME_WORKSPACE_ROOT or first verify pwd equals V4_RUNTIME_WORKSPACE_ROOT.',
   'After mutating, verify the target with read or exec and confirm git status shows the intended owned-path change before declaring completion.',
-  'For IMPLEMENTATION_MUTATION_REQUIRED tasks, do not finish successfully until the workspace contains an intended mutation in an owned path, unless a genuine blocker prevents the task.',
+  'For IMPLEMENTATION_MUTATION_REQUIRED tasks, do not finish successfully until the workspace contains the intended mutation in an owned path, unless a genuine blocker prevents the task.',
   'Do not write into the OpenClaw state directory, temporary agent directory, home directory, memory directory, or any other workspace.',
-  '',
   prompt,
 ].join('\n');
+
 const capabilities = probeAgentCapabilities(openclaw);
 const invocation = buildAgentInvocation({ capabilities, prompt: runtimePrompt, workspacePath, configPath, stateDir, timeoutSeconds: Number(timeoutSeconds), openclaw });
 
