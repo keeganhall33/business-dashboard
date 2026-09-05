@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { insertReadyTask } from '../state-store/sqlite-store.mjs';
+import { addTaskDependency, insertReadyTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { resolveCanonicalBaseSha } from '../disposable-workspace.mjs';
 import { hasWatcherVisibleLabels, validateTaskContract } from './task-contract.mjs';
 
@@ -59,5 +59,18 @@ export function importReadyIssues({ db, issues, baseSha }) {
     });
     imported.push(task);
   }
-  return Object.freeze({ imported, rejected, duplicates });
+  const dependencyRejected = new Set();
+  for (const task of imported) {
+    for (const dependency of task.dependencies ?? []) {
+      try {
+        addTaskDependency(db, { taskId: task.taskId, dependsOnTaskId: dependency.taskId, artifact: dependency.artifact });
+      } catch (error) {
+        rejected.push({ issueNumber: task.issueNumber, errors: [String(error?.message || error)] });
+        dependencyRejected.add(task.taskId);
+        transitionTask(db, { taskId: task.taskId, expectedState: 'READY', toState: 'BLOCKED', patch: { terminalReason: 'DEPENDENCY_CONTRACT_INVALID' } });
+        break;
+      }
+    }
+  }
+  return Object.freeze({ imported: imported.filter((task) => !dependencyRejected.has(task.taskId)), rejected, duplicates });
 }

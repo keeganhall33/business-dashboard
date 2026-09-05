@@ -8,6 +8,7 @@ import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './gith
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
 import { syncTerminalTaskToGitHub } from './github-sync.mjs';
+import { correctionPrompt } from '../policy/correction-loop.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
@@ -31,6 +32,9 @@ export function promptForTask(task) {
     `Success metric: ${contract.successMetric || 'Use the issue acceptance criteria.'}`,
     `Proof required: ${contract.proofRequired || 'Use the issue acceptance criteria and current-run evidence.'}`,
     `Verification owner: ${contract.verificationOwner || 'UNSPECIFIED'}`,
+    `Risk lane: ${contract.riskProfile?.lane || 'LEGACY_UNCLASSIFIED'}`,
+    `Required gate: ${contract.riskProfile?.requiredGate || 'Use existing deterministic and review gates.'}`,
+    `Dependencies: ${JSON.stringify(contract.dependencies ?? [])}`,
     '',
     'Authoritative issue body and acceptance criteria:',
     contract.body,
@@ -141,6 +145,11 @@ export async function runProductionPoll({
       commandsByTaskId[task.task_id] = {
         command: process.execPath,
         args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
+        buildCorrectionAttempt: ({ packet, command, args }) => ({
+          command,
+          args: [args[0], `${args[1]}\n\n${correctionPrompt(packet)}`, ...args.slice(2)],
+        }),
+        maxCorrectionAttempts: 3,
       };
     }
 

@@ -44,6 +44,42 @@ export function openV4StateStore(dbPath) {
       last_state TEXT NOT NULL,
       synced_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id TEXT NOT NULL,
+      depends_on_task_id TEXT NOT NULL,
+      artifact TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(task_id, depends_on_task_id, artifact),
+      FOREIGN KEY(task_id) REFERENCES tasks(task_id),
+      FOREIGN KEY(depends_on_task_id) REFERENCES tasks(task_id)
+    );
+    CREATE TABLE IF NOT EXISTS correction_attempts (
+      task_id TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      verdict TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      action TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(task_id, attempt),
+      FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+    );
+    CREATE TABLE IF NOT EXISTS orchestration_events (
+      event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT,
+      type TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+    );
+    CREATE TABLE IF NOT EXISTS learning_constraints (
+      constraint_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      constraint_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
   ensureColumn(db, 'contract_json', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'result_json', 'TEXT');
@@ -76,6 +112,108 @@ export function getTaskContract(task) {
 
 export function listTasks(db) {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at, task_id').all();
+}
+
+export function addTaskDependency(db, { taskId, dependsOnTaskId, artifact, now = new Date() }) {
+  if (!taskId || !dependsOnTaskId || taskId === dependsOnTaskId || !String(artifact ?? '').trim()) {
+    throw new Error('V4_STATE_DEPENDENCY_INVALID');
+  }
+  if (!getTask(db, taskId) || !getTask(db, dependsOnTaskId)) throw new Error('V4_STATE_DEPENDENCY_TASK_NOT_FOUND');
+  const cycle = db.prepare(`
+    WITH RECURSIVE upstream(task_id) AS (
+      SELECT depends_on_task_id FROM task_dependencies WHERE task_id=?
+      UNION
+      SELECT dependency.depends_on_task_id
+      FROM task_dependencies AS dependency
+      JOIN upstream ON dependency.task_id=upstream.task_id
+    )
+    SELECT 1 AS found FROM upstream WHERE task_id=? LIMIT 1
+  `).get(dependsOnTaskId, taskId);
+  if (cycle) throw new Error('V4_STATE_DEPENDENCY_CYCLE');
+  db.prepare(`INSERT INTO task_dependencies(task_id,depends_on_task_id,artifact,created_at) VALUES(?,?,?,?)`)
+    .run(taskId, dependsOnTaskId, String(artifact).trim(), nowIso(now));
+}
+
+export function listRunnableTasks(db) {
+  return db.prepare(`
+    SELECT candidate.*
+    FROM tasks AS candidate
+    WHERE candidate.state='READY'
+      AND NOT EXISTS (
+        SELECT 1 FROM task_dependencies AS dependency
+        JOIN tasks AS upstream ON upstream.task_id=dependency.depends_on_task_id
+        WHERE dependency.task_id=candidate.task_id AND upstream.state<>'COMPLETE'
+      )
+    ORDER BY candidate.created_at,candidate.rowid
+  `).all();
+}
+
+export function blockTasksWithFailedDependencies(db, { now = new Date() } = {}) {
+  const timestamp = nowIso(now);
+  const candidates = db.prepare(`
+    SELECT DISTINCT candidate.task_id
+    FROM tasks AS candidate
+    JOIN task_dependencies AS dependency ON dependency.task_id=candidate.task_id
+    JOIN tasks AS upstream ON upstream.task_id=dependency.depends_on_task_id
+    WHERE candidate.state='READY' AND upstream.state IN ('BLOCKED','FAILED','TIMED_OUT')
+  `).all();
+  for (const candidate of candidates) {
+    db.prepare(`UPDATE tasks SET state='BLOCKED',terminal_reason='UPSTREAM_DEPENDENCY_FAILED',updated_at=? WHERE task_id=? AND state='READY'`)
+      .run(timestamp, candidate.task_id);
+    recordOrchestrationEvent(db, { taskId: candidate.task_id, type: 'DEPENDENCY_BLOCKED', payload: {}, now });
+  }
+  return candidates.map((candidate) => candidate.task_id);
+}
+
+export function recordCorrectionAttempt(db, { taskId, packet, now = new Date() }) {
+  if (!getTask(db, taskId)) throw new Error('V4_STATE_TASK_NOT_FOUND');
+  db.prepare(`INSERT INTO correction_attempts(task_id,attempt,verdict,reason,evidence,scope,action,created_at)
+              VALUES(?,?,?,?,?,?,?,?)`)
+    .run(taskId, packet.attempt, packet.verdict, packet.reason, packet.evidence, packet.scope, packet.action, nowIso(now));
+  recordOrchestrationEvent(db, { taskId, type: 'CORRECTION_ATTEMPT', payload: packet, now });
+}
+
+export function listCorrectionAttempts(db, taskId) {
+  return db.prepare('SELECT * FROM correction_attempts WHERE task_id=? ORDER BY attempt').all(taskId);
+}
+
+export function recordOrchestrationEvent(db, { taskId = null, type, payload = {}, now = new Date() }) {
+  if (!type) throw new Error('V4_STATE_EVENT_TYPE_REQUIRED');
+  db.prepare('INSERT INTO orchestration_events(task_id,type,payload_json,created_at) VALUES(?,?,?,?)')
+    .run(taskId, String(type), JSON.stringify(payload ?? {}), nowIso(now));
+}
+
+export function listOrchestrationEvents(db) {
+  return db.prepare('SELECT * FROM orchestration_events ORDER BY event_id').all().map((event) => ({
+    ...event,
+    payload: JSON.parse(event.payload_json),
+  }));
+}
+
+export function saveLearningConstraint(db, { constraint, now = new Date() }) {
+  if (!constraint?.id || !constraint?.status) throw new Error('V4_STATE_LEARNING_CONSTRAINT_INVALID');
+  const timestamp = nowIso(now);
+  db.prepare(`
+    INSERT INTO learning_constraints(constraint_id,status,constraint_json,created_at,updated_at)
+    VALUES(?,?,?,?,?)
+    ON CONFLICT(constraint_id) DO UPDATE SET
+      status=excluded.status,
+      constraint_json=excluded.constraint_json,
+      updated_at=excluded.updated_at
+  `).run(constraint.id, constraint.status, JSON.stringify(constraint), timestamp, timestamp);
+  return getLearningConstraint(db, constraint.id);
+}
+
+export function getLearningConstraint(db, constraintId) {
+  const row = db.prepare('SELECT * FROM learning_constraints WHERE constraint_id=?').get(constraintId);
+  return row ? { ...row, constraint: JSON.parse(row.constraint_json) } : null;
+}
+
+export function listLearningConstraints(db, { status = null } = {}) {
+  const rows = status
+    ? db.prepare('SELECT * FROM learning_constraints WHERE status=? ORDER BY created_at').all(status)
+    : db.prepare('SELECT * FROM learning_constraints ORDER BY created_at').all();
+  return rows.map((row) => ({ ...row, constraint: JSON.parse(row.constraint_json) }));
 }
 
 export function recordTaskResult(db, { taskId, result, now = new Date() }) {

@@ -3,13 +3,14 @@ import { createDisposableWorkspace, cleanupDisposableWorkspace } from '../dispos
 import { classifyProgress } from '../progress.mjs';
 import { chooseAvailableSlot } from '../slot-scheduler.mjs';
 import { V4_STATES } from '../state-machine.mjs';
-import { claimTask, getTask, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { createCorrectionPacket, CORRECTION_ACTIONS } from '../policy/correction-loop.mjs';
+import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
 
 const RESULT_TO_STATE = Object.freeze({ COMPLETE: V4_STATES.COMPLETE, BLOCKED: V4_STATES.BLOCKED, FAILED: V4_STATES.FAILED, TIMED_OUT: V4_STATES.TIMED_OUT });
 
-export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, finalizeSuccess = null, now = () => new Date() }) {
+export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, finalizeSuccess = null, buildCorrectionAttempt = null, maxCorrectionAttempts = 3, now = () => new Date() }) {
   const ready = getTask(db, taskId);
   if (!ready) throw new Error(`V4_RUNNER_TASK_NOT_FOUND:${taskId}`);
   if (ready.state !== V4_STATES.READY) throw new Error(`V4_RUNNER_TASK_NOT_READY:${taskId}:${ready.state}`);
@@ -26,15 +27,38 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     transitionTask(db, { taskId, expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING, patch: { workspacePath: workspace.workspacePath }, now: now() });
     const observeSemantic = createWorkspaceProgressObserver(workspace.workspacePath);
 
-    const result = await execute({
-      command, args, cwd: workspace.workspacePath, timeoutMs, stallMs, observeSemantic,
-      onStarted({ childPid, processGroupId }) { recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() }); },
-      onEvent(event) {
-        const classification = classifyProgress(event);
-        if (classification === 'SEMANTIC') recordSemanticProgress(db, { taskId, observedAt: new Date(event.observedAt) });
-        return classification;
-      },
-    });
+    const executeOnce = async (spec) => execute({
+        command: spec.command, args: spec.args, cwd: workspace.workspacePath, timeoutMs, stallMs, observeSemantic,
+        onStarted({ childPid, processGroupId }) { recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() }); },
+        onEvent(event) {
+          const classification = classifyProgress(event);
+          if (classification === 'SEMANTIC') recordSemanticProgress(db, { taskId, observedAt: new Date(event.observedAt) });
+          return classification;
+        },
+      });
+    let result = await executeOnce({ command, args });
+    let correctionAttempt = 0;
+    while (result.status !== 'COMPLETE' && typeof buildCorrectionAttempt === 'function') {
+      correctionAttempt += 1;
+      const contract = getTaskContract(getTask(db, taskId));
+      const packet = createCorrectionPacket({
+        unitId: taskId,
+        verdict: 'RED',
+        reason: result.reason ?? result.status ?? 'EXECUTION_FAILED',
+        evidence: result.stderrTail || result.stdoutTail || result.reason || result.status,
+        scope: contract.fileOwnership || 'Declared task ownership only',
+        attempt: correctionAttempt,
+        maxAttempts: maxCorrectionAttempts,
+      });
+      recordCorrectionAttempt(db, { taskId, packet, now: now() });
+      if (packet.action === CORRECTION_ACTIONS.REPLAN) {
+        result = { ...result, status: 'BLOCKED', reason: 'REPLAN_REQUIRED', correctionPacket: packet };
+        break;
+      }
+      const next = buildCorrectionAttempt({ packet, command, args });
+      if (!next?.command || !Array.isArray(next?.args)) throw new Error('V4_CORRECTION_COMMAND_INVALID');
+      result = await executeOnce(next);
+    }
     executionResult = result;
 
     if (result.status === 'COMPLETE') {
@@ -77,7 +101,8 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
 }
 
 export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, commandsByTaskId, timeoutMs, stallMs, execute, finalizeSuccess }) {
-  const readyTasks = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at, task_id").all();
+  blockTasksWithFailedDependencies(db);
+  const readyTasks = listRunnableTasks(db);
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
   const readyStreams = new Set(readyTasks.filter((task) => task.stream !== 'INTEGRATION_RELEASE').map((task) => task.stream));
   const jobs = [];
@@ -88,7 +113,7 @@ export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, com
     const spec = commandsByTaskId?.[task.task_id];
     if (!spec?.command) continue;
     occupied.add(slot.workerId);
-    jobs.push(runV4Task({ db, repoRoot, workspaceRoot, taskId: task.task_id, slotId: slot.workerId, command: spec.command, args: spec.args ?? [], timeoutMs, stallMs, execute, finalizeSuccess }));
+    jobs.push(runV4Task({ db, repoRoot, workspaceRoot, taskId: task.task_id, slotId: slot.workerId, command: spec.command, args: spec.args ?? [], timeoutMs, stallMs, execute, finalizeSuccess, buildCorrectionAttempt: spec.buildCorrectionAttempt, maxCorrectionAttempts: spec.maxCorrectionAttempts ?? 3 }));
   }
   return Promise.allSettled(jobs);
 }

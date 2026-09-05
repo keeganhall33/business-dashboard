@@ -31,3 +31,27 @@ Before production activation, V4 must prove a live three-lane acceptance run in 
 - permit automatic backfill without carrying Git state between tasks.
 
 QA and integration/release are added only after that proof is green.
+
+## Graph execution and correction
+
+V4 tasks may declare artifact-carrying dependencies with a single-line contract field:
+
+```text
+**dependencies_json:** [{"task_id":"upstream-task","artifact":"verified-plan"}]
+```
+
+A task becomes runnable only after every declared upstream task is `COMPLETE`. A failed upstream task blocks only its dependents; independent work remains runnable. Missing dependencies and cycles fail closed.
+
+Production agent failures return the same bounded unit with a red verdict, concrete evidence, and the original file-ownership scope. Successful sibling units are not rerun. Three failed corrections produce `REPLAN_REQUIRED` rather than another blind retry.
+
+Risk metadata is optional for legacy contracts and required when explicitly classifying new work:
+
+```text
+**mutation_kinds:** SHARED_UTILITY
+**affected_consumers:** 8
+**rollback_verified:** true
+```
+
+Contained reversible work uses deterministic checks. Wide reversible work additionally requires independent review. Production-data writes, deletion, payments, migrations, and unverified rollback paths remain human-gated and are not admitted to autonomous execution.
+
+Verified lessons enter the learning registry as candidates with evidence, applicability, provenance, version, and optional expiry. Promotion requires an approver; high-impact constraints cannot be promoted by automation. Deterministic transformations belong in registered code nodes rather than model workers.

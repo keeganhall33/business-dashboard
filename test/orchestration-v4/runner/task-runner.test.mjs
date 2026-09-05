@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSlotRegistry } from '../../../scripts/orchestration-v4/slot-scheduler.mjs';
-import { openV4StateStore, insertReadyTask, getTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
+import { openV4StateStore, insertReadyTask, getTask, listCorrectionAttempts } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { runReadyBatch } from '../../../scripts/orchestration-v4/runner/task-runner.mjs';
 
 function git(cwd, ...args) {
@@ -129,6 +129,58 @@ test('finalizer failure preserves successful execution evidence and full finaliz
   assert.equal(result.execution.code, 0);
   assert.equal(result.execution.stdoutTail, 'model said done');
   assert.deepEqual(result.finalization, { ok: false, reason: 'FINALIZER_FIXTURE_FAILURE', diagnostics: { workspacePath: '/tmp/workspace', status: '' } });
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('failed unit is corrected in place while its successful sibling is preserved', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-correction-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const contract = { title: 'Correct unit', body: 'body', fileOwnership: 'owned.mjs', taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED' };
+  insertReadyTask(db, { taskId: 'correct-me', issueNumber: 3001, stream: 'CORE_INTELLIGENCE', baseSha: sha, contract });
+  insertReadyTask(db, { taskId: 'good-sibling', issueNumber: 3002, stream: 'INTELLIGENCE_UX', baseSha: sha, contract });
+  const calls = new Map();
+  const execute = async ({ cwd, args, onEvent }) => {
+    const id = path.basename(cwd);
+    calls.set(id, (calls.get(id) ?? 0) + 1);
+    fs.writeFileSync(path.join(cwd, 'task-output.txt'), 'done\n');
+    onEvent({ kind: 'WORKTREE_MUTATION', observedAt: new Date().toISOString() });
+    if (id.includes('correct-me') && calls.get(id) === 1) return { status: 'FAILED', reason: 'TEST_RED', stderrTail: 'expected green' };
+    return { status: 'COMPLETE' };
+  };
+  const commands = {
+    'correct-me': { command: 'fixture', args: ['original'], buildCorrectionAttempt: ({ packet }) => ({ command: 'fixture', args: [packet.reason] }) },
+    'good-sibling': { command: 'fixture', args: ['original'] },
+  };
+  const settled = await runReadyBatch({ db, registry: createSlotRegistry(), repoRoot: repo, workspaceRoot: path.join(root, 'workspaces'), commandsByTaskId: commands, execute, timeoutMs: 5000, stallMs: 1000 });
+  assert.equal(settled.length, 2);
+  assert.equal(getTask(db, 'correct-me').state, 'COMPLETE');
+  assert.equal(getTask(db, 'good-sibling').state, 'COMPLETE');
+  assert.equal(listCorrectionAttempts(db, 'correct-me').length, 1);
+  const siblingCalls = [...calls.entries()].find(([id]) => id.includes('good-sibling'))[1];
+  assert.equal(siblingCalls, 1);
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('third failed correction stops the loop and requests replanning', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-replan-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const contract = { title: 'Replan unit', body: 'body', fileOwnership: 'owned.mjs', taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED' };
+  insertReadyTask(db, { taskId: 'replan-me', issueNumber: 3003, stream: 'CORE_INTELLIGENCE', baseSha: sha, contract });
+  let calls = 0;
+  await runReadyBatch({
+    db, registry: createSlotRegistry(), repoRoot: repo, workspaceRoot: path.join(root, 'workspaces'),
+    commandsByTaskId: { 'replan-me': { command: 'fixture', buildCorrectionAttempt: () => ({ command: 'fixture', args: [] }) } },
+    execute: async () => { calls += 1; return { status: 'FAILED', reason: 'STILL_RED', stderrTail: 'same failure' }; },
+    timeoutMs: 5000, stallMs: 1000,
+  });
+  assert.equal(calls, 3);
+  assert.equal(getTask(db, 'replan-me').state, 'BLOCKED');
+  assert.equal(getTask(db, 'replan-me').terminal_reason, 'REPLAN_REQUIRED');
+  assert.equal(listCorrectionAttempts(db, 'replan-me').length, 3);
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
