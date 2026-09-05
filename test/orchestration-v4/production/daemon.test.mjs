@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { syncPendingGithubTasks } from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import { syncPendingGithubTasks, runProductionPoll } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 import {
   claimTask,
   getGithubSyncMarker,
@@ -88,4 +88,38 @@ test('failed bounded synchronization remains pending and a later poll can succee
   } finally {
     fixture.close();
   }
+});
+
+// Verify timeout default values and invariant from source code
+const DAEMON_SOURCE = fs.readFileSync(
+  new URL('../../../scripts/orchestration-v4/production/daemon.mjs', import.meta.url),
+  'utf8'
+);
+
+// Extract default timeout values
+const TIMEOUT_MS_MATCH = DAEMON_SOURCE.match(/timeoutMs = (\d+) \* 60_000,/);
+const AGENT_TIMEOUT_MS_MATCH = DAEMON_SOURCE.match(/agentTimeoutMs = (\d+) \* 60_000,/);
+const STALL_MS_MATCH = DAEMON_SOURCE.match(/stallMs = (\d+) \* 60_000,/);
+
+test('runProductionPoll uses updated default timeouts: 100-min outer, 90-min agent, 30-min stall', async () => {
+  const TIMEOUT_MINUTES = Object.freeze({
+    DEFAULT_TIMEOUT_MS: parseInt(TIMEOUT_MS_MATCH?.[1] || '0', 10),
+    DEFAULT_AGENT_TIMEOUT_MS: parseInt(AGENT_TIMEOUT_MS_MATCH?.[1] || '0', 10),
+    DEFAULT_STALL_MS: parseInt(STALL_MS_MATCH?.[1] || '0', 10),
+  });
+
+  assert.equal(TIMEOUT_MINUTES.DEFAULT_TIMEOUT_MS, 100, 'outer timeout default should be 100 minutes');
+  assert.equal(TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS, 90, 'agent timeout default should be 90 minutes');
+  assert.equal(TIMEOUT_MINUTES.DEFAULT_STALL_MS, 30, 'stall timeout default should be 30 minutes');
+});
+
+test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
+  const TIMEOUT_MINUTES = Object.freeze({
+    DEFAULT_TIMEOUT_MS: parseInt(TIMEOUT_MS_MATCH?.[1] || '0', 10),
+    DEFAULT_AGENT_TIMEOUT_MS: parseInt(AGENT_TIMEOUT_MS_MATCH?.[1] || '0', 10),
+    DEFAULT_STALL_MS: parseInt(STALL_MS_MATCH?.[1] || '0', 10),
+  });
+
+  assert.ok(TIMEOUT_MINUTES.DEFAULT_STALL_MS < TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS, 'stallMs should be less than agentTimeoutMs');
+  assert.ok(TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS < TIMEOUT_MINUTES.DEFAULT_TIMEOUT_MS, 'agentTimeoutMs should be less than timeoutMs');
 });
