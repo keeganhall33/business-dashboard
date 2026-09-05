@@ -92,3 +92,68 @@ test('integration contract requires an explicit referenced PR', () => {
   const withPr = issue(31, { body: `${issue(31).body.replace('CORE_INTELLIGENCE', 'INTEGRATION_RELEASE')}\nTarget PR: #705` });
   assert.equal(validateTaskContract(withPr).ok, true);
 });
+
+test('business-value v2 requires outcome reason metric proof and independent verification', () => {
+  const incomplete = issue(50, {
+    body: `${issue(50).body}\n**contract_version:** BUSINESS_VALUE_V2\n**verification_owner:** SELF`,
+  });
+  const rejected = validateTaskContract(incomplete);
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.includes('BUSINESS_OUTCOME_REQUIRED'));
+  assert.ok(rejected.errors.includes('BUSINESS_REASON_REQUIRED'));
+  assert.ok(rejected.errors.includes('SUCCESS_METRIC_REQUIRED'));
+  assert.ok(rejected.errors.includes('PROOF_REQUIRED'));
+  assert.ok(rejected.errors.includes('INDEPENDENT_VERIFICATION_REQUIRED'));
+
+  const complete = issue(51, {
+    body: `${issue(51).body}
+**contract_version:** BUSINESS_VALUE_V2
+**verification_owner:** INDEPENDENT
+
+## Business outcome
+Keegan receives one ranked next action.
+
+## Business reason
+Reduce decision time and focus work on revenue.
+
+## Success metric
+One action is ranked first with a deterministic score.
+
+## Proof required
+Focused tests and a current output fixture.`,
+  });
+  const accepted = validateTaskContract(complete);
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.task.businessOutcome, 'Keegan receives one ranked next action.');
+  assert.equal(accepted.task.verificationOwner, 'INDEPENDENT');
+});
+
+test('production prompt carries business value and proof without breaking legacy tasks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-business-value-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    const businessIssue = issue(52, {
+      body: `${issue(52).body}
+**contract_version:** BUSINESS_VALUE_V2
+**verification_owner:** INDEPENDENT
+
+## Business outcome
+Make the next revenue move visible.
+
+## Business reason
+Protect Keegan's attention.
+
+## Success metric
+The top move is deterministic.
+
+## Proof required
+Current-run test output.`,
+    });
+    importReadyIssues({ db, issues: [businessIssue], baseSha: 'e'.repeat(40) });
+    const prompt = promptForTask(getTask(db, 'task-52'));
+    assert.match(prompt, /Business outcome: Make the next revenue move visible/);
+    assert.match(prompt, /Success metric: The top move is deterministic/);
+    assert.match(prompt, /Verification owner: INDEPENDENT/);
+    assert.match(prompt, /Never treat your own confidence as verification/);
+  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
