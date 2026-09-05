@@ -157,3 +157,40 @@ Current-run test output.`,
     assert.match(prompt, /Never treat your own confidence as verification/);
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('dependency and risk metadata enter the contract while irreversible work stays closed', () => {
+  const dependencyIssue = issue(61, {
+    body: `${issue(61).body}
+**dependencies_json:** [{"task_id":"task-60","artifact":"verified-plan"}]
+**mutation_kinds:** SHARED_UTILITY
+**affected_consumers:** 8
+**rollback_verified:** true`,
+  });
+  const parsed = validateTaskContract(dependencyIssue);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.task.dependencies, [{ taskId: 'task-60', artifact: 'verified-plan' }]);
+  assert.equal(parsed.task.riskProfile.lane, 'WIDE_REVERSIBLE');
+
+  const paymentIssue = issue(62, {
+    body: `${issue(62).body}
+**mutation_kinds:** PAYMENT
+**affected_consumers:** 1
+**rollback_verified:** true`,
+  });
+  const payment = validateTaskContract(paymentIssue);
+  assert.equal(payment.ok, false);
+  assert.ok(payment.errors.includes('HARD_TO_REVERSE_HUMAN_APPROVAL_REQUIRED'));
+});
+
+test('missing dependency fails closed instead of becoming runnable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-dependency-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    const dependent = issue(63, { body: `${issue(63).body}\n**dependencies_json:** [{"task_id":"missing","artifact":"result"}]` });
+    const result = importReadyIssues({ db, issues: [dependent], baseSha: 'f'.repeat(40) });
+    assert.equal(result.imported.length, 0);
+    assert.equal(result.rejected.length, 1);
+    assert.equal(getTask(db, 'task-63').state, 'BLOCKED');
+    assert.equal(getTask(db, 'task-63').terminal_reason, 'DEPENDENCY_CONTRACT_INVALID');
+  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});

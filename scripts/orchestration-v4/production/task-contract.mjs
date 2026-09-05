@@ -1,3 +1,5 @@
+import { classifyRiskLane, RISK_LANES } from '../policy/risk-lane.mjs';
+
 const FIELD = /^\*\*([a-zA-Z0-9_]+):\*\*\s*(.+?)\s*$/gm;
 const ALLOWED_TASK_MUTABILITY = new Set([
   'IMPLEMENTATION_MUTATION_REQUIRED',
@@ -39,6 +41,27 @@ export function validateTaskContract(issue) {
   const businessReason = section(issue?.body, 'Business reason');
   const successMetric = section(issue?.body, 'Success metric');
   const proofRequired = section(issue?.body, 'Proof required');
+  let dependencies = [];
+  if (fields.dependencies_json) {
+    try {
+      dependencies = JSON.parse(fields.dependencies_json);
+      if (!Array.isArray(dependencies) || dependencies.some((item) => !item?.task_id || !item?.artifact)) throw new Error();
+      dependencies = dependencies.map((item) => ({ taskId: String(item.task_id), artifact: String(item.artifact) }));
+    } catch { errors.push('DEPENDENCIES_JSON_INVALID'); }
+  }
+  let riskProfile = null;
+  if (fields.mutation_kinds || fields.rollback_verified || fields.affected_consumers) {
+    try {
+      riskProfile = classifyRiskLane({
+        mutationKinds: String(fields.mutation_kinds ?? '').split(',').map((value) => value.trim()).filter(Boolean),
+        affectedConsumers: Number(fields.affected_consumers ?? 0),
+        rollbackVerified: fields.rollback_verified === 'true',
+      });
+      if (riskProfile.lane === RISK_LANES.HARD_TO_REVERSE && fields.human_approval_required !== 'true') {
+        errors.push('HARD_TO_REVERSE_HUMAN_APPROVAL_REQUIRED');
+      }
+    } catch { errors.push('RISK_PROFILE_INVALID'); }
+  }
   if (isBusinessValueV2) {
     if (!businessOutcome) errors.push('BUSINESS_OUTCOME_REQUIRED');
     if (!businessReason) errors.push('BUSINESS_REASON_REQUIRED');
@@ -61,6 +84,8 @@ export function validateTaskContract(issue) {
       successMetric,
       proofRequired,
       verificationOwner: fields.verification_owner ?? 'UNSPECIFIED',
+      dependencies,
+      riskProfile,
       title: issue.title ?? '',
       body: issue.body ?? '',
     }),
