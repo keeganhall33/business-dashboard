@@ -33,6 +33,10 @@ function appendTail(current, chunk) {
   return next.length <= OUTPUT_TAIL_LIMIT ? next : next.slice(-OUTPUT_TAIL_LIMIT);
 }
 
+const APPLY_PATCH_FAILURE_PATTERN = /^\[tools\] apply_patch failed:/;
+
+const APPLY_PATCH_FORMAT_ERROR_RESULT = { status: 'FORMAT_ERROR', reason: 'APPLY_PATCH_FORMAT_ERROR' };
+
 export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, observeSemantic = () => null, spawnImpl = spawn, now = () => Date.now() }) {
   if (!command) throw new Error('V4_PROCESS_COMMAND_REQUIRED');
   if (!cwd) throw new Error('V4_PROCESS_CWD_REQUIRED');
@@ -50,6 +54,7 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     let stdoutBuffer = '';
     let stdoutTail = '';
     let stderrTail = '';
+    let applyPatchFailureDetected = false;
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const pgid = child.pid;
     onStarted({ childPid: child.pid, processGroupId: pgid, startedAt });
@@ -99,6 +104,14 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       for (const line of lines) {
         const structured = parseStructuredLine(line.trim(), observedAt);
         if (structured) emit(structured);
+        else if (APPLY_PATCH_FAILURE_PATTERN.test(line)) {
+          // Detect anchored tool-result signature for apply_patch format failures
+          // Terminates immediately via the completion handler, no second attempt allowed
+          if (!applyPatchFailureDetected) {
+            applyPatchFailureDetected = true;
+            requestTermination(APPLY_PATCH_FORMAT_ERROR_RESULT);
+          }
+        }
       }
     });
     child.stderr?.on('data', (chunk) => {
