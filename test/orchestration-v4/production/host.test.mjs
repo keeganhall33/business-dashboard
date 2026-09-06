@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
 import { runProductionHost } from '../../../scripts/orchestration-v4/production/host.mjs';
 import { claimTask, getTask, insertReadyTask, openV4StateStore, recordExecutionIdentity, transitionTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { V4_STATES } from '../../../scripts/orchestration-v4/state-machine.mjs';
@@ -80,195 +79,115 @@ test('host exits distinctly when a poll is stuck after all workers are terminal'
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host recovers stale tasks and restarts them after restart', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-recovery-'));
-  
-  let pollCalls = 0;
-  let nowMs = 0;
-  
+test('host startup fails stale running task with dead child and releases its slot before polling', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stale-task-'));
+  const dbPath = path.join(root, 'state.sqlite');
+  const db = openV4StateStore(dbPath);
   try {
-    // Create a ready task that will be claimed and started
-    const task = insertReadyTask({ 
-      db: openV4StateStore(path.join(root, 'state.sqlite')),
-      taskId: 'stale-integration',
-      issueNumber: 9911,
-      stream: 'INTEGRATION_RELEASE',
-      baseSha: BASE_SHA,
-    });
-
-    const poll = async () => {
-      pollCalls += 1;
-      
-      // Claim the task and run it
-      const claimed = claimTask({ db, taskId: task.task_id, slotId: 'local-e' });
-      transitionTask({ 
-        db, 
-        taskId: task.task_id, 
-        expectedState: V4_STATES.CLAIMED, 
-        toState: V4_STATES.RUNNING,
-        patch: { workspacePath: `/tmp/${task.task_id}` },
-      });
-
-      // Record execution identity with a child PID (simulate actual task execution)
-      recordExecutionIdentity({ 
-        db,
-        taskId: task.task_id,
-        childPid: 9912 + pollCalls,
-        processGroupId: process.pid + 1000 + pollCalls,
-      });
-
-      // Simulate task completion
-      transitionTask({ 
-        db,
-        taskId: task.task_id,
-        expectedState: V4_STATES.RUNNING,
-        toState: V4_STATES.COMPLETE,
-        patch: { terminalReason: null },
-      });
-
-      return { ok: true };
-    };
-    
-    // Run host for 3 cycles - task should complete successfully each time
-    const firstResult = await runProductionHost({ 
-      stateRoot: root,
-      poll,
-      maxCycles: 3,
-      intervalMs: 100,
-      sleep: async () => {},
-      now: () => nowMs,
-    });
-    
-    assert.ok(firstResult);
-    assert.equal(pollCalls, 3);
-    
-  } finally { 
-    fs.rmSync(root, { recursive: true, force: true }); 
+    insertReadyTask(db, { taskId: 'stale-integration', issueNumber: 9911, stream: 'INTEGRATION_RELEASE', baseSha: BASE_SHA });
+    claimTask(db, { taskId: 'stale-integration', slotId: 'local-e' });
+    transitionTask(db, { taskId: 'stale-integration', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING, patch: { workspacePath: path.join(root, 'preserved-workspace') } });
+    recordExecutionIdentity(db, { taskId: 'stale-integration', childPid: 99999999, processGroupId: 99999999 });
+    insertReadyTask(db, { taskId: 'next-integration', issueNumber: 9912, stream: 'INTEGRATION_RELEASE', baseSha: BASE_SHA });
+  } finally {
+    db.close();
   }
+
+  let observed = null;
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      maxCycles: 1,
+      poll: async ({ db: hostDb }) => {
+        observed = {
+          stale: getTask(hostDb, 'stale-integration'),
+          next: getTask(hostDb, 'next-integration'),
+        };
+      },
+    });
+    assert.deepEqual(result.recoveredStaleTasks, ['stale-integration']);
+    assert.equal(observed.stale.state, V4_STATES.FAILED);
+    assert.equal(observed.stale.slot_id, null);
+    assert.equal(observed.stale.child_pid, null);
+    assert.equal(observed.stale.process_group_id, null);
+    assert.equal(observed.stale.terminal_reason, 'V4_STALE_PROCESS_AFTER_HOST_RESTART');
+    assert.equal(observed.stale.workspace_path, path.join(root, 'preserved-workspace'));
+    assert.equal(JSON.parse(observed.stale.result_json).workspacePreserved, true);
+    assert.equal(observed.next.state, V4_STATES.READY);
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.equal(heartbeat.recoveredStaleTasks, 1);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host classifies and recovers stale tasks with proven stale classifications', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stale-classification-'));
-  
+test('host startup preserves active task when recorded child is still live', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-live-task-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
   try {
-    // Simulate a task with dead child process that has been classified as stale
-    
-    // Create initial task
-    const insertReadyTaskLocal = (taskData) => {
-      return openV4StateStore(path.join(root, 'state.sqlite')).prepare(
-        `INSERT INTO tasks(task_id,issue_number,stream,state,base_sha,contract_json,created_at,updated_at)
-         VALUES(?,?,?, ?,?,?,?,?,?)`
-      ).run(
-        taskData.taskId,
-        taskData.issueNumber,
-        taskData.stream,
-        V4_STATES.READY,
-        taskData.baseSha || BASE_SHA,
-        '{}',
-        new Date().toISOString(),
-        new Date().toISOString()
-      );
-    };
+    insertReadyTask(db, { taskId: 'live-task', issueNumber: 9921, stream: 'INTEGRATION_RELEASE', baseSha: BASE_SHA });
+    claimTask(db, { taskId: 'live-task', slotId: 'local-e' });
+    transitionTask(db, { taskId: 'live-task', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
+    recordExecutionIdentity(db, { taskId: 'live-task', childPid: process.pid, processGroupId: process.pid });
+  } finally {
+    db.close();
+  }
 
-    const transitionTaskLocal = (taskData) => {
-      return openV4StateStore(path.join(root, 'state.sqlite')).prepare(
-        `UPDATE tasks SET state=?, updated_at=? WHERE task_id=?`
-      ).run(taskData.toState, new Date().toISOString(), taskData.taskId);
-    };
-
-    const claimTaskLocal = (taskData) => {
-      return openV4StateStore(path.join(root, 'state.sqlite')).prepare(
-        `UPDATE tasks SET state=?, process_group_id=?, slot_id=?, created_at=?, updated_at=? WHERE task_id=?`
-      ).run(
-        V4_STATES.CLAIMED,
-        1,
-        taskData.slotId,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        taskData.taskId
-      );
-    };
-
-    const recordExecutionIdentityLocal = (taskData) => {
-      return openV4StateStore(path.join(root, 'state.sqlite')).prepare(
-        `UPDATE tasks SET child_pid=?, process_group_id=?, updated_at=? WHERE task_id=?`
-      ).run(
-        taskData.childPid,
-        taskData.processGroupId,
-        new Date().toISOString(),
-        taskData.taskId
-      );
-    };
-
-    // Create a ready task
-    insertReadyTaskLocal({ 
-      taskId: 'stale-integration',
-      issueNumber: 9911,
-      stream: 'INTEGRATION_RELEASE',
-    });
-
-    // Claim it
-    claimTaskLocal({ taskId: 'stale-integration', slotId: 'local-e' });
-    
-    // Transition to running
-    transitionTaskLocal({ 
-      taskId: 'stale-integration', 
-      toState: V4_STATES.RUNNING,
-    });
-
-    // Record execution identity with child PID 9912
-    recordExecutionIdentityLocal({ 
-      taskId: 'stale-integration',
-      childPid: 9912,
-      processGroupId: process.pid + 1000,
-    });
-    
-    // Kill the process to simulate stale state
-    try {
-      process.kill(9912, 'SIGKILL');
-    } catch {}
-    
-    // Now host should classify and recover this task
-    let pollCalls = 0;
-    
-    const poll = async () => {
-      pollCalls += 1;
-      
-      // The host's recoverStaleActiveTasks should classify the dead process (9912)
-      // Since it has an orphan PARENT PID of 1 (in our mock), it will be classified as PPID1_ORPHAN
-      // and released as failed
-      
-      // Create a new ready task for next poll
-      insertReadyTaskLocal({ 
-        taskId: 'live-task',
-        issueNumber: 9921,
-        stream: 'INTEGRATION_RELEASE',
-      });
-
-      // Claim the new task
-      claimTaskLocal({ taskId: 'live-task', slotId: 'local-e' });
-      
-      // Transition to running
-      transitionTaskLocal({ 
-        taskId: 'live-task',
-        toState: V4_STATES.RUNNING,
-      });
-
-      return { ok: true };
-    };
-    
-    const result = await runProductionHost({ 
+  let observed = null;
+  try {
+    const result = await runProductionHost({
       stateRoot: root,
-      poll,
       maxCycles: 1,
-      intervalMs: 100,
+      poll: async ({ db: hostDb }) => { observed = getTask(hostDb, 'live-task'); },
+    });
+    assert.deepEqual(result.recoveredStaleTasks, []);
+    assert.equal(observed.state, V4_STATES.RUNNING);
+    assert.equal(observed.slot_id, 'local-e');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host fails closed when lock belongs to a live pid', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-live-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), `${process.pid}\n`);
+  try {
+    await assert.rejects(() => runProductionHost({ stateRoot: root, poll: async () => {}, maxCycles: 1 }), /V4_HOST_ALREADY_RUNNING/);
+    assert.equal(fs.readFileSync(path.join(root, 'host.lock'), 'utf8').trim(), String(process.pid));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host reclaims a stale dead-pid lock and starts normally', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stale-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), '99999999\n');
+  let calls = 0;
+  try {
+    const result = await runProductionHost({ stateRoot: root, poll: async () => { calls += 1; }, maxCycles: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(calls, 1);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host reclaims an invalid stale lock', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-invalid-lock-'));
+  fs.writeFileSync(path.join(root, 'host.lock'), 'not-a-pid\n');
+  try {
+    const result = await runProductionHost({ stateRoot: root, poll: async () => {}, maxCycles: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host does not wait forever for an orphaned in-flight poll during shutdown', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-drain-'));
+  const never = new Promise(() => {});
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      poll: async () => never,
+      maxCycles: 1,
+      shutdownDrainMs: 0,
       sleep: async () => {},
     });
-    
-    assert.ok(result);
-    assert.equal(pollCalls, 1);
-    
-  } finally { 
-    fs.rmSync(root, { recursive: true, force: true }); 
-  }
+    assert.equal(result.ok, true);
+    assert.equal(result.drained, false);
+    assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

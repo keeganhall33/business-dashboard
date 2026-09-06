@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
-import { classifyProcessOwnership, PROCESS_OWNERSHIP_CLASSIFICATIONS } from './process-ownership.mjs';
 
 function pidIsLive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -44,226 +42,128 @@ function acquireHostLock(lockPath) {
   }
 }
 
-/**
- * Extract observed process facts for a given PID.
- */
-function observeProcess(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  try {
-    const psOutput = require('child_process').spawnSync('ps', ['-p', String(pid)], { encoding: 'utf8', timeout: 5000 });
-    if (!psOutput || !psOutput.stdout) return null;
-    // Parse ps output: PID PPID ... COMMAND
-    const lines = psOutput.stdout.trim().split('\n');
-    if (lines.length === 0) return null;
-    const parts = lines[0].split(/\s+/);
-    return {
-      pid: Number(parts[0]),
-      ppid: Number(parts[1]) ?? 1,
-      command: parts.slice(2).join(' '),
-    };
-  } catch {
-    // Process may have exited or be inaccessible
-    return { exists: false };
-  }
-}
-
-/**
- * Get host ancestors by walking from PID down to 1.
- */
-function getHostAncestors(startPid) {
-  const ancestors = [startPid];
-  let current = startPid;
-  while (current > 1) {
-    try {
-      const psOutput = require('child_process').spawnSync('ps', ['-p', String(current)], { encoding: 'utf8', timeout: 5000 });
-      if (!psOutput || !psOutput.stdout) break;
-      const parts = psOutput.stdout.trim().split(/\s+/);
-      current = Number(parts[1]) ?? current;
-      if (current === startPid) break; // cycle detection
-      ancestors.unshift(current);
-    } catch {
-      break;
-    }
-  }
-  return ancestors;
-}
-
-/**
- * Build expected process facts from contract and host identity.
- */
-function buildExpected(task, now = () => new Date()) {
-  const hostPid = process.pid;
-  const workspacePath = task.workspace_path ?? null;
-  // The entrypoint is the runner that executes tasks
-  // For verification, we use the daemon ENTRYPOINT as a baseline
-  const daemonPath = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
-  return {
-    pid: Number(task.child_pid),
-    hostPid,
-    processGroupId: Number(task.process_group_id) ?? hostPid,
-    entrypoint: daemonPath,
-    taskId: task.task_id,
-    workspacePath,
-  };
-}
-
-/**
- * Release a stale task and record its terminal state.
- */
-function releaseStaleTask(db, task, { reason = 'V4_STALE_PROCESS_AFTER_HOST_RESTART', now = () => new Date() } = {}) {
-  recordTaskResult(db, {
-    taskId: task.task_id,
-    result: {
-      error: reason,
-      staleState: task.state,
-      staleChildPid: Number.isInteger(task.child_pid) && task.child_pid > 0 ? task.child_pid : null,
-      workspacePreserved: Boolean(task.workspace_path),
-    },
-    now: now(),
-  });
-  transitionTask(db, {
-    taskId: task.task_id,
-    expectedState: task.state,
-    toState: V4_STATES.FAILED,
-    patch: { terminalReason: reason },
-    now: now(),
-  });
-  releaseSlotForTerminalTask(db, task.task_id);
-}
-
-/**
- * Reconcile persisted active-task occupancy against current host identity.
- * Preserve verified current children, release proven stale occupancies, leave UNKNOWN fail-closed.
- */
-export function recoverStaleActiveTasks(
-  db,
-  {
-    now = () => new Date(),
-    isPidLive = pidIsLive,
-    sleep,
-  } = {}
-) {
+export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive = pidIsLive } = {}) {
   const active = db.prepare("SELECT * FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY updated_at,task_id").all();
   const recovered = [];
-  
   for (const task of active) {
-    const childPid = Number(task.child_pid);
-    
-    // If no recorded child, skip classification
-    if (!Number.isInteger(childPid) || childPid <= 0) continue;
-    
-    // Check if process is live first - if so, it's verified current child
-    if (isPidLive(childPid)) {
-      // Process is live - this is a verified current child, preserve the task
-      continue;
-    }
-    
-    // Process is dead or inaccessible - classify it to determine recovery action
-    const observed = observeProcess(childPid);
-    const expected = buildExpected(task);
-    
-    if (!observed) {
-      // Cannot get process facts - treat as proven stale (can't recover)
-      releaseStaleTask(db, task, { reason: 'V4_STALE_PROCESS_AFTER_HOST_RESTART', now });
-      recovered.push(task.task_id);
-      continue;
-    }
-    
-    if (!observed.exists) {
-      // Process no longer exists - classified as MISSING or other stale type
-      releaseStaleTask(db, task, { reason: 'V4_STALE_PROCESS_AFTER_HOST_RESTART', now });
-      recovered.push(task.task_id);
-      continue;
-    }
-    
-    // Classify the ownership mismatch
-    const classification = classifyProcessOwnership({
-      expected: { ...expected },
-      observed: {
-        pid: observed.pid,
-        ppid: observed.ppid,
-        processGroupId: Number(observed?.process_group_id ?? observed.pid),
-        command: observed.command,
-        hostAncestors: getHostAncestors(childPid),
+    const pid = Number(task.child_pid);
+    if (Number.isInteger(pid) && pid > 0 && isPidLive(pid)) continue;
+    const reason = 'V4_STALE_PROCESS_AFTER_HOST_RESTART';
+    recordTaskResult(db, {
+      taskId: task.task_id,
+      result: {
+        error: reason,
+        staleState: task.state,
+        staleChildPid: Number.isInteger(pid) && pid > 0 ? pid : null,
+        workspacePreserved: Boolean(task.workspace_path),
       },
+      now: now(),
     });
-    
-    // Handle different classifications
-    if (classification.verified) {
-      // Verified current child - should not happen if process is dead, but keep anyway
-      continue;
-    } else if ([
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.PPID1_ORPHAN,
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.PROCESS_MISSING,
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.PID_REUSED,
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.ENTRYPOINT_MISMATCH,
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.TASK_ID_MISMATCH,
-      PROCESS_OWNERSHIP_CLASSIFICATIONS.HOST_TREE_MISMATCH,
-    ].includes(classification.classification)) {
-      // Proven stale classification - release the task
-      releaseStaleTask(db, task, { reason: 'V4_STALE_PROCESS_AFTER_HOST_RESTART', now });
-      recovered.push(task.task_id);
-    } else if (classification.classification === PROCESS_OWNERSHIP_CLASSIFICATIONS.UNKNOWN) {
-      // Unknown ownership - fail closed, don't release
-      continue;
-    } else {
-      // Any other unknown classification type - fail closed
-      continue;
-    }
+    transitionTask(db, {
+      taskId: task.task_id,
+      expectedState: task.state,
+      toState: V4_STATES.FAILED,
+      patch: { terminalReason: reason },
+      now: now(),
+    });
+    releaseSlotForTerminalTask(db, task.task_id);
+    recovered.push(task.task_id);
   }
-  
   return Object.freeze(recovered);
 }
 
-/**
- * Run production orchestration host for a poll cycle.
- */
-export async function runProductionHost(
-  {
-    stateRoot,
-    repoRoot,
-    workspaceRoot,
-    issues = null,
-    openclaw = '/opt/homebrew/bin/openclaw',
-    ollama = '/opt/homebrew/bin/ollama',
-    gh = 'gh',
-    agentTimeoutMs = 90 * 60_000,
-    timeoutMs = 100 * 60_000,
-    stallMs = 30 * 60_000,
-    poll,
-    shutdownDrainMs = 5000,
-    sleep = async (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  } = {}
-) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
+  if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
+  if (!Number.isInteger(emptyPollTimeoutMs) || emptyPollTimeoutMs <= 0) throw new Error('V4_HOST_EMPTY_POLL_TIMEOUT_INVALID');
+  fs.mkdirSync(stateRoot, { recursive: true });
   const lockPath = path.join(stateRoot, 'host.lock');
-  
-  if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) {
-    throw new Error('V4_PRODUCTION_SHUTDOWN_DRAIN_MS_INVALID');
-  }
-  
+  const lockFd = acquireHostLock(lockPath);
+  fs.writeFileSync(lockFd, `${process.pid}\n`);
+  const db = openV4StateStore(path.join(stateRoot, 'state.sqlite'));
+  const recoveredStaleTasks = recoverStaleActiveTasks(db);
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  process.once('SIGTERM', stop);
+  process.once('SIGINT', stop);
+  let cycles = 0;
+  let skippedPolls = 0;
+  let lastPollError = null;
+  let pollStartedAt = null;
+  let stalledReason = null;
+  const inFlightPolls = new Set();
+
+  const launchPoll = () => {
+    let tracked;
+    pollStartedAt = now();
+    tracked = Promise.resolve()
+      .then(() => poll({ db, ...pollArgs }))
+      .then(
+        () => ({ ok: true }),
+        (error) => {
+          lastPollError = String(error?.message || error);
+          return { ok: false, error: lastPollError };
+        },
+      )
+      .finally(() => {
+        inFlightPolls.delete(tracked);
+        if (inFlightPolls.size === 0) pollStartedAt = null;
+      });
+    inFlightPolls.add(tracked);
+    return tracked;
+  };
+
   try {
-    return await runProductionPoll({
-      db: openV4StateStore(path.join(stateRoot, 'state.sqlite')),
-      repoRoot: repoRoot ?? path.join(workspaceRoot, '..', '..'),
-      workspaceRoot: workspaceRoot,
-      configPath: path.join(repoRoot, '.claw.json'),
-      issues,
-      openclaw,
-      ollama,
-      gh,
-      agentTimeoutMs,
-      timeoutMs,
-      stallMs,
-    });
-  } catch (error) {
-    if (error?.message === 'V4_HOST_ALREADY_RUNNING') {
-      throw error;
+    while (!stopped && cycles < maxCycles) {
+      cycles += 1;
+      if (inFlightPolls.size === 0) launchPoll();
+      else {
+        skippedPolls += 1;
+        const activeTasks = db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").get().count;
+        const elapsedMs = pollStartedAt === null ? 0 : Math.max(0, now() - pollStartedAt);
+        if (activeTasks === 0 && elapsedMs >= emptyPollTimeoutMs) {
+          stalledReason = 'V4_STUCK_EMPTY_POLL';
+          lastPollError = stalledReason;
+          stopped = true;
+        }
+      }
+      const generatedAtMs = now();
+      fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
+        pid: process.pid,
+        cycles,
+        inFlightPolls: inFlightPolls.size,
+        skippedPolls,
+        recoveredStaleTasks: recoveredStaleTasks.length,
+        lastPollError,
+        pollState: stalledReason ? 'STALLED' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
+        stalledReason,
+        pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
+        currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
+        generatedAt: new Date(generatedAtMs).toISOString(),
+      })}\n`);
+      if (!stopped && cycles < maxCycles) await sleep(intervalMs);
     }
-    // Re-throw unexpected errors to caller
-    throw error;
+    let drained = true;
+    if (inFlightPolls.size) {
+      const drain = Promise.allSettled([...inFlightPolls]).then(() => true);
+      if (shutdownDrainMs === 0) drained = false;
+      else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
+    }
+    return { ok: !stalledReason, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained };
   } finally {
-    // Always attempt cleanup on exit
-    fs.rmSync(path.join(repoRoot, '.claw'), { recursive: true, force: true });
-    fs.rmSync(lockPath, { force: true });
+    process.removeListener('SIGTERM', stop);
+    process.removeListener('SIGINT', stop);
+    db.close();
+    try { fs.closeSync(lockFd); } catch {}
+    try { fs.unlinkSync(lockPath); } catch {}
   }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const stateRoot = path.resolve(process.env.JEEVES_V4_STATE_ROOT || path.join(process.env.HOME || '.', '.openclaw/state/orchestration-v4'));
+  const repoRoot = path.resolve(process.env.JEEVES_V4_REPO_ROOT || path.join(process.env.HOME || '.', '.openclaw/runtime-v4/business-dashboard'));
+  const workspaceRoot = path.resolve(process.env.JEEVES_V4_WORKSPACE_ROOT || path.join(process.env.HOME || '.', '.openclaw/workspaces-v4'));
+  const configPath = path.resolve(process.env.JEEVES_V4_CONFIG || process.env.OPENCLAW_CONFIG_PATH || path.join(process.env.HOME || '.', '.openclaw/openclaw.json'));
+  const result = await runProductionHost({ stateRoot, pollArgs: { repoRoot, repoFullName: 'keeganhall33/business-dashboard', workspaceRoot, configPath } });
+  if (!result.ok) process.exitCode = 75;
 }
