@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
-import TestRenderer, { act } from "react-test-renderer";
-
-declare global {
-  // eslint-disable-next-line no-var
-  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
-}
-
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   FunnelKitCampaignReviewCard,
@@ -16,28 +9,23 @@ import {
 } from "@/components/vertical-slice/FunnelKitCampaignReviewCard";
 
 function render() {
-  let renderer: TestRenderer.ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(<FunnelKitCampaignReviewCard campaign={buildFunnelKitCampaignReviewFixtureV1()} />);
-  });
-  return renderer!;
+  return renderToStaticMarkup(
+    <FunnelKitCampaignReviewCard campaign={buildFunnelKitCampaignReviewFixtureV1()} />
+  );
 }
 
 test("review card is explicitly read-only draft/test and shows LIVE SEND disabled", () => {
-  const renderer = render();
-  const text = renderer.toJSON();
-  const flat = JSON.stringify(text);
+  const html = render();
 
-  assert.ok(flat.includes("Read-only review surface"));
-  assert.ok(flat.includes("LIVE SEND: DISABLED"));
-  assert.ok(flat.includes("Mode:"));
+  assert.ok(html.includes("Read-only review surface"));
+  assert.ok(html.includes("LIVE SEND: DISABLED"));
+  assert.ok(html.includes("Mode:"));
 });
 
 test("review card keeps unknowns and blockers visible", () => {
-  const renderer = render();
-  const flat = JSON.stringify(renderer.toJSON());
-  assert.ok(flat.includes("Blockers"));
-  assert.ok(flat.includes("Unknowns"));
+  const html = render();
+  assert.ok(html.includes("Blockers"));
+  assert.ok(html.includes("Unknowns"));
 });
 
 export {};
