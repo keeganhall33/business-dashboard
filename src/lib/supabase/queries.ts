@@ -908,6 +908,41 @@ export async function getActiveOpportunities(limit = 25) {
   return data ?? [];
 }
 
+export type ActiveOpportunityViewRow = {
+  id: string;
+  name: string;
+  organization: string | null;
+  opportunity_type: string;
+  status: string;
+  value_estimate: number | null;
+  prestige_score: number | null;
+  probability_score: number | null;
+  owner_agent: string;
+  contact_name: string | null;
+  contact_role: string | null;
+  next_step: string | null;
+  next_step_due_at: string | null;
+  notes_md: string | null;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Primary discovery input: vw_active_opportunities.
+// This view is expected to exclude inactive/closed records by default.
+export async function getActiveOpportunitiesVw(limit = 25): Promise<ActiveOpportunityViewRow[]> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("vw_active_opportunities")
+    .select(
+      "id,name,organization,opportunity_type,status,value_estimate,prestige_score,probability_score,owner_agent,contact_name,contact_role,next_step,next_step_due_at,notes_md,source,created_at,updated_at"
+    )
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as unknown as ActiveOpportunityViewRow[];
+}
+
 export async function getOpportunityById(id: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
