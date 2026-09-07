@@ -5,6 +5,12 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_MODEL = 'ollama/qwen3.5:9b';
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+export const AGENT_MUTATION_MODES = Object.freeze({ DEFAULT: 'DEFAULT', SHELL_ONLY: 'SHELL_ONLY' });
+
+export function validateAgentMutationMode(mode = AGENT_MUTATION_MODES.DEFAULT) {
+  if (!Object.values(AGENT_MUTATION_MODES).includes(mode)) throw new Error('V4_AGENT_MUTATION_MODE_INVALID');
+  return mode;
+}
 
 function hasFlag(helpText, flag) {
   const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -68,7 +74,8 @@ export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) 
   });
 }
 
-export function productionAgentConfig() {
+export function productionAgentConfig({ applyPatchEnabled = true } = {}) {
+  if (typeof applyPatchEnabled !== 'boolean') throw new Error('V4_AGENT_APPLY_PATCH_CAPABILITY_INVALID');
   return Object.freeze({
     memory: { search: { enabled: false } },
     models: {
@@ -107,19 +114,19 @@ export function productionAgentConfig() {
       fs: { workspaceOnly: true },
       exec: {
         mode: 'full',
-        applyPatch: { enabled: true, workspaceOnly: true },
+        applyPatch: { enabled: applyPatchEnabled, workspaceOnly: true },
       },
     },
   });
 }
 
-export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent') }) {
+export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent'), applyPatchEnabled = true }) {
   if (!taskId) throw new Error('V4_AGENT_TASK_ID_REQUIRED');
   fs.mkdirSync(root, { recursive: true });
   const safe = String(taskId).replace(/[^A-Za-z0-9._-]/g, '-');
   const stateDir = fs.mkdtempSync(path.join(root, `${safe}-`));
   const configPath = path.join(stateDir, 'openclaw-v4.json');
-  fs.writeFileSync(configPath, `${JSON.stringify(productionAgentConfig(), null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(configPath, `${JSON.stringify(productionAgentConfig({ applyPatchEnabled }), null, 2)}\n`, { mode: 0o600 });
   return Object.freeze({ stateDir, configPath });
 }
 
