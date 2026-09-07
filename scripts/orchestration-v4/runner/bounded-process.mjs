@@ -3,6 +3,23 @@ import { spawn } from 'node:child_process';
 const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED','TEST_RESULT','BUILD_RESULT','TYPECHECK_RESULT','MODEL_RESULT','PR_MUTATION']);
 const OUTPUT_TAIL_LIMIT = 16_384;
 const TERMINATION_REAP_GRACE_MS = 2000;
+const APPLY_PATCH_TOOL_FAILURE = /^\[tools\]\s+apply_patch failed:\s*(.+)$/i;
+const APPLY_PATCH_FORMAT_MESSAGES = Object.freeze([
+  /invalid patch hunk/i,
+  /not a valid hunk header/i,
+  /valid hunk headers:/i,
+  /last line of the patch must be ['"]?\*\*\* End Patch/i,
+  /update file hunk .* is empty/i,
+  /add file line .* must start with ['"]?\+/i,
+  /(?:unknown|unsupported).*\*\*\* Remove File/i,
+  /conflicting (?:patch )?directives/i,
+  /missing (?:final )?['"]?\*\*\* End Patch/i,
+]);
+
+export function isApplyPatchFormatFailure(line) {
+  const match = String(line ?? '').match(APPLY_PATCH_TOOL_FAILURE);
+  return Boolean(match && APPLY_PATCH_FORMAT_MESSAGES.some((pattern) => pattern.test(match[1])));
+}
 
 export function signalGroup(pgid, signal, killImpl = process.kill) {
   if (!Number.isInteger(pgid) || pgid <= 0) return false;
@@ -33,7 +50,7 @@ function appendTail(current, chunk) {
   return next.length <= OUTPUT_TAIL_LIMIT ? next : next.slice(-OUTPUT_TAIL_LIMIT);
 }
 
-export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, observeSemantic = () => null, spawnImpl = spawn, now = () => Date.now() }) {
+export function runBoundedProcess({ command, args = [], cwd, env = process.env, timeoutMs, stallMs, onEvent = () => {}, onStarted = () => {}, observeSemantic = () => null, spawnImpl = spawn, killImpl = process.kill, now = () => Date.now() }) {
   if (!command) throw new Error('V4_PROCESS_COMMAND_REQUIRED');
   if (!cwd) throw new Error('V4_PROCESS_CWD_REQUIRED');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('V4_PROCESS_TIMEOUT_REQUIRED');
@@ -48,6 +65,7 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     let killTimer = null;
     let reapTimer = null;
     let stdoutBuffer = '';
+    let stderrBuffer = '';
     let stdoutTail = '';
     let stderrTail = '';
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -81,11 +99,27 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       if (settled || terminationResult) return;
       terminationResult = result;
       clearInterval(timer);
-      signalGroup(pgid, 'SIGTERM');
-      killTimer = setTimeout(() => signalGroup(pgid, 'SIGKILL'), 250);
+      signalGroup(pgid, 'SIGTERM', killImpl);
+      killTimer = setTimeout(() => signalGroup(pgid, 'SIGKILL', killImpl), 250);
       killTimer.unref?.();
       reapTimer = setTimeout(() => finish(result), TERMINATION_REAP_GRACE_MS);
       reapTimer.unref?.();
+    };
+
+    const inspectLines = (buffer, text, observedAt, allowStructured) => {
+      const lines = (buffer + text).split(/\r?\n/);
+      const remainder = lines.pop() ?? '';
+      for (const line of lines) {
+        if (isApplyPatchFormatFailure(line)) {
+          requestTermination({ status: 'FAILED', code: null, signal: 'SIGTERM', reason: 'APPLY_PATCH_FORMAT_ERROR' });
+          continue;
+        }
+        if (allowStructured) {
+          const structured = parseStructuredLine(line.trim(), observedAt);
+          if (structured) emit(structured);
+        }
+      }
+      return remainder;
     };
 
     child.stdout?.on('data', (chunk) => {
@@ -93,18 +127,14 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       const text = String(chunk);
       stdoutTail = appendTail(stdoutTail, text);
       emit({ kind: 'STDOUT', data: text, observedAt });
-      stdoutBuffer += text;
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const structured = parseStructuredLine(line.trim(), observedAt);
-        if (structured) emit(structured);
-      }
+      stdoutBuffer = inspectLines(stdoutBuffer, text, observedAt, true);
     });
     child.stderr?.on('data', (chunk) => {
+      const observedAt = new Date(now()).toISOString();
       const text = String(chunk);
       stderrTail = appendTail(stderrTail, text);
-      emit({ kind: 'STDERR', data: text, observedAt: new Date(now()).toISOString() });
+      emit({ kind: 'STDERR', data: text, observedAt });
+      stderrBuffer = inspectLines(stderrBuffer, text, observedAt, false);
     });
     child.on('error', (error) => {
       if (settled) return;
@@ -115,7 +145,14 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
       reject(error);
     });
     child.on('exit', (code, signal) => {
-      sampleSemantic(new Date(now()).toISOString());
+      const observedAt = new Date(now()).toISOString();
+      if (stdoutBuffer && isApplyPatchFormatFailure(stdoutBuffer)) {
+        terminationResult ??= { status: 'FAILED', code: null, signal: 'SIGTERM', reason: 'APPLY_PATCH_FORMAT_ERROR' };
+      }
+      if (stderrBuffer && isApplyPatchFormatFailure(stderrBuffer)) {
+        terminationResult ??= { status: 'FAILED', code: null, signal: 'SIGTERM', reason: 'APPLY_PATCH_FORMAT_ERROR' };
+      }
+      sampleSemantic(observedAt);
       if (terminationResult) {
         finish({ ...terminationResult, code, observedSignal: signal });
         return;

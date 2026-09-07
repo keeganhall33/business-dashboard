@@ -13,6 +13,12 @@ export function createCorrectionPacket({ unitId, verdict, reason, evidence, scop
 
 export function correctionPrompt(packet) {
   if (!packet?.unitId) throw new Error('V4_CORRECTION_PACKET_REQUIRED');
+  const formatErrorDirectives = packet.reason === 'APPLY_PATCH_FORMAT_ERROR' ? [
+    'APPLY_PATCH IS DISABLED FOR THIS ENTIRE CORRECTION ATTEMPT.',
+    'Do not call apply_patch again during this attempt.',
+    'Perform every mutation with deterministic shell exec commands rooted at the authoritative repository workspace.',
+    'Verify the owned-path changes and tests with repository-rooted shell commands before completion.',
+  ] : [];
   return [
     'Correction attempt for the same bounded unit.',
     `UNIT: ${packet.unitId}`,
@@ -22,5 +28,6 @@ export function correctionPrompt(packet) {
     `SCOPE: ${packet.scope}`,
     `ATTEMPT: ${packet.attempt}/${packet.maxAttempts}`,
     'Preserve accepted sibling units. Change nothing outside SCOPE.',
+    ...formatErrorDirectives,
   ].join('\n');
 }
