@@ -1,10 +1,20 @@
 import { classifyRiskLane, RISK_LANES } from '../policy/risk-lane.mjs';
+import { DEFAULT_SLOT_STREAMS } from '../slot-scheduler.mjs';
 
 const FIELD = /^\*\*([a-zA-Z0-9_]+):\*\*\s*(.+?)\s*$/gm;
 const ALLOWED_TASK_MUTABILITY = new Set([
   'IMPLEMENTATION_MUTATION_REQUIRED',
   'VALIDATION_EVIDENCE_ONLY',
   'EVIDENCE_ONLY',
+]);
+const SUPPORTED_TASK_STREAMS = new Set(
+  Object.values(DEFAULT_SLOT_STREAMS).flat(),
+);
+const TERMINAL_TASK_LABELS = new Set([
+  'orch:blocked',
+  'orch:failed',
+  'orch:complete',
+  'orch:timed-out',
 ]);
 const INTEGRATION_PR_REFERENCE = /(?:\bPR\b|\bpull request\b)\s*[:=-]?\s*#?\s*\d+\b/i;
 const BUSINESS_VALUE_CONTRACT = 'BUSINESS_VALUE_V2';
@@ -31,6 +41,7 @@ export function validateTaskContract(issue) {
   if (!issue?.number) errors.push('ISSUE_NUMBER_REQUIRED');
   if (!fields.task_id) errors.push('TASK_ID_REQUIRED');
   if (!fields.stream) errors.push('STREAM_REQUIRED');
+  else if (!SUPPORTED_TASK_STREAMS.has(fields.stream)) errors.push('STREAM_UNSUPPORTED');
   if (fields.human_approval_required !== 'false') errors.push('HUMAN_APPROVAL_REQUIRED_OR_UNKNOWN');
   if (!fields.task_mutability) errors.push('TASK_MUTABILITY_REQUIRED');
   else if (!ALLOWED_TASK_MUTABILITY.has(fields.task_mutability)) errors.push('TASK_MUTABILITY_INVALID');
@@ -92,9 +103,9 @@ export function validateTaskContract(issue) {
   };
 }
 
-export { BUSINESS_VALUE_CONTRACT };
+export { BUSINESS_VALUE_CONTRACT, SUPPORTED_TASK_STREAMS };
 
 export function hasWatcherVisibleLabels(issue) {
   const names = new Set((issue?.labels ?? []).map((label) => typeof label === 'string' ? label : label?.name).filter(Boolean));
-  return names.has('agent-orchestration') && names.has('orch:ready');
+  return names.has('orch:ready') && ![...TERMINAL_TASK_LABELS].some((label) => names.has(label));
 }
