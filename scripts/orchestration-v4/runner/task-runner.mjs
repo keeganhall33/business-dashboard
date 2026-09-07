@@ -3,21 +3,27 @@ import { createDisposableWorkspace, cleanupDisposableWorkspace } from '../dispos
 import { classifyProgress } from '../progress.mjs';
 import { chooseAvailableSlot } from '../slot-scheduler.mjs';
 import { V4_STATES } from '../state-machine.mjs';
-import { createCorrectionPacket, CORRECTION_ACTIONS } from '../policy/correction-loop.mjs';
+import { createCorrectionPacket, CORRECTION_ACTIONS, createTaskDeadline, remainingTaskExecutionMs, TOTAL_TASK_DEADLINE_EXHAUSTED } from '../policy/correction-loop.mjs';
 import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
 
 const RESULT_TO_STATE = Object.freeze({ COMPLETE: V4_STATES.COMPLETE, BLOCKED: V4_STATES.BLOCKED, FAILED: V4_STATES.FAILED, TIMED_OUT: V4_STATES.TIMED_OUT });
 
-export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, finalizeSuccess = null, buildCorrectionAttempt = null, maxCorrectionAttempts = 3, now = () => new Date() }) {
+export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, command, args = [], timeoutMs = 15 * 60_000, stallMs = 4 * 60_000, execute = runBoundedProcess, finalizeSuccess = null, buildCorrectionAttempt = null, maxCorrectionAttempts = 3, now = () => new Date(), cleanupReserveMs = Math.min(60_000, Math.floor(timeoutMs / 10)) }) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(stallMs) || stallMs <= 0) {
+    throw new Error('V4_TOTAL_TASK_TIMEOUT_INVALID');
+  }
+  const startedAt = now();
+  if (!(startedAt instanceof Date) || !Number.isFinite(startedAt.getTime())) throw new Error('V4_TOTAL_TASK_CLOCK_INVALID');
+  const deadline = createTaskDeadline({ startedAtMs: startedAt.getTime(), timeoutMs, reserveMs: cleanupReserveMs });
   const ready = getTask(db, taskId);
   if (!ready) throw new Error(`V4_RUNNER_TASK_NOT_FOUND:${taskId}`);
   if (ready.state !== V4_STATES.READY) throw new Error(`V4_RUNNER_TASK_NOT_READY:${taskId}:${ready.state}`);
   if (ready.stream === 'INTEGRATION_RELEASE') throw new Error('V4_RUNNER_INTEGRATION_REQUIRES_RECONCILER');
 
-  const claimed = claimTask(db, { taskId, slotId, now: now() });
-  const context = createExecutionContext({ taskId, issueNumber: claimed.issue_number, workerId: slotId, baseSha: claimed.base_sha, workspaceRoot, now: now(), timeoutMs });
+  const claimed = claimTask(db, { taskId, slotId, now: startedAt });
+  const context = createExecutionContext({ taskId, issueNumber: claimed.issue_number, workerId: slotId, baseSha: claimed.base_sha, workspaceRoot, now: startedAt, timeoutMs });
   let workspaceReady = false;
   let executionResult = null;
   let finalizationResult = null;
@@ -27,8 +33,18 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     transitionTask(db, { taskId, expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING, patch: { workspacePath: workspace.workspacePath }, now: now() });
     const observeSemantic = createWorkspaceProgressObserver(workspace.workspacePath);
 
-    const executeOnce = async (spec) => execute({
-        command: spec.command, args: spec.args, cwd: workspace.workspacePath, timeoutMs, stallMs, observeSemantic,
+    const executeOnce = async (spec) => {
+      const observedNow = now();
+      if (!(observedNow instanceof Date) || !Number.isFinite(observedNow.getTime())) throw new Error('V4_TOTAL_TASK_CLOCK_INVALID');
+      const executionBudgetMs = remainingTaskExecutionMs(deadline, observedNow.getTime());
+      if (executionBudgetMs <= 0) return { status: 'TIMED_OUT', reason: TOTAL_TASK_DEADLINE_EXHAUSTED };
+      return execute({
+        command: spec.command,
+        args: spec.args,
+        cwd: workspace.workspacePath,
+        timeoutMs: executionBudgetMs,
+        stallMs: Math.min(stallMs, Math.max(1, executionBudgetMs - 1)),
+        observeSemantic,
         onStarted({ childPid, processGroupId }) { recordExecutionIdentity(db, { taskId, childPid, processGroupId, now: now() }); },
         onEvent(event) {
           const classification = classifyProgress(event);
@@ -36,6 +52,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
           return classification;
         },
       });
+    };
     let result = await executeOnce({ command, args });
     let correctionAttempt = 0;
     while (result.status !== 'COMPLETE' && typeof buildCorrectionAttempt === 'function') {
