@@ -3,7 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, V4_AGENT_MODEL, V4_OLLAMA_BASE_URL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import {
+  AGENT_MUTATION_MODES,
+  buildAgentInvocation,
+  buildProductionAgentEnv,
+  cleanupEphemeralAgentState,
+  createEphemeralAgentState,
+  parseAgentCapabilities,
+  productionAgentConfig,
+  resolveAgentModel,
+  resolveAgentMutationMode,
+  V4_AGENT_MODEL,
+  V4_OLLAMA_BASE_URL,
+} from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
@@ -61,7 +73,7 @@ test('production config allows the dedicated V4 Ollama model to stop after tool 
   assert.equal(config.agents.defaults.models['ollama/qwen3.5:9b'].params.extra_body.tool_choice, 'auto');
 });
 
-test('production config exposes direct workspace-scoped coding tools', () => {
+test('ordinary production config keeps apply_patch enabled and shell exec workspace-scoped', () => {
   const config = productionAgentConfig();
   assert.deepEqual(config.memory, { search: { enabled: false } });
   assert.equal(config.tools.profile, 'coding');
@@ -72,6 +84,46 @@ test('production config exposes direct workspace-scoped coding tools', () => {
   assert.deepEqual(config.tools.exec.applyPatch, { enabled: true, workspaceOnly: true });
 });
 
+test('SHELL_ONLY production config mechanically disables apply_patch without disabling shell exec', () => {
+  const config = productionAgentConfig({ mutationMode: AGENT_MUTATION_MODES.SHELL_ONLY });
+  assert.equal(config.tools.exec.mode, 'full');
+  assert.deepEqual(config.tools.fs, { workspaceOnly: true });
+  assert.deepEqual(config.tools.exec.applyPatch, { enabled: false, workspaceOnly: true });
+});
+
+test('explicit apply-patch capability flag is validated', () => {
+  assert.equal(productionAgentConfig({ applyPatchEnabled: false }).tools.exec.applyPatch.enabled, false);
+  assert.throws(
+    () => productionAgentConfig({ applyPatchEnabled: 'false' }),
+    /V4_AGENT_APPLY_PATCH_CAPABILITY_INVALID/,
+  );
+  assert.throws(
+    () => productionAgentConfig({
+      mutationMode: AGENT_MUTATION_MODES.SHELL_ONLY,
+      applyPatchEnabled: true,
+    }),
+    /V4_AGENT_SHELL_ONLY_APPLY_PATCH_FORBIDDEN/,
+  );
+});
+
+test('unsupported mutation mode fails closed before any agent state is created', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-invalid-mode-'));
+  try {
+    assert.throws(() => resolveAgentMutationMode('PATCH_ANYWAY'), /V4_AGENT_MUTATION_MODE_INVALID/);
+    assert.throws(
+      () => createEphemeralAgentState({
+        taskId: 'invalid-mode',
+        root,
+        mutationMode: 'PATCH_ANYWAY',
+      }),
+      /V4_AGENT_MUTATION_MODE_INVALID/,
+    );
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('task-scoped config writes the production tool policy', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-state-test-'));
   const state = createEphemeralAgentState({ taskId: 'task-memory-off', root });
@@ -79,10 +131,30 @@ test('task-scoped config writes the production tool policy', () => {
     assert.ok(path.isAbsolute(state.stateDir));
     assert.ok(path.isAbsolute(state.configPath));
     assert.equal(path.dirname(state.configPath), state.stateDir);
+    assert.equal(state.mutationMode, AGENT_MUTATION_MODES.DEFAULT);
     const config = JSON.parse(fs.readFileSync(state.configPath, 'utf8'));
     assert.deepEqual(config, productionAgentConfig());
   } finally {
     cleanupEphemeralAgentState(state);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('task-scoped SHELL_ONLY state writes apply_patch disabled', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-shell-only-'));
+  const state = createEphemeralAgentState({
+    taskId: 'shell-only',
+    root,
+    mutationMode: AGENT_MUTATION_MODES.SHELL_ONLY,
+  });
+  try {
+    const config = JSON.parse(fs.readFileSync(state.configPath, 'utf8'));
+    assert.equal(state.mutationMode, AGENT_MUTATION_MODES.SHELL_ONLY);
+    assert.equal(config.tools.exec.applyPatch.enabled, false);
+    assert.equal(config.tools.exec.mode, 'full');
+  } finally {
+    cleanupEphemeralAgentState(state);
+    assert.equal(fs.existsSync(state.stateDir), false);
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
