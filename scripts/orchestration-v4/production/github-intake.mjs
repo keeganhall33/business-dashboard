@@ -14,7 +14,7 @@ export function refreshCanonicalMain(repoRoot) {
 
 export function listReadyIssues({ repoFullName, gh = 'gh' }) {
   const raw = execFileSync(gh, [
-    'issue', 'list', '--repo', repoFullName, '--state', 'open', '--label', 'agent-orchestration', '--label', 'orch:ready',
+    'issue', 'list', '--repo', repoFullName, '--state', 'open', '--label', 'orch:ready',
     '--limit', '100', '--json', 'number,title,body,labels'
   ], { encoding: 'utf8' });
   return JSON.parse(raw || '[]');
