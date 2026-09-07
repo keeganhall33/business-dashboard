@@ -13,11 +13,21 @@ import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } f
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
 const TERMINAL_STATES = new Set(['COMPLETE','BLOCKED','FAILED','TIMED_OUT']);
+const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
 
 export function taskMutationMode(task) {
   const body = String(getTaskContract(task)?.body ?? '');
-  const match = body.match(/^\*\*mutation_mode:\*\*\s*(\S+)\s*$/m);
-  return validateAgentMutationMode(match?.[1] ?? AGENT_MUTATION_MODES.DEFAULT);
+  const directives = body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(MUTATION_MODE_DIRECTIVE));
+
+  if (directives.length === 0) return AGENT_MUTATION_MODES.DEFAULT;
+  if (directives.length !== 1) throw new Error('V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID');
+
+  const match = directives[0].match(/^\*\*mutation_mode:\*\*\s+(DEFAULT|SHELL_ONLY)$/);
+  if (!match) throw new Error('V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID');
+  return validateAgentMutationMode(match[1]);
 }
 
 export function buildCorrectionAgentAttempt({ packet, command, args, createState = createEphemeralAgentState, retainState = () => {} }) {
@@ -31,6 +41,10 @@ export function buildCorrectionAgentAttempt({ packet, command, args, createState
     command,
     args: [args[0], prompt, state.configPath, state.stateDir, ...args.slice(4)],
   };
+}
+
+export function cleanupProductionAgentStates(states) {
+  for (const state of states ?? []) cleanupEphemeralAgentState(state);
 }
 
 export function promptForTask(task) {
@@ -228,6 +242,6 @@ export async function runProductionPoll({
       githubSync,
     });
   } finally {
-    for (const state of ephemeral) cleanupEphemeralAgentState(state);
+    cleanupProductionAgentStates(ephemeral);
   }
 }
