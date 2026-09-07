@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, V4_AGENT_MODEL, V4_OLLAMA_BASE_URL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
+import { AGENT_MUTATION_MODES, buildAgentInvocation, buildProductionAgentEnv, cleanupEphemeralAgentState, createEphemeralAgentState, parseAgentCapabilities, productionAgentConfig, resolveAgentModel, validateAgentMutationMode, V4_AGENT_MODEL, V4_OLLAMA_BASE_URL } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 
 const help = `Usage: openclaw agent exec <prompt>\n  --config <path>\n  --state-dir <path>\n  --model <id>\n  --isolated\n  --code-mode <mode>\n  --local-model-lean\n  --cwd <path>\n  --json\n  --timeout <seconds>`;
 
@@ -139,4 +139,26 @@ test('production agent env preserves an explicitly supplied Ollama API key', () 
 
 test('production agent env fails closed without an absolute workspace', () => {
   assert.throws(() => buildProductionAgentEnv({}, 'relative/workspace'), /V4_AGENT_WORKSPACE_ENV_REQUIRED/);
+});
+
+
+test('governed capability enables patch normally and disables it for shell-only state', () => {
+  assert.equal(productionAgentConfig().tools.exec.applyPatch.enabled, true);
+  assert.equal(productionAgentConfig({ applyPatchEnabled: false }).tools.exec.applyPatch.enabled, false);
+  assert.throws(() => productionAgentConfig({ applyPatchEnabled: 'false' }), /V4_AGENT_APPLY_PATCH_CAPABILITY_INVALID/);
+  assert.equal(validateAgentMutationMode(AGENT_MUTATION_MODES.SHELL_ONLY), 'SHELL_ONLY');
+  assert.throws(() => validateAgentMutationMode('UNSUPPORTED'), /V4_AGENT_MUTATION_MODE_INVALID/);
+});
+
+test('primary and correction ephemeral configurations are isolated and cleaned', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-agent-capability-'));
+  const primary = createEphemeralAgentState({ taskId: 'primary', root });
+  const correction = createEphemeralAgentState({ taskId: 'correction', root, applyPatchEnabled: false });
+  assert.equal(JSON.parse(fs.readFileSync(primary.configPath)).tools.exec.applyPatch.enabled, true);
+  assert.equal(JSON.parse(fs.readFileSync(correction.configPath)).tools.exec.applyPatch.enabled, false);
+  cleanupEphemeralAgentState(primary);
+  cleanupEphemeralAgentState(correction);
+  assert.equal(fs.existsSync(primary.stateDir), false);
+  assert.equal(fs.existsSync(correction.stateDir), false);
+  fs.rmSync(root, { recursive: true, force: true });
 });
