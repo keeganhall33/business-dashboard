@@ -1,4 +1,5 @@
 export const CORRECTION_ACTIONS = Object.freeze({ RETRY_UNIT: 'RETRY_UNIT', REPLAN: 'REPLAN', STOP: 'STOP' });
+export const CORRECTION_MUTATION_MODES = Object.freeze({ DEFAULT: 'DEFAULT', SHELL_ONLY: 'SHELL_ONLY' });
 
 export function createCorrectionPacket({ unitId, verdict, reason, evidence, scope, attempt, maxAttempts = 3 } = {}) {
   if (!unitId || verdict !== 'RED' || !reason || !evidence || !scope) throw new Error('V4_CORRECTION_PACKET_INCOMPLETE');
@@ -11,9 +12,18 @@ export function createCorrectionPacket({ unitId, verdict, reason, evidence, scop
   });
 }
 
+export function correctionMutationMode(packet) {
+  if (!packet?.unitId) throw new Error('V4_CORRECTION_PACKET_REQUIRED');
+  return packet.reason === 'APPLY_PATCH_FORMAT_ERROR'
+    ? CORRECTION_MUTATION_MODES.SHELL_ONLY
+    : CORRECTION_MUTATION_MODES.DEFAULT;
+}
+
 export function correctionPrompt(packet) {
   if (!packet?.unitId) throw new Error('V4_CORRECTION_PACKET_REQUIRED');
-  const formatErrorDirectives = packet.reason === 'APPLY_PATCH_FORMAT_ERROR' ? [
+  const mutationMode = correctionMutationMode(packet);
+  const formatErrorDirectives = mutationMode === CORRECTION_MUTATION_MODES.SHELL_ONLY ? [
+    'MUTATION_MODE: SHELL_ONLY',
     'APPLY_PATCH IS DISABLED FOR THIS ENTIRE CORRECTION ATTEMPT.',
     'Do not call apply_patch again during this attempt.',
     'Perform every mutation with deterministic shell exec commands rooted at the authoritative repository workspace.',

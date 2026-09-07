@@ -101,6 +101,7 @@ test('narrow classifier accepts observed parser-format messages only', () => {
   const accepted = [
     "[tools] apply_patch failed: Invalid patch hunk at line 3: 'export const X' is not a valid hunk header.",
     '[tools] apply_patch failed: Update file hunk for path x.mjs is empty',
+    "[tools] apply_patch failed: Invalid patch hunk at line 2: Update file hunk for path 'scripts/orchestration-v4/policy/model-routing.mjs' is empty",
     "[tools] apply_patch failed: Unknown Line: *** Remove File: x.mjs",
     "[tools] apply_patch failed: The last line of the patch must be '*** End Patch'",
     '[tools] apply_patch failed: conflicting directives for x.mjs',
@@ -178,6 +179,25 @@ test('fragmented tool-result line is classified without broad chunk matching', a
   child.stderr.emit('data', 'led: Update file hunk for path x.mjs is empty\n');
   const result = await promise;
   assert.equal(result.reason, 'APPLY_PATCH_FORMAT_ERROR');
+});
+
+test('exact production format failure is detected without a trailing newline and wins before stall', async () => {
+  const child = fakeChild(4406);
+  const signals = [];
+  const promise = runBoundedProcess({
+    command: 'fixture', cwd: '/tmp', timeoutMs: 1000, stallMs: 100,
+    spawnImpl: () => child,
+    killImpl(pid, signal) {
+      signals.push({ pid, signal });
+      if (signal === 'SIGTERM') queueMicrotask(() => child.emit('exit', null, 'SIGTERM'));
+    },
+  });
+  child.stderr.emit('data', "[tools] apply_patch failed: Invalid patch hunk at line 2: Update file hunk for path 'scripts/orchestration-v4/policy/model-routing.mjs' is empty");
+  const result = await promise;
+  assert.deepEqual(signals, [{ pid: -child.pid, signal: 'SIGTERM' }]);
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.reason, 'APPLY_PATCH_FORMAT_ERROR');
+  assert.equal(result.observedSignal, 'SIGTERM');
 });
 
 test('ordinary anchored patch failure retains normal exit behavior', async () => {

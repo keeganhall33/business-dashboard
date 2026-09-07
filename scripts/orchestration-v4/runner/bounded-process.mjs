@@ -108,7 +108,7 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
 
     const inspectLines = (buffer, text, observedAt, allowStructured) => {
       const lines = (buffer + text).split(/\r?\n/);
-      const remainder = lines.pop() ?? '';
+      let remainder = lines.pop() ?? '';
       for (const line of lines) {
         if (isApplyPatchFormatFailure(line)) {
           requestTermination({ status: 'FAILED', code: null, signal: 'SIGTERM', reason: 'APPLY_PATCH_FORMAT_ERROR' });
@@ -118,6 +118,10 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
           const structured = parseStructuredLine(line.trim(), observedAt);
           if (structured) emit(structured);
         }
+      }
+      if (remainder && isApplyPatchFormatFailure(remainder)) {
+        requestTermination({ status: 'FAILED', code: null, signal: 'SIGTERM', reason: 'APPLY_PATCH_FORMAT_ERROR' });
+        remainder = '';
       }
       return remainder;
     };
