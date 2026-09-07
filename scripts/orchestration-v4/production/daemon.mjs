@@ -2,17 +2,91 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
-import { cleanupEphemeralAgentState, createEphemeralAgentState } from '../runner/agent-executor.mjs';
+import {
+  AGENT_MUTATION_MODES,
+  cleanupEphemeralAgentState,
+  createEphemeralAgentState,
+  resolveAgentMutationMode,
+} from '../runner/agent-executor.mjs';
 import { getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
 import { syncTerminalTaskToGitHub } from './github-sync.mjs';
-import { correctionPrompt } from '../policy/correction-loop.mjs';
+import { correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
 const TERMINAL_STATES = new Set(['COMPLETE','BLOCKED','FAILED','TIMED_OUT']);
+const MUTATION_MODE_PREFIX = '**mutation_mode:**';
+
+export function mutationModeForTask(task) {
+  const contract = getTaskContract(task);
+  const directives = String(contract?.body ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(MUTATION_MODE_PREFIX));
+
+  if (directives.length === 0) return AGENT_MUTATION_MODES.DEFAULT;
+  if (directives.length !== 1) throw new Error('V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID');
+
+  const match = directives[0].match(/^\*\*mutation_mode:\*\*\s*(\S+)\s*$/);
+  if (!match) throw new Error('V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID');
+  return resolveAgentMutationMode(match[1]);
+}
+
+export function createTaskAgentState(task, { root } = {}) {
+  if (!task?.task_id) throw new Error('V4_PRODUCTION_TASK_ID_REQUIRED');
+  return createEphemeralAgentState({
+    taskId: task.task_id,
+    root,
+    mutationMode: mutationModeForTask(task),
+  });
+}
+
+export function buildCorrectionAgentAttempt({
+  packet,
+  command,
+  args,
+  taskId,
+  ephemeralStates,
+  stateRoot,
+}) {
+  if (!taskId || !Array.isArray(args) || args.length < 4 || !Array.isArray(ephemeralStates)) {
+    throw new Error('V4_PRODUCTION_CORRECTION_INVOCATION_INVALID');
+  }
+  const mutationMode = resolveAgentMutationMode(correctionMutationMode(packet));
+  const prompt = `${args[1]}\n\n${correctionPrompt(packet)}`;
+
+  if (mutationMode === AGENT_MUTATION_MODES.DEFAULT) {
+    return Object.freeze({
+      command,
+      args: [args[0], prompt, ...args.slice(2)],
+    });
+  }
+
+  const correctionState = createEphemeralAgentState({
+    taskId: `${taskId}-correction-${packet.attempt}`,
+    root: stateRoot,
+    mutationMode,
+  });
+  ephemeralStates.push(correctionState);
+
+  return Object.freeze({
+    command,
+    args: [
+      args[0],
+      prompt,
+      correctionState.configPath,
+      correctionState.stateDir,
+      ...args.slice(4),
+    ],
+  });
+}
+
+export function cleanupProductionAgentStates(states) {
+  for (const state of states ?? []) cleanupEphemeralAgentState(state);
+}
 
 export function promptForTask(task) {
   const contract = getTaskContract(task);
@@ -140,14 +214,17 @@ export async function runProductionPoll({
 
   try {
     for (const task of executable) {
-      const state = createEphemeralAgentState({ taskId: task.task_id });
+      const state = createTaskAgentState(task);
       ephemeral.push(state);
       commandsByTaskId[task.task_id] = {
         command: process.execPath,
         args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
-        buildCorrectionAttempt: ({ packet, command, args }) => ({
+        buildCorrectionAttempt: ({ packet, command, args }) => buildCorrectionAgentAttempt({
+          packet,
           command,
-          args: [args[0], `${args[1]}\n\n${correctionPrompt(packet)}`, ...args.slice(2)],
+          args,
+          taskId: task.task_id,
+          ephemeralStates: ephemeral,
         }),
         maxCorrectionAttempts: 3,
       };
@@ -203,6 +280,6 @@ export async function runProductionPoll({
       githubSync,
     });
   } finally {
-    for (const state of ephemeral) cleanupEphemeralAgentState(state);
+    cleanupProductionAgentStates(ephemeral);
   }
 }
