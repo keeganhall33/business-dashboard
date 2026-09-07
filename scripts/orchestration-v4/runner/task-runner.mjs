@@ -56,6 +56,7 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
     let result = await executeOnce({ command, args });
     let correctionAttempt = 0;
     while (result.status !== 'COMPLETE' && typeof buildCorrectionAttempt === 'function') {
+      if (result.reason === TOTAL_TASK_DEADLINE_EXHAUSTED) break;
       correctionAttempt += 1;
       const contract = getTaskContract(getTask(db, taskId));
       const packet = createCorrectionPacket({
