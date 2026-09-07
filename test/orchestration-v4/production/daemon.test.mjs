@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { syncPendingGithubTasks, runProductionPoll } from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import { buildCorrectionAgentAttempt, syncPendingGithubTasks, runProductionPoll, taskMutationMode } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 import {
   claimTask,
   getGithubSyncMarker,
@@ -122,4 +122,50 @@ test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
 
   assert.ok(TIMEOUT_MINUTES.DEFAULT_STALL_MS < TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS, 'stallMs should be less than agentTimeoutMs');
   assert.ok(TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS < TIMEOUT_MINUTES.DEFAULT_TIMEOUT_MS, 'agentTimeoutMs should be less than timeoutMs');
+});
+
+
+function correctionPacket(reason = 'APPLY_PATCH_FORMAT_ERROR') {
+  return { unitId: 'unit', verdict: 'RED', reason, evidence: 'evidence', scope: 'owned', attempt: 1, maxAttempts: 3 };
+}
+
+test('task mutation mode defaults safely, accepts shell-only, and rejects unsupported values', () => {
+  assert.equal(taskMutationMode({ contract_json: JSON.stringify({ body: 'ordinary task' }) }), 'DEFAULT');
+  assert.equal(taskMutationMode({ contract_json: JSON.stringify({ body: '**mutation_mode:** SHELL_ONLY' }) }), 'SHELL_ONLY');
+  assert.throws(
+    () => taskMutationMode({ contract_json: JSON.stringify({ body: '**mutation_mode:** SOMETHING_ELSE' }) }),
+    /V4_AGENT_MUTATION_MODE_INVALID/,
+  );
+});
+
+test('patch-format correction receives a distinct shell-only configuration', () => {
+  const retained = [];
+  const calls = [];
+  const next = buildCorrectionAgentAttempt({
+    packet: correctionPacket(),
+    command: 'node',
+    args: ['entry.mjs', 'primary prompt', '/primary/config.json', '/primary/state', '90', 'openclaw'],
+    createState: (options) => {
+      calls.push(options);
+      return { configPath: '/correction/config.json', stateDir: '/correction/state' };
+    },
+    retainState: (state) => retained.push(state),
+  });
+  assert.deepEqual(calls, [{ taskId: 'unit-correction-1', applyPatchEnabled: false }]);
+  assert.equal(next.args[2], '/correction/config.json');
+  assert.equal(next.args[3], '/correction/state');
+  assert.match(next.args[1], /MUTATION_MODE: SHELL_ONLY/);
+  assert.equal(retained.length, 1);
+});
+
+test('unrelated correction retains the primary configuration', () => {
+  const next = buildCorrectionAgentAttempt({
+    packet: correctionPacket('EXIT_2'),
+    command: 'node',
+    args: ['entry.mjs', 'primary prompt', '/primary/config.json', '/primary/state', '90', 'openclaw'],
+    createState: () => { throw new Error('MUST_NOT_CREATE_STATE'); },
+  });
+  assert.equal(next.args[2], '/primary/config.json');
+  assert.equal(next.args[3], '/primary/state');
+  assert.doesNotMatch(next.args[1], /MUTATION_MODE: SHELL_ONLY/);
 });
