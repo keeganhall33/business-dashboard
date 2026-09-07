@@ -3,7 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { buildCorrectionAgentAttempt, syncPendingGithubTasks, runProductionPoll, taskMutationMode } from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import {
+  buildCorrectionAgentAttempt,
+  cleanupProductionAgentStates,
+  syncPendingGithubTasks,
+  runProductionPoll,
+  taskMutationMode,
+} from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import { createEphemeralAgentState } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 import {
   claimTask,
   getGithubSyncMarker,
@@ -124,18 +131,45 @@ test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
   assert.ok(TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS < TIMEOUT_MINUTES.DEFAULT_TIMEOUT_MS, 'agentTimeoutMs should be less than timeoutMs');
 });
 
-
 function correctionPacket(reason = 'APPLY_PATCH_FORMAT_ERROR') {
   return { unitId: 'unit', verdict: 'RED', reason, evidence: 'evidence', scope: 'owned', attempt: 1, maxAttempts: 3 };
 }
 
-test('task mutation mode defaults safely, accepts shell-only, and rejects unsupported values', () => {
-  assert.equal(taskMutationMode({ contract_json: JSON.stringify({ body: 'ordinary task' }) }), 'DEFAULT');
-  assert.equal(taskMutationMode({ contract_json: JSON.stringify({ body: '**mutation_mode:** SHELL_ONLY' }) }), 'SHELL_ONLY');
-  assert.throws(
-    () => taskMutationMode({ contract_json: JSON.stringify({ body: '**mutation_mode:** SOMETHING_ELSE' }) }),
-    /V4_AGENT_MUTATION_MODE_INVALID/,
-  );
+function taskWithBody(body) {
+  return { contract_json: JSON.stringify({ body }) };
+}
+
+test('task mutation mode accepts only absent, exact DEFAULT, or exact SHELL_ONLY directives', () => {
+  assert.equal(taskMutationMode(taskWithBody('ordinary task')), 'DEFAULT');
+  assert.equal(taskMutationMode(taskWithBody('**mutation_mode:** DEFAULT')), 'DEFAULT');
+  assert.equal(taskMutationMode(taskWithBody('**mutation_mode:** SHELL_ONLY')), 'SHELL_ONLY');
+});
+
+test('task mutation mode fails closed on blank, unsupported, and extra-token directives', () => {
+  for (const body of [
+    '**mutation_mode:**',
+    '**mutation_mode:** SOMETHING_ELSE',
+    '**mutation_mode:** SHELL_ONLY extra',
+  ]) {
+    assert.throws(
+      () => taskMutationMode(taskWithBody(body)),
+      /V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID/,
+      body,
+    );
+  }
+});
+
+test('task mutation mode fails closed on duplicate identical or conflicting directives', () => {
+  for (const body of [
+    '**mutation_mode:** SHELL_ONLY\n**mutation_mode:** SHELL_ONLY',
+    '**mutation_mode:** DEFAULT\n**mutation_mode:** SHELL_ONLY',
+  ]) {
+    assert.throws(
+      () => taskMutationMode(taskWithBody(body)),
+      /V4_PRODUCTION_MUTATION_MODE_DIRECTIVE_INVALID/,
+      body,
+    );
+  }
 });
 
 test('patch-format correction receives a distinct shell-only configuration', () => {
@@ -156,6 +190,32 @@ test('patch-format correction receives a distinct shell-only configuration', () 
   assert.equal(next.args[3], '/correction/state');
   assert.match(next.args[1], /MUTATION_MODE: SHELL_ONLY/);
   assert.equal(retained.length, 1);
+});
+
+test('production cleanup removes both primary and correction ephemeral states', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-daemon-capability-cleanup-'));
+  const primary = createEphemeralAgentState({ taskId: 'unit', root });
+  const retained = [];
+  try {
+    buildCorrectionAgentAttempt({
+      packet: correctionPacket(),
+      command: 'node',
+      args: ['entry.mjs', 'primary prompt', primary.configPath, primary.stateDir, '90', 'openclaw'],
+      createState: (options) => createEphemeralAgentState({ ...options, root }),
+      retainState: (state) => retained.push(state),
+    });
+    assert.equal(retained.length, 1);
+    assert.equal(fs.existsSync(primary.stateDir), true);
+    assert.equal(fs.existsSync(retained[0].stateDir), true);
+
+    cleanupProductionAgentStates([primary, ...retained]);
+
+    assert.equal(fs.existsSync(primary.stateDir), false);
+    assert.equal(fs.existsSync(retained[0].stateDir), false);
+  } finally {
+    cleanupProductionAgentStates([primary, ...retained]);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('unrelated correction retains the primary configuration', () => {
