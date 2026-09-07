@@ -6,6 +6,11 @@ import { spawnSync } from 'node:child_process';
 const DEFAULT_MODEL = 'ollama/qwen3.5:9b';
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
+export const AGENT_MUTATION_MODES = Object.freeze({
+  DEFAULT: 'DEFAULT',
+  SHELL_ONLY: 'SHELL_ONLY',
+});
+
 function hasFlag(helpText, flag) {
   const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[\\s,])${escaped}(?=[\\s=<]|$)`, 'm').test(String(helpText ?? ''));
@@ -35,6 +40,13 @@ export function probeAgentCapabilities(openclaw = '/opt/homebrew/bin/openclaw', 
 
 export function resolveAgentModel(env = process.env) {
   return String(env.V4_AGENT_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+}
+
+export function resolveAgentMutationMode(mutationMode = AGENT_MUTATION_MODES.DEFAULT) {
+  if (!Object.values(AGENT_MUTATION_MODES).includes(mutationMode)) {
+    throw new Error(`V4_AGENT_MUTATION_MODE_INVALID:${String(mutationMode)}`);
+  }
+  return mutationMode;
 }
 
 export function buildAgentInvocation({ capabilities, prompt, workspacePath, configPath, stateDir, timeoutSeconds = 900, openclaw = '/opt/homebrew/bin/openclaw', model = resolveAgentModel() }) {
@@ -68,7 +80,20 @@ export function buildProductionAgentEnv(parentEnv = process.env, workspacePath) 
   });
 }
 
-export function productionAgentConfig() {
+export function productionAgentConfig({
+  mutationMode = AGENT_MUTATION_MODES.DEFAULT,
+  applyPatchEnabled,
+} = {}) {
+  const resolvedMutationMode = resolveAgentMutationMode(mutationMode);
+  if (applyPatchEnabled !== undefined && typeof applyPatchEnabled !== 'boolean') {
+    throw new Error('V4_AGENT_APPLY_PATCH_CAPABILITY_INVALID');
+  }
+  const resolvedApplyPatchEnabled = applyPatchEnabled
+    ?? (resolvedMutationMode !== AGENT_MUTATION_MODES.SHELL_ONLY);
+  if (resolvedMutationMode === AGENT_MUTATION_MODES.SHELL_ONLY && resolvedApplyPatchEnabled) {
+    throw new Error('V4_AGENT_SHELL_ONLY_APPLY_PATCH_FORBIDDEN');
+  }
+
   return Object.freeze({
     memory: { search: { enabled: false } },
     models: {
@@ -107,20 +132,32 @@ export function productionAgentConfig() {
       fs: { workspaceOnly: true },
       exec: {
         mode: 'full',
-        applyPatch: { enabled: true, workspaceOnly: true },
+        applyPatch: { enabled: resolvedApplyPatchEnabled, workspaceOnly: true },
       },
     },
   });
 }
 
-export function createEphemeralAgentState({ taskId, root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent') }) {
+export function createEphemeralAgentState({
+  taskId,
+  root = path.join(os.tmpdir(), 'jeeves-orchestration-v4-agent'),
+  mutationMode = AGENT_MUTATION_MODES.DEFAULT,
+  applyPatchEnabled,
+}) {
   if (!taskId) throw new Error('V4_AGENT_TASK_ID_REQUIRED');
+  const resolvedMutationMode = resolveAgentMutationMode(mutationMode);
+  const config = productionAgentConfig({ mutationMode: resolvedMutationMode, applyPatchEnabled });
   fs.mkdirSync(root, { recursive: true });
   const safe = String(taskId).replace(/[^A-Za-z0-9._-]/g, '-');
   const stateDir = fs.mkdtempSync(path.join(root, `${safe}-`));
   const configPath = path.join(stateDir, 'openclaw-v4.json');
-  fs.writeFileSync(configPath, `${JSON.stringify(productionAgentConfig(), null, 2)}\n`, { mode: 0o600 });
-  return Object.freeze({ stateDir, configPath });
+  try {
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  } catch (error) {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    throw error;
+  }
+  return Object.freeze({ stateDir, configPath, mutationMode: resolvedMutationMode });
 }
 
 export function cleanupEphemeralAgentState(state) {
