@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import React from "react";
+import { renderToString } from "react-dom/server";
+
+import {
+  IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1,
+  IonosIntelligentInboxV1,
+  visibleIonosInboxItems
+} from "@/components/email/IonosIntelligentInboxV1";
+import RelationshipsPage from "@/app/(app)/relationships/page";
+
 import * as inboxModule from "@/lib/email/ionos-intelligent-inbox-v1";
 import {
   projectIonosIntelligentInboxV1,
@@ -456,4 +466,88 @@ test("runtime module exports only the pure projection capability", () => {
   assert.deepEqual(Object.keys(inboxModule).sort(), ["projectIonosIntelligentInboxV1"]);
   const source = JSON.stringify(Object.keys(inboxModule));
   assert.doesNotMatch(source, /send|smtp|mutat|persist|network|scheduler|model|automatic/i);
+});
+
+
+const workspaceFixture = IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1;
+const workspaceHtml = renderToString(<IonosIntelligentInboxV1 inbox={workspaceFixture} />);
+const relationshipsPageHtml = renderToString(<RelationshipsPage />);
+
+test("relationship workspace renders every bounded queue with what why next and evidence context", () => {
+  for (const label of [
+    "Needs reply",
+    "Waiting on contact",
+    "High value",
+    "Stale opportunities",
+    "Recent replies",
+    "Suggested commitments",
+    "Suggested follow-ups"
+  ]) {
+    assert.match(workspaceHtml, new RegExp(label));
+  }
+  assert.match(workspaceHtml, /What happened/);
+  assert.match(workspaceHtml, /Why it matters/);
+  assert.match(workspaceHtml, /Next safe move/);
+  assert.match(workspaceHtml, /Freshness:/);
+  assert.match(workspaceHtml, /Open relationship evidence/);
+});
+
+test("relationship workspace unifies mailbox identities without hiding their sources", () => {
+  assert.match(workspaceHtml, /Personal \/ high-value \+ Assistant \/ customer service/);
+  assert.match(workspaceHtml, /Marketing \/ FunnelKit \+ Personal \/ high-value/);
+  assert.match(workspaceHtml, /one evidence-backed view across IONOS identities/i);
+});
+
+test("relationship workspace keeps UNKNOWN STALE and CONFLICTED non-actionable", () => {
+  assert.match(workspaceHtml, /UNKNOWN/);
+  assert.match(workspaceHtml, /STALE/);
+  assert.match(workspaceHtml, /CONFLICTED/);
+  assert.match(workspaceHtml, /Verify before acting/);
+  assert.match(workspaceHtml, /cannot produce an approved action/);
+  for (const item of workspaceFixture.requiresVerification) {
+    assert.equal(item.decisionEligible, false);
+    assert.equal(item.nextMove, "VERIFY_EVIDENCE");
+  }
+});
+
+test("relationship suggestions remain approval-gated with no send or compose affordance", () => {
+  assert.match(workspaceHtml, /Suggested only · approval required · nothing sent/);
+  assert.match(workspaceHtml, /Preparation suggestions only. Nothing is sent./);
+  assert.doesNotMatch(workspaceHtml, />\s*Send\s*</i);
+  assert.doesNotMatch(workspaceHtml, />\s*Compose\s*</i);
+  assert.doesNotMatch(workspaceHtml, /method="post"/i);
+});
+
+test("relationship workspace applies a compact attention limit with accessible overflow", () => {
+  const base = workspaceFixture.needsReply[0];
+  assert.ok(base);
+  const three = [
+    base,
+    { ...base, id: "second", projectionId: "second" },
+    { ...base, id: "third", projectionId: "third" }
+  ];
+  assert.deepEqual(visibleIonosInboxItems(three).map((item) => item.id), [base.id, "second"]);
+  const expandedHtml = renderToString(
+    <IonosIntelligentInboxV1 inbox={{ ...workspaceFixture, needsReply: three }} />
+  );
+  assert.match(expandedHtml, /<details/);
+  assert.match(expandedHtml, /View .*1.* more/);
+});
+
+test("Relationships preserves ExecutiveWorkspacePage and adds responsive light-mode depth", () => {
+  assert.match(relationshipsPageHtml, /Relationships/);
+  assert.match(relationshipsPageHtml, /Intelligent relationship inbox/);
+  assert.match(relationshipsPageHtml, /data-visual-mode="light"/);
+  assert.match(relationshipsPageHtml, /sm:px-6/);
+  assert.match(relationshipsPageHtml, /md:grid-cols-2/);
+  assert.match(relationshipsPageHtml, /xl:grid-cols-3/);
+});
+
+test("relationship workspace fixture and rendering are deterministic", () => {
+  assert.equal(renderToString(<IonosIntelligentInboxV1 inbox={workspaceFixture} />), workspaceHtml);
+  assert.equal(workspaceFixture.telemetry.projectionCount, 7);
+  assert.deepEqual(
+    [...workspaceFixture.telemetry.projectionFingerprints],
+    [...workspaceFixture.telemetry.projectionFingerprints].sort()
+  );
 });
