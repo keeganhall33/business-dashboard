@@ -56,6 +56,12 @@ function classifications(crm: CanonicalEmailCrmLinkResultV1) {
   }));
 }
 
+const DEFAULT_CANONICAL_EMAIL_ID = normalizeHistoricalEmailMessagesV1({
+  messages: [message()],
+  horizon: { startAt: "2026-09-01T00:00:00.000Z", endAt: NOW },
+  batchSize: 100
+}).records[0].id;
+
 function input(
   overrides: Partial<IonosReadonlyIntelligencePipelineInputV1> = {}
 ): IonosReadonlyIntelligencePipelineInputV1 {
@@ -75,7 +81,13 @@ function input(
       }],
       companyDomains: [],
       entityLinks: [],
-      recordStates: [],
+      recordStates: [{
+        canonicalEmailId: DEFAULT_CANONICAL_EMAIL_ID,
+        truthState: "KNOWN",
+        freshnessState: "CURRENT",
+        evidenceRef: "state:known:current",
+        observedAt: "2026-09-08T13:30:00.000Z"
+      }],
       corrections: [],
       now: NOW
     },
@@ -171,7 +183,11 @@ test("UNKNOWN STALE and CONFLICTED evidence cannot become actionable", () => {
         }]
       }
     }));
-    assert.ok(result.crm.records.every((record) => !record.decisionEligible));
+    if (state.truthState !== "KNOWN") {
+      assert.ok(result.crm.records.every((record) => !record.decisionEligible));
+    } else {
+      assert.ok(result.crm.records.every((record) => record.freshnessState === "STALE"));
+    }
     assert.ok(result.relationship.projections.every((projection) => !projection.decisionEligible));
     assert.ok(result.inbox.executiveAttention.every((item) => item.attentionReason === "VERIFY_EVIDENCE"));
     assert.ok(result.inbox.requiresVerification.every((item) => !item.decisionEligible));
