@@ -21,6 +21,26 @@ const sections: Array<{ id: ExecutiveIntelligenceCardV1["section"]; label: strin
   { id: "DATA_COVERAGE_GAPS", label: "Data / coverage gaps", description: "UNKNOWN, STALE, and CONFLICTED states stay explicit." }
 ];
 
+export const EXECUTIVE_HOME_SECTION_DEFAULT_LIMIT = 4;
+
+export function visibleExecutiveHomeCards(
+  cards: ExecutiveIntelligenceCardV1[],
+  expanded: boolean,
+  limit = EXECUTIVE_HOME_SECTION_DEFAULT_LIMIT
+) {
+  return expanded ? cards : cards.slice(0, limit);
+}
+
+export function toggleExecutiveHomeSection(
+  current: ReadonlySet<ExecutiveIntelligenceCardV1["section"]>,
+  sectionId: ExecutiveIntelligenceCardV1["section"]
+) {
+  const next = new Set(current);
+  if (next.has(sectionId)) next.delete(sectionId);
+  else next.add(sectionId);
+  return next;
+}
+
 export function ExecutiveHomeShell({
   data,
   decisionRoom = EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1
@@ -29,6 +49,7 @@ export function ExecutiveHomeShell({
   decisionRoom?: ExecutiveHomeDecisionRoomDrilldownV1;
 }) {
   const [activeDecisionRoomId, setActiveDecisionRoomId] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<ExecutiveIntelligenceCardV1["section"]>>(() => new Set());
   const isDecisionRoomOpen = activeDecisionRoomId === decisionRoom.decision_id;
   const doNowCount = data.cards.filter((card) => card.priority === "DO_NOW").length;
   const uncertainCount = data.cards.filter((card) => card.state === "UNKNOWN" || card.state === "STALE" || card.state === "CONFLICTED").length;
@@ -83,6 +104,11 @@ export function ExecutiveHomeShell({
         <div className="mt-6 space-y-8">
           {sections.map((section) => {
             const cards = data.cards.filter((card) => card.section === section.id);
+            const isExpanded = expandedSections.has(section.id);
+            const visibleCards = visibleExecutiveHomeCards(cards, isExpanded);
+            const hasOverflow = cards.length > EXECUTIVE_HOME_SECTION_DEFAULT_LIMIT;
+            const cardGridId = `executive-home-cards-${section.id}`;
+
             return (
               <section key={section.id} id={section.id}>
                 <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -95,8 +121,8 @@ export function ExecutiveHomeShell({
                     {cards[0] ? <LightBadge label={cards[0].state} tone={stateTone(cards[0].state)} /> : null}
                   </div>
                 </div>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {cards.map((card) => (
+                <div id={cardGridId} className="grid gap-4 lg:grid-cols-2">
+                  {visibleCards.map((card) => (
                     <ExecutiveIntelligenceCard
                       key={card.id}
                       card={card}
@@ -105,6 +131,20 @@ export function ExecutiveHomeShell({
                     />
                   ))}
                 </div>
+                {hasOverflow ? (
+                  <div className="mt-4 flex justify-center sm:justify-start">
+                    <button
+                      type="button"
+                      aria-controls={cardGridId}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Show less" : "View more"} ${section.label} signals`}
+                      onClick={() => setExpandedSections((current) => toggleExecutiveHomeSection(current, section.id))}
+                      className="w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800 shadow-sm sm:w-auto"
+                    >
+                      {isExpanded ? "Show less" : `View more (${cards.length - EXECUTIVE_HOME_SECTION_DEFAULT_LIMIT})`}
+                    </button>
+                  </div>
+                ) : null}
               </section>
             );
           })}
