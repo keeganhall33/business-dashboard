@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import React from "react";
+import { renderToString } from "react-dom/server";
+
+import {
+  IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1,
+  IonosIntelligentInboxV1,
+  visibleIonosInboxItems
+} from "@/components/email/IonosIntelligentInboxV1";
+import RelationshipsPage from "@/app/(app)/relationships/page";
+
 import * as inboxModule from "@/lib/email/ionos-intelligent-inbox-v1";
 import {
   projectIonosIntelligentInboxV1,
@@ -458,15 +468,6 @@ test("runtime module exports only the pure projection capability", () => {
   assert.doesNotMatch(source, /send|smtp|mutat|persist|network|scheduler|model|automatic/i);
 });
 
-
-import React from "react";
-import { renderToString } from "react-dom/server";
-import {
-  IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1,
-  IonosIntelligentInboxV1,
-  visibleIonosInboxItems
-} from "@/components/email/IonosIntelligentInboxV1";
-import RelationshipsPage from "@/app/(app)/relationships/page";
 
 const workspaceFixture = IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1;
 const workspaceHtml = renderToString(<IonosIntelligentInboxV1 inbox={workspaceFixture} />);
