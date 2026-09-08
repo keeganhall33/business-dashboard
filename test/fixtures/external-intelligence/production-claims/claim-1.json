@@ -93,5 +93,10 @@
       "valid_until": null
     },
     "verification_state": "unverified"
+  },
+  "recovery_annotation": {
+    "issue": "851",
+    "purpose": "proof_of_mutation_after_recovery",
+    "applied_at": "2026-08-25T08:43:00.000Z"
   }
 }
