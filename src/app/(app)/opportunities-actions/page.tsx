@@ -1,6 +1,12 @@
 import { ExecutiveWorkspacePage } from "@/components/executive-workspace/ExecutiveWorkspacePage";
+import { PlanningReadinessOpportunityPanelV1 } from "@/components/opportunity-intelligence/PlanningReadinessOpportunityPanelV1";
 import { getExecutiveWorkspaceByHrefV1 } from "@/lib/executive-workspace/ia";
 
 export default function OpportunitiesActionsPage() {
-  return <ExecutiveWorkspacePage model={getExecutiveWorkspaceByHrefV1("/opportunities-actions")} />;
+  return (
+    <>
+      <ExecutiveWorkspacePage model={getExecutiveWorkspaceByHrefV1("/opportunities-actions")} />
+      <PlanningReadinessOpportunityPanelV1 />
+    </>
+  );
 }
