@@ -198,7 +198,7 @@ test("rejects empty evidence contradictory resolved-without-proof and malformed 
         resolutionEvidenceRefs: []
       })
     ], { now: NOW }),
-    /resolution evidence/i
+    /resolutionEvidenceRefs must not be empty/i
   );
   assert.throws(
     () => buildOwnershipExperienceExceptionQueueV1(
