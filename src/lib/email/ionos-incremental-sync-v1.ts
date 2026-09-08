@@ -142,7 +142,7 @@ function nonNegativeInteger(value: unknown, label: string): number {
 
 function canonicalUid(value: unknown, label: string): string {
   if (typeof value === "bigint") {
-    if (value < 0n) throw new Error(`${label} must be non-negative`);
+    if (value < BigInt(0)) throw new Error(`${label} must be non-negative`);
     return value.toString();
   }
 
@@ -402,7 +402,7 @@ async function syncMailbox(
 
       const uidValidity = canonicalUid(statusValue.uidValidity, "provider status.uidValidity");
       const uidNext = canonicalUid(statusValue.uidNext, "provider status.uidNext");
-      const baseline = BigInt(uidNext) > 0n ? (BigInt(uidNext) - 1n).toString() : "0";
+      const baseline = BigInt(uidNext) > BigInt(0) ? (BigInt(uidNext) - BigInt(1)).toString() : "0";
       const committedAt = nowValue(now);
 
       if (lastCursor == null) {
@@ -437,8 +437,8 @@ async function syncMailbox(
         };
       }
 
-      const fromUid = BigInt(lastCursor.lastSeenUid) + 1n;
-      const observedLastUid = BigInt(uidNext) > 0n ? BigInt(uidNext) - 1n : 0n;
+      const fromUid = BigInt(lastCursor.lastSeenUid) + BigInt(1);
+      const observedLastUid = BigInt(uidNext) > BigInt(0) ? BigInt(uidNext) - BigInt(1) : BigInt(0);
       if (fromUid > observedLastUid) {
         return {
           mailboxId: mailbox.id,
@@ -454,8 +454,8 @@ async function syncMailbox(
       }
 
       const requestedTo =
-        fromUid + BigInt(options.batchSize) - 1n < observedLastUid
-          ? fromUid + BigInt(options.batchSize) - 1n
+        fromUid + BigInt(options.batchSize) - BigInt(1) < observedLastUid
+          ? fromUid + BigInt(options.batchSize) - BigInt(1)
           : observedLastUid;
       const fetched = await session.fetchMetadata({
         fromUid: fromUid.toString(),
