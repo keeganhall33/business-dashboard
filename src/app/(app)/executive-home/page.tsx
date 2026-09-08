@@ -1,4 +1,5 @@
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
+import { IonosCommunicationAttentionCard } from "@/components/executive-home/IonosCommunicationAttentionCard";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
@@ -32,9 +33,12 @@ export default async function ExecutiveHomePage({ searchParams }: PageProps) {
   const executiveHome = buildExecutiveHomeFromDashboardOverviewV1(overview);
 
   return (
-    <ExecutiveHomeShell
-      data={sanitizeDashboardPayloadForHtml(executiveHome.home)}
-      decisionRoom={sanitizeDashboardPayloadForHtml(executiveHome.decisionRoom)}
-    />
+    <>
+      <ExecutiveHomeShell
+        data={sanitizeDashboardPayloadForHtml(executiveHome.home)}
+        decisionRoom={sanitizeDashboardPayloadForHtml(executiveHome.decisionRoom)}
+      />
+      <IonosCommunicationAttentionCard inbox={null} />
+    </>
   );
 }
