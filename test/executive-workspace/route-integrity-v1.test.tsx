@@ -25,12 +25,13 @@ test("every current executive workspace detail CTA resolves to a real route or r
     for (const section of model.sections) {
       for (const card of section.cards) {
         const resolution = resolveExecutiveWorkspaceDetailHrefV1(card.detail_href);
+        const expectedHref = `href=\"${escapeHrefForMarkup(card.detail_href)}\"`;
         if (resolution.state === "ROUTABLE") {
           routable += 1;
-          assert.match(html, new RegExp(`href=\\"${escapeHrefForMarkup(card.detail_href).replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\"`));
+          assert.ok(html.includes(expectedHref), card.detail_href);
         } else {
           unavailable += 1;
-          assert.ok(!html.includes(`href=\"${escapeHrefForMarkup(card.detail_href)}\"`), card.detail_href);
+          assert.ok(!html.includes(expectedHref), card.detail_href);
         }
       }
     }
