@@ -6,6 +6,7 @@ import { createSlotRegistry, chooseAvailableSlot } from '../orchestration-v4/slo
 import { V4_STATES } from '../orchestration-v4/state-machine.mjs';
 import { importReadyIssues } from '../orchestration-v4/production/github-intake.mjs';
 import { syncPendingGithubTasks } from '../orchestration-v4/production/daemon.mjs';
+import { classifyProcessOwnership } from '../orchestration-v4/production/process-ownership.mjs';
 import { signalGroup } from '../orchestration-v4/runner/bounded-process.mjs';
 import { createTaskLauncher } from './task-launcher.mjs';
 
@@ -37,6 +38,65 @@ export function recoverLiteStartupTasks({ listActive, failTask }) {
     recovered.push(task.task_id);
   }
   return recovered;
+}
+
+export function observeLiteProcess(pid, exec = execFileSync) {
+  if (!Number.isInteger(pid) || pid <= 0) return { exists: false };
+  let raw;
+  try {
+    raw = String(exec('ps', ['-o', 'pid=,ppid=,pgid=,command=', '-p', String(pid)], { encoding: 'utf8', timeout: 2_000 })).trim();
+  } catch {
+    return { exists: false };
+  }
+  const match = raw.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\s\S]+)$/);
+  if (!match) return { exists: true, pid, ppid: null, processGroupId: null, hostAncestors: [], command: '' };
+  const observed = { exists: true, pid: Number(match[1]), ppid: Number(match[2]), processGroupId: Number(match[3]), hostAncestors: [], command: match[4] };
+  let ancestor = observed.ppid;
+  const seen = new Set([pid]);
+  while (Number.isInteger(ancestor) && ancestor > 1 && !seen.has(ancestor)) {
+    seen.add(ancestor);
+    observed.hostAncestors.push(ancestor);
+    try {
+      const parent = String(exec('ps', ['-o', 'ppid=', '-p', String(ancestor)], { encoding: 'utf8', timeout: 2_000 })).trim();
+      ancestor = /^\d+$/.test(parent) ? Number(parent) : null;
+    } catch { ancestor = null; }
+  }
+  return observed;
+}
+
+export function signalVerifiedLiteTasks({ entries, getCurrentTask, hostPid = process.pid, observe = observeLiteProcess, signal = signalGroup }) {
+  const denied = [];
+  const signaled = [];
+  for (const entry of entries) {
+    const task = getCurrentTask(entry.taskId);
+    const expected = {
+      pid: task?.child_pid,
+      hostPid,
+      processGroupId: task?.process_group_id,
+      entrypoint: 'agent-task-entrypoint.mjs',
+      taskId: entry.taskId,
+    };
+    const ownership = classifyProcessOwnership({ expected, observed: observe(expected.pid) });
+    if (!ownership.maySignal) {
+      denied.push({ taskId: entry.taskId, reason: ownership.reason });
+      continue;
+    }
+    signal(expected.processGroupId, 'SIGTERM');
+    signaled.push(entry.taskId);
+  }
+  return Object.freeze({ signaled: Object.freeze(signaled), denied: Object.freeze(denied) });
+}
+
+export function buildLiteHeartbeat({ snapshot, recoveredStaleTasks, now = Date.now(), pid = process.pid, state = 'RUNNING' }) {
+  if (!snapshot || !Array.isArray(snapshot.slots) || snapshot.slots.length !== 6) throw new Error('V4_LITE_HEARTBEAT_SLOTS_INVALID');
+  return Object.freeze({
+    pid,
+    mode: 'V4_LITE',
+    state,
+    recoveredStaleTasks,
+    generatedAt: new Date(now).toISOString(),
+    ...snapshot,
+  });
 }
 
 export function createLiteController({
@@ -208,14 +268,12 @@ export async function runV4LiteHost({
   try {
     while (!stopped && controller.snapshot().ticks < maxTicks) {
       await controller.tick();
-      const heartbeat = { pid: process.pid, mode: 'V4_LITE', state: stopped ? 'STOPPING' : 'RUNNING', recoveredStaleTasks: recovered.length, generatedAt: new Date().toISOString(), ...controller.snapshot() };
+      const heartbeat = buildLiteHeartbeat({ snapshot: controller.snapshot(), recoveredStaleTasks: recovered.length, state: stopped ? 'STOPPING' : 'RUNNING' });
       fs.writeFileSync(path.join(stateRoot, 'heartbeat-lite.json'), `${JSON.stringify(heartbeat)}\n`);
       if (!stopped && controller.snapshot().ticks < maxTicks) await sleep(intervalMs);
     }
-    for (const entry of controller.active.values()) {
-      const task = getTask(db, entry.taskId);
-      if (Number.isInteger(task?.process_group_id) && task.process_group_id > 0) signalGroup(task.process_group_id, 'SIGTERM');
-    }
+    const shutdown = signalVerifiedLiteTasks({ entries: [...controller.active.values()], getCurrentTask: (taskId) => getTask(db, taskId) });
+    if (shutdown.denied.length) exitCode = 75;
     if (controller.active.size) {
       const drained = await Promise.race([
         Promise.allSettled([...controller.active.values()].map((entry) => entry.promise)).then(() => true),
