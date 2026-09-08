@@ -10,6 +10,8 @@ export type AttributionConfidenceV1 = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
 export type ResultVsPredictionV1 = "WITHIN_RANGE" | "MISSED_HIGH" | "MISSED_LOW" | "INCONCLUSIVE" | "UNKNOWN";
 export type CalibrationErrorV1 = "NONE" | "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
 export type LearningStrengthV1 = "STRONG_CAUSAL_LEARNING" | "DIRECTIONAL_LEARNING" | "WEAK_SIGNAL_ONLY" | "UNKNOWN";
+export type DecisionGovernanceReviewStateV1 = "DRAFT" | "REVIEWED" | "APPROVED";
+export type DecisionReviewStateV1 = "CURRENT" | "REVIEW_REQUIRED" | "SUPERSEDED";
 
 export type PredictedOutcomeRangeV1 = {
   metric: string;
@@ -29,6 +31,31 @@ export type ObservedOutcomeV1 = {
   unknown_reason: string | null;
 };
 
+export type DecisionGovernanceV1 = {
+  rationale: string;
+  alternatives: string[];
+  decision_actor: string;
+  decision_at: string;
+  approval_authority: string;
+  review_state: DecisionGovernanceReviewStateV1;
+  supporting_evidence_refs: string[];
+  contradicting_evidence_refs: string[];
+  valid_until: string | null;
+  evidence_fingerprint: string | null;
+  revisit_on_evidence_change: boolean;
+  superseded_by_id: string | null;
+};
+
+export type DecisionReviewContextV1 = {
+  as_of?: string;
+  current_evidence_fingerprint?: string | null;
+};
+
+export type DecisionReviewEvaluationV1 = {
+  state: DecisionReviewStateV1;
+  reasons: Array<"VALIDITY_EXPIRED" | "EVIDENCE_CHANGED" | "SUPERSEDED">;
+};
+
 export type DecisionLearningRecordInputV1 = {
   id: string;
   recommendation_id: string;
@@ -45,9 +72,11 @@ export type DecisionLearningRecordInputV1 = {
   LESSON: string;
   CALIBRATION_ERROR: CalibrationErrorV1;
   POLICY_UPDATE_CANDIDATE: string | null;
+  DECISION_GOVERNANCE?: DecisionGovernanceV1;
 };
 
 export type DecisionLearningRecordCardV1 = DecisionLearningRecordInputV1 & {
+  decision_review: DecisionReviewEvaluationV1 | null;
   dashboard_flags: {
     is_successful_prediction: boolean;
     is_missed_prediction: boolean;
@@ -55,6 +84,8 @@ export type DecisionLearningRecordCardV1 = DecisionLearningRecordInputV1 & {
     is_unknown_outcome: boolean;
     can_update_policy: boolean;
     learning_strength: LearningStrengthV1;
+    needs_decision_review: boolean;
+    is_superseded: boolean;
   };
 };
 
@@ -69,8 +100,157 @@ export type DecisionLearningSnapshotV1 = {
     low_attribution_outcomes: number;
     unknown_outcomes: number;
     policy_update_candidates: number;
+    review_required_decisions: number;
+    superseded_decisions: number;
   };
 };
+
+const DECISION_REVIEW_STATES = new Set<DecisionGovernanceReviewStateV1>(["DRAFT", "REVIEWED", "APPROVED"]);
+
+function assertNonEmptyString(value: unknown, label: string): asserts value is string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
+}
+
+function assertCanonicalTimestamp(value: unknown, label: string): asserts value is string {
+  assertNonEmptyString(value, label);
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis) || new Date(millis).toISOString() !== value) {
+    throw new Error(`${label} must be a canonical ISO timestamp`);
+  }
+}
+
+function assertStringList(value: unknown, label: string, { allowEmpty = false } = {}): asserts value is string[] {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+    throw new Error(`${label} must be ${allowEmpty ? "an" : "a non-empty"} array`);
+  }
+  const seen = new Set<string>();
+  for (const item of value) {
+    assertNonEmptyString(item, `${label} item`);
+    if (seen.has(item)) throw new Error(`${label} contains duplicate reference ${item}`);
+    seen.add(item);
+  }
+}
+
+export function validateDecisionGovernance(input: DecisionLearningRecordInputV1): DecisionGovernanceV1 | null {
+  const governance = input.DECISION_GOVERNANCE;
+  if (governance == null) return null;
+  if (typeof governance !== "object" || Array.isArray(governance)) {
+    throw new Error("DECISION_GOVERNANCE must be an object");
+  }
+
+  assertNonEmptyString(governance.rationale, "DECISION_GOVERNANCE.rationale");
+  assertStringList(governance.alternatives, "DECISION_GOVERNANCE.alternatives");
+  assertNonEmptyString(governance.decision_actor, "DECISION_GOVERNANCE.decision_actor");
+  assertCanonicalTimestamp(governance.decision_at, "DECISION_GOVERNANCE.decision_at");
+  assertNonEmptyString(governance.approval_authority, "DECISION_GOVERNANCE.approval_authority");
+
+  if (!DECISION_REVIEW_STATES.has(governance.review_state)) {
+    throw new Error("DECISION_GOVERNANCE.review_state is invalid");
+  }
+
+  assertStringList(governance.supporting_evidence_refs, "DECISION_GOVERNANCE.supporting_evidence_refs", { allowEmpty: true });
+  assertStringList(governance.contradicting_evidence_refs, "DECISION_GOVERNANCE.contradicting_evidence_refs", { allowEmpty: true });
+  if (governance.supporting_evidence_refs.length + governance.contradicting_evidence_refs.length === 0) {
+    throw new Error("DECISION_GOVERNANCE requires at least one evidence reference");
+  }
+
+  const supporting = new Set(governance.supporting_evidence_refs);
+  const duplicatedAcrossSides = governance.contradicting_evidence_refs.find((ref) => supporting.has(ref));
+  if (duplicatedAcrossSides) {
+    throw new Error(`Evidence reference ${duplicatedAcrossSides} cannot be both supporting and contradicting`);
+  }
+
+  if (governance.valid_until != null) {
+    assertCanonicalTimestamp(governance.valid_until, "DECISION_GOVERNANCE.valid_until");
+    if (Date.parse(governance.valid_until) < Date.parse(governance.decision_at)) {
+      throw new Error("DECISION_GOVERNANCE.valid_until cannot precede decision_at");
+    }
+  }
+
+  if (typeof governance.revisit_on_evidence_change !== "boolean") {
+    throw new Error("DECISION_GOVERNANCE.revisit_on_evidence_change must be boolean");
+  }
+  if (governance.revisit_on_evidence_change) {
+    assertNonEmptyString(governance.evidence_fingerprint, "DECISION_GOVERNANCE.evidence_fingerprint");
+  } else if (governance.evidence_fingerprint != null) {
+    assertNonEmptyString(governance.evidence_fingerprint, "DECISION_GOVERNANCE.evidence_fingerprint");
+  }
+
+  if (governance.superseded_by_id != null) {
+    assertNonEmptyString(governance.superseded_by_id, "DECISION_GOVERNANCE.superseded_by_id");
+    if (governance.superseded_by_id === input.id) {
+      throw new Error("Decision cannot supersede itself");
+    }
+  }
+
+  return governance;
+}
+
+export function decisionReviewStateFor(
+  input: DecisionLearningRecordInputV1,
+  context: DecisionReviewContextV1 = {}
+): DecisionReviewEvaluationV1 | null {
+  const governance = validateDecisionGovernance(input);
+  if (!governance) return null;
+
+  if (governance.superseded_by_id) {
+    return { state: "SUPERSEDED", reasons: ["SUPERSEDED"] };
+  }
+
+  const asOf = context.as_of ?? governance.decision_at;
+  assertCanonicalTimestamp(asOf, "decision review as_of");
+  const reasons: DecisionReviewEvaluationV1["reasons"] = [];
+
+  if (governance.valid_until && Date.parse(asOf) >= Date.parse(governance.valid_until)) {
+    reasons.push("VALIDITY_EXPIRED");
+  }
+
+  const currentFingerprint = context.current_evidence_fingerprint;
+  if (
+    governance.revisit_on_evidence_change &&
+    currentFingerprint != null &&
+    currentFingerprint !== governance.evidence_fingerprint
+  ) {
+    assertNonEmptyString(currentFingerprint, "current_evidence_fingerprint");
+    reasons.push("EVIDENCE_CHANGED");
+  }
+
+  return {
+    state: reasons.length > 0 ? "REVIEW_REQUIRED" : "CURRENT",
+    reasons
+  };
+}
+
+function validateSupersessionGraph(inputs: DecisionLearningRecordInputV1[]) {
+  const byId = new Map<string, DecisionLearningRecordInputV1>();
+  for (const input of inputs) {
+    assertNonEmptyString(input.id, "decision id");
+    if (byId.has(input.id)) throw new Error(`Duplicate decision id ${input.id}`);
+    validateDecisionGovernance(input);
+    byId.set(input.id, input);
+  }
+
+  for (const input of inputs) {
+    const successor = input.DECISION_GOVERNANCE?.superseded_by_id;
+    if (successor && !byId.has(successor)) {
+      throw new Error(`Superseding decision ${successor} is missing`);
+    }
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string) => {
+    if (visiting.has(id)) throw new Error("Circular decision supersession is not allowed");
+    if (visited.has(id)) return;
+    visiting.add(id);
+    const next = byId.get(id)?.DECISION_GOVERNANCE?.superseded_by_id;
+    if (next) visit(next);
+    visiting.delete(id);
+    visited.add(id);
+  };
+
+  for (const id of byId.keys()) visit(id);
+}
 
 export function learningStrengthFor(input: DecisionLearningRecordInputV1): LearningStrengthV1 {
   if (input.ATTRIBUTION_CONFIDENCE === "LOW") return "WEAK_SIGNAL_ONLY";
@@ -80,27 +260,46 @@ export function learningStrengthFor(input: DecisionLearningRecordInputV1): Learn
   return "STRONG_CAUSAL_LEARNING";
 }
 
-export function toDecisionLearningRecordCard(input: DecisionLearningRecordInputV1): DecisionLearningRecordCardV1 {
+export function toDecisionLearningRecordCard(
+  input: DecisionLearningRecordInputV1,
+  reviewContext: DecisionReviewContextV1 = {}
+): DecisionLearningRecordCardV1 {
   const learning_strength = learningStrengthFor(input);
+  const decision_review = decisionReviewStateFor(input, reviewContext);
+  const governanceAllowsPolicyUpdate =
+    !input.DECISION_GOVERNANCE ||
+    (input.DECISION_GOVERNANCE.review_state === "APPROVED" && decision_review?.state === "CURRENT");
+  const canUpdatePolicy =
+    learning_strength === "STRONG_CAUSAL_LEARNING" &&
+    Boolean(input.POLICY_UPDATE_CANDIDATE) &&
+    governanceAllowsPolicyUpdate;
+
   return {
     ...input,
-    POLICY_UPDATE_CANDIDATE: learning_strength === "STRONG_CAUSAL_LEARNING" ? input.POLICY_UPDATE_CANDIDATE : null,
+    POLICY_UPDATE_CANDIDATE: canUpdatePolicy ? input.POLICY_UPDATE_CANDIDATE : null,
+    decision_review,
     dashboard_flags: {
       is_successful_prediction: input.RESULT_VS_PREDICTION === "WITHIN_RANGE",
       is_missed_prediction: input.RESULT_VS_PREDICTION === "MISSED_HIGH" || input.RESULT_VS_PREDICTION === "MISSED_LOW",
       is_low_attribution: input.ATTRIBUTION_CONFIDENCE === "LOW",
       is_unknown_outcome: input.OBSERVED_OUTCOME.value === null || input.RESULT_VS_PREDICTION === "UNKNOWN",
-      can_update_policy: learning_strength === "STRONG_CAUSAL_LEARNING" && Boolean(input.POLICY_UPDATE_CANDIDATE),
-      learning_strength
+      can_update_policy: canUpdatePolicy,
+      learning_strength,
+      needs_decision_review: decision_review?.state === "REVIEW_REQUIRED",
+      is_superseded: decision_review?.state === "SUPERSEDED"
     }
   };
 }
 
 export function buildDecisionLearningSnapshot(
   inputs: DecisionLearningRecordInputV1[],
-  generated_at = "2026-08-17T20:00:00.000Z"
+  generated_at = "2026-08-17T20:00:00.000Z",
+  reviewContext: DecisionReviewContextV1 = {}
 ): DecisionLearningSnapshotV1 {
-  const cards = inputs.map(toDecisionLearningRecordCard);
+  assertCanonicalTimestamp(generated_at, "generated_at");
+  validateSupersessionGraph(inputs);
+  const effectiveReviewContext = { as_of: generated_at, ...reviewContext };
+  const cards = inputs.map((input) => toDecisionLearningRecordCard(input, effectiveReviewContext));
   return {
     generated_at,
     data_mode: "FIXTURE_BASELINE",
@@ -111,7 +310,9 @@ export function buildDecisionLearningSnapshot(
       missed_predictions: cards.filter((card) => card.dashboard_flags.is_missed_prediction).length,
       low_attribution_outcomes: cards.filter((card) => card.dashboard_flags.is_low_attribution).length,
       unknown_outcomes: cards.filter((card) => card.dashboard_flags.is_unknown_outcome).length,
-      policy_update_candidates: cards.filter((card) => card.dashboard_flags.can_update_policy).length
+      policy_update_candidates: cards.filter((card) => card.dashboard_flags.can_update_policy).length,
+      review_required_decisions: cards.filter((card) => card.dashboard_flags.needs_decision_review).length,
+      superseded_decisions: cards.filter((card) => card.dashboard_flags.is_superseded).length
     }
   };
 }
