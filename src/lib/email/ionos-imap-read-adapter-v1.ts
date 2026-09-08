@@ -37,7 +37,7 @@ type ImapFlowConstructor = new (options: {
 }) => ImapClientLike;
 
 function canonicalUid(value: unknown, label: string): string {
-  if (typeof value === "bigint" && value >= 0n) return value.toString();
+  if (typeof value === "bigint" && value >= BigInt(0)) return value.toString();
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
   if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) return BigInt(value).toString();
   throw new Error(`${label} must be a non-negative decimal UID`);
