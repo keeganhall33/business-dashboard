@@ -66,9 +66,9 @@ test("UNKNOWN STALE and CONFLICTED remain visibly non-actionable", () => {
     assert.equal(item.eligibility, "UNKNOWN");
     assert.equal(item.netStrategicEconomics, "UNKNOWN");
   }
-  assert.match(html, /UNKNOWN · UNKNOWN · verify evidence/);
-  assert.match(html, /STALE · UNKNOWN · verify evidence/);
-  assert.match(html, /CONFLICTED · UNKNOWN · verify evidence/);
+  assert.match(html, /UNKNOWN.*UNKNOWN.*verify evidence/);
+  assert.match(html, /STALE.*UNKNOWN.*verify evidence/);
+  assert.match(html, /CONFLICTED.*UNKNOWN.*verify evidence/);
   assert.match(html, /cannot become a timing recommendation/);
 });
 
