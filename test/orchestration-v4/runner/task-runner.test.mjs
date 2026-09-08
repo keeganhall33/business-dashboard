@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSlotRegistry } from '../../../scripts/orchestration-v4/slot-scheduler.mjs';
 import { openV4StateStore, insertReadyTask, getTask, listCorrectionAttempts } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
-import { runReadyBatch } from '../../../scripts/orchestration-v4/runner/task-runner.mjs';
+import { runReadyBatch, runV4Task } from '../../../scripts/orchestration-v4/runner/task-runner.mjs';
 
 function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
@@ -183,4 +183,54 @@ test('third failed correction stops the loop and requests replanning', async () 
   assert.equal(listCorrectionAttempts(db, 'replan-me').length, 3);
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+
+test('one total deadline bounds initial and correction execution and releases the slot', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-deadline-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const contract = { title: 'Deadline', body: 'body', fileOwnership: 'owned.mjs', taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED' };
+  insertReadyTask(db, { taskId: 'deadline-task', issueNumber: 4001, stream: 'QA_EVALUATION', baseSha: sha, contract });
+  let clock = 1_000;
+  const budgets = [];
+  const result = await runV4Task({
+    db,
+    repoRoot: repo,
+    workspaceRoot: path.join(root, 'workspaces'),
+    taskId: 'deadline-task',
+    slotId: 'local-f',
+    command: 'fixture',
+    timeoutMs: 1_000,
+    cleanupReserveMs: 100,
+    stallMs: 50,
+    now: () => new Date(clock),
+    execute: async ({ timeoutMs, onEvent }) => {
+      budgets.push(timeoutMs);
+      onEvent({ kind: 'WORKTREE_MUTATION', observedAt: new Date(clock).toISOString() });
+      clock += budgets.length === 1 ? 600 : 300;
+      return { status: 'FAILED', reason: 'STILL_RED', stderrTail: 'evidence' };
+    },
+    buildCorrectionAttempt: () => ({ command: 'fixture', args: [] }),
+    maxCorrectionAttempts: 5,
+  });
+  assert.deepEqual(budgets, [900, 300]);
+  assert.equal(result.result.status, 'TIMED_OUT');
+  assert.equal(result.result.reason, 'TOTAL_TASK_DEADLINE_EXHAUSTED');
+  assert.equal(getTask(db, 'deadline-task').terminal_reason, 'TOTAL_TASK_DEADLINE_EXHAUSTED');
+  assert.equal(getTask(db, 'deadline-task').slot_id, null);
+  assert.equal(getTask(db, 'deadline-task').semantic_progress_seq, 2);
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('invalid total deadline inputs fail closed before task execution', async () => {
+  await assert.rejects(
+    runV4Task({ db: null, repoRoot: '/tmp', workspaceRoot: '/tmp', taskId: 'x', slotId: 'x', command: 'x', timeoutMs: -1 }),
+    /V4_TOTAL_TASK_TIMEOUT_INVALID/,
+  );
+  await assert.rejects(
+    runV4Task({ db: null, repoRoot: '/tmp', workspaceRoot: '/tmp', taskId: 'x', slotId: 'x', command: 'x', timeoutMs: 100, cleanupReserveMs: 100 }),
+    /V4_TOTAL_TASK_DEADLINE_CONFIG_INVALID/,
+  );
 });

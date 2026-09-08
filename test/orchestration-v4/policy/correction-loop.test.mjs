@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CORRECTION_ACTIONS, CORRECTION_MUTATION_MODES, createCorrectionPacket, correctionMutationMode, correctionPrompt } from '../../../scripts/orchestration-v4/policy/correction-loop.mjs';
+import { CORRECTION_ACTIONS, CORRECTION_MUTATION_MODES, createCorrectionPacket, correctionMutationMode, correctionPrompt, createTaskDeadline, remainingTaskExecutionMs, TOTAL_TASK_DEADLINE_EXHAUSTED } from '../../../scripts/orchestration-v4/policy/correction-loop.mjs';
 
 function packet(reason, attempt = 1) {
   return createCorrectionPacket({
@@ -42,4 +42,20 @@ test('three-attempt ceiling is preserved for patch format corrections', () => {
 
 test('correction mutation mode fails closed without a governed packet identity', () => {
   assert.throws(() => correctionMutationMode({ reason: 'APPLY_PATCH_FORMAT_ERROR' }), /V4_CORRECTION_PACKET_REQUIRED/);
+});
+
+test('remaining execution budget honors exact boundaries and cleanup reserve', () => {
+  const deadline = createTaskDeadline({ startedAtMs: 1_000, timeoutMs: 5_400_000, reserveMs: 60_000 });
+  assert.equal(remainingTaskExecutionMs(deadline, 1_000), 5_340_000);
+  assert.equal(remainingTaskExecutionMs(deadline, 5_341_000), 0);
+  assert.equal(remainingTaskExecutionMs(deadline, 5_401_000), 0);
+  assert.equal(TOTAL_TASK_DEADLINE_EXHAUSTED, 'TOTAL_TASK_DEADLINE_EXHAUSTED');
+});
+
+test('deadline configuration and clock evidence fail closed', () => {
+  assert.throws(() => createTaskDeadline({ startedAtMs: 0, timeoutMs: 0, reserveMs: 0 }), /V4_TOTAL_TASK_DEADLINE_CONFIG_INVALID/);
+  assert.throws(() => createTaskDeadline({ startedAtMs: 0, timeoutMs: 100, reserveMs: 100 }), /V4_TOTAL_TASK_DEADLINE_CONFIG_INVALID/);
+  assert.throws(() => createTaskDeadline({ startedAtMs: 0, timeoutMs: Infinity, reserveMs: 1 }), /V4_TOTAL_TASK_DEADLINE_CONFIG_INVALID/);
+  const deadline = createTaskDeadline({ startedAtMs: 100, timeoutMs: 100, reserveMs: 10 });
+  assert.throws(() => remainingTaskExecutionMs(deadline, 99), /V4_TOTAL_TASK_DEADLINE_CLOCK_INVALID/);
 });

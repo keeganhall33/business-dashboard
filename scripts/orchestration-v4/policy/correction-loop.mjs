@@ -41,3 +41,20 @@ export function correctionPrompt(packet) {
     ...formatErrorDirectives,
   ].join('\n');
 }
+
+export const TOTAL_TASK_DEADLINE_EXHAUSTED = 'TOTAL_TASK_DEADLINE_EXHAUSTED';
+
+export function createTaskDeadline({ startedAtMs, timeoutMs, reserveMs }) {
+  if (!Number.isFinite(startedAtMs) || !Number.isInteger(timeoutMs) || timeoutMs <= 0 ||
+      !Number.isInteger(reserveMs) || reserveMs < 0 || reserveMs >= timeoutMs) {
+    throw new Error('V4_TOTAL_TASK_DEADLINE_CONFIG_INVALID');
+  }
+  return Object.freeze({ startedAtMs, deadlineAtMs: startedAtMs + timeoutMs, timeoutMs, reserveMs });
+}
+
+export function remainingTaskExecutionMs(deadline, nowMs) {
+  if (!deadline || !Number.isFinite(nowMs) || nowMs < deadline.startedAtMs) {
+    throw new Error('V4_TOTAL_TASK_DEADLINE_CLOCK_INVALID');
+  }
+  return Math.max(0, deadline.deadlineAtMs - nowMs - deadline.reserveMs);
+}
