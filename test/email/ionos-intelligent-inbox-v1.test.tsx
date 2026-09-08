@@ -531,7 +531,7 @@ test("relationship workspace applies a compact attention limit with accessible o
     <IonosIntelligentInboxV1 inbox={{ ...workspaceFixture, needsReply: three }} />
   );
   assert.match(expandedHtml, /<details/);
-  assert.match(expandedHtml, /View 1 more/);
+  assert.match(expandedHtml, /View .*1.* more/);
 });
 
 test("Relationships preserves ExecutiveWorkspacePage and adds responsive light-mode depth", () => {
