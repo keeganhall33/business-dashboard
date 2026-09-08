@@ -139,6 +139,7 @@ test("projects relationship states into the required intelligent-inbox queues", 
   });
   const commitment = withStates("commitment", "NO_ACTION", ["NO_ACTION", "COMMITMENT_SUGGESTED"], {
     commitmentSuggestionIds: ["commitment-1"],
+    lastMeaningfulInteraction: null,
     nextBestMove: {
       move: "PREPARE_FOLLOW_UP",
       status: "SUGGESTED_UNVERIFIED",
