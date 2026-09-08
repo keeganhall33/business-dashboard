@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSlotRegistry } from '../../scripts/orchestration-v4/slot-scheduler.mjs';
-import { createLiteController, ownershipOverlaps, recoverLiteStartupTasks, withDeadline } from '../../scripts/orchestration-v4-lite/host.mjs';
+import { buildLiteHeartbeat, createLiteController, ownershipOverlaps, recoverLiteStartupTasks, signalVerifiedLiteTasks, withDeadline } from '../../scripts/orchestration-v4-lite/host.mjs';
 
 function deferred() {
   let resolve;
@@ -99,6 +99,41 @@ test('startup recovery rejects every inherited task without trusting its pid', (
   const recovered = recoverLiteStartupTasks({ listActive: () => [{ task_id:'old-a',child_pid:123 },{ task_id:'old-b',child_pid:456 }], failTask: (candidate, reason) => failed.push([candidate.task_id, reason]) });
   assert.deepEqual(recovered, ['old-a','old-b']);
   assert.deepEqual(failed, [['old-a','V4_LITE_STALE_TASK_AT_STARTUP'],['old-b','V4_LITE_STALE_TASK_AT_STARTUP']]);
+});
+
+test('shutdown signals only a process verified as this controller task', () => {
+  const calls = [];
+  const entries = [{ taskId: 'task-a' }, { taskId: 'task-b' }];
+  const tasks = {
+    'task-a': { child_pid: 201, process_group_id: 201 },
+    'task-b': { child_pid: 202, process_group_id: 202 },
+  };
+  const result = signalVerifiedLiteTasks({
+    entries,
+    hostPid: 100,
+    getCurrentTask: (taskId) => tasks[taskId],
+    observe: (pid) => pid === 201
+      ? { exists: true, pid, ppid: 100, processGroupId: 201, hostAncestors: [100], command: 'node agent-task-entrypoint.mjs task-a' }
+      : { exists: true, pid, ppid: 1, processGroupId: 202, hostAncestors: [], command: 'node agent-task-entrypoint.mjs task-b' },
+    signal: (pgid, kind) => calls.push([pgid, kind]),
+  });
+  assert.deepEqual(calls, [[201, 'SIGTERM']]);
+  assert.deepEqual(result.signaled, ['task-a']);
+  assert.deepEqual(result.denied, [{ taskId: 'task-b', reason: 'WORKER_REPARENTED_TO_INIT' }]);
+});
+
+test('heartbeat reports six real slot states and current process progress', async () => {
+  const ready = [task('t1', 'CORE_INTELLIGENCE')];
+  const { controller } = harness({ ready });
+  await controller.tick();
+  const heartbeat = buildLiteHeartbeat({ snapshot: controller.snapshot(), recoveredStaleTasks: 2, now: 1_788_800_000_000, pid: 99 });
+  assert.equal(heartbeat.mode, 'V4_LITE');
+  assert.equal(heartbeat.pid, 99);
+  assert.equal(heartbeat.recoveredStaleTasks, 2);
+  assert.equal(heartbeat.slots.length, 6);
+  assert.equal(heartbeat.slots.find((slot) => slot.slotId === 'local-a').taskId, 't1');
+  assert.equal(heartbeat.slots.filter((slot) => slot.state === 'IDLE').length, 5);
+  assert.equal(heartbeat.activeCount, 1);
 });
 
 test('worker rejection is observed and releases occupancy', async () => {
