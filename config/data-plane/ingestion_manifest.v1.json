@@ -1,0 +1,3347 @@
+{
+  "schema_version": "ingestion_manifest_v1",
+  "manifest_version": "2026-09-08.1",
+  "timezone": "America/Los_Angeles",
+  "scheduler": {
+    "wakeup_cadence": "5m",
+    "enqueue_only": true,
+    "maximum_dispatch_seconds": 30
+  },
+  "evidence_contract": {
+    "required_fields": [
+      "source_id",
+      "source_tier",
+      "run_id",
+      "adapter_version",
+      "retrieved_at",
+      "source_as_of",
+      "coverage_start",
+      "coverage_end",
+      "cursor_before",
+      "cursor_after",
+      "raw_reference",
+      "content_hash",
+      "canonical_ids",
+      "units",
+      "currency",
+      "timezone",
+      "completeness",
+      "idempotency_key",
+      "quality_state",
+      "freshness_state",
+      "conflict_state",
+      "legal_policy_version",
+      "decision_eligibility"
+    ],
+    "missing_is_zero": false,
+    "collector_liveness_is_freshness": false
+  },
+  "sources": [
+    {
+      "source_id": "ads.google",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "NEEDS_KEEGAN_CONNECTION",
+      "business_domains": [
+        "paid_media",
+        "marketing"
+      ],
+      "capabilities": [
+        "SEARCH_AD_PERFORMANCE",
+        "ATTRIBUTION"
+      ],
+      "decisions_supported": [
+        "SPEND_ALLOCATION",
+        "KEYWORD_STRATEGY"
+      ],
+      "adapter": {
+        "identity": "google-ads-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 21600,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 172800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "ads.google:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "GOOGLE_ADS_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "NEEDS_CONNECTION",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:ads.google",
+        "canonical": "canonical_facts:ads.google"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "ads.meta",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "paid_media",
+        "marketing"
+      ],
+      "capabilities": [
+        "CAMPAIGN_PERFORMANCE",
+        "CREATIVE_PERFORMANCE",
+        "ATTRIBUTION"
+      ],
+      "decisions_supported": [
+        "SPEND_ALLOCATION",
+        "CREATIVE_ITERATION"
+      ],
+      "adapter": {
+        "identity": "scripts/run-meta-reporting.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "0 11 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 21600,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 172800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "ads.meta:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "META_ACCESS_TOKEN",
+        "META_AD_ACCOUNT_ID",
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:ads.meta",
+        "canonical": "canonical_facts:ads.meta"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "analytics.ga4",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "website",
+        "commerce",
+        "marketing"
+      ],
+      "capabilities": [
+        "ACQUISITION",
+        "FUNNEL",
+        "LANDING_PAGE_PERFORMANCE"
+      ],
+      "decisions_supported": [
+        "CHANNEL_ALLOCATION",
+        "CRO_PRIORITIZATION",
+        "CONTENT_STRATEGY"
+      ],
+      "adapter": {
+        "identity": "scripts/run-ga4-raw-telemetry.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "0 10 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 172800,
+      "freshness_sla_seconds": 259200,
+      "maximum_decision_staleness_seconds": 432000,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "analytics.ga4:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "GA4_CREDENTIALS_JSON",
+        "GA4_PROPERTY_ID",
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:analytics.ga4",
+        "canonical": "canonical_facts:analytics.ga4"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "art_market.sothebys",
+      "registry_source_id": "art_market.sothebys",
+      "registry_source_set_ids": [
+        "set.art.and_galleries"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "art_market"
+      ],
+      "capabilities": [
+        "pricing",
+        "market_observation",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:art_market.sothebys",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:art_market.sothebys",
+        "canonical": "canonical_facts:art_market.sothebys"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "behavior.microsoft_clarity",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "NEEDS_KEEGAN_CONNECTION",
+      "business_domains": [
+        "cro",
+        "website"
+      ],
+      "capabilities": [
+        "SESSION_BEHAVIOR",
+        "FRICTION_SIGNALS"
+      ],
+      "decisions_supported": [
+        "CRO_PRIORITIZATION"
+      ],
+      "adapter": {
+        "identity": "clarity-approved-export-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 172800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "behavior.microsoft_clarity:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "CLARITY_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "NEEDS_CONNECTION",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:behavior.microsoft_clarity",
+        "canonical": "canonical_facts:behavior.microsoft_clarity"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "calendar.sports.milestones",
+      "registry_source_id": "calendar.sports.milestones",
+      "registry_source_set_ids": [
+        "set.sports.official"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "sports",
+        "planning"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "calendar_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:calendar.sports.milestones",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 7776000,
+      "maximum_decision_staleness_seconds": 7776000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:calendar.sports.milestones",
+        "canonical": "canonical_facts:calendar.sports.milestones"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "commerce.funnelkit",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "commerce",
+        "lifecycle"
+      ],
+      "capabilities": [
+        "CHECKOUT_DIAGNOSTICS",
+        "ABANDONMENT",
+        "EMAIL_AUTOMATION"
+      ],
+      "decisions_supported": [
+        "CHECKOUT_REPAIR",
+        "LIFECYCLE_FOLLOWUP"
+      ],
+      "adapter": {
+        "identity": "funnelkit-native-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 300,
+      "freshness_sla_seconds": 3600,
+      "maximum_decision_staleness_seconds": 86400,
+      "incremental": {
+        "strategy": "CURSOR",
+        "checkpoint": "commerce.funnelkit:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "FUNNELKIT_API_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:commerce.funnelkit",
+        "canonical": "canonical_facts:commerce.funnelkit"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "commerce.woocommerce",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "commerce",
+        "finance"
+      ],
+      "capabilities": [
+        "REVENUE_TRUTH",
+        "PRODUCT_PERFORMANCE",
+        "CUSTOMER_COHORTS"
+      ],
+      "decisions_supported": [
+        "PRICING",
+        "INVENTORY",
+        "PRODUCT_PORTFOLIO"
+      ],
+      "adapter": {
+        "identity": "scripts/run-woo-telemetry.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "5 10 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 900,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 172800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "commerce.woocommerce:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:commerce.woocommerce",
+        "canonical": "canonical_facts:commerce.woocommerce"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "competitors.curated.set",
+      "registry_source_id": "competitors.curated.set",
+      "registry_source_set_ids": [
+        "set.competitor.monitoring"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "competition",
+        "market"
+      ],
+      "capabilities": [
+        "positioning",
+        "market_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:competitors.curated.set",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:competitors.curated.set",
+        "canonical": "canonical_facts:competitors.curated.set"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "crm.native",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "crm",
+        "relationships",
+        "business_memory"
+      ],
+      "capabilities": [
+        "OPPORTUNITY_STATE",
+        "TASKS",
+        "COMMITMENTS"
+      ],
+      "decisions_supported": [
+        "PIPELINE_PRIORITIZATION",
+        "FOLLOWUP"
+      ],
+      "adapter": {
+        "identity": "scripts/run-lead-intelligence.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "0 13 * * 1",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 60,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 172800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "crm.native:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:crm.native",
+        "canonical": "canonical_facts:crm.native"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "economics.fred",
+      "registry_source_id": "economics.fred",
+      "registry_source_set_ids": [
+        "set.market.demand.and_economics"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "economics",
+        "market"
+      ],
+      "capabilities": [
+        "macro_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "src/lib/external-intelligence/collection/fred/fred.adapter.ts",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 2592000,
+      "freshness_sla_seconds": 7776000,
+      "maximum_decision_staleness_seconds": 7776000,
+      "incremental": {
+        "strategy": "ETAG",
+        "checkpoint": "economics.fred:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "METADATA_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:economics.fred",
+        "canonical": "canonical_facts:economics.fred"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "edge.cloudflare",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "website",
+        "operations",
+        "security"
+      ],
+      "capabilities": [
+        "TRAFFIC_QUALITY",
+        "PERFORMANCE",
+        "SECURITY_EVENTS"
+      ],
+      "decisions_supported": [
+        "PERFORMANCE_REPAIR",
+        "SECURITY_RESPONSE"
+      ],
+      "adapter": {
+        "identity": "scripts/run-cloudflare-telemetry.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "30 12 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 900,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 172800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "edge.cloudflare:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ZONE_ID",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:edge.cloudflare",
+        "canonical": "canonical_facts:edge.cloudflare"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "email.ionos",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "relationships",
+        "crm",
+        "business_memory"
+      ],
+      "capabilities": [
+        "CORRESPONDENCE_MEMORY",
+        "COMMITMENT_TRACKING",
+        "OPPORTUNITY_FOLLOWUP"
+      ],
+      "decisions_supported": [
+        "RELATIONSHIP_FOLLOWUP",
+        "OPPORTUNITY_PRIORITIZATION"
+      ],
+      "adapter": {
+        "identity": "ionos-imap-incremental-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 900,
+      "freshness_sla_seconds": 3600,
+      "maximum_decision_staleness_seconds": 86400,
+      "incremental": {
+        "strategy": "CURSOR",
+        "checkpoint": "email.ionos:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "IONOS_IMAP_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:email.ionos",
+        "canonical": "canonical_facts:email.ionos"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "entertainment.deadline",
+      "registry_source_id": "entertainment.deadline",
+      "registry_source_set_ids": [
+        "set.entertainment.and_music"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "entertainment",
+        "culture"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "catalyst",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:entertainment.deadline",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:entertainment.deadline",
+        "canonical": "canonical_facts:entertainment.deadline"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "entertainment.variety",
+      "registry_source_id": "entertainment.variety",
+      "registry_source_set_ids": [
+        "set.entertainment.and_music"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "entertainment",
+        "culture"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "catalyst",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:entertainment.variety",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:entertainment.variety",
+        "canonical": "canonical_facts:entertainment.variety"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "galleries.curated.rosters",
+      "registry_source_id": "galleries.curated.rosters",
+      "registry_source_set_ids": [
+        "set.art.and_galleries"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "art_market"
+      ],
+      "capabilities": [
+        "collaboration",
+        "market_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:galleries.curated.rosters",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 2592000,
+      "freshness_sla_seconds": 15552000,
+      "maximum_decision_staleness_seconds": 15552000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:galleries.curated.rosters",
+        "canonical": "canonical_facts:galleries.curated.rosters"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "intelligence.supabase",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_AND_INGESTING",
+      "business_domains": [
+        "business_memory",
+        "decisions",
+        "outcomes"
+      ],
+      "capabilities": [
+        "CANONICAL_FACTS",
+        "DECISION_HISTORY",
+        "OUTCOME_LEARNING"
+      ],
+      "decisions_supported": [
+        "ALL_GOVERNED_DECISIONS"
+      ],
+      "adapter": {
+        "identity": "supabase-canonical-state",
+        "state": "OPERATIONAL",
+        "version": "v1"
+      },
+      "execution_venue": "DASHBOARD_WORKER",
+      "cadence": {
+        "mode": "EVENT_DRIVEN",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 60,
+      "freshness_sla_seconds": 300,
+      "maximum_decision_staleness_seconds": 3600,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "intelligence.supabase:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:intelligence.supabase",
+        "canonical": "canonical_facts:intelligence.supabase"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "licensing.rights_holders.newsrooms",
+      "registry_source_id": "licensing.rights_holders.newsrooms",
+      "registry_source_set_ids": [
+        "set.licensing.and_rights"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "licensing"
+      ],
+      "capabilities": [
+        "collaboration",
+        "verified_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:licensing.rights_holders.newsrooms",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 1209600,
+      "freshness_sla_seconds": 7776000,
+      "maximum_decision_staleness_seconds": 7776000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:licensing.rights_holders.newsrooms",
+        "canonical": "canonical_facts:licensing.rights_holders.newsrooms"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "licensing.uspto.trademarks",
+      "registry_source_id": "licensing.uspto.trademarks",
+      "registry_source_set_ids": [
+        "set.licensing.and_rights"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "licensing",
+        "risk"
+      ],
+      "capabilities": [
+        "collaboration",
+        "regulatory_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:licensing.uspto.trademarks",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "METADATA_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:licensing.uspto.trademarks",
+        "canonical": "canonical_facts:licensing.uspto.trademarks"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "memorabilia.heritage",
+      "registry_source_id": "memorabilia.heritage",
+      "registry_source_set_ids": [
+        "set.memorabilia.and_trading_cards"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "memorabilia",
+        "market"
+      ],
+      "capabilities": [
+        "pricing",
+        "market_observation",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:memorabilia.heritage",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:memorabilia.heritage",
+        "canonical": "canonical_facts:memorabilia.heritage"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "music.pollstar",
+      "registry_source_id": "music.pollstar",
+      "registry_source_set_ids": [
+        "set.entertainment.and_music"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "NOT_RECOMMENDED",
+      "business_domains": [
+        "music",
+        "culture"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "catalyst",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:music.pollstar",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PROHIBITED",
+        "automation_suitability": "PROHIBITED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:music.pollstar",
+        "canonical": "canonical_facts:music.pollstar"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "operations.stamps",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "NEEDS_KEEGAN_CONNECTION",
+      "business_domains": [
+        "operations",
+        "shipping",
+        "customer_experience"
+      ],
+      "capabilities": [
+        "FULFILLMENT",
+        "DELIVERY_EXCEPTIONS"
+      ],
+      "decisions_supported": [
+        "CUSTOMER_RECOVERY",
+        "FULFILLMENT_RESPONSE"
+      ],
+      "adapter": {
+        "identity": "stamps-authorized-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 900,
+      "freshness_sla_seconds": 3600,
+      "maximum_decision_staleness_seconds": 86400,
+      "incremental": {
+        "strategy": "CURSOR",
+        "checkpoint": "operations.stamps:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "STAMPS_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "NEEDS_CONNECTION",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:operations.stamps",
+        "canonical": "canonical_facts:operations.stamps"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "ops.shipping.alerts",
+      "registry_source_id": "ops.shipping.alerts",
+      "registry_source_set_ids": [
+        "set.ops.and_shipping"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "operations"
+      ],
+      "capabilities": [
+        "ops_alert",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:ops.shipping.alerts",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 604800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:ops.shipping.alerts",
+        "canonical": "canonical_facts:ops.shipping.alerts"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "platform.google.policy_updates",
+      "registry_source_id": "platform.google.policy_updates",
+      "registry_source_set_ids": [
+        "set.platform.and_regulatory"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "platform",
+        "risk"
+      ],
+      "capabilities": [
+        "platform_change",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:platform.google.policy_updates",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 7776000,
+      "maximum_decision_staleness_seconds": 7776000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:platform.google.policy_updates",
+        "canonical": "canonical_facts:platform.google.policy_updates"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "platform.meta.policy_updates",
+      "registry_source_id": "platform.meta.policy_updates",
+      "registry_source_set_ids": [
+        "set.platform.and_regulatory"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "platform",
+        "risk"
+      ],
+      "capabilities": [
+        "platform_change",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:platform.meta.policy_updates",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 7776000,
+      "maximum_decision_staleness_seconds": 7776000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:platform.meta.policy_updates",
+        "canonical": "canonical_facts:platform.meta.policy_updates"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "regulatory.us.releases",
+      "registry_source_id": "regulatory.us.releases",
+      "registry_source_set_ids": [
+        "set.platform.and_regulatory"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "risk",
+        "operations"
+      ],
+      "capabilities": [
+        "regulatory_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:regulatory.us.releases",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:regulatory.us.releases",
+        "canonical": "canonical_facts:regulatory.us.releases"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "search.google_search_console",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "NEEDS_KEEGAN_CONNECTION",
+      "business_domains": [
+        "seo",
+        "website"
+      ],
+      "capabilities": [
+        "SEARCH_DEMAND",
+        "INDEX_COVERAGE",
+        "QUERY_PERFORMANCE"
+      ],
+      "decisions_supported": [
+        "SEO_PRIORITIZATION",
+        "CONTENT_STRATEGY"
+      ],
+      "adapter": {
+        "identity": "search-console-adapter",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 172800,
+      "freshness_sla_seconds": 259200,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "search.google_search_console:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "SEARCH_CONSOLE_CREDENTIAL_REF"
+      ],
+      "legal_access": {
+        "status": "NEEDS_CONNECTION",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:search.google_search_console",
+        "canonical": "canonical_facts:search.google_search_console"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "search.google_trends",
+      "registry_source_id": "search.google_trends",
+      "registry_source_set_ids": [
+        "set.market.demand.and_economics"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "NOT_RECOMMENDED",
+      "business_domains": [
+        "demand",
+        "market"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "demand_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:search.google_trends",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 604800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PROHIBITED",
+        "automation_suitability": "PROHIBITED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:search.google_trends",
+        "canonical": "canonical_facts:search.google_trends"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "social.owned_channels",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "social",
+        "content",
+        "marketing"
+      ],
+      "capabilities": [
+        "CONTENT_PERFORMANCE",
+        "QUALIFIED_ENGAGEMENT"
+      ],
+      "decisions_supported": [
+        "CONTENT_STRATEGY",
+        "CHANNEL_ALLOCATION"
+      ],
+      "adapter": {
+        "identity": "scripts/run-social-intelligence.mjs",
+        "state": "PARTIAL",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "0 4 * * 1",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 172800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "social.owned_channels:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:social.owned_channels",
+        "canonical": "canonical_facts:social.owned_channels"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "social.youtube",
+      "registry_source_id": "social.youtube",
+      "registry_source_set_ids": [
+        "set.entertainment.and_music"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "NOT_RECOMMENDED",
+      "business_domains": [
+        "culture",
+        "demand"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "demand_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:social.youtube",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 604800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PROHIBITED",
+        "automation_suitability": "PROHIBITED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:social.youtube",
+        "canonical": "canonical_facts:social.youtube"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "sports_business.boardroom",
+      "registry_source_id": "sports_business.boardroom",
+      "registry_source_set_ids": [
+        "set.sports_business.reporting"
+      ],
+      "source_tier": "TIER_C_HIGH_QUALITY_SECONDARY",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "sports_business",
+        "culture"
+      ],
+      "capabilities": [
+        "collaboration",
+        "market_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "src/lib/external-intelligence/collection/boardroom/boardroom.adapter.ts",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "ETAG",
+        "checkpoint": "sports_business.boardroom:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports_business.boardroom",
+        "canonical": "canonical_facts:sports_business.boardroom"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "sports_business.front_office_sports",
+      "registry_source_id": "sports_business.front_office_sports",
+      "registry_source_set_ids": [
+        "set.sports_business.reporting"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "sports_business"
+      ],
+      "capabilities": [
+        "collaboration",
+        "market_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:sports_business.front_office_sports",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports_business.front_office_sports",
+        "canonical": "canonical_facts:sports_business.front_office_sports"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "sports_business.sportico",
+      "registry_source_id": "sports_business.sportico",
+      "registry_source_set_ids": [
+        "set.sports_business.reporting"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "sports_business",
+        "culture"
+      ],
+      "capabilities": [
+        "collaboration",
+        "market_signal",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:sports_business.sportico",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports_business.sportico",
+        "canonical": "canonical_facts:sports_business.sportico"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "sports.basketball.hoophall.official",
+      "registry_source_id": "sports.basketball.hoophall.official",
+      "registry_source_set_ids": [
+        "set.sports.official"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "business_domains": [
+        "sports",
+        "culture"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "commission",
+        "collaboration",
+        "verified_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "src/lib/external-intelligence/collection/hoophall/hoophall.adapter.ts",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "ETAG",
+        "checkpoint": "sports.basketball.hoophall.official:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports.basketball.hoophall.official",
+        "canonical": "canonical_facts:sports.basketball.hoophall.official"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "sports.major_leagues.official",
+      "registry_source_id": "sports.major_leagues.official",
+      "registry_source_set_ids": [
+        "set.sports.official"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "sports",
+        "culture"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "commission",
+        "verified_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:sports.major_leagues.official",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 604800,
+      "maximum_decision_staleness_seconds": 604800,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports.major_leagues.official",
+        "canonical": "canonical_facts:sports.major_leagues.official"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "sports.ncaa.official",
+      "registry_source_id": "sports.ncaa.official",
+      "registry_source_set_ids": [
+        "set.sports.official"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "sports"
+      ],
+      "capabilities": [
+        "subject_selection",
+        "verified_event",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:sports.ncaa.official",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:sports.ncaa.official",
+        "canonical": "canonical_facts:sports.ncaa.official"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "trading_cards.card_ladder",
+      "registry_source_id": "trading_cards.card_ladder",
+      "registry_source_set_ids": [
+        "set.memorabilia.and_trading_cards"
+      ],
+      "source_tier": "TIER_E_PAID_OR_LICENSED",
+      "connection_state": "NOT_RECOMMENDED",
+      "business_domains": [
+        "trading_cards",
+        "market"
+      ],
+      "capabilities": [
+        "pricing",
+        "market_observation",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:trading_cards.card_ladder",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "DISABLED",
+      "cadence": {
+        "mode": "DISABLED",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 86400,
+      "freshness_sla_seconds": 1209600,
+      "maximum_decision_staleness_seconds": 1209600,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PROHIBITED",
+        "automation_suitability": "PROHIBITED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:trading_cards.card_ladder",
+        "canonical": "canonical_facts:trading_cards.card_ladder"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    },
+    {
+      "source_id": "trading_cards.psa",
+      "registry_source_id": "trading_cards.psa",
+      "registry_source_set_ids": [
+        "set.memorabilia.and_trading_cards"
+      ],
+      "source_tier": "TIER_B_PRIMARY_EXTERNAL",
+      "connection_state": "MANUAL_ONLY",
+      "business_domains": [
+        "trading_cards",
+        "market"
+      ],
+      "capabilities": [
+        "pricing",
+        "market_observation",
+        "EXTERNAL_CONTEXT"
+      ],
+      "decisions_supported": [
+        "OPPORTUNITY_PRIORITIZATION",
+        "RISK_AND_TIMING"
+      ],
+      "adapter": {
+        "identity": "unimplemented:trading_cards.psa",
+        "state": "UNIMPLEMENTED",
+        "version": "v1"
+      },
+      "execution_venue": "MANUAL_ONLY",
+      "cadence": {
+        "mode": "MANUAL",
+        "expression": null,
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 604800,
+      "freshness_sla_seconds": 2592000,
+      "maximum_decision_staleness_seconds": 2592000,
+      "incremental": {
+        "strategy": "NONE",
+        "checkpoint": "not_applicable"
+      },
+      "backfill": {
+        "strategy": "NONE",
+        "maximum_days": 0,
+        "priority": "LOW"
+      },
+      "secret_refs": [],
+      "legal_access": {
+        "status": "PENDING_REVIEW",
+        "automation_suitability": "MANUAL_ONLY",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:trading_cards.psa",
+        "canonical": "canonical_facts:trading_cards.psa"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 0,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "KEEGAN"
+    },
+    {
+      "source_id": "website.wordpress",
+      "registry_source_id": null,
+      "registry_source_set_ids": [],
+      "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
+      "connection_state": "CONNECTED_PARTIAL",
+      "business_domains": [
+        "website",
+        "seo",
+        "content"
+      ],
+      "capabilities": [
+        "CONTENT_INVENTORY",
+        "PRODUCT_METADATA",
+        "SEO_METADATA"
+      ],
+      "decisions_supported": [
+        "SEO_PRIORITIZATION",
+        "CONTENT_REFRESH"
+      ],
+      "adapter": {
+        "identity": "scripts/run-website-conversion.mjs",
+        "state": "READY",
+        "version": "v1"
+      },
+      "execution_venue": "GITHUB_ACTIONS",
+      "cadence": {
+        "mode": "CRON",
+        "expression": "0 10 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "expected_source_latency_seconds": 3600,
+      "freshness_sla_seconds": 86400,
+      "maximum_decision_staleness_seconds": 259200,
+      "incremental": {
+        "strategy": "WATERMARK",
+        "checkpoint": "website.wordpress:checkpoint"
+      },
+      "backfill": {
+        "strategy": "BOUNDED_WINDOW",
+        "maximum_days": 365,
+        "priority": "LOW"
+      },
+      "secret_refs": [
+        "WOO_BASE_URL",
+        "WOO_CONSUMER_KEY",
+        "WOO_CONSUMER_SECRET",
+        "OP_SERVICE_ACCOUNT_TOKEN"
+      ],
+      "legal_access": {
+        "status": "INTERNAL_AUTHORIZED",
+        "automation_suitability": "ALLOWED",
+        "policy_version": "data-access-v1"
+      },
+      "destinations": {
+        "raw": "raw_evidence:website.wordpress",
+        "canonical": "canonical_facts:website.wordpress"
+      },
+      "provenance": {
+        "source_as_of_required": true,
+        "raw_hash_required": true
+      },
+      "idempotency_key_fields": [
+        "source_id",
+        "source_as_of",
+        "source_record_id"
+      ],
+      "retry": {
+        "max_attempts": 5,
+        "base_delay_seconds": 60,
+        "max_delay_seconds": 3600,
+        "dead_letter": true
+      },
+      "downstream": {
+        "decision_eligible_states": [
+          "FRESH"
+        ],
+        "fail_closed_states": [
+          "EXPECTED_LAG",
+          "STALE",
+          "FAILED",
+          "CONFLICTED",
+          "PARTIAL",
+          "UNKNOWN",
+          "NO_DATA"
+        ]
+      },
+      "owner": "keegan",
+      "verification_class": "INDEPENDENT"
+    }
+  ]
+}
