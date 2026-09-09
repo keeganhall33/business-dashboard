@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-18T00:00:00.000Z",
+  "timestamp": "2026-09-09T13:45:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -119,6 +119,49 @@
         "nextMove": "Follow up with new work-in-progress preview",
         "nextMoveDueAt": "2026-05-22T19:00:00.000Z",
         "estimatedValue": 8000,
+        "supportingDocs": null
+      },
+      {
+        "id": "collect-room-dubai-20260909",
+        "name": "The Collect Room — Dubai / GCC Retail Partnership",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "inbound",
+        "opportunityType": "retail-partnership",
+        "company": {
+          "name": "The Collect Room",
+          "website": "https://www.thecollectroom.com/",
+          "location": "Dubai, United Arab Emirates",
+          "store": "Dubai Hills Mall",
+          "description": "Premium sports memorabilia and collectibles retailer serving Dubai and the wider GCC collector market."
+        },
+        "primaryContact": {
+          "name": "Eaver",
+          "title": "Operation Head",
+          "email": null
+        },
+        "lastOutreachAt": "2026-09-09T13:45:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Eaver's response; if no reply, follow up on retail structure, initial assortment, collector profile and GCC collaboration opportunities",
+        "nextMoveDueAt": "2026-09-16T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential Dubai/GCC retail foothold plus access to regional athlete relationships, signed releases, originals and collaborative projects.",
+        "notes": [
+          "Inbound inquiry after Eaver saw Keegan's Muhammad Ali artwork.",
+          "The Collect Room wants to begin with a small selection of Keegan's work and explore a longer-term partnership if customer response is strong.",
+          "Interested categories include limited-edition prints, athlete-signed pieces and potentially original artwork.",
+          "Need to learn how The Collect Room normally structures partnerships: wholesale purchase, consignment or another model.",
+          "Some athlete-signed editions are tied to charitable fundraising with 100% of Keegan's proceeds donated, so those require a separate commercial structure.",
+          "Discovery questions: collector base, company/store scale, best-performing athletes and memorabilia categories, target quantities and intended initial launch size.",
+          "Expansion idea: leverage The Collect Room's athlete relationships in Dubai/GCC for original artwork, regional signings, special releases and collaborative projects."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana — Keegan Hall Studio",
+          "date": "2026-09-09",
+          "summary": "Confirmed strong interest in exploring the partnership; asked about desired assortment and partnership structure; explained that some athlete-signed editions are 100% charitable; requested information about collector base, strongest athlete/memorabilia categories and launch scale; raised potential originals, regional athlete relationships, signed editions, special releases and collaborative projects."
+        },
         "supportingDocs": null
       }
     ]
