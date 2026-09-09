@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type {
   ExecutiveCommandCenterTruthStateV1,
   ExecutiveHomeFixtureV1,
@@ -205,7 +206,7 @@ function DecisionPanel({
 }: {
   title: string;
   count: number;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm">
@@ -228,7 +229,7 @@ function TruthChip({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
   );
 }
 
-function CompactEmpty({ children }: { children: React.ReactNode }) {
+function CompactEmpty({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-4 text-sm leading-6 text-stone-600">
       {children}
