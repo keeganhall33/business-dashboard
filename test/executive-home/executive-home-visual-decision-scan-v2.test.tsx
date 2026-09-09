@@ -170,7 +170,7 @@ test("Executive Home removes visible placeholder and section-pill walls while ke
   assert.match(html, /Operational detail and specialist signals/);
   assert.match(html, /Supporting intelligence/);
   assert.match(html, /Decision Room detail/);
-  assert.match(html, /Open Decision Room/);
+  assert.match(html, /Choose recommendation above/);
   assert.match(html, /Loading executive intelligence with provenance intact/);
   assert.match(html, /No material intelligence changes need attention right now/);
   assert.match(html, /Unable to verify executive intelligence/);
