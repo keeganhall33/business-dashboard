@@ -8,6 +8,8 @@ import { toRelationshipOpportunityViewModelV1 } from "@/lib/relationship-intelli
 
 export type SpecialistCommandCenterTruthStateV1 = "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
 export type SpecialistCommandCenterFreshnessV1 = "CURRENT" | "STALE" | "CONFLICTED" | "UNKNOWN";
+export type SpecialistCommandCenterModeV1 = "PRODUCTION" | "FIXTURE";
+export type SpecialistCommandCenterSourceModeV1 = "PRODUCTION" | "FIXTURE";
 
 export function toSpecialistEvidenceFreshnessV1(
   truthState: SpecialistCommandCenterTruthStateV1,
@@ -40,8 +42,58 @@ export type SpecialistCommandCenterCardV1 = {
   decision_room_id?: string;
   approval_class?: string;
   source: string;
+  source_mode?: SpecialistCommandCenterSourceModeV1;
 };
 
+export type SpecialistProductionInputV1 = {
+  source_mode: "PRODUCTION";
+  cards: readonly SpecialistCommandCenterCardV1[];
+};
+
+export type SpecialistCapabilityStatusV1 = {
+  id: SpecialistCommandCenterCardV1["id"];
+  title: string;
+  availability: "PRODUCTION_BACKED" | "UNAVAILABLE";
+  truth_state: SpecialistCommandCenterTruthStateV1;
+  evidence_freshness: SpecialistCommandCenterFreshnessV1;
+  can_trust: string;
+  missing_evidence: string;
+  next_safe_step: string;
+  detail_href: string | null;
+};
+
+const SPECIALIST_CAPABILITY_BASE_V1: readonly Omit<SpecialistCapabilityStatusV1, "availability" | "truth_state" | "evidence_freshness" | "can_trust" | "detail_href">[] = [
+  {
+    id: "financial",
+    title: "Financial",
+    missing_evidence: "No canonical production financial specialist snapshot is supplied to this surface.",
+    next_safe_step: "Supply a verified production financial snapshot before presenting a financial conclusion."
+  },
+  {
+    id: "goals-capacity",
+    title: "Goals / Capacity",
+    missing_evidence: "No canonical production goals or capacity specialist snapshot is supplied to this surface.",
+    next_safe_step: "Supply verified goals and capacity evidence before presenting portfolio pressure as current truth."
+  },
+  {
+    id: "relationships",
+    title: "Relationships",
+    missing_evidence: "No canonical production relationship specialist snapshot is supplied to this surface.",
+    next_safe_step: "Use verified CRM and correspondence evidence before presenting a relationship recommendation."
+  }
+] as const;
+
+function cloneSpecialistCardV1(card: SpecialistCommandCenterCardV1): SpecialistCommandCenterCardV1 {
+  return {
+    ...card,
+    evidence_context: { ...card.evidence_context }
+  };
+}
+
+/**
+ * Explicit fixture seam retained for deterministic previews and existing tests.
+ * Production callers must use SpecialistProductionInputV1 instead.
+ */
 export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCardV1[] {
   const financialBundle = getFinancialIntelligenceFixtureBundleV1();
   const financialSnapshot =
@@ -78,7 +130,8 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       evidence: DECISION_ROOM_FIXTURE_V1.evidence_refs.find((ref) => ref.provenance === "FINANCIAL_FIXTURE")?.label ?? financialSnapshot.source,
       decision_room_id: DECISION_ROOM_FIXTURE_V1.decision_id,
       approval_class: DECISION_ROOM_FIXTURE_V1.approval_class,
-      source: financialSnapshot.source
+      source: financialSnapshot.source,
+      source_mode: "FIXTURE"
     },
     {
       id: "goals-capacity",
@@ -98,7 +151,8 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       material_gap_or_risk: goalsSnapshot.unknown_resource_inputs[0] ?? goalsView.overload_or_conflict.summary,
       detail_href: "/specialists/goals-capacity",
       evidence: `Goals fixture: ${goalsSnapshot.source}`,
-      source: goalsSnapshot.source
+      source: goalsSnapshot.source,
+      source_mode: "FIXTURE"
     },
     {
       id: "relationships",
@@ -118,7 +172,57 @@ export function getSpecialistCommandCenterCardsV1(): SpecialistCommandCenterCard
       material_gap_or_risk: relationshipBrief.ACCESS_PATH.summary,
       detail_href: "/relationships",
       evidence: `Relationship fixture: ${relationshipBrief.source_mode}`,
-      source: relationshipBrief.source_mode
+      source: relationshipBrief.source_mode,
+      source_mode: "FIXTURE"
     }
   ];
+}
+
+export function getProductionSpecialistCommandCenterCardsV1(
+  input?: SpecialistProductionInputV1
+): SpecialistCommandCenterCardV1[] {
+  if (!input || input.source_mode !== "PRODUCTION" || !Array.isArray(input.cards)) return [];
+  return input.cards
+    .filter((card) => card.source_mode === "PRODUCTION")
+    .map((card) => cloneSpecialistCardV1(card));
+}
+
+export function getSpecialistCommandCenterCardsForModeV1(
+  mode: SpecialistCommandCenterModeV1,
+  productionInput?: SpecialistProductionInputV1
+): SpecialistCommandCenterCardV1[] {
+  return mode === "FIXTURE"
+    ? getSpecialistCommandCenterCardsV1()
+    : getProductionSpecialistCommandCenterCardsV1(productionInput);
+}
+
+export function getSpecialistCapabilityStatusV1(
+  productionInput?: SpecialistProductionInputV1
+): SpecialistCapabilityStatusV1[] {
+  const cards = getProductionSpecialistCommandCenterCardsV1(productionInput);
+
+  return SPECIALIST_CAPABILITY_BASE_V1.map((capability) => {
+    const card = cards.find((candidate) => candidate.id === capability.id);
+    if (!card) {
+      return {
+        ...capability,
+        availability: "UNAVAILABLE",
+        truth_state: "UNKNOWN",
+        evidence_freshness: "UNKNOWN",
+        can_trust: "No current specialist conclusion is presented without a verified production input.",
+        detail_href: null
+      };
+    }
+
+    return {
+      ...capability,
+      availability: "PRODUCTION_BACKED",
+      truth_state: card.truth_state,
+      evidence_freshness: card.evidence_freshness,
+      can_trust: card.why_it_matters,
+      missing_evidence: card.material_gap_or_risk,
+      next_safe_step: card.next_best_action,
+      detail_href: card.detail_href
+    };
+  });
 }
