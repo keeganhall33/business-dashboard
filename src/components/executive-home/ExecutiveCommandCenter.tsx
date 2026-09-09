@@ -4,6 +4,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import {
   advanceExecutiveStrategyStepV1,
+  EXECUTIVE_HOME_FIXTURE_V1,
   type ExecutiveCommandCenterKpiV1,
   type ExecutiveCommandCenterTruthStateV1,
   type ExecutiveCommandCenterV1,
@@ -52,7 +53,7 @@ export function ExecutiveCommandCenter({
   const [commandCenter, setCommandCenter] = useState(data);
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
   const resolvedSpecialistMode: SpecialistCommandCenterModeV1 =
-    specialistMode ?? (process.env.NODE_ENV === "test" ? "FIXTURE" : "PRODUCTION");
+    specialistMode ?? (data === EXECUTIVE_HOME_FIXTURE_V1.command_center ? "FIXTURE" : "PRODUCTION");
   const specialistCards = useMemo(
     () => getSpecialistCommandCenterCardsForModeV1(resolvedSpecialistMode, specialistInput),
     [resolvedSpecialistMode, specialistInput]
