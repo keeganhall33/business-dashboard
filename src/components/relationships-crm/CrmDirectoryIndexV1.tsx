@@ -77,7 +77,7 @@ function DirectoryShell({
   children: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8" data-testid="crm-directory-index-v1">
+    <main className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8" data-testid="crm-directory-index-v1" data-visual-mode="light">
       <div className="mx-auto max-w-[1600px]">
         <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
