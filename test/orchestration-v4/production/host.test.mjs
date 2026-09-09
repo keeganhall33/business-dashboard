@@ -22,7 +22,7 @@ test('host loops, writes heartbeat, releases lock, and restarts', async () => {
     assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
     const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
     assert.equal(heartbeat.cycles, 2);
-    assert.equal(heartbeat.inFlightPolls <= 1, true);
+    assert.equal(heartbeat.inFlightPolls <= 2, true);
     assert.equal(heartbeat.recoveredStaleTasks, 0);
     const second = await runProductionHost({ stateRoot: root, poll, maxCycles: 1, intervalMs: 1, sleep: yieldSleep });
     assert.equal(second.cycles, 1);
@@ -30,30 +30,31 @@ test('host loops, writes heartbeat, releases lock, and restarts', async () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host keeps production polls single-flight while a prior poll is unresolved', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-single-flight-'));
+test('host keeps bounded intake polling while earlier polls remain unresolved', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-bounded-overlap-'));
   let calls = 0;
   const never = new Promise(() => {});
   try {
     const result = await runProductionHost({
       stateRoot: root,
       poll: async () => { calls += 1; return never; },
-      maxCycles: 4,
+      maxCycles: 8,
+      maxConcurrentPolls: 6,
       intervalMs: 1,
       shutdownDrainMs: 0,
       sleep: async () => {},
     });
     assert.equal(result.ok, true);
-    assert.equal(calls, 1);
-    assert.equal(result.skippedPolls, 3);
+    assert.equal(calls, 6);
+    assert.equal(result.skippedPolls, 2);
     assert.equal(result.drained, false);
     const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
-    assert.equal(heartbeat.inFlightPolls, 1);
-    assert.equal(heartbeat.skippedPolls, 3);
+    assert.equal(heartbeat.inFlightPolls, 6);
+    assert.equal(heartbeat.skippedPolls, 2);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host exits distinctly when a poll is stuck after all workers are terminal', async () => {
+test('host exits distinctly when the bounded poll set is stuck with no active workers', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stuck-empty-poll-'));
   const never = new Promise(() => {});
   let nowMs = 0;
@@ -61,7 +62,8 @@ test('host exits distinctly when a poll is stuck after all workers are terminal'
     const result = await runProductionHost({
       stateRoot: root,
       poll: async () => never,
-      maxCycles: 3,
+      maxCycles: 4,
+      maxConcurrentPolls: 1,
       intervalMs: 1,
       shutdownDrainMs: 0,
       emptyPollTimeoutMs: 120_000,
@@ -76,6 +78,13 @@ test('host exits distinctly when a poll is stuck after all workers are terminal'
     assert.equal(heartbeat.stalledReason, 'V4_STUCK_EMPTY_POLL');
     assert.equal(heartbeat.currentPollElapsedMs, 120_000);
     assert.equal(heartbeat.inFlightPolls, 1);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('host rejects an invalid concurrent poll bound', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-invalid-poll-bound-'));
+  try {
+    await assert.rejects(() => runProductionHost({ stateRoot: root, maxConcurrentPolls: 7, maxCycles: 1, poll: async () => {} }), /V4_HOST_MAX_CONCURRENT_POLLS_INVALID/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -175,7 +184,7 @@ test('host reclaims an invalid stale lock', async () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('host does not wait forever for an orphaned in-flight poll during shutdown', async () => {
+test('host does not wait forever for orphaned in-flight polls during shutdown', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-drain-'));
   const never = new Promise(() => {});
   try {
