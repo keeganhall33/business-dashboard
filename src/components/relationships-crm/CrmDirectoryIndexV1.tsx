@@ -262,7 +262,7 @@ export function CrmDirectoryIndexV1({
       title="Relationships"
       description="A scan-first relationship workspace organized around people and companies. Canonical evidence is the source of truth."
     >
-      <section className="grid gap-4 md:grid-cols-2" aria-label="CRM directories">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="CRM directories">
         <a href="/relationships/people" className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-400">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -283,6 +283,20 @@ export function CrmDirectoryIndexV1({
           </div>
           <p className="mt-4 text-sm leading-6 text-stone-600">Organizations, key people, active opportunities, last activity, next move, and supported value.</p>
         </a>
+        <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm" aria-label="Intelligent relationship inbox">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Evidence queue</p>
+              <h2 className="mt-1 text-xl font-semibold">Intelligent relationship inbox</h2>
+            </div>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900">
+              VERIFY
+            </span>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-stone-600">
+            Needs-reply, waiting, stale, and conflicted signals remain verification-gated until canonical records are available.
+          </p>
+        </section>
       </section>
       <p className="mt-4 text-xs leading-5 text-stone-500">
         Intelligent relationship inbox signals remain part of the canonical relationship evidence path and can populate these directories only after verification.
