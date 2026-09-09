@@ -83,6 +83,7 @@ export function ExecutiveHomeShell({
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Supporting intelligence</p>
                 <h2 className="mt-1 text-lg font-semibold text-stone-950">Workspaces, evidence and lower-priority signals</h2>
+                <p className="mt-1 text-xs leading-5 text-stone-600">Executive Home stays concise while deeper work remains in its owning workspaces.</p>
               </div>
               <span className="mt-2 rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600 sm:mt-0">Explore</span>
             </div>
@@ -92,7 +93,11 @@ export function ExecutiveHomeShell({
             <section aria-label="Workspace shortcuts">
               <div className="mb-3 flex w-full max-w-full flex-wrap gap-2 items-center justify-between">
                 <h3 className="text-sm font-semibold text-stone-950">Owning workspaces</h3>
-                <a href="#decision-room-drilldown" className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700">
+                <a
+                  href={`#${decisionRoom.decision_id}`}
+                  onClick={() => setActiveDecisionRoomId(decisionRoom.decision_id)}
+                  className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700"
+                >
                   Jump to grounded drill-down
                 </a>
               </div>
@@ -170,7 +175,7 @@ export function ExecutiveHomeShell({
               </button>
             ) : (
               <a href={`#${decisionRoom.source_card_id}`} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-center text-sm font-semibold text-stone-800">
-                Open Decision Room from a recommendation above
+                Choose recommendation above
               </a>
             )}
           </div>
