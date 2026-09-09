@@ -77,6 +77,13 @@ function matchesQuery(values: readonly (string | null)[], filter: CrmDirectoryFi
   return !query || values.some((value) => normalizedText(value).includes(query));
 }
 
+export function crmPersonDetailHrefV1(personId: string): string {
+  if (typeof personId !== "string" || !personId.trim()) {
+    throw new Error("personId must be a non-empty string");
+  }
+  return `/relationships/people/${encodeURIComponent(personId.trim())}`;
+}
+
 export function sortCrmPeopleV1(
   people: readonly CrmPersonDirectoryRecordV1[]
 ): readonly CrmPersonDirectoryRecordV1[] {
