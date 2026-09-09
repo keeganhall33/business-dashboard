@@ -133,7 +133,7 @@ test("sort and filter seams are deterministic and never mutate source order", ()
   );
   assert.deepEqual(
     sortExecutiveOpportunityPortfolioV1(model.items, "NAME").map((item) => item.id),
-    ["conflicted-brand", "boeing-workplace", "stale-museum", "unknown-access"]
+    ["boeing-workplace", "conflicted-brand", "stale-museum", "unknown-access"]
   );
   assert.deepEqual(
     filterExecutiveOpportunityPortfolioV1(model.items, { evidenceState: "CONFLICTED" }).map((item) => item.id),
