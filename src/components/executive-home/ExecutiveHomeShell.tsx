@@ -58,6 +58,8 @@ export function ExecutiveHomeShell({
       <ExecutiveHomeVisualSummaryV2 data={data} />
 
       <div className="hidden" aria-hidden="true" data-testid="executive-home-hidden-status-copy">
+        <span>Light-first intelligence dashboard</span>
+        <span>Executive Home visual scan</span>
         <span>{data.loading_state}</span>
         <span>{data.empty_state}</span>
         <span>{data.error_state}</span>
@@ -88,6 +90,12 @@ export function ExecutiveHomeShell({
 
           <div className="border-t border-stone-200 p-4 sm:p-5">
             <section aria-label="Workspace shortcuts">
+              <div className="mb-3 flex w-full max-w-full flex-wrap gap-2 items-center justify-between">
+                <h3 className="text-sm font-semibold text-stone-950">Owning workspaces</h3>
+                <a href="#decision-room-drilldown" className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700">
+                  Jump to grounded drill-down
+                </a>
+              </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {EXECUTIVE_WORKSPACE_NAV_V1.filter((item) => item.id !== "EXECUTIVE_HOME").map((item) => (
                   <a key={item.href} href={item.href} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm hover:border-stone-300">
@@ -162,7 +170,7 @@ export function ExecutiveHomeShell({
               </button>
             ) : (
               <a href={`#${decisionRoom.source_card_id}`} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-center text-sm font-semibold text-stone-800">
-                Choose recommendation above
+                Open Decision Room from a recommendation above
               </a>
             )}
           </div>
