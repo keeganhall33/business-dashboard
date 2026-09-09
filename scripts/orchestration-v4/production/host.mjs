@@ -72,10 +72,11 @@ export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive 
   return Object.freeze(recovered);
 }
 
-export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, maxConcurrentPolls = 6, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
   if (!Number.isInteger(emptyPollTimeoutMs) || emptyPollTimeoutMs <= 0) throw new Error('V4_HOST_EMPTY_POLL_TIMEOUT_INVALID');
+  if (!Number.isInteger(maxConcurrentPolls) || maxConcurrentPolls <= 0 || maxConcurrentPolls > 6) throw new Error('V4_HOST_MAX_CONCURRENT_POLLS_INVALID');
   fs.mkdirSync(stateRoot, { recursive: true });
   const lockPath = path.join(stateRoot, 'host.lock');
   const lockFd = acquireHostLock(lockPath);
@@ -89,13 +90,18 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let cycles = 0;
   let skippedPolls = 0;
   let lastPollError = null;
-  let pollStartedAt = null;
   let stalledReason = null;
   const inFlightPolls = new Set();
+  const pollStartedAtByPromise = new Map();
+
+  const oldestPollStartedAt = () => {
+    if (pollStartedAtByPromise.size === 0) return null;
+    return Math.min(...pollStartedAtByPromise.values());
+  };
 
   const launchPoll = () => {
     let tracked;
-    pollStartedAt = now();
+    const startedAt = now();
     tracked = Promise.resolve()
       .then(() => poll({ db, ...pollArgs }))
       .then(
@@ -107,19 +113,22 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       )
       .finally(() => {
         inFlightPolls.delete(tracked);
-        if (inFlightPolls.size === 0) pollStartedAt = null;
+        pollStartedAtByPromise.delete(tracked);
       });
     inFlightPolls.add(tracked);
+    pollStartedAtByPromise.set(tracked, startedAt);
     return tracked;
   };
 
   try {
     while (!stopped && cycles < maxCycles) {
       cycles += 1;
-      if (inFlightPolls.size === 0) launchPoll();
-      else {
+      if (inFlightPolls.size < maxConcurrentPolls) {
+        launchPoll();
+      } else {
         skippedPolls += 1;
         const activeTasks = db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").get().count;
+        const pollStartedAt = oldestPollStartedAt();
         const elapsedMs = pollStartedAt === null ? 0 : Math.max(0, now() - pollStartedAt);
         if (activeTasks === 0 && elapsedMs >= emptyPollTimeoutMs) {
           stalledReason = 'V4_STUCK_EMPTY_POLL';
@@ -128,6 +137,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         }
       }
       const generatedAtMs = now();
+      const pollStartedAt = oldestPollStartedAt();
       fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
         pid: process.pid,
         cycles,
