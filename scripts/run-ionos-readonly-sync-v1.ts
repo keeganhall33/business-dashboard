@@ -117,11 +117,12 @@ async function defaultCommandRunner(
 }
 
 function commandTimedOut(error: unknown): boolean {
-  if (!isPlainObject(error)) return false;
+  if (error == null || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; killed?: unknown };
   return (
-    error.code === "ETIMEDOUT" ||
-    error.code === "ERR_CHILD_PROCESS_TIMEOUT" ||
-    error.killed === true
+    candidate.code === "ETIMEDOUT" ||
+    candidate.code === "ERR_CHILD_PROCESS_TIMEOUT" ||
+    candidate.killed === true
   );
 }
 
