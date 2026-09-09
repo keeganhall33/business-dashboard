@@ -39,6 +39,11 @@ jobs:
       - name: Install PostgreSQL tooling
         shell: bash
         run: |
+          for source_file in /etc/apt/sources.list.d/*; do
+            if [[ -f "$source_file" ]] && grep -q 'dl.google.com' "$source_file"; then
+              sudo mv "$source_file" "$source_file.disabled-by-validated-main"
+            fi
+          done
           sudo apt-get update
           sudo apt-get install -y postgresql
           PG_BIN="$(pg_config --bindir)"
