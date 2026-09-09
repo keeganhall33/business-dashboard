@@ -296,7 +296,7 @@ test("mailbox failure prints its safe summary and then returns failure", async (
 });
 
 test("total deadline exhaustion is deterministic", async () => {
-  const times = [NOW_MS, NOW_MS, NOW_MS + 1_000];
+  const times = [NOW_MS, NOW_MS + 1_000];
   const now = () => times.shift() ?? NOW_MS + 60_000;
   await assert.rejects(
     runIonosReadonlySyncCommandV1({
