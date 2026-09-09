@@ -6,6 +6,7 @@ const DEFAULT_SLOT_STREAMS = Object.freeze({
   'local-e': Object.freeze([
     'INTEGRATION_RELEASE',
     'INTELLIGENCE_UX',
+    'PRODUCTION_VALUE',
     'DATA_EVIDENCE_LEARNING',
     'CORE_INTELLIGENCE',
     'LEARNING_INTELLIGENCE',
