@@ -21,6 +21,7 @@ export type CrmPersonDirectoryRecordV1 = {
   activeOpportunity: string | null;
   activeAsk: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;
+  detailHref?: string | null;
 };
 
 export type CrmCompanyDirectoryRecordV1 = {
@@ -75,6 +76,20 @@ function matchesEvidence(
 function matchesQuery(values: readonly (string | null)[], filter: CrmDirectoryFilterV1): boolean {
   const query = normalizedText(filter.query ?? null);
   return !query || values.some((value) => normalizedText(value).includes(query));
+}
+
+export function crmPersonDetailHrefV1(personId: string): string {
+  if (typeof personId !== "string" || !personId.trim()) {
+    throw new Error("personId must be a non-empty string");
+  }
+  return `/relationships/people/${encodeURIComponent(personId.trim())}`;
+}
+
+export function supportedCrmPersonDetailHrefV1(
+  person: CrmPersonDirectoryRecordV1
+): string | null {
+  const canonicalHref = crmPersonDetailHrefV1(person.id);
+  return person.detailHref === canonicalHref ? canonicalHref : null;
 }
 
 export function sortCrmPeopleV1(
