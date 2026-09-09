@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import {
+  supportedCrmPersonDetailHrefV1,
   type CrmCompanyDirectoryRecordV1,
   type CrmDirectoryEvidenceStateV1,
   type CrmDirectoryIndexV1,
@@ -126,6 +127,18 @@ function PersonChannels({ person }: { person: CrmPersonDirectoryRecordV1 }) {
   );
 }
 
+function PersonName({ person }: { person: CrmPersonDirectoryRecordV1 }) {
+  const detailHref = supportedCrmPersonDetailHrefV1(person);
+  if (!detailHref) {
+    return <span className="font-semibold text-stone-950">{display(person.name)}</span>;
+  }
+  return (
+    <a href={detailHref} className="font-semibold text-stone-950 underline-offset-4 hover:underline">
+      {display(person.name)}
+    </a>
+  );
+}
+
 function PeopleTable({ people }: { people: readonly CrmPersonDirectoryRecordV1[] }) {
   if (!people.length) return <EmptyDirectory kind="people" />;
   const rows = sortCrmPeopleV1(people);
@@ -150,7 +163,7 @@ function PeopleTable({ people }: { people: readonly CrmPersonDirectoryRecordV1[]
             {rows.map((person) => (
               <tr key={person.id} data-record-id={person.id} className="align-top">
                 <td className="px-4 py-4">
-                  <div className="font-semibold text-stone-950">{display(person.name)}</div>
+                  <PersonName person={person} />
                   <div className="mt-1 text-xs text-stone-500">{display(person.title)}</div>
                 </td>
                 <td className="px-4 py-4">{display(person.companyName)}</td>
