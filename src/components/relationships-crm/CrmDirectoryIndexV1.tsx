@@ -96,9 +96,14 @@ function DirectoryShell({
 }
 
 function EmptyDirectory({ kind }: { kind: "people" | "companies" }) {
+  const heading =
+    kind === "people"
+      ? "No verified people records are available yet."
+      : "No verified companies records are available yet.";
+
   return (
     <section className="rounded-3xl border border-dashed border-stone-300 bg-white p-6" aria-label={`No verified ${kind}`}>
-      <p className="text-sm font-semibold text-stone-950">No verified {kind} records are available yet.</p>
+      <p className="text-sm font-semibold text-stone-950">{heading}</p>
       <p className="mt-1 max-w-2xl text-sm leading-6 text-stone-600">
         This directory stays empty rather than inventing CRM facts. Evidence-backed records can populate it through the canonical relationship data path.
       </p>
@@ -279,6 +284,9 @@ export function CrmDirectoryIndexV1({
           <p className="mt-4 text-sm leading-6 text-stone-600">Organizations, key people, active opportunities, last activity, next move, and supported value.</p>
         </a>
       </section>
+      <p className="mt-4 text-xs leading-5 text-stone-500">
+        Intelligent relationship inbox signals remain part of the canonical relationship evidence path and can populate these directories only after verification.
+      </p>
       {index.people.length === 0 && index.companies.length === 0 ? (
         <div className="mt-4 rounded-3xl border border-dashed border-stone-300 bg-white p-5 text-sm leading-6 text-stone-600">
           No verified CRM records are currently projected into this directory. Synthetic contacts and companies are intentionally not shown.
