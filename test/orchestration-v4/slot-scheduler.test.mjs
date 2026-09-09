@@ -8,6 +8,7 @@ test('slots express capacity and routing only', () => {
   assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-a', 'local-b', 'local-e']);
   assert.deepEqual(candidateSlots(registry, 'DISCOVERY_INTELLIGENCE'), ['local-b', 'local-e']);
   assert.deepEqual(candidateSlots(registry, 'INTELLIGENCE_UX'), ['local-c', 'local-e']);
+  assert.deepEqual(candidateSlots(registry, 'PRODUCTION_VALUE'), ['local-c', 'local-e']);
   assert.deepEqual(candidateSlots(registry, 'HIGHEST_VALUE_SPECIALIST'), ['local-d', 'local-e']);
   assert.deepEqual(candidateSlots(registry, 'AGENT_ORCHESTRATION'), ['local-d']);
   assert.deepEqual(candidateSlots(registry, 'INTEGRATION_RELEASE'), ['local-e']);
@@ -56,6 +57,13 @@ test('local-e preserves integration priority but backfills useful work when inte
     readyStreams: new Set(['INTELLIGENCE_UX']),
   });
   assert.equal(productiveFallback?.workerId, 'local-e');
+
+  const productionValueFallback = chooseAvailableSlot(registry, {
+    stream: 'PRODUCTION_VALUE',
+    occupied: new Set(['local-c']),
+    readyStreams: new Set(['PRODUCTION_VALUE']),
+  });
+  assert.equal(productionValueFallback?.workerId, 'local-e');
 });
 
 test('claim and release are task-scoped and fail closed on cross-task release', () => {
