@@ -13,6 +13,8 @@ const TRUTH_TONE: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   CONFLICTED: "border-rose-200 bg-rose-50 text-rose-900"
 };
 
+const EXECUTIVE_HOME_VISUAL_SOURCE_SECTION_LIMIT = 4;
+
 export type ExecutiveHomeVisualSummaryModelV2 = {
   needsYouNow: ExecutiveIntelligenceCardV1[];
   biggestOpportunities: ExecutiveHomeFixtureV1["command_center"]["opportunities"];
@@ -26,13 +28,26 @@ export type ExecutiveHomeVisualSummaryModelV2 = {
   };
 };
 
+function attentionBudgetedCards(data: ExecutiveHomeFixtureV1): ExecutiveIntelligenceCardV1[] {
+  const sectionCounts = new Map<ExecutiveIntelligenceCardV1["section"], number>();
+  return data.cards.filter((card) => {
+    const count = sectionCounts.get(card.section) ?? 0;
+    sectionCounts.set(card.section, count + 1);
+    return count < EXECUTIVE_HOME_VISUAL_SOURCE_SECTION_LIMIT;
+  });
+}
+
 export function buildExecutiveHomeVisualSummaryV2(
   data: ExecutiveHomeFixtureV1
 ): ExecutiveHomeVisualSummaryModelV2 {
-  const approvalRequired = data.cards.filter(
+  // Preserve the established per-section attention budget before promoting items into
+  // the top scan. This prevents hidden overflow from unexpectedly jumping above the
+  // fold while still making approvals first-class within the visible attention set.
+  const attentionCards = attentionBudgetedCards(data);
+  const approvalRequired = attentionCards.filter(
     (card) => card.approval_state === "KEEGAN_ACTION_REQUIRED"
   );
-  const doNow = data.cards.filter(
+  const doNow = attentionCards.filter(
     (card) =>
       card.priority === "DO_NOW" &&
       !approvalRequired.some((approval) => approval.id === card.id)
@@ -75,7 +90,7 @@ export function ExecutiveHomeVisualSummaryV2({ data }: { data: ExecutiveHomeFixt
     <section
       aria-label="Executive decision scan"
       data-testid="executive-home-visual-summary-v2"
-      className="mx-auto w-full max-w-[1600px] px-4 pb-5 pt-5 sm:px-6 lg:px-8"
+      className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8 pb-5 pt-5"
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
