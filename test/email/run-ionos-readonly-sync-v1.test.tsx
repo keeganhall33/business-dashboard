@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import * as commandModule from "../../scripts/run-ionos-readonly-sync-v1";
@@ -310,6 +311,26 @@ test("total deadline exhaustion is deterministic", async () => {
     }),
     /IONOS_SYNC_TOTAL_DEADLINE_EXHAUSTED/
   );
+});
+
+test("direct CLI snapshots Node process.env before strict environment validation", () => {
+  const result = spawnSync(
+    "./node_modules/.bin/tsx",
+    ["scripts/run-ionos-readonly-sync-v1.ts"],
+    {
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH },
+      encoding: "utf8"
+    }
+  );
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(
+    result.stderr,
+    /IONOS_SYNC_MISSING_ENV_IONOS_MAILBOX_CONFIG_JSON/
+  );
+  assert.doesNotMatch(result.stderr, /IONOS_SYNC_COMMAND_ENV_INVALID/);
 });
 
 test("module is import-safe and exposes no send mutation or scheduler API", () => {
