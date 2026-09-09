@@ -237,7 +237,7 @@ export async function runIonosReadonlySyncCommandV1(
 
 export async function mainIonosReadonlySyncV1(): Promise<void> {
   try {
-    await runIonosReadonlySyncCommandV1({ env: process.env });
+    await runIonosReadonlySyncCommandV1({ env: { ...process.env } });
   } catch (error) {
     const safe = redactedError(error);
     process.stderr.write(`${safe.message}\n`);
