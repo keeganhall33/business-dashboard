@@ -198,6 +198,9 @@ export function ExecutiveHomeVisualSummaryV2({ data }: { data: ExecutiveHomeFixt
             >
               <div className="h-full rounded-full bg-stone-700" style={{ width: `${watchPercent}%` }} />
             </div>
+            <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+              UNKNOWN / STALE / CONFLICTED
+            </p>
           </div>
         </div>
       </div>
