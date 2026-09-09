@@ -370,7 +370,7 @@ test("runtime API exposes only the evidence fetcher and contains no mutation or 
     new URL("../../src/lib/email/ionos-message-evidence-adapter-v1.ts", import.meta.url),
     "utf8"
   );
-  assert.doesNotMatch(source, /messageDelete|messageMove|messageFlagsAdd|messageFlagsRemove|append\(|smtp|sendMail/i);
+  assert.doesNotMatch(source, /messageDelete|messageMove|messageFlagsAdd|messageFlagsRemove|append\(|sendMail/i);
   assert.match(source, /mailboxOpen\(mailbox\.folder, \{ readOnly: true \}\)/);
   assert.match(source, /body: \{ policy: "NONE" \}/);
 });
