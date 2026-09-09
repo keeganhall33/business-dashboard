@@ -33,7 +33,8 @@ const knownPerson: CrmPersonDirectoryRecordV1 = {
   nextFollowUpAt: "2026-09-11T18:00:00.000Z",
   activeOpportunity: "The Chase original art cards",
   activeAsk: "Confirm approved athlete source photography",
-  evidenceState: "KNOWN"
+  evidenceState: "KNOWN",
+  detailHref: "/relationships/people/brian-lee"
 };
 
 const uncertainPerson: CrmPersonDirectoryRecordV1 = {
@@ -112,10 +113,18 @@ test("person record workspace is scan-first, read-only, responsive, and progress
   assert.doesNotMatch(html, /Send|Compose|form action=|mailto:/i);
 });
 
-test("people directory links supplied records to the implemented person route", () => {
+test("people directory links only records that supply the implemented canonical person destination", () => {
   const html = renderToString(<CrmDirectoryIndexV1 index={index} mode="PEOPLE" />);
   assert.match(html, /href="\/relationships\/people\/brian-lee"/);
-  assert.match(html, /href="\/relationships\/people\/unknown-contact"/);
+  assert.doesNotMatch(html, /href="\/relationships\/people\/unknown-contact"/);
+
+  const wrongHrefIndex = buildCrmDirectoryIndexV1({
+    people: [{ ...knownPerson, detailHref: "/relationships/people/not-brian" }],
+    companies: []
+  });
+  const wrongHrefHtml = renderToString(<CrmDirectoryIndexV1 index={wrongHrefIndex} mode="PEOPLE" />);
+  assert.doesNotMatch(wrongHrefHtml, /href="\/relationships\/people\/not-brian"/);
+  assert.doesNotMatch(wrongHrefHtml, /href="\/relationships\/people\/brian-lee"/);
 });
 
 test("resolver returns exact supplied record and fails honestly for unsupported ids", () => {
