@@ -10,10 +10,12 @@ import {
   type ExecutiveExecutionStepV1
 } from "@/lib/executive-home/fixtures";
 import {
-  getSpecialistCommandCenterCardsV1,
+  getSpecialistCommandCenterCardsForModeV1,
   type SpecialistCommandCenterCardV1,
   type SpecialistCommandCenterFreshnessV1,
-  type SpecialistCommandCenterTruthStateV1
+  type SpecialistCommandCenterModeV1,
+  type SpecialistCommandCenterTruthStateV1,
+  type SpecialistProductionInputV1
 } from "@/lib/executive-home/specialist-command-center";
 
 const truthStyles: Record<ExecutiveCommandCenterTruthStateV1, string> = {
@@ -38,15 +40,27 @@ export function executiveOpportunityDetailHrefV1(opportunityId: string): string 
 
 export function ExecutiveCommandCenter({
   data,
-  onOpenDecisionRoom
+  onOpenDecisionRoom,
+  specialistInput,
+  specialistMode
 }: {
   data: ExecutiveCommandCenterV1;
   onOpenDecisionRoom?: (decisionRoomId: string) => void;
+  specialistInput?: SpecialistProductionInputV1;
+  specialistMode?: SpecialistCommandCenterModeV1;
 }) {
   const [commandCenter, setCommandCenter] = useState(data);
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
-  const specialistCards = useMemo(() => getSpecialistCommandCenterCardsV1(), []);
-  const activeDetail = useMemo(() => detailFor(commandCenter, activeDetailId, specialistCards), [commandCenter, activeDetailId, specialistCards]);
+  const resolvedSpecialistMode: SpecialistCommandCenterModeV1 =
+    specialistMode ?? (process.env.NODE_ENV === "test" ? "FIXTURE" : "PRODUCTION");
+  const specialistCards = useMemo(
+    () => getSpecialistCommandCenterCardsForModeV1(resolvedSpecialistMode, specialistInput),
+    [resolvedSpecialistMode, specialistInput]
+  );
+  const activeDetail = useMemo(
+    () => detailFor(commandCenter, activeDetailId, specialistCards),
+    [commandCenter, activeDetailId, specialistCards]
+  );
 
   function completeCurrentStep() {
     setCommandCenter((current) =>
@@ -150,54 +164,72 @@ export function ExecutiveCommandCenter({
           </Panel>
         </div>
 
-        <Panel title="Specialist intelligence" subtitle="Decision-changing specialist signals with grounded drill-downs.">
-          <div className="grid gap-3 lg:grid-cols-3">
-            {specialistCards.map((card) => (
-              <article key={card.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-base font-semibold text-stone-950">{card.title}</h3>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${specialistTruthStyles[card.truth_state]}`}>{card.truth_state}</span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveDetailId(`specialist-evidence:${card.id}`)}
-                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${freshnessStyles[card.evidence_freshness]}`}
-                      aria-label={`${card.title} evidence freshness ${card.evidence_freshness}`}
-                    >
-                      {card.evidence_freshness}
-                    </button>
-                  </div>
-                </div>
-                <dl className="mt-4 space-y-3 text-sm leading-6">
-                  <SpecialistDetail label="WHAT_CHANGED" value={card.what_changed} />
-                  <SpecialistDetail label="WHY_IT_MATTERS" value={card.why_it_matters} />
-                  <SpecialistDetail label="NEXT_BEST_ACTION" value={card.next_best_action} />
-                  <SpecialistDetail label="EVIDENCE" value={card.evidence} />
-                  <SpecialistDetail label="FRESHNESS" value={card.evidence_context.freshness_detail} />
-                  {card.approval_class ? <SpecialistDetail label="Approval class" value={card.approval_class} /> : null}
-                  <SpecialistDetail label="Confidence" value={card.confidence} />
-                  <SpecialistDetail label="Gap / risk" value={card.material_gap_or_risk} />
-                </dl>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">Source: {card.source}</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {card.decision_room_id && onOpenDecisionRoom ? (
-                      <a
-                        href="#decision-room-drilldown"
-                        onClick={() => onOpenDecisionRoom(card.decision_room_id!)}
-                        className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+        <Panel title="Specialist intelligence" subtitle="Production evidence only; fixture/demo conclusions never substitute for missing live data.">
+          {specialistCards.length ? (
+            <div className="grid gap-3 lg:grid-cols-3">
+              {specialistCards.map((card) => (
+                <article key={card.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-base font-semibold text-stone-950">{card.title}</h3>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${specialistTruthStyles[card.truth_state]}`}>{card.truth_state}</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailId(`specialist-evidence:${card.id}`)}
+                        className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${freshnessStyles[card.evidence_freshness]}`}
+                        aria-label={`${card.title} evidence freshness ${card.evidence_freshness}`}
                       >
-                        Review in Decision Room
-                      </a>
-                    ) : null}
-                    <a href={card.detail_href} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
-                      Open detail
-                    </a>
+                        {card.evidence_freshness}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
+                  <dl className="mt-4 space-y-3 text-sm leading-6">
+                    <SpecialistDetail label="WHAT_CHANGED" value={card.what_changed} />
+                    <SpecialistDetail label="WHY_IT_MATTERS" value={card.why_it_matters} />
+                    <SpecialistDetail label="NEXT_BEST_ACTION" value={card.next_best_action} />
+                    <SpecialistDetail label="EVIDENCE" value={card.evidence} />
+                    <SpecialistDetail label="FRESHNESS" value={card.evidence_context.freshness_detail} />
+                    {card.approval_class ? <SpecialistDetail label="Approval class" value={card.approval_class} /> : null}
+                    <SpecialistDetail label="Confidence" value={card.confidence} />
+                    <SpecialistDetail label="Gap / risk" value={card.material_gap_or_risk} />
+                  </dl>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">Source: {card.source}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {card.decision_room_id && onOpenDecisionRoom ? (
+                        <a
+                          href="#decision-room-drilldown"
+                          onClick={() => onOpenDecisionRoom(card.decision_room_id!)}
+                          className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                          Review in Decision Room
+                        </a>
+                      ) : null}
+                      <a href={card.detail_href} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+                        Open detail
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div
+              data-testid="specialist-production-unavailable"
+              className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 text-sm leading-6 text-stone-700"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">UNKNOWN</span>
+                <span className="font-semibold text-stone-950">Specialist evidence unavailable</span>
+              </div>
+              <p className="mt-2">
+                No canonical production specialist snapshot is supplied to Executive Home. Financial, goals/capacity, and relationship fixture conclusions are intentionally withheld rather than presented as current business truth.
+              </p>
+              <a href="/specialists" className="mt-3 inline-flex rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-800">
+                Review specialist coverage
+              </a>
+            </div>
+          )}
         </Panel>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
