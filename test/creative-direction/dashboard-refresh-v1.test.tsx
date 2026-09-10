@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import React from "react";
 import { renderToString } from "react-dom/server";
 
+import CreativeDirectionPage from "@/app/(app)/creative-direction/page";
 import { CreativeDirectionWorkspace } from "@/components/creative-direction/CreativeDirectionWorkspace";
 import {
   CREATIVE_DIRECTION_WORKSPACE_FIXTURE_V1,
@@ -11,9 +14,35 @@ import {
   executiveHomeCreativeDeltas,
   shouldCreateCreativeRecommendationRevision
 } from "@/lib/creative-direction/dashboard-refresh-fixtures";
+import { CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1 } from "@/lib/creative-visualization/fixtures";
 
 const fixture = CREATIVE_DIRECTION_WORKSPACE_FIXTURE_V1;
-const html = renderToString(<CreativeDirectionWorkspace data={fixture} />);
+const html = renderToString(
+  <CreativeDirectionWorkspace
+    data={fixture}
+    comparisonSet={CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1}
+  />
+);
+
+test("production Creative Direction route has no reachable fixture provider and fails closed", () => {
+  const pageSource = readFileSync(
+    resolve(process.cwd(), "src/app/(app)/creative-direction/page.tsx"),
+    "utf8"
+  );
+  const workspaceSource = readFileSync(
+    resolve(process.cwd(), "src/components/creative-direction/CreativeDirectionWorkspace.tsx"),
+    "utf8"
+  );
+  const productionHtml = renderToString(<CreativeDirectionPage />);
+
+  assert.doesNotMatch(pageSource, /fixtures?/);
+  assert.doesNotMatch(workspaceSource, /fixtures?/);
+  assert.match(productionHtml, /data-testid="creative-direction-production-unavailable"/);
+  assert.match(productionHtml, /Creative evidence unavailable/);
+  assert.match(productionHtml, /UNKNOWN/);
+  assert.match(productionHtml, /Fixture and demo recommendations are intentionally withheld/);
+  assert.doesNotMatch(productionHtml, /Develop the next graphite original|confidence HIGH/i);
+});
 
 test("Creative Direction workspace renders light-first dashboard-consumable sections", () => {
   for (const text of [
