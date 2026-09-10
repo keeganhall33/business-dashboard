@@ -1,10 +1,79 @@
-import type { CreativeDirectionWorkspaceFixtureV1 } from "@/lib/creative-direction/dashboard-refresh-fixtures";
 import { CreativeVisualizationPanel } from "@/components/creative-visualization/CreativeVisualizationPanel";
-import { CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1 } from "@/lib/creative-visualization/fixtures";
+import type { CreativeVisualizationComparisonSetV1 } from "@/lib/creative-visualization/contracts";
 
-export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWorkspaceFixtureV1 }) {
-  const rec = data.current_recommendation;
+export type CreativeDirectionRecommendationInputV1 = {
+  version: number;
+  stage: "KEEP_NOW" | "TEST_NOW" | "DEVELOP_NEXT" | "DEFER" | "AVOID";
+  recommendation: string;
+  what_should_i_make_next: string;
+  medium_portfolio: string[];
+  artwork_series_recommendations: string[];
+  composition_palette_scale_material_style: string[];
+  short_path_to_goal: string;
+  what_to_stop_avoid: string[];
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  why_changed: string | null;
+  new_evidence_ids: string[];
+};
+
+export type CreativeDirectionWorkspaceInputV1 = {
+  current_recommendation: CreativeDirectionRecommendationInputV1;
+  version_history: CreativeDirectionRecommendationInputV1[];
+  refresh_states: Array<{
+    cadence: string;
+    status: "DUE" | "CURRENT" | "SILENT_NO_MATERIAL_CHANGE";
+    trigger: string;
+  }>;
+  market_signals: string[];
+  institutional_signals: string[];
+  collector_signals: string[];
+  peer_category_map: string[];
+  open_visual_territory: string[];
+  creative_experiments: string[];
+  creative_learnings: string[];
+};
+
+export function CreativeDirectionWorkspace({
+  data,
+  comparisonSet
+}: {
+  data?: CreativeDirectionWorkspaceInputV1;
+  comparisonSet?: CreativeVisualizationComparisonSetV1;
+}) {
   const stages = ["KEEP_NOW", "TEST_NOW", "DEVELOP_NEXT", "DEFER", "AVOID"] as const;
+
+  if (!data) {
+    return (
+      <main
+        className="min-h-screen bg-[#f7f2ea] px-4 py-6 text-stone-950 md:px-8"
+        aria-label="Creative Direction Intelligence"
+      >
+        <div className="mx-auto max-w-7xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+            Creative Direction Intelligence
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-normal md:text-5xl">
+            What should I make next?
+          </h1>
+          <section
+            data-testid="creative-direction-production-unavailable"
+            className="mt-6 rounded-3xl border border-dashed border-amber-300 bg-amber-50/70 p-5"
+          >
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+              UNKNOWN
+            </span>
+            <h2 className="mt-3 text-xl font-semibold">Creative evidence unavailable</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-700">
+              No canonical production creative-direction snapshot is supplied. Fixture and demo recommendations are
+              intentionally withheld rather than presented as current business truth.
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  const rec = data.current_recommendation;
 
   return (
     <main className="min-h-screen bg-[#f7f2ea] px-4 py-6 text-stone-950 md:px-8">
@@ -61,7 +130,22 @@ export function CreativeDirectionWorkspace({ data }: { data: CreativeDirectionWo
           <InfoBlock title="Creative learnings" items={data.creative_learnings} />
         </section>
 
-        <CreativeVisualizationPanel comparisonSet={CREATIVE_VISUALIZATION_COMPARISON_SET_FIXTURE_V1} />
+        {comparisonSet ? (
+          <CreativeVisualizationPanel comparisonSet={comparisonSet} />
+        ) : (
+          <section
+            data-testid="creative-visualization-production-unavailable"
+            className="mt-6 rounded-3xl border border-dashed border-amber-300 bg-amber-50/70 p-5"
+          >
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+              UNKNOWN
+            </span>
+            <h2 className="mt-3 text-xl font-semibold">Creative visualization unavailable</h2>
+            <p className="mt-2 text-sm leading-6 text-stone-700">
+              No canonical production comparison set is supplied. Generated fixture concepts are intentionally withheld.
+            </p>
+          </section>
+        )}
 
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
