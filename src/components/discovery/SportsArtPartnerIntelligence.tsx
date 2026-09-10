@@ -1,8 +1,39 @@
-import { SPORTS_ART_PARTNER_UNIVERSE_FIXTURE_V1 } from "@/lib/discovery/sports-art-partners/fixtures";
-import { toSportsArtPartnerDashboardV1 } from "@/lib/discovery/sports-art-partners/dashboard";
+import type { SportsArtPartnerDashboardV1 } from "@/lib/discovery/sports-art-partners/contracts";
 
-export function SportsArtPartnerIntelligence() {
-  const dashboard = toSportsArtPartnerDashboardV1(SPORTS_ART_PARTNER_UNIVERSE_FIXTURE_V1);
+export function SportsArtPartnerIntelligence({
+  dashboard = null,
+}: {
+  dashboard?: SportsArtPartnerDashboardV1 | null;
+}) {
+  if (!dashboard) {
+    return (
+      <main className="space-y-5">
+        <header className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Discovery intelligence</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-stone-950">Sports Art Partner Intelligence</h1>
+          <p className="mt-3 max-w-4xl text-base leading-7 text-stone-700">
+            Partner intelligence appears here only when a verified production universe is supplied.
+          </p>
+        </header>
+
+        <section
+          className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"
+          aria-labelledby="sports-art-partner-unavailable-title"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Production coverage</p>
+          <h2 id="sports-art-partner-unavailable-title" className="mt-2 text-xl font-semibold text-stone-950">
+            Partner intelligence unavailable
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-700">
+            No verified production partner universe is connected to this workspace yet. Relationship strength, licensing power,
+            distribution reach, athlete access, economics, current opportunities, and next actions remain unknown rather than
+            being inferred from test fixtures.
+          </p>
+          <p className="mt-3 text-sm font-semibold text-stone-900">Next safe step: connect a verified evidence-backed partner universe.</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="space-y-5">
