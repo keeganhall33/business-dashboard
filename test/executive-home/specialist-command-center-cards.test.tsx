@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import React from "react";
@@ -8,10 +10,14 @@ import FinancialSpecialistPage from "@/app/(app)/specialists/financial/page";
 import GoalsCapacitySpecialistPage from "@/app/(app)/specialists/goals-capacity/page";
 import { ExecutiveCommandCenter } from "@/components/executive-home/ExecutiveCommandCenter";
 import { EXECUTIVE_HOME_FIXTURE_V1 } from "@/lib/executive-home/fixtures";
-import { getSpecialistCommandCenterCardsV1, toSpecialistEvidenceFreshnessV1 } from "@/lib/executive-home/specialist-command-center";
+import {
+  getSpecialistCommandCenterCardsForModeV1,
+  toSpecialistEvidenceFreshnessV1
+} from "@/lib/executive-home/specialist-command-center";
+import { getSpecialistCommandCenterCardsFixtureV1 } from "./support/specialist-command-center-fixture-adapter";
 
-test("specialist command-center adapter returns exactly the Phase C entry cards", () => {
-  const cards = getSpecialistCommandCenterCardsV1();
+test("test-only specialist adapter returns exactly the deterministic Phase C entry cards", () => {
+  const cards = getSpecialistCommandCenterCardsFixtureV1();
 
   assert.deepEqual(cards.map((card) => card.id), ["financial", "goals-capacity", "relationships"]);
   assert.ok(cards.every((card) => card.what_changed.length > 20));
@@ -27,6 +33,19 @@ test("specialist command-center adapter returns exactly the Phase C entry cards"
   assert.equal(cards.find((card) => card.id === "financial")?.approval_class, "L1_RECOMMENDATION");
 });
 
+test("production specialist selector has no fixture provider import", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "src/lib/executive-home/specialist-command-center.ts"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(source, /(?:financial-intelligence|goals-portfolio-capacity|decision-room|relationship-intelligence)\/fixtures/);
+});
+
+test("fixture mode fails closed in the production specialist selector", () => {
+  assert.deepEqual(getSpecialistCommandCenterCardsForModeV1("FIXTURE"), []);
+});
+
 test("freshness adapter distinguishes current stale conflicted and unknown without fake precision", () => {
   assert.equal(toSpecialistEvidenceFreshnessV1("KNOWN"), "CURRENT");
   assert.equal(toSpecialistEvidenceFreshnessV1("INFERRED"), "CURRENT");
@@ -36,22 +55,20 @@ test("freshness adapter distinguishes current stale conflicted and unknown witho
   assert.equal(toSpecialistEvidenceFreshnessV1("KNOWN", false), "UNKNOWN");
 });
 
-test("specialist cards keep mobile and desktop grid classes in the light command center", () => {
-  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} onOpenDecisionRoom={() => undefined} />);
+test("fixture command-center data cannot surface specialist fixture conclusions", () => {
+  const html = renderToString(
+    <ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      onOpenDecisionRoom={() => undefined}
+    />
+  );
 
   assert.match(html, /Specialist intelligence/);
-  assert.match(html, /grid gap-3 lg:grid-cols-3/);
-  assert.match(html, /WHAT_CHANGED/);
-  assert.match(html, /WHY_IT_MATTERS/);
-  assert.match(html, /NEXT_BEST_ACTION/);
-  assert.match(html, /EVIDENCE/);
-  assert.match(html, /FRESHNESS/);
-  assert.match(html, /aria-label="Financial evidence freshness UNKNOWN"/);
-  assert.match(html, /aria-label="Goals \/ Capacity evidence freshness UNKNOWN"/);
-  assert.match(html, /aria-label="Relationships evidence freshness UNKNOWN"/);
-  assert.match(html, /Review in Decision Room/);
-  assert.match(html, /bg-white/);
-  assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950/);
+  assert.match(html, /data-testid="specialist-production-unavailable"/);
+  assert.match(html, /Specialist evidence unavailable/);
+  assert.match(html, /fixture conclusions are intentionally withheld/);
+  assert.doesNotMatch(html, /WHAT_CHANGED|WHY_IT_MATTERS|NEXT_BEST_ACTION/);
+  assert.doesNotMatch(html, /Review in Decision Room/);
 });
 
 test("financial and goals drill-down pages render read-only specialist detail", () => {

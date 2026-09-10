@@ -8,6 +8,9 @@ import TestRenderer, { act } from "react-test-renderer";
 import { ExecutiveCommandCenter } from "@/components/executive-home/ExecutiveCommandCenter";
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
 import { advanceExecutiveStrategyStepV1, EXECUTIVE_HOME_FIXTURE_V1 } from "@/lib/executive-home/fixtures";
+import { getSpecialistProductionInputFixtureV1 } from "./support/specialist-command-center-fixture-adapter";
+
+const SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1 = getSpecialistProductionInputFixtureV1();
 
 function renderedText(renderer: TestRenderer.ReactTestRenderer): string {
   return JSON.stringify(renderer.toJSON());
@@ -39,7 +42,11 @@ test("dashboard command center uses a full-width light shell without dark gutter
 });
 
 test("command center preserves UNKNOWN instead of converting missing evidence to zero or false", () => {
-  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+  const html = renderToString(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
 
   assert.match(html, /UNKNOWN economics/);
   assert.match(html, /Direct economics for prestige event concepts remain UNKNOWN rather than zero/);
@@ -53,7 +60,11 @@ test("command center preserves UNKNOWN instead of converting missing evidence to
 });
 
 test("command center renders three specialist cards with grounded drill-down links", () => {
-  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+  const html = renderToString(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
 
   assert.match(html, /Financial/);
   assert.match(html, /Goals \/ Capacity/);
@@ -69,7 +80,11 @@ test("command center cards expose drill-down controls for metrics and actions", 
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+    renderer = TestRenderer.create(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
   });
 
   const automationButton = renderer!.root.findAllByType("button").find((button) => nodeText(button.children).includes("Automation health"));
@@ -91,7 +106,11 @@ test("specialist freshness badge opens evidence source drill-down", () => {
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+    renderer = TestRenderer.create(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
   });
 
   const freshnessButton = renderer!.root.findAllByType("button").find((button) => String(button.props["aria-label"] ?? "").includes("Financial evidence freshness"));
@@ -111,7 +130,11 @@ test("specialist freshness badge opens evidence source drill-down", () => {
 });
 
 test("command center keeps freshness badges light and mobile-compatible", () => {
-  const html = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+  const html = renderToString(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
 
   assert.match(html, /grid gap-3 lg:grid-cols-3/);
   assert.match(html, /bg-\[#f8f4ec\]/);
@@ -144,7 +167,11 @@ test("completion button advances the visible sequence and reveals verification s
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
+    renderer = TestRenderer.create(<ExecutiveCommandCenter
+      data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      specialistMode="PRODUCTION"
+      specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
+    />);
   });
 
   const completeButton = renderer!.root.findAllByType("button").find((button) => nodeText(button.children).includes("Mark current step complete"));
