@@ -1,4 +1,21 @@
-import { getSpecialistCapabilityStatusV1 } from "@/lib/executive-home/specialist-command-center";
+import { Suspense } from "react";
+import { headers } from "next/headers";
+
+import { getDashboardOverview } from "@/lib/api/dashboard";
+import {
+  getSpecialistCapabilityStatusV1,
+  type SpecialistCapabilityStatusV1,
+  type SpecialistProductionInputV1
+} from "@/lib/executive-home/specialist-command-center";
+import { buildFinancialProductionSpecialistCardV1 } from "@/lib/financial-intelligence/production-specialist-card-v1";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 const truthStyles = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -8,8 +25,49 @@ const truthStyles = {
   CONFLICTED: "border-rose-200 bg-rose-50 text-rose-900"
 } as const;
 
-export default function SpecialistsPage() {
-  const capabilities = getSpecialistCapabilityStatusV1();
+export default function SpecialistsPage({ searchParams }: PageProps = {}) {
+  return (
+    <Suspense fallback={<SpecialistsWorkspace capabilities={getSpecialistCapabilityStatusV1()} />}>
+      <ProductionSpecialistsWorkspace searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function ProductionSpecialistsWorkspace({ searchParams }: PageProps) {
+  const hdrs = await headers();
+  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
+  const proto = hdrs.get("x-forwarded-proto") ?? "https";
+  const cookie = hdrs.get("cookie");
+  const baseUrl =
+    host && /^[A-Za-z0-9.:-]+$/.test(host) && (proto === "http" || proto === "https")
+      ? `${proto}://${host}`
+      : "";
+
+  const resolvedParams = (await searchParams) ?? {};
+  const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
+  const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
+  const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
+
+  try {
+    const overview = await getDashboardOverview(
+      { preset, startDate: start, endDate: end },
+      { baseUrl, cookie }
+    );
+    const financialCard = buildFinancialProductionSpecialistCardV1(overview);
+    const productionInput: SpecialistProductionInputV1 | undefined = financialCard
+      ? { source_mode: "PRODUCTION", cards: [financialCard] }
+      : undefined;
+
+    return <SpecialistsWorkspace capabilities={getSpecialistCapabilityStatusV1(productionInput)} />;
+  } catch {
+    return <SpecialistsWorkspace capabilities={getSpecialistCapabilityStatusV1()} />;
+  }
+}
+
+function SpecialistsWorkspace({ capabilities }: { capabilities: SpecialistCapabilityStatusV1[] }) {
+  const productionBackedCount = capabilities.filter(
+    (capability) => capability.availability === "PRODUCTION_BACKED"
+  ).length;
 
   return (
     <main className="min-h-screen bg-[#f8f4ec] text-stone-950" aria-label="Specialist intelligence workspace">
@@ -24,13 +82,32 @@ export default function SpecialistsPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900">LIVE EVIDENCE: UNAVAILABLE</span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900">UNKNOWN</span>
+              <span
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  productionBackedCount > 0
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}
+              >
+                {productionBackedCount > 0
+                  ? `LIVE EVIDENCE: ${productionBackedCount} SPECIALIST${productionBackedCount === 1 ? "" : "S"}`
+                  : "LIVE EVIDENCE: UNAVAILABLE"}
+              </span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900">
+                {productionBackedCount > 0 ? "BOUNDED PRODUCTION TRUTH" : "UNKNOWN"}
+              </span>
             </div>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <TruthBoundaryMetric label="Current specialist conclusions" value="Withheld without production evidence" />
+            <TruthBoundaryMetric
+              label="Current specialist conclusions"
+              value={
+                productionBackedCount > 0
+                  ? `${productionBackedCount} bounded production-backed projection${productionBackedCount === 1 ? "" : "s"}`
+                  : "Withheld without production evidence"
+              }
+            />
             <TruthBoundaryMetric label="Fixture substitution" value="Disabled for production" />
             <TruthBoundaryMetric label="Safe behavior" value="Expose gaps before recommendations" />
           </div>
