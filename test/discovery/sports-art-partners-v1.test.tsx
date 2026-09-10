@@ -88,7 +88,7 @@ test("benchmark companies are not mislabeled as equal-priority partnership targe
 
 test("dashboard surface exposes filters and comparison dimensions", () => {
   const dashboard = toSportsArtPartnerDashboardV1(SPORTS_ART_PARTNER_UNIVERSE_FIXTURE_V1);
-  const html = renderToString(<SportsArtPartnerIntelligence />);
+  const html = renderToString(<SportsArtPartnerIntelligence dashboard={dashboard} />);
 
   assert.equal(dashboard.view_version, "sports_art_partner_dashboard_v1.0");
   assert.deepEqual(dashboard.filters, ["PARTNER TARGET", "LICENSING TARGET", "DISTRIBUTION TARGET", "COLLECTIBLES TARGET", "ATHLETE ACCESS", "BENCHMARK", "COMPETITOR", "COLLABORATOR"]);
