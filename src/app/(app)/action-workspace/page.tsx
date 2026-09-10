@@ -1,6 +1,5 @@
-import { ActionWorkspacePanel } from "@/components/action-workspace/ActionWorkspacePanel";
-import { ACTION_WORKSPACE_FIXTURE_V1 } from "@/lib/action-workspace/fixtures";
+import { redirect } from "next/navigation";
 
 export default function ActionWorkspacePage() {
-  return <ActionWorkspacePanel workspace={ACTION_WORKSPACE_FIXTURE_V1} />;
+  redirect("/act");
 }
