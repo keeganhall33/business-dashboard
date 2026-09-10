@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSlotRegistry } from '../../../scripts/orchestration-v4/slot-scheduler.mjs';
-import { openV4StateStore, insertReadyTask, getTask, listCorrectionAttempts } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
+import { openV4StateStore, insertReadyTask, claimTask, getTask, listCorrectionAttempts } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { runReadyBatch, runV4Task } from '../../../scripts/orchestration-v4/runner/task-runner.mjs';
 
 function git(cwd, ...args) {
@@ -92,6 +92,69 @@ test('integration tasks are never executed by the product/QA runner', async () =
 
   assert.equal(result.length, 0);
   assert.equal(getTask(db, 'integration-task').state, 'READY');
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('ready integration work protects local-e from product fallback in the real batch caller', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-integration-reserve-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+
+  insertReadyTask(db, { taskId: 'local-c-occupier', issueNumber: 2010, stream: 'INTELLIGENCE_UX', baseSha: sha });
+  claimTask(db, { taskId: 'local-c-occupier', slotId: 'local-c' });
+  insertReadyTask(db, { taskId: 'integration-waiting', issueNumber: 2011, stream: 'INTEGRATION_RELEASE', baseSha: sha });
+  insertReadyTask(db, { taskId: 'ux-waiting', issueNumber: 2012, stream: 'INTELLIGENCE_UX', baseSha: sha });
+
+  const result = await runReadyBatch({
+    db,
+    registry: createSlotRegistry(),
+    repoRoot: repo,
+    workspaceRoot: path.join(root, 'workspaces'),
+    commandsByTaskId: { 'ux-waiting': { command: 'fixture' } },
+    timeoutMs: 5000,
+    stallMs: 1000,
+    execute: fakeExecute,
+  });
+
+  assert.equal(result.length, 0);
+  assert.equal(getTask(db, 'integration-waiting').state, 'READY');
+  assert.equal(getTask(db, 'ux-waiting').state, 'READY');
+  assert.equal(getTask(db, 'local-c-occupier').slot_id, 'local-c');
+  db.close();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('local-e backfills useful product work when integration is absent and primary lane is occupied', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-local-e-fallback-'));
+  const { repo, sha } = makeRepo(root);
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+
+  insertReadyTask(db, { taskId: 'local-c-occupier', issueNumber: 2020, stream: 'INTELLIGENCE_UX', baseSha: sha });
+  claimTask(db, { taskId: 'local-c-occupier', slotId: 'local-c' });
+  insertReadyTask(db, { taskId: 'ux-fallback', issueNumber: 2021, stream: 'INTELLIGENCE_UX', baseSha: sha });
+  let observedSlot = null;
+
+  const result = await runReadyBatch({
+    db,
+    registry: createSlotRegistry(),
+    repoRoot: repo,
+    workspaceRoot: path.join(root, 'workspaces'),
+    commandsByTaskId: { 'ux-fallback': { command: 'fixture' } },
+    timeoutMs: 5000,
+    stallMs: 1000,
+    execute: async ({ cwd, onEvent }) => {
+      observedSlot = getTask(db, 'ux-fallback').slot_id;
+      fs.writeFileSync(path.join(cwd, 'task-output.txt'), 'done\n');
+      onEvent({ kind: 'WORKTREE_MUTATION', observedAt: new Date().toISOString() });
+      return { status: 'COMPLETE', reason: null };
+    },
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(observedSlot, 'local-e');
+  assert.equal(getTask(db, 'ux-fallback').state, 'COMPLETE');
+  assert.equal(getTask(db, 'ux-fallback').slot_id, null);
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
