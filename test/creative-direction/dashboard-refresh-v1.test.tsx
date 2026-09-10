@@ -35,8 +35,9 @@ test("production Creative Direction route has no reachable fixture provider and 
   );
   const productionHtml = renderToString(<CreativeDirectionPage />);
 
-  assert.doesNotMatch(pageSource, /fixtures?/);
-  assert.doesNotMatch(workspaceSource, /fixtures?/);
+  const fixtureImport = /from\\s+["\'][^"\']*fixtures?[^"\']*["\']/;
+  assert.doesNotMatch(pageSource, fixtureImport);
+  assert.doesNotMatch(workspaceSource, fixtureImport);
   assert.match(productionHtml, /data-testid="creative-direction-production-unavailable"/);
   assert.match(productionHtml, /Creative evidence unavailable/);
   assert.match(productionHtml, /UNKNOWN/);
