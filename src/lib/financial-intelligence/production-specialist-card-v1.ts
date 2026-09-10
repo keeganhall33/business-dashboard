@@ -76,7 +76,12 @@ export function buildFinancialProductionSpecialistCardV1(
     return null;
   }
 
-  const currentLabel = formatCurrency(revenue.current);
+  const currentRevenue = revenue.current;
+  if (!isFiniteNumber(currentRevenue)) {
+    return null;
+  }
+
+  const currentLabel = formatCurrency(currentRevenue);
   const rangeLabel = formatRange(baseline.range.startDate, baseline.range.endDate);
   const orders = baseline.metrics.orders;
   const knownOrders = isCompleteCurrentMetric(orders)
@@ -108,7 +113,7 @@ export function buildFinancialProductionSpecialistCardV1(
     material_gap_or_risk: UNSUPPORTED_FINANCIAL_FIELDS,
     detail_href: "/data-evidence",
     evidence:
-      `performanceBaseline.metrics.revenue.current=${revenue.current}; completeness=complete; range=${rangeLabel}`,
+      `performanceBaseline.metrics.revenue.current=${currentRevenue}; completeness=complete; range=${rangeLabel}`,
     source: "DASHBOARD_OVERVIEW_PERFORMANCE_BASELINE",
     source_mode: "PRODUCTION"
   };
