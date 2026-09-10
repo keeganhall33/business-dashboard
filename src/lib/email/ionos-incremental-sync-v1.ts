@@ -308,7 +308,7 @@ function failedResult(
   };
 }
 
-function normalizeMessages(
+export function normalizeEmailIngestCandidatesV1(
   value: unknown,
   mailbox: IonosMailboxRuntimeV1,
   uidValidity: string,
@@ -466,7 +466,7 @@ async function syncMailbox(
       if (!isPlainObject(fetched) || typeof fetched.complete !== "boolean" || fetched.complete !== true) {
         throw new Error("provider fetch must be explicitly complete");
       }
-      const candidates = normalizeMessages(
+      const candidates = normalizeEmailIngestCandidatesV1(
         fetched.messages,
         mailbox,
         uidValidity,
