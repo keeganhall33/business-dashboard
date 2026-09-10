@@ -39,7 +39,7 @@ test("explicit deterministic dashboard input remains renderable without fixture 
         company_name: "Verified Partner",
         primary_classification: "PARTNER_TARGET",
         filter_tags: ["PARTNER TARGET"],
-        relationship_strength: "KNOWN" as never,
+        relationship_strength: "STRONG",
         existing_access_path: "Verified introduction path",
         strategic_upside: "HIGH",
         licensing_power: "MEDIUM",
@@ -53,8 +53,6 @@ test("explicit deterministic dashboard input remains renderable without fixture 
       },
     ],
   };
-
-  dashboard.rows[0]!.relationship_strength = "STRONG";
 
   const html = renderToStaticMarkup(<SportsArtPartnerIntelligence dashboard={dashboard} />);
 
