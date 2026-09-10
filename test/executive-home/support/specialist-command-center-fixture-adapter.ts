@@ -1,6 +1,7 @@
 import { DECISION_ROOM_FIXTURE_V1 } from "@/lib/decision-room/fixtures";
 import {
   type SpecialistCommandCenterCardV1,
+  type SpecialistProductionInputV1,
   toSpecialistEvidenceFreshnessV1
 } from "@/lib/executive-home/specialist-command-center";
 import { getFinancialIntelligenceFixtureBundleV1 } from "@/lib/financial-intelligence/fixtures";
@@ -110,4 +111,15 @@ export function getSpecialistCommandCenterCardsFixtureV1(): SpecialistCommandCen
       source_mode: "FIXTURE"
     }
   ];
+}
+
+export function getSpecialistProductionInputFixtureV1(): SpecialistProductionInputV1 {
+  return {
+    source_mode: "PRODUCTION",
+    cards: getSpecialistCommandCenterCardsFixtureV1().map((card) => ({
+      ...card,
+      evidence_context: { ...card.evidence_context },
+      source_mode: "PRODUCTION"
+    }))
+  };
 }
