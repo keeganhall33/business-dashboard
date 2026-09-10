@@ -93,7 +93,15 @@ test("surfaces a precise six-month canonical opportunity with a safe internal ne
 });
 
 test("suppresses a 17-day signal that requires a major original", () => {
-  const result = buildProductionOpportunityRadarV1({ rows: [row({ id: "late", deliverBy: "2026-09-27T20:00:00.000Z", artwork: "MAJOR_ORIGINAL" })], nowIso: NOW });
+  const result = buildProductionOpportunityRadarV1({
+    rows: [row({
+      id: "late",
+      deliverBy: "2026-09-27T20:00:00.000Z",
+      artwork: "MAJOR_ORIGINAL",
+      overrides: { engage_by: "2026-09-15T00:00:00.000Z" }
+    })],
+    nowIso: NOW
+  });
   assert.equal(result.surfaced_count, 0);
   assert.equal(result.suppressions[0]?.reason, "LATE_SIGNAL_REQUIRES_MAJOR_NEW_ARTWORK");
 });
