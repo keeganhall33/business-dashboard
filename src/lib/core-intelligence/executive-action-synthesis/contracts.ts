@@ -1,4 +1,8 @@
-import type { StrategyEvidenceReviewDispositionV1, StrategyEvidenceReviewQueueItemV1 } from "@/lib/core-intelligence/strategy-evidence-review/contracts";
+import type {
+  StrategyEvidenceReviewDispositionV1,
+  StrategyEvidenceReviewQueueItemV1,
+  StrategyEvidenceReviewQueueV1,
+} from "@/lib/core-intelligence/strategy-evidence-review/contracts";
 import type { Recommendation } from "@/lib/intelligence/recommendation-contract";
 
 export type ExecutiveActionLaneV1 = "DO_NOW" | "PREPARE" | "MONITOR" | "WAIT" | "DEPRIORITIZE";
@@ -32,9 +36,7 @@ export type ExecutiveActionSynthesisInputV1 = {
   contract_version: "executive_action_synthesis_input_v1";
   generated_at: string;
   recommendations: Recommendation[];
-  evidence_review_queue: {
-    queue: StrategyEvidenceReviewQueueItemV1[];
-  };
+  evidence_review_queue: StrategyEvidenceReviewQueueV1;
 };
 
 export type ExecutiveActionSynthesisV1 = {
