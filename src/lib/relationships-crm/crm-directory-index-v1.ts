@@ -35,6 +35,7 @@ export type CrmCompanyDirectoryRecordV1 = {
   nextMove: string | null;
   supportedValue: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;
+  detailHref?: string | null;
 };
 
 export type CrmDirectoryIndexV1 = {
@@ -90,6 +91,20 @@ export function supportedCrmPersonDetailHrefV1(
 ): string | null {
   const canonicalHref = crmPersonDetailHrefV1(person.id);
   return person.detailHref === canonicalHref ? canonicalHref : null;
+}
+
+export function crmCompanyDetailHrefV1(companyId: string): string {
+  if (typeof companyId !== "string" || !companyId.trim()) {
+    throw new Error("companyId must be a non-empty string");
+  }
+  return `/relationships/companies/${encodeURIComponent(companyId.trim())}`;
+}
+
+export function supportedCrmCompanyDetailHrefV1(
+  company: CrmCompanyDirectoryRecordV1
+): string | null {
+  const canonicalHref = crmCompanyDetailHrefV1(company.id);
+  return company.detailHref === canonicalHref ? canonicalHref : null;
 }
 
 export function sortCrmPeopleV1(

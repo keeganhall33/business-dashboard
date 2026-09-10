@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import {
+  supportedCrmCompanyDetailHrefV1,
   supportedCrmPersonDetailHrefV1,
   type CrmCompanyDirectoryRecordV1,
   type CrmDirectoryEvidenceStateV1,
@@ -193,6 +194,18 @@ function CompactList({ values }: { values: readonly string[] }) {
   return <span>{values.join(", ")}</span>;
 }
 
+function CompanyName({ company }: { company: CrmCompanyDirectoryRecordV1 }) {
+  const detailHref = supportedCrmCompanyDetailHrefV1(company);
+  if (!detailHref) {
+    return <span className="font-semibold text-stone-950">{display(company.name)}</span>;
+  }
+  return (
+    <a href={detailHref} className="font-semibold text-stone-950 underline-offset-4 hover:underline">
+      {display(company.name)}
+    </a>
+  );
+}
+
 function CompaniesTable({ companies }: { companies: readonly CrmCompanyDirectoryRecordV1[] }) {
   if (!companies.length) return <EmptyDirectory kind="companies" />;
   const rows = sortCrmCompaniesV1(companies);
@@ -217,7 +230,7 @@ function CompaniesTable({ companies }: { companies: readonly CrmCompanyDirectory
           <tbody className="divide-y divide-stone-100">
             {rows.map((company) => (
               <tr key={company.id} data-record-id={company.id} className="align-top">
-                <td className="px-4 py-4 font-semibold text-stone-950">{display(company.name)}</td>
+                <td className="px-4 py-4"><CompanyName company={company} /></td>
                 <td className="px-4 py-4">{display(company.category)}</td>
                 <td className="px-4 py-4"><CompactList values={company.keyPeople} /></td>
                 <td className="px-4 py-4">{display(company.relationshipState)}</td>
