@@ -1,14 +1,22 @@
 import { ExecutiveLearningWorkspaceV1 } from "@/components/learning/ExecutiveLearningWorkspaceV1";
-import { buildExecutiveLearningWorkspaceV1 } from "@/lib/learning/executive-learning-v1";
+import {
+  buildExecutiveLearningWorkspaceV1,
+  type ExecutiveLearningWorkspaceV1 as ExecutiveLearningWorkspaceModelV1
+} from "@/lib/learning/executive-learning-v1";
 import { loadProductionLearningRecordsV1 } from "@/lib/learning/production-learning-records-v1";
 
 export const dynamic = "force-dynamic";
 
+function buildUnavailableLearningWorkspace(): ExecutiveLearningWorkspaceModelV1 {
+  return buildExecutiveLearningWorkspaceV1({ records: null });
+}
+
 export default async function LearningPage() {
   const feed = await loadProductionLearningRecordsV1();
-  const model = buildExecutiveLearningWorkspaceV1({
-    records: feed.status === "AVAILABLE" ? feed.records : null
-  });
+  const model =
+    feed.status === "AVAILABLE"
+      ? buildExecutiveLearningWorkspaceV1({ records: feed.records })
+      : buildUnavailableLearningWorkspace();
 
   return (
     <div

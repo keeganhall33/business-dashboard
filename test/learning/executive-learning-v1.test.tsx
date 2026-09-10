@@ -16,9 +16,11 @@ const learningPageSource = readFileSync(
 test("production Learning route consumes only the canonical production loader", () => {
   assert.doesNotMatch(learningPageSource, /ExecutiveWorkspacePage|getExecutiveWorkspaceByHrefV1/);
   assert.match(learningPageSource, /loadProductionLearningRecordsV1/);
-  assert.match(learningPageSource, /feed\.status === "AVAILABLE" \? feed\.records : null/);
+  assert.match(learningPageSource, /feed\.status === "AVAILABLE"/);
+  assert.match(learningPageSource, /buildExecutiveLearningWorkspaceV1\(\{ records: feed\.records \}\)/);
+  assert.match(learningPageSource, /buildExecutiveLearningWorkspaceV1\(\{ records: null \}\)/);
   assert.doesNotMatch(learningPageSource, /decisionLearningFixtures|FIXTURE_BASELINE|records:\s*\[\s*\{/);
-  assert.match(learningPageSource, /IMPLEMENTED_NEEDS_OUTCOME/);
+  assert.match(learningPageSource, /data-production-learning-status/);
   assert.match(learningPageSource, /never changes policy without separate governed evidence/);
 });
 
