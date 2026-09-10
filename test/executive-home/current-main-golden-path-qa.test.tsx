@@ -30,7 +30,10 @@ test("current-main executive golden path renders command center specialist summa
   assert.match(financialHtml, /Financial intelligence/);
   assert.match(financialHtml, /Command-center summary/);
   assert.match(goalsHtml, /Goals \/ Capacity/);
-  assert.match(goalsHtml, /Capacity conflicts remain visible/);
+  assert.match(goalsHtml, /UNAVAILABLE/);
+  assert.match(goalsHtml, /No canonical production goals or capacity specialist snapshot is supplied to this surface\./);
+  assert.match(goalsHtml, /Supply verified goals and capacity evidence before presenting portfolio pressure as current truth\./);
+  assert.doesNotMatch(goalsHtml, /Capacity conflicts remain visible/);
   assert.match(homeHtml, /Protect premium scarcity while choosing the next move/);
   assert.match(homeHtml, /Open Decision Room/);
   assert.match(homeHtml, /Grounded drill-down/);
