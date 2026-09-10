@@ -64,7 +64,13 @@ test("financial and goals drill-down pages render read-only specialist detail", 
   assert.match(financial, /href="\/executive-home"/);
 
   assert.match(goals, /Goals \/ Capacity/);
-  assert.match(goals, /Command-center summary/);
-  assert.match(goals, /Capacity conflicts remain visible/);
-  assert.match(goals, /href="\/executive-home"/);
+  assert.match(goals, /UNAVAILABLE/);
+  assert.match(goals, /UNKNOWN/);
+  assert.match(goals, /No canonical production goals or capacity specialist snapshot is supplied to this surface\./);
+  assert.match(goals, /Supply verified goals and capacity evidence before presenting portfolio pressure as current truth\./);
+  assert.match(goals, /href="\/specialists"/);
+  assert.match(goals, /href="\/data-evidence"/);
+  assert.match(goals, /href="\/dashboard"/);
+  assert.doesNotMatch(goals, /Command-center summary/);
+  assert.doesNotMatch(goals, /Capacity conflicts remain visible/);
 });
