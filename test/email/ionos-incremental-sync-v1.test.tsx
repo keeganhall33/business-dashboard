@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { IonosMailboxRuntimeV1 } from "@/lib/email/ionos-mailbox-config-v1";
 import {
+  normalizeEmailIngestCandidatesV1,
   syncIonosMailboxesV1,
   type EmailCursorStoreV1,
   type EmailMetadataV1,
@@ -16,7 +17,7 @@ const mailboxes: IonosMailboxRuntimeV1[] = [
     id: "personal",
     role: "PERSONAL_HIGH_VALUE_RELATIONSHIP",
     user: "personal@example.test",
-    pass: "personal-secret",
+    pass: "fixture-a",
     host: "imap.ionos.com",
     port: 993,
     folder: "INBOX",
@@ -27,7 +28,7 @@ const mailboxes: IonosMailboxRuntimeV1[] = [
     id: "assistant",
     role: "ASSISTANT_CUSTOMER_SERVICE_OUTREACH",
     user: "assistant@example.test",
-    pass: "assistant-secret",
+    pass: "fixture-b",
     host: "imap.ionos.com",
     port: 993,
     folder: "INBOX",
@@ -38,7 +39,7 @@ const mailboxes: IonosMailboxRuntimeV1[] = [
     id: "marketing",
     role: "MARKETING_FUNNELKIT",
     user: "marketing@example.test",
-    pass: "marketing-secret",
+    pass: "fixture-c",
     host: "imap.ionos.com",
     port: 993,
     folder: "INBOX",
@@ -216,6 +217,29 @@ test("fetches only the bounded new UID range and emits stable sorted candidate i
   ]);
   assert.equal(store.values.get("personal")?.lastSeenUid, "12");
   assert.deepEqual(results.slice(1).map((result) => result.status), ["NO_NEW_MAIL", "NO_NEW_MAIL"]);
+});
+
+test("shared candidate normalizer preserves incremental identity, large UID precision, and null metadata", () => {
+  const mailbox = mailboxes[0]!;
+  const uid = "90071992547409931";
+  const candidates = normalizeEmailIngestCandidatesV1(
+    [{ uid, messageId: null, internalDate: null, size: null }],
+    mailbox,
+    "90071992547409930",
+    BigInt(uid),
+    BigInt(uid)
+  );
+
+  assert.deepEqual(candidates, [{
+    id: `ionos:${mailbox.id}:90071992547409930:${uid}`,
+    mailboxId: mailbox.id,
+    role: mailbox.role,
+    uidValidity: "90071992547409930",
+    uid,
+    messageId: null,
+    internalDate: null,
+    size: null
+  }]);
 });
 
 test("repeated no-new-mail runs emit no duplicate candidates or cursor commits", async () => {
@@ -540,7 +564,7 @@ test("results and telemetry remain deterministic and secrets-safe with a read-on
   const serialized = JSON.stringify(first);
   assert.doesNotMatch(
     serialized,
-    /example\.test|personal-secret|assistant-secret|marketing-secret|op:\/\/|provider leaked/
+    /example\.test|fixture-a|fixture-b|fixture-c|op:\/\/|provider leaked/
   );
   assert.deepEqual(Object.keys(firstProvider.adapter), ["openReadOnly"]);
   assert.equal("send" in firstProvider.adapter, false);
