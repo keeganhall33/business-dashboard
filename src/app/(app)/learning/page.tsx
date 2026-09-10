@@ -1,6 +1,7 @@
-import { ExecutiveWorkspacePage } from "@/components/executive-workspace/ExecutiveWorkspacePage";
-import { getExecutiveWorkspaceByHrefV1 } from "@/lib/executive-workspace/ia";
+import { ExecutiveLearningWorkspaceV1 } from "@/components/learning/ExecutiveLearningWorkspaceV1";
+import { buildExecutiveLearningWorkspaceV1 } from "@/lib/learning/executive-learning-v1";
 
 export default function LearningPage() {
-  return <ExecutiveWorkspacePage model={getExecutiveWorkspaceByHrefV1("/learning")} />;
+  const model = buildExecutiveLearningWorkspaceV1({ records: null });
+  return <ExecutiveLearningWorkspaceV1 model={model} />;
 }
