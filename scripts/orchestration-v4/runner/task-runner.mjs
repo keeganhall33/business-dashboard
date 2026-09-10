@@ -122,7 +122,7 @@ export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, com
   blockTasksWithFailedDependencies(db);
   const readyTasks = listRunnableTasks(db);
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
-  const readyStreams = new Set(readyTasks.filter((task) => task.stream !== 'INTEGRATION_RELEASE').map((task) => task.stream));
+  const readyStreams = new Set(readyTasks.map((task) => task.stream));
   const jobs = [];
   for (const task of readyTasks) {
     if (task.stream === 'INTEGRATION_RELEASE') continue;
