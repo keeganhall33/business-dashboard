@@ -13,10 +13,16 @@ const learningPageSource = readFileSync(
   "utf8"
 );
 
-test("production Learning route removes the generic prose template and fails closed without a canonical feed", () => {
+test("production Learning route consumes only the canonical production loader", () => {
   assert.doesNotMatch(learningPageSource, /ExecutiveWorkspacePage|getExecutiveWorkspaceByHrefV1/);
-  assert.match(learningPageSource, /buildExecutiveLearningWorkspaceV1\(\{ records: null \}\)/);
+  assert.match(learningPageSource, /loadProductionLearningRecordsV1/);
+  assert.match(learningPageSource, /feed\.status === "AVAILABLE" \? feed\.records : null/);
+  assert.doesNotMatch(learningPageSource, /decisionLearningFixtures|FIXTURE_BASELINE|records:\s*\[\s*\{/);
+  assert.match(learningPageSource, /IMPLEMENTED_NEEDS_OUTCOME/);
+  assert.match(learningPageSource, /never changes policy without separate governed evidence/);
+});
 
+test("unavailable canonical evidence still fails closed", () => {
   const model = buildExecutiveLearningWorkspaceV1({ records: null });
   assert.equal(model.coverage, "UNAVAILABLE");
   assert.equal(model.summary.recordCount, null);
