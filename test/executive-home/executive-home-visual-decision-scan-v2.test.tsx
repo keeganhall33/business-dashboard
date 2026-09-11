@@ -14,6 +14,7 @@ import {
   type ExecutiveHomeFixtureV1,
   type ExecutiveIntelligenceCardV1
 } from "@/lib/executive-home/fixtures";
+import { getExecutiveHomeDecisionRoomDrilldownFixtureV1 } from "./support/decision-room-drilldown-fixture-adapter";
 
 function cloneCard(
   base: ExecutiveIntelligenceCardV1,
@@ -89,6 +90,7 @@ function buildDecisionScanFixture(): ExecutiveHomeFixtureV1 {
 }
 
 const fixture = buildDecisionScanFixture();
+const decisionRoomFixture = getExecutiveHomeDecisionRoomDrilldownFixtureV1();
 
 test("visual decision model enforces three-item budgets with approval-first deterministic ordering", () => {
   const first = buildExecutiveHomeVisualSummaryV2(fixture);
@@ -157,7 +159,7 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
 });
 
 test("Executive Home removes visible placeholder and section-pill walls while keeping depth reachable", () => {
-  const html = renderToString(<ExecutiveHomeShell data={fixture} />);
+  const html = renderToString(<ExecutiveHomeShell data={fixture} decisionRoom={decisionRoomFixture} />);
 
   assert.match(html, /data-testid="executive-home-visual-summary-v2"/);
   assert.match(html, /data-testid="executive-home-hidden-status-copy"/);
