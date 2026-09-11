@@ -1,5 +1,4 @@
 import { answerConversationalDecisionTurnV1 } from "@/lib/conversational-decision/engine";
-import { CONVERSATIONAL_DECISION_FIXTURE_V1 } from "@/lib/conversational-decision/fixtures";
 import type {
   ConversationalDecisionAnswerV1,
   ConversationalDecisionFixtureV1,
@@ -18,7 +17,7 @@ export type DecisionConversationCanonicalInputV1 = {
   utterance: string;
   transcript: string;
   source_turn_id: string;
-  read_only_fixture: true;
+  read_only_fixture: boolean;
 };
 
 export type DecisionConversationQuestionV1 = {
@@ -31,7 +30,7 @@ export type DecisionConversationViewModelV1 = {
   id: string;
   eyebrow: string;
   title: string;
-  read_only_state: "READ_ONLY_FIXTURE";
+  read_only_state: "READ_ONLY_FIXTURE" | "UNAVAILABLE";
   mutation_state: "MUTATION_DISABLED";
   strategic_question: string;
   recommendation: {
@@ -74,7 +73,11 @@ export function buildDecisionConversationPanelViewModelV1(input: {
   mode?: DecisionConversationInputModeV1;
   turnId?: string;
 } = {}): DecisionConversationViewModelV1 {
-  const fixture = input.fixture ?? CONVERSATIONAL_DECISION_FIXTURE_V1;
+  if (!input.fixture) {
+    return unavailableDecisionConversationPanelViewModelV1();
+  }
+
+  const fixture = input.fixture;
   const selectedTurn = fixture.turns.find((turn) => turn.turn_id === input.turnId) ?? fixture.turns[0];
   const mode = input.mode ?? "TEXT";
   const answer = answerConversationalDecisionTurnV1({ fixture, turn: selectedTurn });
@@ -122,5 +125,70 @@ export function buildDecisionConversationPanelViewModelV1(input: {
       }
     ],
     answer
+  };
+}
+
+function unavailableDecisionConversationPanelViewModelV1(): DecisionConversationViewModelV1 {
+  const unavailableVersion = {
+    recommendation_id: "recommendation-unavailable",
+    version: 0,
+    title: "Recommendation unavailable",
+    recommendation_summary: "No canonical recommendation evidence is available for this conversation.",
+    recommended_action: "Connect or refresh canonical decision evidence before asking for guidance.",
+    why: "The conversation panel fails closed when no canonical decision input is supplied.",
+    approval_level: "L0_INSIGHT" as const,
+    evidence_refs: [],
+    assumptions: [],
+    unknowns: ["Canonical decision evidence"],
+    conflicts: [],
+    created_from_turn_id: "unavailable"
+  };
+
+  return {
+    id: "decision-conversation-unavailable",
+    eyebrow: "Ask about this decision",
+    title: "Decision conversation unavailable",
+    read_only_state: "UNAVAILABLE",
+    mutation_state: "MUTATION_DISABLED",
+    strategic_question: "UNKNOWN until canonical decision evidence is available.",
+    recommendation: {
+      title: unavailableVersion.title,
+      summary: unavailableVersion.recommendation_summary,
+      action: unavailableVersion.recommended_action,
+      approval_level: unavailableVersion.approval_level,
+      version: unavailableVersion.version
+    },
+    input: {
+      interaction_id: "interaction-unavailable",
+      decision_id: "decision-unavailable",
+      recommendation_id: unavailableVersion.recommendation_id,
+      mode: "TEXT",
+      classification: "QUESTION_ONLY",
+      utterance: "",
+      transcript: "",
+      source_turn_id: "unavailable",
+      read_only_fixture: false
+    },
+    voice: {
+      affordance_label: "Voice unavailable",
+      state_label: "DISABLED_UNSUPPORTED",
+      transcript: ""
+    },
+    suggested_questions: [],
+    answer: {
+      turn_id: "unavailable",
+      classification: "QUESTION_ONLY",
+      spoken_answer: "Canonical decision evidence is unavailable.",
+      written_answer: "No answer is shown because canonical decision evidence was not supplied.",
+      evidence_refs: [],
+      assumptions: [],
+      unknowns: [...unavailableVersion.unknowns],
+      conflicts: [],
+      approval_level: unavailableVersion.approval_level,
+      facts_mutated: false,
+      revision: null,
+      active_recommendation_version: unavailableVersion,
+      prior_versions: []
+    }
   };
 }

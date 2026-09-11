@@ -41,15 +41,16 @@ test("challenge fixture cannot silently overwrite recommendation and keeps disag
   assert.ok(challenged.specialist_disagreement.every((item) => item.visible_in_dashboard));
 });
 
-test("Decision Room adapter preserves existing #553 shell contract while adding V1 dashboard fields", () => {
+test("Decision Room adapter fails closed when a legacy shell model lacks canonical evidence", () => {
   const legacyRoom = INTELLIGENCE_UX_SHELL_FIXTURE_V1.decision_rooms[0];
   const adapted = toDecisionRoomViewModelV1(legacyRoom);
 
   assert.equal(adapted.decision_id, legacyRoom.decision_id);
-  assert.equal(adapted.current_recommendation.summary, legacyRoom.recommendation_summary);
-  assert.equal(adapted.next_action, legacyRoom.primary_action);
-  assert.ok(adapted.evidence_refs.some((item) => item.provenance === "MANUAL_FIXTURE"));
-  assert.ok(adapted.assumptions_unknowns.some((item) => item.label === "Direct economics" && item.truth_state === "UNKNOWN"));
+  assert.equal(adapted.current_recommendation.title, "Decision evidence unavailable");
+  assert.equal(adapted.confidence, "insufficient_evidence");
+  assert.equal(adapted.approval_class, "L0_INSIGHT");
+  assert.ok(adapted.evidence_refs.every((item) => item.truth_state === "UNKNOWN"));
+  assert.doesNotMatch(adapted.current_recommendation.summary, /collector room|prestige|warm route/i);
 });
 
 test("contradiction, disagreement, and UNKNOWN survive rendering", () => {
@@ -132,19 +133,20 @@ test("Decision Room evidence summary preserves mobile and light-mode density wit
   assert.doesNotMatch(evidenceHtml, /0%|\$0|score[^<]*0/i);
 });
 
-test("Decision Room integrates conversation panel and recommendation revision history", () => {
+test("Decision Room keeps conversation unavailable without canonical input while preserving explicit revision history", () => {
   const room = DECISION_ROOM_CONVERSATION_REVISION_FIXTURE_V1;
   const html = renderToString(<DecisionRoom decision={room} />);
 
   assert.ok(room.conversation_revision);
-  assert.equal(room.conversation_revision.conversation.input.mode, "VOICE_TRANSCRIPT");
-  assert.equal(room.conversation_revision.new_information_preview.input.mode, "VOICE_TRANSCRIPT");
+  assert.equal(room.conversation_revision.conversation.read_only_state, "UNAVAILABLE");
+  assert.equal(room.conversation_revision.conversation.input.mode, "TEXT");
+  assert.equal(room.conversation_revision.new_information_preview.input.mode, "TEXT");
   assert.equal(room.conversation_revision.recommendation_revision.old_recommendation.version, 1);
   assert.equal(room.conversation_revision.recommendation_revision.active_recommendation.version, 2);
   assert.equal(room.conversation_revision.recommendation_revision.memory_mutated, false);
-  assert.match(html, /Conversational Decision Panel/);
+  assert.match(html, /Decision conversation unavailable/);
   assert.match(html, /Fixture-backed new information preview/);
-  assert.match(html, /HUMAN_REPORTED_FACT[\s\S]*VOICE_TRANSCRIPT/);
+  assert.match(html, /HUMAN_REPORTED_FACT[\s\S]*TEXT/);
   assert.match(html, /Recommendation[\s\S]*1[\s\S]*to[\s\S]*2/);
   assert.match(html, /Before v[\s\S]*1/);
   assert.match(html, /After v[\s\S]*2/);
