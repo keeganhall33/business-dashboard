@@ -148,10 +148,10 @@ test("CRM overview exposes first-class People and Companies navigation without a
   assert.doesNotMatch(html, /Open relationship evidence/);
 });
 
-test("production CRM routes render honest empty states and contain no synthetic contact or company fixture", () => {
+test("production CRM routes render honest empty states and contain no synthetic contact or company fixture", async () => {
   const overview = renderToString(<RelationshipsPage />);
-  const people = renderToString(<RelationshipPeoplePage />);
-  const companies = renderToString(<RelationshipCompaniesPage />);
+  const people = renderToString(await RelationshipPeoplePage());
+  const companies = renderToString(await RelationshipCompaniesPage());
   const combined = `${overview}${people}${companies}`;
 
   assert.match(overview, /No verified CRM records/);
