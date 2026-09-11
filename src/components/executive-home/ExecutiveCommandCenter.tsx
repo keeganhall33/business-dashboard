@@ -2,13 +2,11 @@
 
 import type React from "react";
 import { useMemo, useState } from "react";
-import {
-  advanceExecutiveStrategyStepV1,
-  EXECUTIVE_HOME_FIXTURE_V1,
-  type ExecutiveCommandCenterKpiV1,
-  type ExecutiveCommandCenterTruthStateV1,
-  type ExecutiveCommandCenterV1,
-  type ExecutiveExecutionStepV1
+import type {
+  ExecutiveCommandCenterKpiV1,
+  ExecutiveCommandCenterTruthStateV1,
+  ExecutiveCommandCenterV1,
+  ExecutiveExecutionStepV1
 } from "@/lib/executive-home/fixtures";
 import {
   getSpecialistCommandCenterCardsForModeV1,
@@ -42,18 +40,19 @@ export function executiveOpportunityDetailHrefV1(opportunityId: string): string 
 export function ExecutiveCommandCenter({
   data,
   onOpenDecisionRoom,
+  onAdvanceStrategyStep,
   specialistInput,
   specialistMode
 }: {
   data: ExecutiveCommandCenterV1;
   onOpenDecisionRoom?: (decisionRoomId: string) => void;
+  onAdvanceStrategyStep?: (current: ExecutiveCommandCenterV1, stepId: string) => ExecutiveCommandCenterV1;
   specialistInput?: SpecialistProductionInputV1;
   specialistMode?: SpecialistCommandCenterModeV1;
 }) {
   const [commandCenter, setCommandCenter] = useState(data);
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
-  const resolvedSpecialistMode: SpecialistCommandCenterModeV1 =
-    specialistMode ?? (data === EXECUTIVE_HOME_FIXTURE_V1.command_center ? "FIXTURE" : "PRODUCTION");
+  const resolvedSpecialistMode: SpecialistCommandCenterModeV1 = specialistMode ?? "PRODUCTION";
   const specialistCards = useMemo(
     () => getSpecialistCommandCenterCardsForModeV1(resolvedSpecialistMode, specialistInput),
     [resolvedSpecialistMode, specialistInput]
@@ -64,9 +63,8 @@ export function ExecutiveCommandCenter({
   );
 
   function completeCurrentStep() {
-    setCommandCenter((current) =>
-      advanceExecutiveStrategyStepV1(current, current.strategy_path.current_step_id, "2026-08-23T12:00:00.000Z", "KEEGAN")
-    );
+    if (!onAdvanceStrategyStep) return;
+    setCommandCenter((current) => onAdvanceStrategyStep(current, current.strategy_path.current_step_id));
   }
 
   return (
@@ -119,7 +117,7 @@ export function ExecutiveCommandCenter({
                   type="button"
                   onClick={completeCurrentStep}
                   className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-stone-300"
-                  disabled={!commandCenter.strategy_path.steps.some((step) => step.id === commandCenter.strategy_path.current_step_id && step.state === "IN_PROGRESS")}
+                  disabled={!onAdvanceStrategyStep || !commandCenter.strategy_path.steps.some((step) => step.id === commandCenter.strategy_path.current_step_id && step.state === "IN_PROGRESS")}
                 >
                   Mark current step complete
                 </button>

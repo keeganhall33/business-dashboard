@@ -169,6 +169,7 @@ test("completion button advances the visible sequence and reveals verification s
   act(() => {
     renderer = TestRenderer.create(<ExecutiveCommandCenter
       data={EXECUTIVE_HOME_FIXTURE_V1.command_center}
+      onAdvanceStrategyStep={(current, stepId) => advanceExecutiveStrategyStepV1(current, stepId, "2026-08-23T12:00:00.000Z", "KEEGAN")}
       specialistMode="PRODUCTION"
       specialistInput={SPECIALIST_PRODUCTION_INPUT_FIXTURE_V1}
     />);

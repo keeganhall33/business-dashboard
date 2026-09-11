@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { DecisionRoom } from "@/components/intelligence-ux/DecisionRoom";
 import { toDecisionRoomViewModelV1 } from "@/lib/decision-room/shell-adapter";
-import { EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1, type ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
+import type { ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { ExecutiveCommandCenter } from "./ExecutiveCommandCenter";
@@ -44,14 +44,14 @@ export function toggleExecutiveHomeSection(
 
 export function ExecutiveHomeShell({
   data,
-  decisionRoom = EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1
+  decisionRoom
 }: {
   data: ExecutiveHomeFixtureV1;
   decisionRoom?: ExecutiveHomeDecisionRoomDrilldownV1;
 }) {
   const [activeDecisionRoomId, setActiveDecisionRoomId] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<ExecutiveIntelligenceCardV1["section"]>>(() => new Set());
-  const isDecisionRoomOpen = activeDecisionRoomId === decisionRoom.decision_id;
+  const isDecisionRoomOpen = Boolean(decisionRoom && activeDecisionRoomId === decisionRoom.decision_id);
 
   return (
     <main className="min-h-screen bg-[#f8f4ec] text-stone-950">
@@ -72,7 +72,7 @@ export function ExecutiveHomeShell({
         </summary>
         <ExecutiveCommandCenter
           data={data.command_center}
-          onOpenDecisionRoom={(decisionRoomId) => setActiveDecisionRoomId(decisionRoomId)}
+          onOpenDecisionRoom={decisionRoom ? (decisionRoomId) => setActiveDecisionRoomId(decisionRoomId) : undefined}
         />
       </details>
 
@@ -93,13 +93,17 @@ export function ExecutiveHomeShell({
             <section aria-label="Workspace shortcuts">
               <div className="mb-3 flex w-full max-w-full flex-wrap gap-2 items-center justify-between">
                 <h3 className="text-sm font-semibold text-stone-950">Owning workspaces</h3>
-                <a
-                  href={`#${decisionRoom.decision_id}`}
-                  onClick={() => setActiveDecisionRoomId(decisionRoom.decision_id)}
-                  className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700"
-                >
-                  Jump to grounded drill-down
-                </a>
+                {decisionRoom ? (
+                  <a
+                    href={`#${decisionRoom.decision_id}`}
+                    onClick={() => setActiveDecisionRoomId(decisionRoom.decision_id)}
+                    className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700"
+                  >
+                    Jump to grounded drill-down
+                  </a>
+                ) : (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">Decision evidence UNKNOWN</span>
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {EXECUTIVE_WORKSPACE_NAV_V1.filter((item) => item.id !== "EXECUTIVE_HOME").map((item) => (
@@ -136,8 +140,8 @@ export function ExecutiveHomeShell({
                         <ExecutiveIntelligenceCard
                           key={card.id}
                           card={card}
-                          decisionRoomId={card.id === decisionRoom.source_card_id ? decisionRoom.decision_id : undefined}
-                          onOpenDecisionRoom={card.id === decisionRoom.source_card_id ? () => setActiveDecisionRoomId(decisionRoom.decision_id) : undefined}
+                          decisionRoomId={decisionRoom && card.id === decisionRoom.source_card_id ? decisionRoom.decision_id : undefined}
+                          onOpenDecisionRoom={decisionRoom && card.id === decisionRoom.source_card_id ? () => setActiveDecisionRoomId(decisionRoom.decision_id) : undefined}
                         />
                       ))}
                     </div>
@@ -169,24 +173,28 @@ export function ExecutiveHomeShell({
               <h2 className="mt-1 text-xl font-semibold tracking-normal text-stone-950">Decision Room detail</h2>
               <p className="mt-1 text-sm leading-6 text-stone-700">Open a Home recommendation or specialist signal to inspect WHY, evidence, unknowns, counterargument, next move, and contextual Ask Jeeves.</p>
             </div>
-            {isDecisionRoomOpen ? (
+            {isDecisionRoomOpen && decisionRoom ? (
               <button type="button" onClick={() => setActiveDecisionRoomId(null)} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
                 Back to Executive Home
               </button>
-            ) : (
+            ) : decisionRoom ? (
               <a href={`#${decisionRoom.source_card_id}`} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-center text-sm font-semibold text-stone-800">
                 Choose recommendation above
               </a>
+            ) : (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900">UNAVAILABLE</span>
             )}
           </div>
-          {isDecisionRoomOpen ? (
+          {isDecisionRoomOpen && decisionRoom ? (
             <>
               <RecommendationComparisonContinuity decisionRoom={decisionRoom} />
               <DecisionRoom decision={decisionRoom} />
             </>
           ) : (
             <div className="rounded-3xl border border-dashed border-stone-300 bg-white p-5 text-sm leading-6 text-stone-700">
-              No Decision Room is open. Use the Home recommendation card or Financial specialist signal to drill down without losing Executive Home orientation.
+              {decisionRoom
+                ? "No Decision Room is open. Use a grounded Home recommendation or specialist signal to inspect its canonical evidence."
+                : "Decision Room evidence is unavailable. Supply a canonical drill-down record before presenting recommendation detail."}
             </div>
           )}
         </section>

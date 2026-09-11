@@ -6,6 +6,9 @@ import TestRenderer, { act } from "react-test-renderer";
 
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
 import { EXECUTIVE_HOME_FIXTURE_V1 } from "@/lib/executive-home/fixtures";
+import { getExecutiveHomeDecisionRoomDrilldownFixtureV1 } from "./support/decision-room-drilldown-fixture-adapter";
+
+const decisionRoomFixture = getExecutiveHomeDecisionRoomDrilldownFixtureV1();
 
 function renderedTree(renderer: TestRenderer.ReactTestRenderer): string {
   return JSON.stringify(renderer.toJSON());
@@ -15,7 +18,7 @@ function renderOpenedDecisionRoom(): TestRenderer.ReactTestRenderer {
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={decisionRoomFixture} />);
   });
 
   const openButton = renderer!.root.findAllByType("button").find((button) => button.children.includes("Open Decision Room"));
