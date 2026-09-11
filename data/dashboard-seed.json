@@ -1,1 +1,260 @@
-{"timestamp":"2026-09-11T15:00:00.000Z","range":{"preset":"30d","startDate":"2026-04-19","endDate":"2026-05-18"},"headerMetrics":[{"metricKey":"monthly_revenue","metricName":"Monthly revenue","category":"revenue","currentValue":18250,"targetValue":10000,"deltaPercent":null,"status":"warning","unit":"usd","ownerAgent":null,"measuredAt":"2026-05-18T00:00:00.000Z"},{"metricKey":"aov","metricName":"Average order value","category":"revenue","currentValue":412,"targetValue":650,"deltaPercent":null,"status":"warning","unit":"usd","ownerAgent":null,"measuredAt":"2026-05-18T00:00:00.000Z"},{"metricKey":"conversion_rate","metricName":"Conversion rate","category":"revenue","currentValue":1.8,"targetValue":2.6,"deltaPercent":null,"status":"warning","unit":"percent","ownerAgent":null,"measuredAt":"2026-05-18T00:00:00.000Z"}],"luxuryCollectibles":{"premiumEdition":{"targetSellThroughPercent":85,"actualSellThroughPercent":62,"timeToSell":{"avgDaysCurrent":18,"avgDaysPrior":24}},"vipCollectors":{"total":14,"growth30d":3,"retentionPercent":92},"proofOfWork":{"deliverablesCompletedPerWeek":9,"evidenceHealthPercent":78},"institutionalPipeline":{"activeOpportunities":6,"totalValueUsd":125000},"pricingLadder":{"floorPriceUsd":450,"avgSellingPriceUsd":980},"pricingArchitecture":{"tiers":[{"tier":"Collector","rangeUsd":{"min":450,"max":1200}},{"tier":"Patron","rangeUsd":{"min":1500,"max":5000}},{"tier":"Institutional","rangeUsd":{"min":8000,"max":null}}]},"narrativeStats":{"storyContentEngagementPercent":6.4,"antiAiStorytellingOutputsPerWeek":4}},"pipelinePanel":{"collectors":[{"id":"seed-collector-1","name":"Collector A","tier":"A","status":"active","lastOutreachAt":"2026-05-10T18:22:00.000Z","nextMove":"Send updated collector edition deck","nextMoveDueAt":"2026-05-20T19:00:00.000Z","estimatedValue":15000,"supportingDocs":[{"label":"Notes","url":"https://example.com/collector-a"}]},{"id":"seed-collector-2","name":"Collector B","tier":"A","status":"warming","lastOutreachAt":"2026-05-04T17:10:00.000Z","nextMove":"Offer studio visit + private viewing","nextMoveDueAt":"2026-05-24T19:00:00.000Z","estimatedValue":22000,"supportingDocs":null},{"id":"seed-collector-3","name":"Collector C","tier":"B","status":"stalled","lastOutreachAt":"2026-04-22T16:04:00.000Z","nextMove":"Follow up with new work-in-progress preview","nextMoveDueAt":"2026-05-22T19:00:00.000Z","estimatedValue":8000,"supportingDocs":null},{"id":"collect-room-dubai-20260909","name":"The Collect Room — Dubai / GCC Retail Partnership","tier":"A","status":"warming","priority":"high","source":"inbound","opportunityType":"retail-partnership","company":{"name":"The Collect Room","website":"https://www.thecollectroom.com/","location":"Dubai, United Arab Emirates","store":"Dubai Hills Mall","description":"Premium sports memorabilia and collectibles retailer serving Dubai and the wider GCC collector market."},"primaryContact":{"name":"Eaver","title":"Operation Head","email":null},"lastOutreachAt":"2026-09-09T13:45:00.000Z","lastTouchType":"outbound-email","nextMove":"Await Eaver's response; if no reply, follow up on retail structure, initial assortment, collector profile and GCC collaboration opportunities","nextMoveDueAt":"2026-09-16T16:00:00.000Z","estimatedValue":null,"strategicValue":"Potential Dubai/GCC retail foothold plus access to regional athlete relationships, signed releases, originals and collaborative projects.","notes":["Inbound inquiry after Eaver saw Keegan's Muhammad Ali artwork.","The Collect Room wants to begin with a small selection of Keegan's work and explore a longer-term partnership if customer response is strong.","Interested categories include limited-edition prints, athlete-signed pieces and potentially original artwork.","Need to learn how The Collect Room normally structures partnerships: wholesale purchase, consignment or another model.","Some athlete-signed editions are tied to charitable fundraising with 100% of Keegan's proceeds donated, so those require a separate commercial structure.","Discovery questions: collector base, company/store scale, best-performing athletes and memorabilia categories, target quantities and intended initial launch size.","Expansion idea: leverage The Collect Room's athlete relationships in Dubai/GCC for original artwork, regional signings, special releases and collaborative projects."],"latestCommunication":{"direction":"outbound","sender":"Ioana — Keegan Hall Studio","date":"2026-09-09","summary":"Confirmed strong interest in exploring the partnership; asked about desired assortment and partnership structure; explained that some athlete-signed editions are 100% charitable; requested information about collector base, strongest athlete/memorabilia categories and launch scale; raised potential originals, regional athlete relationships, signed editions, special releases and collaborative projects."},"supportingDocs":null},{"id":"ferrari-80th-anniversary-20260911","name":"Ferrari — 80th Anniversary Art / Collector Experience","tier":"A","status":"warming","priority":"high","source":"outbound","opportunityType":"luxury-brand-collaboration","company":{"name":"Ferrari","website":"https://www.ferrari.com/","location":"Maranello, Italy","description":"Luxury automotive and lifestyle brand approaching its 80th anniversary in 2027; opportunity centered on craftsmanship, legacy, collectors, client experiences, exhibition and possible charitable activation."},"primaryContact":{"name":"Maria Conti","title":"Chief Communication Officer","email":"maria.conti@ferrari.com"},"lastOutreachAt":"2026-09-11T15:00:00.000Z","lastTouchType":"outbound-email","nextMove":"Await Maria Conti's response; if no reply, send a concise follow-up reinforcing the 80th-anniversary fit and offer a short conversation rather than a fixed proposal","nextMoveDueAt":"2026-09-18T16:00:00.000Z","estimatedValue":null,"strategicValue":"Potential flagship luxury collaboration with major prestige, global collector access, Ferrari client relationships, institutional visibility and premium revenue. Strong fit with Keegan's positioning around greatness, precision and obsessive craftsmanship.","notes":["Ioana Hall sent the initial outreach from ioana@keeganhall.com on September 11, 2026. Keegan was intentionally not copied on the first email; manager-led outreach preserves positioning and brings Keegan in once interest becomes substantive.","Primary concept is NOT an art-car or vehicle-painting collaboration. The stronger lane is an 80th-anniversary original artwork and/or collector, client, exhibition, experience or charitable activation tied to Ferrari's legacy.","Positioning: Ferrari's 80 years of excellence, precision, craftsmanship and legacy align naturally with Keegan's hyper-realistic graphite process and most ambitious originals exceeding 800 hours.","Credibility used in outreach: Michael Jordan personally commissioned an original from Keegan and later helped facilitate another signed original through Upper Deck.","Credibility used in outreach: Keegan has an ongoing relationship with Rory McIlroy and his team across several originals and signed-edition projects. After Rory's Masters victory, Rory's team approached Keegan for a project in which Rory gifted the original to Augusta National and Rory and Keegan created an exclusive co-signed edition for Augusta National members.","Charity proof point used lightly: Keegan's work has helped raise more than $850,000 for charitable causes, establishing optional philanthropic activation credibility without making the initial pitch a charity proposal.","Keegan studied art abroad in Rome while at the University of Washington and traveled throughout Italy. This is authentic personal context to use later in relationship-building, not a primary cold-email credibility point.","Do not over-prescribe execution. The strategy is to show a compelling fit and invite Ferrari to shape the concept around what it is already developing for the anniversary.","Follow-up cadence: first follow-up around September 18 if no response; second touch roughly 10-14 days later only if useful, ideally with a relevant Ferrari anniversary/client-experience trigger; after that prioritize a warm introduction or alternate Ferrari marketing/events/lifestyle path rather than repeated cold emails.","Potential alternate paths if Maria does not engage: senior Ferrari North America marketing/events leadership; Ferrari Lifestyle; a warm connector with direct Ferrari client/brand-event credibility. Josh Rubin/Cool Hunting is a secondary connector, not the primary target for this traditional fine-art/collector concept."],"latestCommunication":{"direction":"outbound","sender":"Ioana Hall — Manager, Keegan Hall","date":"2026-09-11","summary":"Introduced Keegan in the context of Ferrari's 80th anniversary; established Jordan, Rory/Augusta National, charity and 800+ hour craftsmanship credibility; proposed an open-ended intersection around original art, Ferrari's collector/client world, exhibition or experience, and possible charitable component while explicitly avoiding a prescribed execution."},"supportingDocs":null},{"id":"ralph-lauren-60th-anniversary-20260911","name":"Ralph Lauren — 60th Anniversary Sport / Luxury / Legacy Collaboration","tier":"A","status":"warming","priority":"high","source":"outbound","opportunityType":"luxury-brand-collaboration","company":{"name":"Ralph Lauren","website":"https://www.ralphlauren.com/","location":"New York, New York, United States","description":"Global luxury lifestyle brand approaching its 60th anniversary; opportunity centered on sport, craftsmanship, heritage, iconic achievement, collector storytelling and potentially philanthropy."},"primaryContact":{"name":"David Lauren","title":"Vice Chairman and Chief Branding and Innovation Officer","email":"david.lauren@ralphlauren.com"},"lastOutreachAt":"2026-09-11T15:00:00.000Z","lastTouchType":"outbound-email","nextMove":"Await David Lauren's response; if no reply, send a concise follow-up centered on the 60-year milestone and the natural overlap between Keegan's work, sport, craftsmanship, heritage and iconic achievement","nextMoveDueAt":"2026-09-18T16:00:00.000Z","estimatedValue":null,"strategicValue":"Potential major luxury-brand collaboration with strong alignment to sport, celebrity, craftsmanship and legacy; could improve revenue, East Coast/NY collector access, cultural positioning, premium-brand credibility and charitable reach.","notes":["Ioana Hall sent the initial outreach from ioana@keeganhall.com on September 11, 2026. Keegan was intentionally not copied on the first email; Ioana opens and qualifies the opportunity before bringing Keegan into substantive creative discussions.","Primary lane is Ralph Lauren's 60th anniversary through sport, luxury, heritage, craftsmanship and iconic achievement. Do NOT frame Keegan through Design With Intent or culturally inclusive/underrepresented-community programming unless a genuine future concept independently warrants it.","David Lauren is the preferred target because his remit spans branding, innovation, global marketing, PR, advertising, digital content, brand communications and the Ralph Lauren Corporate Foundation.","Credibility used in outreach: Michael Jordan personally commissioned an original from Keegan and later helped facilitate another signed original through Upper Deck.","Credibility used in outreach: Keegan has an ongoing relationship with Rory McIlroy and his team across several originals and signed-edition projects. After Rory's Masters victory, Rory's team approached Keegan for a project in which Rory gifted the original to Augusta National and Rory and Keegan created an exclusive co-signed edition for Augusta National members.","Charity proof point used lightly: Keegan's work has helped raise more than $850,000 for charitable causes, which may become strategically relevant because David also leads the Ralph Lauren Corporate Foundation.","Keegan's most ambitious originals have exceeded 800 hours, supporting a luxury craftsmanship narrative rather than a conventional illustration/vendor pitch.","Do not manufacture a personal Ralph Lauren anecdote. The strongest authentic connection is conceptual: sport, greatness, American icons, heritage, obsessive craft and elevating culturally significant people and moments.","Do not over-prescribe execution. The goal is to learn what Ralph Lauren is already planning for the milestone and develop a collaboration that feels native to its brand world.","Follow-up cadence: first follow-up around September 18 if no response; second touch roughly 10-14 days later only with additional relevance or a fresh brand/sport trigger; after that pursue a warm introduction or alternate senior marketing/sports/partnership path rather than repeated cold outreach.","Potential executions if interest develops: original artwork, limited collector object, sport-led campaign or event activation, anniversary storytelling, private client experience, exhibition, or philanthropic component. These are option spaces, not a fixed proposal."],"latestCommunication":{"direction":"outbound","sender":"Ioana Hall — Manager, Keegan Hall","date":"2026-09-11","summary":"Introduced Keegan around Ralph Lauren's 60th anniversary; established Jordan, Rory/Augusta National, charity and 800+ hour craftsmanship credibility; framed the fit around sport, craftsmanship, heritage and iconic achievement; invited a conversation around Ralph Lauren's existing milestone plans rather than prescribing a concept."},"supportingDocs":null}]}}
+{
+  "timestamp": "2026-09-11T15:00:00.000Z",
+  "range": {
+    "preset": "30d",
+    "startDate": "2026-04-19",
+    "endDate": "2026-05-18"
+  },
+  "headerMetrics": [
+    {
+      "metricKey": "monthly_revenue",
+      "metricName": "Monthly revenue",
+      "category": "revenue",
+      "currentValue": 18250,
+      "targetValue": 10000,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "usd",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    },
+    {
+      "metricKey": "aov",
+      "metricName": "Average order value",
+      "category": "revenue",
+      "currentValue": 412,
+      "targetValue": 650,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "usd",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    },
+    {
+      "metricKey": "conversion_rate",
+      "metricName": "Conversion rate",
+      "category": "revenue",
+      "currentValue": 1.8,
+      "targetValue": 2.6,
+      "deltaPercent": null,
+      "status": "warning",
+      "unit": "percent",
+      "ownerAgent": null,
+      "measuredAt": "2026-05-18T00:00:00.000Z"
+    }
+  ],
+  "luxuryCollectibles": {
+    "premiumEdition": {
+      "targetSellThroughPercent": 85,
+      "actualSellThroughPercent": 62,
+      "timeToSell": {
+        "avgDaysCurrent": 18,
+        "avgDaysPrior": 24
+      }
+    },
+    "vipCollectors": {
+      "total": 14,
+      "growth30d": 3,
+      "retentionPercent": 92
+    },
+    "proofOfWork": {
+      "deliverablesCompletedPerWeek": 9,
+      "evidenceHealthPercent": 78
+    },
+    "institutionalPipeline": {
+      "activeOpportunities": 6,
+      "totalValueUsd": 125000
+    },
+    "pricingLadder": {
+      "floorPriceUsd": 450,
+      "avgSellingPriceUsd": 980
+    },
+    "pricingArchitecture": {
+      "tiers": [
+        { "tier": "Collector", "rangeUsd": { "min": 450, "max": 1200 } },
+        { "tier": "Patron", "rangeUsd": { "min": 1500, "max": 5000 } },
+        { "tier": "Institutional", "rangeUsd": { "min": 8000, "max": null } }
+      ]
+    },
+    "narrativeStats": {
+      "storyContentEngagementPercent": 6.4,
+      "antiAiStorytellingOutputsPerWeek": 4
+    }
+  },
+  "pipelinePanel": {
+    "collectors": [
+      {
+        "id": "seed-collector-1",
+        "name": "Collector A",
+        "tier": "A",
+        "status": "active",
+        "lastOutreachAt": "2026-05-10T18:22:00.000Z",
+        "nextMove": "Send updated collector edition deck",
+        "nextMoveDueAt": "2026-05-20T19:00:00.000Z",
+        "estimatedValue": 15000,
+        "supportingDocs": [
+          {
+            "label": "Notes",
+            "url": "https://example.com/collector-a"
+          }
+        ]
+      },
+      {
+        "id": "seed-collector-2",
+        "name": "Collector B",
+        "tier": "A",
+        "status": "warming",
+        "lastOutreachAt": "2026-05-04T17:10:00.000Z",
+        "nextMove": "Offer studio visit + private viewing",
+        "nextMoveDueAt": "2026-05-24T19:00:00.000Z",
+        "estimatedValue": 22000,
+        "supportingDocs": null
+      },
+      {
+        "id": "seed-collector-3",
+        "name": "Collector C",
+        "tier": "B",
+        "status": "stalled",
+        "lastOutreachAt": "2026-04-22T16:04:00.000Z",
+        "nextMove": "Follow up with new work-in-progress preview",
+        "nextMoveDueAt": "2026-05-22T19:00:00.000Z",
+        "estimatedValue": 8000,
+        "supportingDocs": null
+      },
+      {
+        "id": "collect-room-dubai-20260909",
+        "name": "The Collect Room — Dubai / GCC Retail Partnership",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "inbound",
+        "opportunityType": "retail-partnership",
+        "company": {
+          "name": "The Collect Room",
+          "website": "https://www.thecollectroom.com/",
+          "location": "Dubai, United Arab Emirates",
+          "store": "Dubai Hills Mall",
+          "description": "Premium sports memorabilia and collectibles retailer serving Dubai and the wider GCC collector market."
+        },
+        "primaryContact": {
+          "name": "Eaver",
+          "title": "Operation Head",
+          "email": null
+        },
+        "lastOutreachAt": "2026-09-09T13:45:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Eaver's response; if no reply, follow up on retail structure, initial assortment, collector profile and GCC collaboration opportunities",
+        "nextMoveDueAt": "2026-09-16T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential Dubai/GCC retail foothold plus access to regional athlete relationships, signed releases, originals and collaborative projects.",
+        "notes": [
+          "Inbound inquiry after Eaver saw Keegan's Muhammad Ali artwork.",
+          "The Collect Room wants to begin with a small selection of Keegan's work and explore a longer-term partnership if customer response is strong.",
+          "Interested categories include limited-edition prints, athlete-signed pieces and potentially original artwork.",
+          "Need to learn how The Collect Room normally structures partnerships: wholesale purchase, consignment or another model.",
+          "Some athlete-signed editions are tied to charitable fundraising with 100% of Keegan's proceeds donated, so those require a separate commercial structure.",
+          "Discovery questions: collector base, company/store scale, best-performing athletes and memorabilia categories, target quantities and intended initial launch size.",
+          "Expansion idea: leverage The Collect Room's athlete relationships in Dubai/GCC for original artwork, regional signings, special releases and collaborative projects."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana — Keegan Hall Studio",
+          "date": "2026-09-09",
+          "summary": "Confirmed strong interest in exploring the partnership; asked about desired assortment and partnership structure; explained that some athlete-signed editions are 100% charitable; requested information about collector base, strongest athlete/memorabilia categories and launch scale; raised potential originals, regional athlete relationships, signed editions, special releases and collaborative projects."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "ferrari-80th-anniversary-20260911",
+        "name": "Ferrari — 80th Anniversary Art / Collector Experience",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "luxury-brand-collaboration",
+        "company": {
+          "name": "Ferrari",
+          "website": "https://www.ferrari.com/",
+          "location": "Maranello, Italy",
+          "description": "Luxury automotive and lifestyle brand approaching its 80th anniversary in 2027; opportunity centered on craftsmanship, legacy, collectors, client experiences, exhibition and possible charitable activation."
+        },
+        "primaryContact": {
+          "name": "Maria Conti",
+          "title": "Chief Communication Officer",
+          "email": "maria.conti@ferrari.com"
+        },
+        "lastOutreachAt": "2026-09-11T15:00:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Maria Conti's response; if no reply, send a concise follow-up reinforcing the 80th-anniversary fit and offer a short conversation rather than a fixed proposal",
+        "nextMoveDueAt": "2026-09-18T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential flagship luxury collaboration with major prestige, global collector access, Ferrari client relationships, institutional visibility and premium revenue. Strong fit with Keegan's positioning around greatness, precision and obsessive craftsmanship.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com on September 11, 2026. Keegan was intentionally not copied on the first email; manager-led outreach preserves positioning and brings Keegan in once interest becomes substantive.",
+          "Primary concept is NOT an art-car or vehicle-painting collaboration. The stronger lane is an 80th-anniversary original artwork and/or collector, client, exhibition, experience or charitable activation tied to Ferrari's legacy.",
+          "Positioning: Ferrari's 80 years of excellence, precision, craftsmanship and legacy align naturally with Keegan's hyper-realistic graphite process and most ambitious originals exceeding 800 hours.",
+          "Credibility used in outreach: Michael Jordan personally commissioned an original from Keegan and later helped facilitate another signed original through Upper Deck.",
+          "Credibility used in outreach: Keegan has an ongoing relationship with Rory McIlroy and his team across several originals and signed-edition projects. After Rory's Masters victory, Rory's team approached Keegan for a project in which Rory gifted the original to Augusta National and Rory and Keegan created an exclusive co-signed edition for Augusta National members.",
+          "Charity proof point used lightly: Keegan's work has helped raise more than $850,000 for charitable causes, establishing optional philanthropic activation credibility without making the initial pitch a charity proposal.",
+          "Keegan studied art abroad in Rome while at the University of Washington and traveled throughout Italy. This is authentic personal context to use later in relationship-building, not a primary cold-email credibility point.",
+          "Do not over-prescribe execution. The strategy is to show a compelling fit and invite Ferrari to shape the concept around what it is already developing for the anniversary.",
+          "Follow-up cadence: first follow-up around September 18 if no response; second touch roughly 10-14 days later only if useful, ideally with a relevant Ferrari anniversary/client-experience trigger; after that prioritize a warm introduction or alternate Ferrari marketing/events/lifestyle path rather than repeated cold emails.",
+          "Potential alternate paths if Maria does not engage: senior Ferrari North America marketing/events leadership; Ferrari Lifestyle; a warm connector with direct Ferrari client/brand-event credibility. Josh Rubin/Cool Hunting is a secondary connector, not the primary target for this traditional fine-art/collector concept."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall",
+          "date": "2026-09-11",
+          "summary": "Introduced Keegan in the context of Ferrari's 80th anniversary; established Jordan, Rory/Augusta National, charity and 800+ hour craftsmanship credibility; proposed an open-ended intersection around original art, Ferrari's collector/client world, exhibition or experience, and possible charitable component while explicitly avoiding a prescribed execution."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "ralph-lauren-60th-anniversary-20260911",
+        "name": "Ralph Lauren — 60th Anniversary Sport / Luxury / Legacy Collaboration",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "luxury-brand-collaboration",
+        "company": {
+          "name": "Ralph Lauren",
+          "website": "https://www.ralphlauren.com/",
+          "location": "New York, New York, United States",
+          "description": "Global luxury lifestyle brand approaching its 60th anniversary; opportunity centered on sport, craftsmanship, heritage, iconic achievement, collector storytelling and potentially philanthropy."
+        },
+        "primaryContact": {
+          "name": "David Lauren",
+          "title": "Vice Chairman and Chief Branding and Innovation Officer",
+          "email": "david.lauren@ralphlauren.com"
+        },
+        "lastOutreachAt": "2026-09-11T15:00:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await David Lauren's response; if no reply, send a concise follow-up centered on the 60-year milestone and the natural overlap between Keegan's work, sport, craftsmanship, heritage and iconic achievement",
+        "nextMoveDueAt": "2026-09-18T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential major luxury-brand collaboration with strong alignment to sport, celebrity, craftsmanship and legacy; could improve revenue, East Coast/NY collector access, cultural positioning, premium-brand credibility and charitable reach.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com on September 11, 2026. Keegan was intentionally not copied on the first email; Ioana opens and qualifies the opportunity before bringing Keegan into substantive creative discussions.",
+          "Primary lane is Ralph Lauren's 60th anniversary through sport, luxury, heritage, craftsmanship and iconic achievement. Do NOT frame Keegan through Design With Intent or culturally inclusive/underrepresented-community programming unless a genuine future concept independently warrants it.",
+          "David Lauren is the preferred target because his remit spans branding, innovation, global marketing, PR, advertising, digital content, brand communications and the Ralph Lauren Corporate Foundation.",
+          "Credibility used in outreach: Michael Jordan personally commissioned an original from Keegan and later helped facilitate another signed original through Upper Deck.",
+          "Credibility used in outreach: Keegan has an ongoing relationship with Rory McIlroy and his team across several originals and signed-edition projects. After Rory's Masters victory, Rory's team approached Keegan for a project in which Rory gifted the original to Augusta National and Rory and Keegan created an exclusive co-signed edition for Augusta National members.",
+          "Charity proof point used lightly: Keegan's work has helped raise more than $850,000 for charitable causes, which may become strategically relevant because David also leads the Ralph Lauren Corporate Foundation.",
+          "Keegan's most ambitious originals have exceeded 800 hours, supporting a luxury craftsmanship narrative rather than a conventional illustration/vendor pitch.",
+          "Do not manufacture a personal Ralph Lauren anecdote. The strongest authentic connection is conceptual: sport, greatness, American icons, heritage, obsessive craft and elevating culturally significant people and moments.",
+          "Do not over-prescribe execution. The goal is to learn what Ralph Lauren is already planning for the milestone and develop a collaboration that feels native to its brand world.",
+          "Follow-up cadence: first follow-up around September 18 if no response; second touch roughly 10-14 days later only with additional relevance or a fresh brand/sport trigger; after that pursue a warm introduction or alternate senior marketing/sports/partnership path rather than repeated cold outreach.",
+          "Potential executions if interest develops: original artwork, limited collector object, sport-led campaign or event activation, anniversary storytelling, private client experience, exhibition, or philanthropic component. These are option spaces, not a fixed proposal."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall",
+          "date": "2026-09-11",
+          "summary": "Introduced Keegan around Ralph Lauren's 60th anniversary; established Jordan, Rory/Augusta National, charity and 800+ hour craftsmanship credibility; framed the fit around sport, craftsmanship, heritage and iconic achievement; invited a conversation around Ralph Lauren's existing milestone plans rather than prescribing a concept."
+        },
+        "supportingDocs": null
+      }
+    ]
+  }
+}
