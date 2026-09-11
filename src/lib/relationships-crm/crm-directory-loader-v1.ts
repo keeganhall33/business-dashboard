@@ -40,7 +40,8 @@ async function queryActiveCanonicalEntitiesV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient()
     .from("entities_v1")
     .select("entity_id,entity_type,canonical_name,resolution_status")
-    .eq("resolution_status", "active");
+    .eq("resolution_status", "active")
+    .in("entity_type", ["person", "organization"]);
 
   if (error) throw error;
   return data ?? [];
