@@ -1,6 +1,7 @@
 import { CrmDirectoryIndexV1 } from "@/components/relationships-crm/CrmDirectoryIndexV1";
-import { EMPTY_CRM_DIRECTORY_INDEX_V1 } from "@/lib/relationships-crm/crm-directory-index-v1";
+import { loadCrmDirectoryIndexV1 } from "@/lib/relationships-crm/crm-directory-loader-v1";
 
-export default function RelationshipCompaniesPage() {
-  return <CrmDirectoryIndexV1 index={EMPTY_CRM_DIRECTORY_INDEX_V1} mode="COMPANIES" />;
+export default async function RelationshipCompaniesPage() {
+  const index = await loadCrmDirectoryIndexV1();
+  return <CrmDirectoryIndexV1 index={index} mode="COMPANIES" />;
 }
