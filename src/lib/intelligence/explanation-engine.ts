@@ -9,6 +9,7 @@ import type {
 import { decomposeRevenue } from "./metric-decomposition";
 import { detectOutliers } from "./anomaly-detection";
 import { buildEvidenceTimeline } from "./evidence-timeline";
+import { buildRevenueExplanationWorkflowRunV1 } from "./workflow-graph/revenue-explanation-graph-v1";
 
 function confidenceFromScore(score: number): ExplanationConfidence {
   if (score >= 0.85) return "strongly_supported";
@@ -29,6 +30,13 @@ function buildMetricEvidence(id: string, label: string, source: ExplanationEvide
   return { id, label, source, kind: "metric", details };
 }
 
+function capDriverConfidence(driver: ExplanationDriver): void {
+  if (driver.confidence === "confirmed" || driver.confidence === "strongly_supported" || driver.confidence === "likely") {
+    driver.confidence = "possible";
+    driver.confidenceReasons.push("Workflow evidence integrity is unresolved; driver strength is capped at possible.");
+  }
+}
+
 export function explainRevenueChange(params: {
   metric: string;
   currentRange: { startDate: string; endDate: string };
@@ -42,6 +50,7 @@ export function explainRevenueChange(params: {
   const prevWoo = params.previous.commerceTelemetry?.woo?.summary ?? null;
   const currentGa = params.current.commerceTelemetry?.ga4?.summary ?? null;
   const prevGa = params.previous.commerceTelemetry?.ga4?.summary ?? null;
+  const currentMeta = params.current.metaAds?.summary ?? null;
 
   const currentRevenueCents = currentWoo?.revenue != null ? Math.round(currentWoo.revenue * 100) : null;
   const prevRevenueCents = prevWoo?.revenue != null ? Math.round(prevWoo.revenue * 100) : null;
@@ -70,6 +79,24 @@ export function explainRevenueChange(params: {
       previousSessions: prevSessions
     })
   ];
+  if (
+    currentMeta &&
+    params.current.metaAds?.status !== "FALLBACK" &&
+    params.current.metaAds?.status !== "BROKEN" &&
+    [currentMeta.spend, currentMeta.impressions, currentMeta.clicks, currentMeta.purchases, currentMeta.purchaseValue]
+      .some((value) => typeof value === "number" && Number.isFinite(value))
+  ) {
+    evidence.push(buildMetricEvidence("meta:delivery", "Meta delivery summary", "meta", {
+      spend: currentMeta.spend,
+      impressions: currentMeta.impressions,
+      clicks: currentMeta.clicks,
+      purchases: currentMeta.purchases,
+      purchaseValue: currentMeta.purchaseValue,
+      roas: currentMeta.roas,
+      generatedAt: params.current.metaAds?.generatedAt ?? null,
+      status: params.current.metaAds?.status ?? null
+    }));
+  }
 
   const missingSources: string[] = [];
   if (!currentWoo || currentRevenueCents == null) missingSources.push("woo");
@@ -233,6 +260,24 @@ export function explainRevenueChange(params: {
     missingSources
   });
 
+  const workflowRun = buildRevenueExplanationWorkflowRunV1({
+    metric: params.metric,
+    currentRange: params.currentRange,
+    comparisonRange: params.comparisonRange,
+    current: params.current,
+    previous: params.previous,
+    evidence,
+    allZeroWindow: isAllZeroWindow
+  });
+
+  if (workflowRun.state !== "COMPLETE" && explanation.confidence !== "insufficient_evidence") {
+    explanation.confidence = "possible";
+    explanation.confidence_reasons.push(`Workflow evidence integrity is ${workflowRun.state.toLowerCase()}; conclusions remain provisional.`);
+    if (explanation.primary_driver) capDriverConfidence(explanation.primary_driver);
+    explanation.contributing_drivers.forEach(capDriverConfidence);
+    explanation.counteracting_drivers.forEach(capDriverConfidence);
+  }
+
   return {
     ok: true,
     generatedAt: now,
@@ -242,6 +287,7 @@ export function explainRevenueChange(params: {
       window: params.currentRange,
       sources: timeline.sources,
       events: timeline.events
-    }
+    },
+    workflowRun
   };
 }

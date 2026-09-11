@@ -72,6 +72,51 @@ export type MetricExplanation = {
   evidence: ExplanationEvidenceItem[];
 };
 
+export type ExplainWorkflowRunNodeSummary = {
+  nodeId: string;
+  state: "ACCEPTED" | "MISSING" | "REJECTED";
+  truthState: "ABSENT" | "UNKNOWN" | "CURRENT" | "STALE" | "CONFLICTED";
+  evidenceCount: number;
+};
+
+export type ExplainWorkflowRunSummary = {
+  version: "REVENUE_EXPLANATION_WORKFLOW_RUN_V1";
+  graphId: string;
+  runId: string;
+  state: "COMPLETE" | "PARTIAL" | "DEGRADED" | "BLOCKED" | "FAILED";
+  expectedNodeCount: number;
+  acceptedNodeCount: number;
+  missingBranches: string[];
+  failedBranches: string[];
+  plannedWaves: Array<{ index: number; nodeIds: string[] }>;
+  observedTiming: {
+    state: "NOT_OBSERVED" | "PARTIAL" | "OBSERVED";
+    elapsedMs: number | null;
+  };
+  verifier: {
+    state: "PASSED" | "FAILED" | "UNKNOWN";
+    failedLenses: Array<"CORRECTNESS" | "FRESHNESS" | "SOURCE_SUPPORT">;
+  };
+  anchors: {
+    requiredCount: number;
+    passedCount: number;
+    rejectedCanonicalRefs: string[];
+    uniqueEvidenceIdentityCount: number;
+  };
+  evidenceCoverage: {
+    expectedSources: string[];
+    observedSources: string[];
+    missingSources: string[];
+    duplicateEvidenceCount: number;
+  };
+  budget: {
+    state: "WITHIN_BUDGET" | "UNKNOWN" | "EXCEEDED";
+    elapsedMs: number | null;
+    costUsd: number | null;
+  };
+  nodes: ExplainWorkflowRunNodeSummary[];
+};
+
 export type ExplainResponse = {
   ok: boolean;
   generatedAt: string;
@@ -89,4 +134,5 @@ export type ExplainResponse = {
       evidence: ExplanationEvidenceItem[];
     }>;
   };
+  workflowRun?: ExplainWorkflowRunSummary;
 };
