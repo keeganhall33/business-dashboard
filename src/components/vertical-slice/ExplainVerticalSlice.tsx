@@ -1,6 +1,7 @@
 import type { DashboardOverviewResponse, TrendComparison, TelemetryMetadata } from "@/lib/types/dashboard";
 import { VerticalSliceCard, Pill, DefinitionRow } from "./VerticalSliceCard";
 import { CausalExplanationPanel } from "./CausalExplanationPanel";
+import { WorkflowRunIntegrityPanelV1 } from "./WorkflowRunIntegrityPanelV1";
 import type { ExplainResponse } from "@/lib/intelligence/explanation-contract";
 
 function confidenceTone(value: string) {
@@ -63,6 +64,7 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
   return (
     <div className="space-y-6">
       <CausalExplanationPanel payload={explanation} />
+      <WorkflowRunIntegrityPanelV1 summary={explanation?.workflowRun ?? null} />
 
       <VerticalSliceCard
         title="Summary → Explanation"
