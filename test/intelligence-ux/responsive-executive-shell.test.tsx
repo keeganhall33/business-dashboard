@@ -40,13 +40,14 @@ test("persistent global and contextual Ask Jeeves controls share canonical class
   assert.equal(INTELLIGENCE_UX_SHELL_FIXTURE_V1.global_ask.memory_write_policy, "NO_WRITE_WITHOUT_CLASSIFICATION");
 });
 
-test("Decision Room shows written answer, evidence, and assumption drill-down", () => {
-  assert.match(html, /Written answer/);
-  assert.match(html, /The recommendation changes if a credible host/);
+test("Decision Room fails closed when the responsive fixture lacks canonical decision evidence", () => {
+  assert.match(html, /Decision evidence unavailable/);
+  assert.match(html, /No canonical decision record is available/);
   assert.match(html, /Evidence/);
-  assert.match(html, /Access path/);
+  assert.match(html, /Canonical decision evidence/);
   assert.match(html, /Assumptions/);
-  assert.match(html, /Direct economics/);
+  assert.match(html, /Canonical decision input required/);
+  assert.match(html, /L0_INSIGHT/);
   assert.match(html, /UNKNOWN/);
 });
 

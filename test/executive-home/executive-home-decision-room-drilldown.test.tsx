@@ -6,15 +6,17 @@ import { renderToString } from "react-dom/server";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
-import { EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1 } from "@/lib/executive-home/decision-room-drilldown";
 import { EXECUTIVE_HOME_FIXTURE_V1 } from "@/lib/executive-home/fixtures";
+import { getExecutiveHomeDecisionRoomDrilldownFixtureV1 } from "./support/decision-room-drilldown-fixture-adapter";
+
+const EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1 = getExecutiveHomeDecisionRoomDrilldownFixtureV1();
 
 function renderedText(renderer: TestRenderer.ReactTestRenderer): string {
   return JSON.stringify(renderer.toJSON());
 }
 
 test("Executive Home visibly links one recommendation to its Decision Room drill-down", () => {
-  const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+  const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
 
   assert.match(html, /Protect premium scarcity while choosing the next move/);
   assert.match(html, /Open Decision Room/);
@@ -28,7 +30,7 @@ test("Home recommendation opens Decision Room with grounded why evidence unknown
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
   });
 
   const root = renderer!.root;
@@ -57,7 +59,7 @@ test("grounded drill-down anchor also opens the Decision Room before navigation"
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
   });
 
   const root = renderer!.root;
@@ -72,42 +74,20 @@ test("grounded drill-down anchor also opens the Decision Room before navigation"
   assert.match(renderedText(renderer!), /Private collector room access validation/);
 });
 
-test("financial specialist card opens the same grounded Decision Room with truth context intact", () => {
-  let renderer: TestRenderer.ReactTestRenderer;
+test("fixture-backed specialist card is withheld from the production command center", () => {
+  const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
 
-  act(() => {
-    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
-  });
-
-  const root = renderer!.root;
-  const specialistLink = root.findAllByType("a").find((link) => link.children.includes("Review in Decision Room"));
-  assert.ok(specialistLink, "expected specialist Decision Room link");
-  assert.equal(specialistLink.props.href, "#decision-room-drilldown");
-
-  act(() => {
-    specialistLink.props.onClick();
-  });
-
-  const html = renderedText(renderer!);
-
-  assert.match(html, /Financial/);
-  assert.match(html, /WHAT_CHANGED/);
-  assert.match(html, /WHY_IT_MATTERS/);
-  assert.match(html, /EVIDENCE/);
-  assert.match(html, /NEXT_BEST_ACTION/);
-  assert.match(html, /L1_RECOMMENDATION/);
-  assert.match(html, /Private collector room access validation/);
-  assert.match(html, /Financial fixture: weak direct economics/);
-  assert.match(html, /CONFLICTED/);
-  assert.match(html, /UNKNOWN/);
-  assert.match(html, /Run the smallest access validation/);
-});
+  assert.match(html, /Specialist evidence unavailable/);
+  assert.match(html, /fixture conclusions are intentionally withheld/);
+  assert.doesNotMatch(html, /Review in Decision Room/);
+  assert.doesNotMatch(html, /Financial fixture: weak direct economics/);
+})
 
 test("contextual Ask Jeeves grounded follow-up answer survives the same Home to Decision Room flow", () => {
   let renderer: TestRenderer.ReactTestRenderer;
 
   act(() => {
-    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
+    renderer = TestRenderer.create(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
   });
 
   const openButton = renderer!.root.findAllByType("button").find((button) => button.children.includes("Open Decision Room"));

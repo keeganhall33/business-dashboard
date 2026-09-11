@@ -5,9 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { DecisionConversationPanel } from "./DecisionConversationPanel";
 import { buildDecisionConversationPanelViewModelV1 } from "./DecisionConversationViewModel";
+import { CONVERSATIONAL_DECISION_FIXTURE_V1 } from "@/lib/conversational-decision/fixtures";
 
 test("DecisionConversationPanel renders light read-only fixture state and canonical voice transcript mode", () => {
   const viewModel = buildDecisionConversationPanelViewModelV1({
+    fixture: CONVERSATIONAL_DECISION_FIXTURE_V1,
     mode: "VOICE_TRANSCRIPT",
     turnId: "turn-grounded-why"
   });

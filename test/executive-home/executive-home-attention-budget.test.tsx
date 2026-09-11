@@ -15,6 +15,7 @@ import {
   type ExecutiveHomeFixtureV1,
   type ExecutiveIntelligenceCardV1
 } from "@/lib/executive-home/fixtures";
+import { getExecutiveHomeDecisionRoomDrilldownFixtureV1 } from "./support/decision-room-drilldown-fixture-adapter";
 
 function cloneCard(
   base: ExecutiveIntelligenceCardV1,
@@ -64,7 +65,8 @@ function buildAttentionFixture(): ExecutiveHomeFixtureV1 {
 }
 
 const attentionFixture = buildAttentionFixture();
-const html = renderToString(<ExecutiveHomeShell data={attentionFixture} />);
+const decisionRoomFixture = getExecutiveHomeDecisionRoomDrilldownFixtureV1();
+const html = renderToString(<ExecutiveHomeShell data={attentionFixture} decisionRoom={decisionRoomFixture} />);
 
 test("Executive Home caps every section at four cards by default while preserving the full count", () => {
   assert.equal(EXECUTIVE_HOME_SECTION_DEFAULT_LIMIT, 4);

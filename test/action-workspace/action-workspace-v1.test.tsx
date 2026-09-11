@@ -22,30 +22,15 @@ test("one command-center recommendation links to the approval-ready action works
   assert.match(html, /href="\/action-workspace"/);
 });
 
-test("action workspace route renders all required decision context in light mode", () => {
-  const html = renderToString(<ActionWorkspacePage />);
-
-  for (const label of [
-    "OBJECTIVE",
-    "WHY_NOW",
-    "EXPECTED_UPSIDE",
-    "RISK",
-    "NEXT_ACTION",
-    "SUCCESS_METRIC",
-    "EVIDENCE",
-    "CONFIDENCE / UNKNOWN",
-    "OWNER",
-    "APPROVAL_CLASS",
-    "EVALUATION_DATE",
-    "DEPENDENCIES"
-  ]) {
-    assert.match(html, new RegExp(label.replace("/", "\\/")));
-  }
-
-  assert.match(html, /Approval-ready action workspace/);
-  assert.match(html, /bg-\[#f8f4ec\]/);
-  assert.match(html, /lg:grid-cols-3/);
-  assert.doesNotMatch(html, /bg-black|bg-zinc-950|bg-slate-950/);
+test("action workspace route redirects to the canonical persisted Action Center", () => {
+  assert.throws(
+    () => ActionWorkspacePage(),
+    (error: unknown) => {
+      if (!error || typeof error !== "object" || !("digest" in error)) return false;
+      const digest = String((error as { digest: unknown }).digest);
+      return digest.startsWith("NEXT_REDIRECT;") && digest.includes(";/act;");
+    }
+  );
 });
 
 test("demo approval controls are non-mutating fixture interactions", () => {

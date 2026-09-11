@@ -10,10 +10,10 @@ import { EXECUTIVE_HOME_FIXTURE_V1 } from "@/lib/executive-home/fixtures";
 import {
   getSpecialistCapabilityStatusV1,
   getSpecialistCommandCenterCardsForModeV1,
-  getSpecialistCommandCenterCardsV1,
   getProductionSpecialistCommandCenterCardsV1,
   type SpecialistProductionInputV1
 } from "@/lib/executive-home/specialist-command-center";
+import { getSpecialistCommandCenterCardsFixtureV1 } from "./support/specialist-command-center-fixture-adapter";
 
 test("production command center withholds fixture-backed specialist conclusions when live input is absent", () => {
   const html = renderToString(
@@ -34,19 +34,20 @@ test("production command center withholds fixture-backed specialist conclusions 
   assert.doesNotMatch(html, /Review in Decision Room/);
 });
 
-test("fixture specialist generation is deterministic only through the explicit fixture mode", () => {
-  const first = getSpecialistCommandCenterCardsForModeV1("FIXTURE");
-  const second = getSpecialistCommandCenterCardsForModeV1("FIXTURE");
+test("fixture specialist generation remains deterministic only in test support", () => {
+  const first = getSpecialistCommandCenterCardsFixtureV1();
+  const second = getSpecialistCommandCenterCardsFixtureV1();
 
   assert.deepEqual(first, second);
   assert.deepEqual(first.map((card) => card.id), ["financial", "goals-capacity", "relationships"]);
   assert.ok(first.every((card) => card.source_mode === "FIXTURE"));
+  assert.deepEqual(getSpecialistCommandCenterCardsForModeV1("FIXTURE"), []);
   assert.deepEqual(getSpecialistCommandCenterCardsForModeV1("PRODUCTION"), []);
   assert.deepEqual(getProductionSpecialistCommandCenterCardsV1(), []);
 });
 
 test("explicit production input preserves unknown stale and conflicted truth without fixture substitution", () => {
-  const [financial, goals, relationships] = getSpecialistCommandCenterCardsV1();
+  const [financial, goals, relationships] = getSpecialistCommandCenterCardsFixtureV1();
   const productionInput: SpecialistProductionInputV1 = {
     source_mode: "PRODUCTION",
     cards: [
