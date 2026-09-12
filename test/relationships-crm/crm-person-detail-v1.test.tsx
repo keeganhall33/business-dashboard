@@ -135,11 +135,13 @@ test("resolver returns exact supplied record and fails honestly for unsupported 
   assert.equal(resolveCrmPersonDetailV1(index, ""), null);
 });
 
-test("production dynamic route remains fail-closed until a canonical CRM loader supplies verified people", () => {
+test("production dynamic route loads the canonical directory and remains fail-closed", () => {
   const source = readFileSync("src/app/(app)/relationships/people/[id]/page.tsx", "utf8");
 
-  assert.match(source, /EMPTY_CRM_DIRECTORY_INDEX_V1/);
+  assert.match(source, /loadCrmDirectoryIndexV1/);
+  assert.match(source, /await loadCrmDirectoryIndexV1\(\)/);
   assert.match(source, /resolveCrmPersonDetailV1/);
   assert.match(source, /notFound\(\)/);
+  assert.doesNotMatch(source, /EMPTY_CRM_DIRECTORY_INDEX_V1/);
   assert.doesNotMatch(source, /Brian Lee|Arena Club|Pentel|Michael Jordan/);
 });
