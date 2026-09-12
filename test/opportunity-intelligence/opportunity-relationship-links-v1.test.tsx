@@ -151,7 +151,7 @@ test("opportunity detail renders compact supported relationship links and withho
   assert.match(html, /Evidence-supported CRM context/);
   assert.match(html, /href="\/relationships\/people\/person-michelle"/);
   assert.match(html, /href="\/relationships\/companies\/company-public-school"/);
-  assert.match(html, /1 relationship link withheld pending verification/);
+  assert.match(html, /1(?:<!-- -->)? relationship link(?:<!-- -->)? withheld pending verification/);
   assert.doesNotMatch(html, /href="\/relationships\/people\/person-unverified"/);
 });
 
