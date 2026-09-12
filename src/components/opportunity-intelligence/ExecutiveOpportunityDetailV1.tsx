@@ -4,6 +4,11 @@ import type {
   ExecutiveCommandCenterOpportunityV1,
   ExecutiveCommandCenterTruthStateV1
 } from "@/lib/executive-home/fixtures";
+import {
+  projectOpportunityRelationshipLinksV1,
+  type OpportunityRelationshipEvidenceV1,
+  type OpportunityRelationshipLinksV1
+} from "@/lib/opportunity-intelligence/opportunity-relationship-links-v1";
 
 const EVIDENCE_TONE: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -17,10 +22,12 @@ export type ExecutiveOpportunityDetailViewV1 = {
   opportunity: ExecutiveCommandCenterOpportunityV1;
   verificationRequired: boolean;
   unknowns: string[];
+  relatedRelationships: OpportunityRelationshipLinksV1;
 };
 
 export function buildExecutiveOpportunityDetailViewV1(
-  opportunity: ExecutiveCommandCenterOpportunityV1
+  opportunity: ExecutiveCommandCenterOpportunityV1,
+  relationshipEvidence: readonly OpportunityRelationshipEvidenceV1[] | null = null
 ): ExecutiveOpportunityDetailViewV1 {
   const unknowns: string[] = [];
   const fields: Array<[string, string]> = [
@@ -46,21 +53,32 @@ export function buildExecutiveOpportunityDetailViewV1(
     unknowns.push("Evidence is INFERRED and should be verified before irreversible action.");
   }
 
+  const relatedRelationships = projectOpportunityRelationshipLinksV1({
+    opportunityId: opportunity.id,
+    evidence: relationshipEvidence
+  });
+
   return {
     opportunity,
-    verificationRequired: opportunity.evidence !== "KNOWN" || unknowns.length > 0,
-    unknowns
+    verificationRequired:
+      opportunity.evidence !== "KNOWN" ||
+      unknowns.length > 0 ||
+      relatedRelationships.verificationRequired,
+    unknowns,
+    relatedRelationships
   };
 }
 
 export function ExecutiveOpportunityDetailV1({
   opportunity,
-  generatedAt
+  generatedAt,
+  relationshipEvidence = null
 }: {
   opportunity: ExecutiveCommandCenterOpportunityV1;
   generatedAt?: string | null;
+  relationshipEvidence?: readonly OpportunityRelationshipEvidenceV1[] | null;
 }) {
-  const view = buildExecutiveOpportunityDetailViewV1(opportunity);
+  const view = buildExecutiveOpportunityDetailViewV1(opportunity, relationshipEvidence);
 
   return (
     <main className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8" data-testid="executive-opportunity-detail-v1">
@@ -114,6 +132,37 @@ export function ExecutiveOpportunityDetailV1({
             )}
           </div>
         </section>
+
+        {view.relatedRelationships.links.length > 0 ? (
+          <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm" data-testid="opportunity-related-relationships-v1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Related relationships</p>
+                <h2 className="mt-1 text-xl font-semibold text-stone-950">Evidence-supported CRM context</h2>
+              </div>
+              {view.relatedRelationships.withheld.length > 0 ? (
+                <p className="text-xs font-medium text-amber-800">
+                  {view.relatedRelationships.withheld.length} relationship link{view.relatedRelationships.withheld.length === 1 ? "" : "s"} withheld pending verification.
+                </p>
+              ) : null}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {view.relatedRelationships.links.map((relationship) => (
+                <Link
+                  key={`${relationship.entityType}:${relationship.canonicalId}`}
+                  href={relationship.href}
+                  className="rounded-2xl border border-stone-200 bg-[#fffdf8] p-4 transition hover:border-stone-400"
+                >
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    {relationship.entityType === "PERSON" ? "Person" : "Company"}
+                  </span>
+                  <span className="mt-1 block text-base font-semibold text-stone-950">{relationship.label}</span>
+                  <span className="mt-2 block text-sm text-stone-600">Open canonical CRM record</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <details className="rounded-3xl border border-stone-200 bg-[#fffdf8] shadow-sm">
           <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-stone-900">Evidence and secondary context</summary>
