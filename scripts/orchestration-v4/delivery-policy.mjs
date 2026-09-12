@@ -90,6 +90,20 @@ function isDependencyComplete(taskById, dependencyId) {
   return taskById.get(dependencyId)?.state === 'COMPLETE';
 }
 
+function hasVerifiedProductionEvidence(task) {
+  if (task?.state !== 'COMPLETE') return false;
+  try {
+    const result = JSON.parse(task.result_json || '{}');
+    const proof = result?.productionVerification;
+    return proof?.verified === true
+      && proof.taskId === task.task_id
+      && proof.issueNumber === task.issue_number
+      && proof.contractVersion === 'PRODUCTION_VERIFICATION_V1';
+  } catch {
+    return false;
+  }
+}
+
 export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = 5 } = {}) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
   const active = tasks.filter((task) => ACTIVE_STATES.has(task.state));
@@ -142,13 +156,35 @@ export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecut
   return Object.freeze({ selected, deferred, activeSliceIds: [...admittedSlices].sort() });
 }
 
-export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString()) {
+export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(), correctionAttempts = []) {
+  const correctionsByTask = new Map();
+  for (const correction of correctionAttempts) {
+    const rows = correctionsByTask.get(correction.task_id) || [];
+    rows.push(correction);
+    correctionsByTask.set(correction.task_id, rows);
+  }
   const slices = new Map();
   for (const task of tasks) {
     const metadata = deliveryMetadata(getTaskContract(task));
     if (!metadata.sliceId) continue;
     const current = slices.get(metadata.sliceId) || { sliceId: metadata.sliceId, outcome: metadata.outcome, tasks: [] };
-    current.tasks.push({ taskId: task.task_id, issueNumber: task.issue_number, stage: metadata.stage, state: task.state });
+    const corrections = correctionsByTask.get(task.task_id) || [];
+    const latestCorrection = corrections.at(-1) || null;
+    const unresolvedStall = ACTIVE_STATES.has(task.state)
+      && latestCorrection?.reason === 'SEMANTIC_PROGRESS_STALL'
+      && (timestamp(task.semantic_progress_at) ?? 0) <= (timestamp(latestCorrection.created_at) ?? 0);
+    current.tasks.push({
+      taskId: task.task_id,
+      issueNumber: task.issue_number,
+      stage: metadata.stage,
+      state: task.state,
+      semanticProgressSeq: task.semantic_progress_seq ?? 0,
+      lastSemanticProgressAt: task.semantic_progress_at ?? null,
+      correctionAttempts: corrections.length,
+      lastCorrectionReason: latestCorrection?.reason ?? null,
+      lastCorrectionAt: latestCorrection?.created_at ?? null,
+      recoveryState: unresolvedStall ? 'STALLED_RETRYING' : null,
+    });
     if (!current.outcome && metadata.outcome) current.outcome = metadata.outcome;
     slices.set(metadata.sliceId, current);
   }
@@ -160,11 +196,16 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       return [stage, stageTask?.state ?? null];
     }));
     const latestVerification = latestTask(sourceTasks.filter((task) => deliveryMetadata(getTaskContract(task)).stage === 'PRODUCTION_VERIFICATION'));
-    const verified = latestVerification?.state === 'COMPLETE';
+    const verificationComplete = latestVerification?.state === 'COMPLETE';
+    const verified = hasVerifiedProductionEvidence(latestVerification);
+    const evidenceMissing = verificationComplete && !verified;
     const launchPolicy = metadata.launchPolicy || 'UNSPECIFIED';
     const operational = verified && launchPolicy === 'IMMEDIATE_AFTER_VERIFICATION';
     const blockedTasks = Object.values(stageStates).filter((state) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(state)).length;
     const hasActiveWork = slice.tasks.some((task) => task.state === 'READY' || ACTIVE_STATES.has(task.state));
+    const stalledTasks = slice.tasks.filter((task) => task.recoveryState === 'STALLED_RETRYING').length;
+    const correctionAttempts = slice.tasks.reduce((sum, task) => sum + task.correctionAttempts, 0);
+    const latestBlockedTask = latestTask(sourceTasks.filter((task) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(task.state)));
     const startedAtMs = Math.min(...sourceTasks.map((task) => timestamp(task.created_at)).filter((value) => value !== null));
     const availableAtMs = operational ? (timestamp(latestVerification.updated_at) ?? timestamp(latestVerification.created_at)) : null;
     const cycleTimeHours = availableAtMs !== null && Number.isFinite(startedAtMs)
@@ -172,6 +213,8 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       : null;
     const launchState = operational ? 'AVAILABLE'
       : verified && launchPolicy === 'BUNDLED_ONLY' ? 'VERIFIED_HELD'
+        : evidenceMissing ? 'EVIDENCE_MISSING'
+        : stalledTasks > 0 ? 'RECOVERING'
         : latestVerification && (latestVerification.state === 'READY' || ACTIVE_STATES.has(latestVerification.state)) ? 'VERIFYING'
           : stageStates.INTEGRATION === 'COMPLETE' ? 'AWAITING_PRODUCTION_VERIFICATION'
             : blockedTasks > 0 ? 'BLOCKED'
@@ -189,7 +232,10 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       availableAt: availableAtMs === null ? null : new Date(availableAtMs).toISOString(),
       cycleTimeHours,
       blockedTasks,
-      status: operational ? 'OPERATIONAL' : blockedTasks > 0 ? 'BLOCKED' : hasActiveWork ? 'ACTIVE' : 'STALLED',
+      stalledTasks,
+      correctionAttempts,
+      blockerReason: evidenceMissing ? 'PRODUCTION_EVIDENCE_NOT_VERIFIED' : latestBlockedTask?.terminal_reason ?? null,
+      status: operational ? 'OPERATIONAL' : evidenceMissing || blockedTasks > 0 ? 'BLOCKED' : stalledTasks > 0 ? 'RECOVERING' : hasActiveWork ? 'ACTIVE' : 'PLANNED',
     };
   }).sort((a, b) => a.sliceId.localeCompare(b.sliceId));
   const releases = [...new Set(rows.map((row) => row.releaseTarget))].sort().map((releaseTarget) => {
@@ -208,10 +254,10 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
   return Object.freeze({
     contractVersion: 'delivery_health_v1',
     generatedAt,
-    activeSlices: rows.filter((slice) => slice.status === 'ACTIVE').length,
+    activeSlices: rows.filter((slice) => slice.status === 'ACTIVE' || slice.status === 'RECOVERING').length,
     operationalSlices: rows.filter((slice) => slice.operational).length,
-    blockedSlices: rows.filter((slice) => slice.blockedTasks > 0 && !slice.operational).length,
-    stalledSlices: rows.filter((slice) => slice.status === 'STALLED').length,
+    blockedSlices: rows.filter((slice) => slice.status === 'BLOCKED').length,
+    stalledSlices: rows.filter((slice) => slice.stalledTasks > 0).length,
     availableFeatures: rows.filter((slice) => slice.launchState === 'AVAILABLE').length,
     verifiedHeldFeatures: rows.filter((slice) => slice.launchState === 'VERIFIED_HELD').length,
     throughputLast7Days: rows.filter((slice) => slice.availableAt && generatedAtMs - timestamp(slice.availableAt) <= 7 * 86_400_000).length,

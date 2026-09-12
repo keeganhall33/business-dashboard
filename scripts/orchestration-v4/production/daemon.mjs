@@ -31,6 +31,11 @@ export function taskMutationMode(task) {
   return validateAgentMutationMode(match[1]);
 }
 
+export function taskAttemptLimit(task) {
+  const value = getTaskContract(task)?.maxAttempts;
+  return Number.isInteger(value) && value >= 1 ? value : 3;
+}
+
 export function buildCorrectionAgentAttempt({ packet, command, args, createState = createEphemeralAgentState, retainState = () => {} }) {
   const prompt = `${args[1]}\n\n${correctionPrompt(packet)}`;
   if (correctionMutationMode(packet) !== CORRECTION_MUTATION_MODES.SHELL_ONLY) {
@@ -90,6 +95,15 @@ export function promptForTask(task) {
     'Optimize for the stated user outcome and end-to-end flow, not merely file completion.',
     'A task is coded when its acceptance passes; a slice is operational only after its PRODUCTION_VERIFICATION stage passes.',
     'A production-verified feature with IMMEDIATE_AFTER_VERIFICATION launches independently. Do not hold it for the full version milestone.',
+    ...(deliveryMetadata(contract).stage === 'PRODUCTION_VERIFICATION' ? [
+      '',
+      'Production verification completion is fail-closed and requires a machine-readable evidence artifact.',
+      'Only after the live verification and every required safety check pass, write `.openclaw/tmp/production-verification-v1.json` with this exact schema:',
+      '{"contractVersion":"PRODUCTION_VERIFICATION_V1","taskId":"TASK_ID","issueNumber":ISSUE_NUMBER,"verdict":"PASS","observedAt":"ISO_8601","liveExecution":true,"repositoryClean":true,"privacySafe":true,"externalMutation":false,"checks":[{"id":"NON_SECRET_CHECK_ID","passed":true}],"telemetry":{"NON_SECRET_METRIC":0}}',
+      'Use the current task id and issue number. Include only redacted aggregate telemetry and non-secret check identifiers.',
+      'Never write the artifact when the live command was skipped, blocked, failed, partial, timed out, or lacked required proof.',
+      'Never include credentials, addresses, subjects, message identifiers, bodies, attachment bytes, secret references, tokens, or raw provider errors.',
+    ] : []),
   ].join('\n');
 }
 
@@ -200,7 +214,7 @@ export async function runProductionPoll({
           args,
           retainState: (correctionState) => ephemeral.push(correctionState),
         }),
-        maxCorrectionAttempts: 3,
+        maxCorrectionAttempts: taskAttemptLimit(task),
       };
     }
 

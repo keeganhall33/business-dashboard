@@ -5,9 +5,10 @@ import { buildDeliveryHealth, selectDeliveryReadyTasks } from './delivery-policy
 
 export function createDeliveryReport(db, generatedAt = new Date().toISOString()) {
   const tasks = listTasks(db);
+  const correctionAttempts = db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all();
   const selection = selectDeliveryReadyTasks(tasks);
   return Object.freeze({
-    ...buildDeliveryHealth(tasks, generatedAt),
+    ...buildDeliveryHealth(tasks, generatedAt, correctionAttempts),
     readyNow: selection.selected.map((task) => task.task_id),
     deferred: selection.deferred,
     wip: {

@@ -1,10 +1,15 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { taskBranchName } from '../disposable-workspace.mjs';
 import { getTaskContract } from '../state-store/sqlite-store.mjs';
 import { runRequiredQualityGates } from '../quality-gates.mjs';
 import { deliveryMetadata } from '../delivery-policy.mjs';
+
+export const PRODUCTION_VERIFICATION_ARTIFACT = '.openclaw/tmp/production-verification-v1.json';
+const PRODUCTION_VERIFICATION_VERSION = 'PRODUCTION_VERIFICATION_V1';
+const MAX_PRODUCTION_EVIDENCE_BYTES = 64 * 1024;
 
 function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
@@ -139,9 +144,107 @@ export function collectZeroMutationDiagnostics({ workspacePath, fileOwnership = 
   };
 }
 
+function isPlainObject(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function containsSensitiveEvidence(value) {
+  const serialized = JSON.stringify(value);
+  if (/op:\/\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(serialized)) return true;
+  const forbiddenKey = /(password|secret|token|credential|emailAddress|messageId|subject|bodyText|attachmentBytes)/i;
+  const stack = [value];
+  while (stack.length) {
+    const current = stack.pop();
+    if (Array.isArray(current)) {
+      stack.push(...current);
+      continue;
+    }
+    if (!isPlainObject(current)) continue;
+    for (const [key, nested] of Object.entries(current)) {
+      if (forbiddenKey.test(key)) return true;
+      if (nested && typeof nested === 'object') stack.push(nested);
+    }
+  }
+  return false;
+}
+
+export function validateProductionVerificationArtifact({ task, workspacePath }) {
+  const artifactPath = path.resolve(workspacePath, PRODUCTION_VERIFICATION_ARTIFACT);
+  if (!artifactPath.startsWith(`${path.resolve(workspacePath)}${path.sep}`)) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_PATH_INVALID' };
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(artifactPath, 'utf8');
+  } catch {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_MISSING' };
+  }
+  if (!raw || Buffer.byteLength(raw, 'utf8') > MAX_PRODUCTION_EVIDENCE_BYTES) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_SIZE_INVALID' };
+  }
+  let evidence;
+  try {
+    evidence = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_JSON_INVALID' };
+  }
+  if (!isPlainObject(evidence)
+    || evidence.contractVersion !== PRODUCTION_VERIFICATION_VERSION
+    || evidence.taskId !== task.task_id
+    || evidence.issueNumber !== task.issue_number
+    || evidence.verdict !== 'PASS') {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_IDENTITY_INVALID' };
+  }
+  if (!Number.isFinite(Date.parse(String(evidence.observedAt || '')))) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_TIMESTAMP_INVALID' };
+  }
+  if (evidence.liveExecution !== true
+    || evidence.repositoryClean !== true
+    || evidence.privacySafe !== true
+    || evidence.externalMutation !== false) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_ASSERTIONS_INVALID' };
+  }
+  if (!Array.isArray(evidence.checks)
+    || evidence.checks.length === 0
+    || evidence.checks.some((check) => !isPlainObject(check) || typeof check.id !== 'string' || !check.id.trim() || check.passed !== true)) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_CHECKS_INVALID' };
+  }
+  if (!isPlainObject(evidence.telemetry) || Object.keys(evidence.telemetry).length === 0) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_TELEMETRY_MISSING' };
+  }
+  if (containsSensitiveEvidence(evidence)) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_PRIVACY_VIOLATION' };
+  }
+  const unexpectedMutations = mutationPaths(workspacePath).filter((relativePath) => relativePath !== PRODUCTION_VERIFICATION_ARTIFACT);
+  if (unexpectedMutations.length > 0) {
+    return { ok: false, reason: 'V4_PRODUCTION_EVIDENCE_REPOSITORY_MUTATED', unexpectedMutations };
+  }
+  return {
+    ok: true,
+    productionVerification: {
+      verified: true,
+      contractVersion: evidence.contractVersion,
+      taskId: evidence.taskId,
+      issueNumber: evidence.issueNumber,
+      observedAt: evidence.observedAt,
+      assertionIds: evidence.checks.map((check) => check.id),
+      telemetryKeys: Object.keys(evidence.telemetry).sort(),
+      artifactSha256: crypto.createHash('sha256').update(raw).digest('hex'),
+    },
+  };
+}
+
 export function publishImplementationResult({ task, workspace, repoFullName, gh = 'gh' }) {
   const contract = getTaskContract(task);
   if (contract?.taskMutability !== 'IMPLEMENTATION_MUTATION_REQUIRED') {
+    const delivery = deliveryMetadata(contract);
+    if (delivery.stage === 'PRODUCTION_VERIFICATION') {
+      const verified = validateProductionVerificationArtifact({ task, workspacePath: workspace.workspacePath });
+      if (!verified.ok) return verified;
+      return { ok: true, publicationRequired: false, ...verified };
+    }
     return { ok: true, publicationRequired: false };
   }
 

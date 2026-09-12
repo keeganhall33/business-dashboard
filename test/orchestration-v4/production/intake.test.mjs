@@ -6,7 +6,7 @@ import path from 'node:path';
 import { openV4StateStore, getTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { importReadyIssues } from '../../../scripts/orchestration-v4/production/github-intake.mjs';
 import { parseTaskContract, validateTaskContract } from '../../../scripts/orchestration-v4/production/task-contract.mjs';
-import { promptForTask } from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import { promptForTask, taskAttemptLimit } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 
 function issue(number, overrides = {}) {
   return {
@@ -155,6 +155,22 @@ Current-run test output.`,
     assert.match(prompt, /Success metric: The top move is deterministic/);
     assert.match(prompt, /Verification owner: INDEPENDENT/);
     assert.match(prompt, /Never treat your own confidence as verification/);
+  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('task-specific attempt ceilings are parsed and enforced by the production runner', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-attempt-limit-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    const bounded = issue(53, { body: `${issue(53).body}\n**max_attempts:** 1` });
+    const imported = importReadyIssues({ db, issues: [bounded], baseSha: 'f'.repeat(40) });
+    assert.equal(imported.imported.length, 1);
+    assert.equal(imported.imported[0].maxAttempts, 1);
+    assert.equal(taskAttemptLimit(getTask(db, 'task-53')), 1);
+
+    const invalid = validateTaskContract(issue(54, { body: `${issue(54).body}\n**max_attempts:** 0` }));
+    assert.equal(invalid.ok, false);
+    assert.ok(invalid.errors.includes('MAX_ATTEMPTS_INVALID'));
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 

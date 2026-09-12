@@ -18,18 +18,48 @@ function task(id, overrides = {}) {
     rollbackCondition: 'Rollback on production verification failure.',
     ...overrides.contract,
   };
+  const issueNumber = overrides.issue_number || Number(id.replace(/\D/g, '')) || 1;
+  const state = overrides.state || 'READY';
+  const resultJson = Object.hasOwn(overrides, 'result_json')
+    ? overrides.result_json
+    : state === 'COMPLETE' && contract.sliceStage === 'PRODUCTION_VERIFICATION'
+      ? JSON.stringify({
+        productionVerification: {
+          verified: true,
+          contractVersion: 'PRODUCTION_VERIFICATION_V1',
+          taskId: id,
+          issueNumber,
+        },
+      })
+      : null;
   return {
     task_id: id,
-    issue_number: Number(id.replace(/\D/g, '')) || 1,
+    issue_number: issueNumber,
     stream: 'CORE_INTELLIGENCE',
-    state: 'READY',
+    state,
     created_at: '2026-09-12T00:00:00.000Z',
     updated_at: '2026-09-12T00:00:00.000Z',
     contract_json: JSON.stringify(contract),
     ...overrides,
+    result_json: resultJson,
     contract_json: JSON.stringify(contract),
   };
 }
+
+test('completed production verification without machine evidence fails closed', () => {
+  const report = buildDeliveryHealth([
+    task('verify-44', {
+      state: 'COMPLETE',
+      result_json: JSON.stringify({ execution: { status: 'COMPLETE', code: 0 } }),
+      contract: { sliceId: 'email-proof', sliceStage: 'PRODUCTION_VERIFICATION' },
+    }),
+  ]);
+  assert.equal(report.operationalSlices, 0);
+  assert.equal(report.availableFeatures, 0);
+  assert.equal(report.blockedSlices, 1);
+  assert.equal(report.slices[0].launchState, 'EVIDENCE_MISSING');
+  assert.equal(report.slices[0].blockerReason, 'PRODUCTION_EVIDENCE_NOT_VERIFIED');
+});
 
 test('delivery selection prioritizes outcomes, honors dependencies, and caps active slices', () => {
   const tasks = [
@@ -94,6 +124,41 @@ test('latest production verification supersedes an older failed attempt', () => 
     task('verify-31', { state: 'COMPLETE', updated_at: '2026-09-12T00:00:00.000Z', contract: { sliceId: 'retry', sliceStage: 'PRODUCTION_VERIFICATION' } }),
   ]);
   assert.equal(health.slices[0].launchState, 'AVAILABLE');
+});
+
+test('delivery health exposes unresolved semantic stalls and retry diagnostics', () => {
+  const health = buildDeliveryHealth([
+    task('verify-40', {
+      state: 'RUNNING',
+      semantic_progress_seq: 2,
+      semantic_progress_at: '2026-09-12T18:04:43.000Z',
+      contract: { sliceId: 'email', sliceStage: 'PRODUCTION_VERIFICATION' },
+    }),
+  ], '2026-09-12T18:44:00.000Z', [{
+    task_id: 'verify-40',
+    attempt: 2,
+    reason: 'SEMANTIC_PROGRESS_STALL',
+    created_at: '2026-09-12T18:34:43.000Z',
+  }]);
+
+  assert.equal(health.stalledSlices, 1);
+  assert.equal(health.activeSlices, 1);
+  assert.equal(health.slices[0].launchState, 'RECOVERING');
+  assert.equal(health.slices[0].status, 'RECOVERING');
+  assert.equal(health.slices[0].correctionAttempts, 1);
+  assert.equal(health.slices[0].tasks[0].recoveryState, 'STALLED_RETRYING');
+});
+
+test('delivery health exposes terminal blocker reasons', () => {
+  const health = buildDeliveryHealth([
+    task('verify-41', {
+      state: 'BLOCKED',
+      terminal_reason: 'REPLAN_REQUIRED',
+      contract: { sliceId: 'email', sliceStage: 'PRODUCTION_VERIFICATION' },
+    }),
+  ]);
+  assert.equal(health.blockedSlices, 1);
+  assert.equal(health.slices[0].blockerReason, 'REPLAN_REQUIRED');
 });
 
 test('quality gates are machine-run and fail closed on the first failure', () => {

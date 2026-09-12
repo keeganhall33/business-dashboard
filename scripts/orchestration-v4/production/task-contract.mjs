@@ -20,6 +20,8 @@ const TERMINAL_TASK_LABELS = new Set([
 ]);
 const INTEGRATION_PR_REFERENCE = /(?:\bPR\b|\bpull request\b)\s*[:=-]?\s*#?\s*\d+\b/i;
 const BUSINESS_VALUE_CONTRACT = 'BUSINESS_VALUE_V2';
+const DEFAULT_MAX_ATTEMPTS = 3;
+const MAX_ALLOWED_ATTEMPTS = 10;
 
 function section(body, heading) {
   const lines = String(body).split(/\r?\n/);
@@ -52,6 +54,12 @@ export function validateTaskContract(issue) {
   if (!fields.task_mutability) errors.push('TASK_MUTABILITY_REQUIRED');
   else if (!ALLOWED_TASK_MUTABILITY.has(fields.task_mutability)) errors.push('TASK_MUTABILITY_INVALID');
   if (!fields.file_ownership || fields.file_ownership.trim() === '') errors.push('FILE_OWNERSHIP_REQUIRED');
+  const maxAttempts = fields.max_attempts == null
+    ? DEFAULT_MAX_ATTEMPTS
+    : Number(fields.max_attempts);
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ALLOWED_ATTEMPTS) {
+    errors.push('MAX_ATTEMPTS_INVALID');
+  }
   if (fields.stream === 'INTEGRATION_RELEASE' && !INTEGRATION_PR_REFERENCE.test(String(issue?.body ?? ''))) errors.push('INTEGRATION_REFERENCED_PR_REQUIRED');
   const isBusinessValueV2 = fields.contract_version === BUSINESS_VALUE_CONTRACT;
   const businessOutcome = section(issue?.body, 'Business outcome');
@@ -108,6 +116,7 @@ export function validateTaskContract(issue) {
       body: issue.body ?? '',
       milestone: fields.milestone ?? null,
       priority: fields.priority ?? 'P3',
+      maxAttempts,
       deliveryMode: fields.delivery_mode ?? 'LEGACY',
       sliceId: fields.slice_id ?? null,
       sliceStage: fields.slice_stage ?? null,
