@@ -32,7 +32,7 @@ async function fakeExecute({ cwd, onEvent }) {
   return { status: 'COMPLETE', reason: null };
 }
 
-test('three lanes isolate task workspaces, release slots, and backfill immediately', async () => {
+test('available lanes isolate task workspaces and execute bounded backfill immediately', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-runner-'));
   const workspaceRoot = path.join(root, 'workspaces');
   const { repo, sha } = makeRepo(root);
@@ -47,13 +47,13 @@ test('three lanes isolate task workspaces, release slots, and backfill immediate
   const commands = Object.fromEntries(['core-task', 'discovery-task', 'ux-task', 'core-backfill'].map((taskId) => [taskId, { command: 'fixture' }]));
 
   const first = await runReadyBatch({ db, registry, repoRoot: repo, workspaceRoot, commandsByTaskId: commands, timeoutMs: 5000, stallMs: 1000, execute: fakeExecute });
-  assert.equal(first.length, 3);
+  assert.equal(first.length, 4);
   assert.equal(getTask(db, 'core-task').state, 'COMPLETE');
   assert.equal(getTask(db, 'discovery-task').state, 'BLOCKED');
   assert.equal(getTask(db, 'ux-task').state, 'COMPLETE');
-  assert.equal(getTask(db, 'core-backfill').state, 'READY');
+  assert.equal(getTask(db, 'core-backfill').state, 'COMPLETE');
 
-  for (const taskId of ['core-task', 'discovery-task', 'ux-task']) {
+  for (const taskId of ['core-task', 'discovery-task', 'ux-task', 'core-backfill']) {
     const task = getTask(db, taskId);
     assert.equal(task.slot_id, null);
     assert.equal(task.semantic_progress_seq, 1);
@@ -61,7 +61,7 @@ test('three lanes isolate task workspaces, release slots, and backfill immediate
   }
 
   const second = await runReadyBatch({ db, registry, repoRoot: repo, workspaceRoot, commandsByTaskId: commands, timeoutMs: 5000, stallMs: 1000, execute: fakeExecute });
-  assert.equal(second.length, 1);
+  assert.equal(second.length, 0);
   const backfill = getTask(db, 'core-backfill');
   assert.equal(backfill.state, 'COMPLETE');
   assert.equal(backfill.slot_id, null);

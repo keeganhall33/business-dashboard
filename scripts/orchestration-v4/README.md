@@ -12,6 +12,15 @@ V4 is a clean execution substrate built alongside V3. It does not reuse persiste
 6. Cleanup is task-scoped and idempotent.
 7. GitHub labels mirror orchestration state but do not determine local process liveness.
 8. Integration/release execution may use a specialized executor but still receives a disposable workspace.
+9. New development is organized around production vertical slices with no more than three active outcomes at once.
+10. Dependencies and machine-run quality gates fail closed before publication.
+11. Coded, integrated, and production-verified are distinct states; only the last counts as delivered capability.
+
+## Delivery acceleration policy
+
+Each new vertical slice names one user/business outcome and advances through `DISCOVERY`, `CONTRACT`, `IMPLEMENTATION`, `INTEGRATION`, and `PRODUCTION_VERIFICATION`. V4 prioritizes blocking defects and outcome slices, holds dependent tasks until prerequisites are complete, caps task and slice WIP, and independently runs the declared quality gates before publishing a PR.
+
+Use `npm run delivery:status` against the V4 state database for the completion scoreboard. The same delivery snapshot is embedded in `heartbeat.json` so operational monitoring can show active, blocked, and production-verified slices without treating issue count as product progress.
 
 ## Phase 1
 

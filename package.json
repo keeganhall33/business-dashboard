@@ -21,6 +21,7 @@
     "cloudflare:run": "node scripts/run-cloudflare-telemetry.mjs",
     "scheduler:status": "node scripts/scheduler-status.mjs",
     "woo:ingest": "node scripts/run-woo-telemetry.mjs",
+    "delivery:status": "node scripts/orchestration-v4/delivery-report.mjs",
     "orchestration:v4-lite:host": "node scripts/orchestration-v4-lite/host.mjs"
   },
   "dependencies": {

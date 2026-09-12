@@ -3,6 +3,7 @@ import path from 'node:path';
 import { openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
+import { buildDeliveryHealth } from '../delivery-policy.mjs';
 
 function pidIsLive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -149,6 +150,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         stalledReason,
         pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
         currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
+        delivery: buildDeliveryHealth(db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all()),
         generatedAt: new Date(generatedAtMs).toISOString(),
       })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);

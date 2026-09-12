@@ -1,7 +1,9 @@
 import { classifyRiskLane, RISK_LANES } from '../policy/risk-lane.mjs';
 import { DEFAULT_SLOT_STREAMS } from '../slot-scheduler.mjs';
+import { validateDeliveryFields } from '../delivery-policy.mjs';
 
 const FIELD = /^\*\*([a-zA-Z0-9_]+):\*\*\s*(.+?)\s*$/gm;
+const FORM_FIELD = /^###\s+([a-zA-Z0-9_]+)\s*\n+([\s\S]*?)(?=^###\s+|(?![\s\S]))/gm;
 const ALLOWED_TASK_MUTABILITY = new Set([
   'IMPLEMENTATION_MUTATION_REQUIRED',
   'VALIDATION_EVIDENCE_ONLY',
@@ -32,6 +34,10 @@ function section(body, heading) {
 export function parseTaskContract(body = '') {
   const fields = {};
   for (const match of String(body).matchAll(FIELD)) fields[match[1]] = match[2];
+  for (const match of String(body).matchAll(FORM_FIELD)) {
+    const value = match[2].trim();
+    if (value && !fields[match[1]]) fields[match[1]] = value;
+  }
   return fields;
 }
 
@@ -80,6 +86,7 @@ export function validateTaskContract(issue) {
     if (!proofRequired) errors.push('PROOF_REQUIRED');
     if (fields.verification_owner !== 'INDEPENDENT') errors.push('INDEPENDENT_VERIFICATION_REQUIRED');
   }
+  errors.push(...validateDeliveryFields(fields));
   return {
     ok: errors.length === 0,
     errors,
@@ -99,6 +106,17 @@ export function validateTaskContract(issue) {
       riskProfile,
       title: issue.title ?? '',
       body: issue.body ?? '',
+      milestone: fields.milestone ?? null,
+      priority: fields.priority ?? 'P3',
+      deliveryMode: fields.delivery_mode ?? 'LEGACY',
+      sliceId: fields.slice_id ?? null,
+      sliceStage: fields.slice_stage ?? null,
+      dependsOn: fields.depends_on ?? '',
+      qualityGates: fields.quality_gates ?? '',
+      outcome: fields.outcome ?? null,
+      userFlow: fields.user_flow ?? null,
+      definitionOfDone: fields.definition_of_done ?? null,
+      productionEvidence: fields.production_evidence ?? null,
     }),
   };
 }
