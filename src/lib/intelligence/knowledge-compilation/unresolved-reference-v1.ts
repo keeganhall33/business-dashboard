@@ -124,7 +124,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function assertBoundedString(value: unknown, field: string, maxLength = UNRESOLVED_REFERENCE_LIMITS.maxIdentifierLength): string {
+function assertBoundedString(
+  value: unknown,
+  field: string,
+  maxLength: number = UNRESOLVED_REFERENCE_LIMITS.maxIdentifierLength
+): string {
   if (typeof value !== "string") fail(`${field.toUpperCase()}_REQUIRED`);
   const trimmed = value.trim();
   if (!trimmed) fail(`${field.toUpperCase()}_REQUIRED`);
