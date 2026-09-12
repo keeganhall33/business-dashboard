@@ -150,7 +150,11 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         stalledReason,
         pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
         currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
-        delivery: buildDeliveryHealth(db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all()),
+        delivery: buildDeliveryHealth(
+          db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all(),
+          new Date().toISOString(),
+          db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all(),
+        ),
         generatedAt: new Date(generatedAtMs).toISOString(),
       })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
