@@ -96,6 +96,41 @@ test('latest production verification supersedes an older failed attempt', () => 
   assert.equal(health.slices[0].launchState, 'AVAILABLE');
 });
 
+test('delivery health exposes unresolved semantic stalls and retry diagnostics', () => {
+  const health = buildDeliveryHealth([
+    task('verify-40', {
+      state: 'RUNNING',
+      semantic_progress_seq: 2,
+      semantic_progress_at: '2026-09-12T18:04:43.000Z',
+      contract: { sliceId: 'email', sliceStage: 'PRODUCTION_VERIFICATION' },
+    }),
+  ], '2026-09-12T18:44:00.000Z', [{
+    task_id: 'verify-40',
+    attempt: 2,
+    reason: 'SEMANTIC_PROGRESS_STALL',
+    created_at: '2026-09-12T18:34:43.000Z',
+  }]);
+
+  assert.equal(health.stalledSlices, 1);
+  assert.equal(health.activeSlices, 1);
+  assert.equal(health.slices[0].launchState, 'RECOVERING');
+  assert.equal(health.slices[0].status, 'RECOVERING');
+  assert.equal(health.slices[0].correctionAttempts, 1);
+  assert.equal(health.slices[0].tasks[0].recoveryState, 'STALLED_RETRYING');
+});
+
+test('delivery health exposes terminal blocker reasons', () => {
+  const health = buildDeliveryHealth([
+    task('verify-41', {
+      state: 'BLOCKED',
+      terminal_reason: 'REPLAN_REQUIRED',
+      contract: { sliceId: 'email', sliceStage: 'PRODUCTION_VERIFICATION' },
+    }),
+  ]);
+  assert.equal(health.blockedSlices, 1);
+  assert.equal(health.slices[0].blockerReason, 'REPLAN_REQUIRED');
+});
+
 test('quality gates are machine-run and fail closed on the first failure', () => {
   const calls = [];
   const result = runRequiredQualityGates({
