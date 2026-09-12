@@ -50,7 +50,7 @@ function recommendation(overrides: Partial<Recommendation> & Pick<Recommendation
       strategicFit: 0.5,
       executionReadiness: 0.5,
       overallScore: 50,
-      formula: "fixture-only",
+      formula: "test-score",
     },
     risk: overrides.risk ?? "medium",
     downside: overrides.downside ?? [],
@@ -99,7 +99,7 @@ function buildModel(recommendations: Recommendation[]) {
     recommendations,
     evidence_review_queue: review,
   });
-  return buildExecutiveStrategyWorkspaceV1({ recommendations: payload, evidenceReview: review, synthesis });
+  return buildExecutiveStrategyWorkspaceV1({ recommendations: payload, contradictionAssessment: contradiction, evidenceReview: review, synthesis });
 }
 
 test("strategy workspace preserves canonical score order and conflicting evidence", () => {
@@ -150,6 +150,68 @@ test("strategy workspace preserves canonical score order and conflicting evidenc
   assert.equal(model.currentPriorities[0]?.economics, null);
   assert.ok(model.blockers.some((item) => item.id === "scale-high"));
   assert.ok(model.decisionPoints.some((item) => item.id === "pause-lower"));
+});
+
+test("strategy workspace preserves INFERRED only when truth is compatible and freshness is current", () => {
+  const generatedAt = "2026-09-12T18:00:00.000Z";
+  const records = ["one", "two"].map((id) => recommendation({
+    id,
+    title: `Supported option ${id}`,
+    category: "scale",
+    affected_channels: ["organic"],
+    supporting_evidence: [{ id: `e-${id}`, label: "Observed metric", source: "ga4", kind: "metric", details: {} }],
+    estimated_cost: { money_cents: 0, notes: [] },
+    estimated_effort: { hours: 1, level: "low", notes: [] },
+    time_to_impact: "days",
+    confidence: "likely",
+    review_date: "2026-09-20",
+    assumptions: ["Observed channel scope remains comparable."],
+  }));
+  const payload: RecommendationsResponse = {
+    ok: true,
+    generatedAt,
+    dataMode: "LIVE_DATA",
+    window: { startDate: "2026-09-01", endDate: "2026-09-12" },
+    recommendations: records,
+    guardrailsTriggered: [],
+    warnings: [],
+  };
+  const contradiction = assessRecommendationContradictionsV1({
+    contract_version: "recommendation_contradiction_input_v1",
+    generated_at: generatedAt,
+    recommendations: records,
+  });
+  assert.ok(contradiction.compatible_pairs.some((pair) => pair.truth_state === "INFERRED"));
+
+  const baseReview = buildStrategyEvidenceReviewQueueV1({
+    contract_version: "strategy_evidence_review_queue_input_v1",
+    generated_at: generatedAt,
+    recommendations: records,
+    contradiction_assessment: contradiction,
+    confidence_guards: [],
+  });
+  const currentQueue = baseReview.queue.map((item) => ({ ...item, freshness_state: "CURRENT" as const }));
+  const review = {
+    ...baseReview,
+    queue: currentQueue,
+    REVIEW_NOW: currentQueue.filter((item) => item.disposition === "REVIEW_NOW"),
+    REVIEW_NEXT: currentQueue.filter((item) => item.disposition === "REVIEW_NEXT"),
+    DEFER: currentQueue.filter((item) => item.disposition === "DEFER"),
+  };
+  const synthesis = buildExecutiveActionSynthesisV1({
+    contract_version: "executive_action_synthesis_input_v1",
+    generated_at: generatedAt,
+    recommendations: records,
+    evidence_review_queue: review,
+  });
+  const model = buildExecutiveStrategyWorkspaceV1({
+    recommendations: payload,
+    contradictionAssessment: contradiction,
+    evidenceReview: review,
+    synthesis,
+  });
+
+  assert.equal(model.currentPriorities[0]?.epistemicState, "INFERRED");
 });
 
 test("strategy workspace renders scan-first sections without inventing unsupported economics", () => {
