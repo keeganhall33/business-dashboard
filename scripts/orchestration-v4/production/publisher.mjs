@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { taskBranchName } from '../disposable-workspace.mjs';
 import { getTaskContract } from '../state-store/sqlite-store.mjs';
+import { runRequiredQualityGates } from '../quality-gates.mjs';
+import { deliveryMetadata } from '../delivery-policy.mjs';
 
 function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
@@ -160,6 +162,9 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
     };
   }
 
+  const quality = runRequiredQualityGates({ workspacePath: cwd, contract });
+  if (!quality.ok) return { ok: false, reason: quality.reason, quality };
+
   ensureIdentity(cwd);
   const branch = taskBranchName(task.issue_number, task.task_id);
   git(cwd, 'switch', '-c', branch);
@@ -182,7 +187,23 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
   let pr = matches[0] || null;
   let created = false;
   if (!pr) {
-    execFileSync(gh, ['pr','create','--repo',repoFullName,'--base','main','--head',branch,'--title',contract.title || `V4 task #${task.issue_number}`,'--body',`Closes #${task.issue_number}\n\nCreated by Orchestration V4 from immutable base ${task.base_sha}.`], { encoding: 'utf8' });
+    const delivery = deliveryMetadata(contract);
+    const body = [
+      `Closes #${task.issue_number}`,
+      '',
+      '## Delivery outcome',
+      `- Mode: ${delivery.mode}`,
+      `- Slice: ${delivery.sliceId ?? 'none'}`,
+      `- Stage: ${delivery.stage ?? 'none'}`,
+      `- Outcome: ${delivery.outcome ?? 'legacy task contract'}`,
+      `- Operational: ${delivery.stage === 'PRODUCTION_VERIFICATION' ? 'production evidence required by contract' : 'no, this is not the production-verification stage'}`,
+      '',
+      '## Machine-observed quality gates',
+      ...(quality.skipped ? ['- Legacy contract: no declared gates.'] : quality.gates.map((gate) => `- ${gate.gate}: PASS`)),
+      '',
+      `Created by Orchestration V4 from immutable base ${task.base_sha}.`,
+    ].join('\n');
+    execFileSync(gh, ['pr','create','--repo',repoFullName,'--base','main','--head',branch,'--title',contract.title || `V4 task #${task.issue_number}`,'--body',body], { encoding: 'utf8' });
     created = true;
     matches = ghJson(['pr','list','--repo',repoFullName,'--state','open','--head',branch,'--json','number,url,headRefOid'], gh);
     pr = matches[0] || null;
@@ -199,5 +220,6 @@ export function publishImplementationResult({ task, workspace, repoFullName, gh 
     created,
     committedPaths,
     ignoredUnownedPaths: mutations.unownedChangedPaths,
+    quality,
   };
 }

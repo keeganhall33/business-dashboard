@@ -9,6 +9,7 @@ import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
 import { syncTerminalTaskToGitHub } from './github-sync.mjs';
 import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
+import { deliveryMetadata, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
@@ -68,6 +69,9 @@ export function promptForTask(task) {
     `Risk lane: ${contract.riskProfile?.lane || 'LEGACY_UNCLASSIFIED'}`,
     `Required gate: ${contract.riskProfile?.requiredGate || 'Use existing deterministic and review gates.'}`,
     `Dependencies: ${JSON.stringify(contract.dependencies ?? [])}`,
+    `Delivery mode: ${deliveryMetadata(contract).mode}`,
+    `Vertical slice: ${deliveryMetadata(contract).sliceId ?? 'none'}`,
+    `Slice stage: ${deliveryMetadata(contract).stage ?? 'none'}`,
     '',
     'Authoritative issue body and acceptance criteria:',
     contract.body,
@@ -80,6 +84,8 @@ export function promptForTask(task) {
     'Use local tools and complete the implementation, tests, and validation required by the issue.',
     'Do not optimize for activity or code volume. Prefer the smallest complete change that advances the declared business outcome.',
     'Every completion claim must cite evidence produced or inspected during this run. Never treat your own confidence as verification.',
+    'Optimize for the stated user outcome and end-to-end flow, not merely file completion.',
+    'A task is coded when its acceptance passes; a slice is operational only after its PRODUCTION_VERIFICATION stage passes.',
   ].join('\n');
 }
 
@@ -165,9 +171,11 @@ export async function runProductionPoll({
   const baseSha = refreshCanonicalMain(repoRoot);
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
-  const ready = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY created_at,task_id").all();
-  const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE');
-  const executable = ready.filter((task) => task.stream !== 'INTEGRATION_RELEASE');
+  const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
+  const ready = allTasks.filter((task) => task.state === 'READY');
+  const deliverySelection = selectDeliveryReadyTasks(allTasks);
+  const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE').slice(0, 1);
+  const executable = deliverySelection.selected;
   const ephemeral = [];
   const commandsByTaskId = {};
 
@@ -240,6 +248,11 @@ export async function runProductionPoll({
       integrationAttempted: integrationSettled.length,
       integrationSettled,
       githubSync,
+      deliveryPolicy: {
+        selected: deliverySelection.selected.map((task) => task.task_id),
+        deferred: deliverySelection.deferred,
+        activeSliceIds: deliverySelection.activeSliceIds,
+      },
     });
   } finally {
     cleanupProductionAgentStates(ephemeral);

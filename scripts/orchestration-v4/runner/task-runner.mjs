@@ -7,6 +7,7 @@ import { createCorrectionPacket, CORRECTION_ACTIONS, createTaskDeadline, remaini
 import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
+import { selectDeliveryReadyTasks } from '../delivery-policy.mjs';
 
 const RESULT_TO_STATE = Object.freeze({ COMPLETE: V4_STATES.COMPLETE, BLOCKED: V4_STATES.BLOCKED, FAILED: V4_STATES.FAILED, TIMED_OUT: V4_STATES.TIMED_OUT });
 
@@ -120,9 +121,13 @@ export async function runV4Task({ db, repoRoot, workspaceRoot, taskId, slotId, c
 
 export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, commandsByTaskId, timeoutMs, stallMs, execute, finalizeSuccess }) {
   blockTasksWithFailedDependencies(db);
-  const readyTasks = listRunnableTasks(db);
+  const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at, task_id').all();
+  const runnableTasks = listRunnableTasks(db);
+  const runnableIds = new Set(runnableTasks.map((task) => task.task_id));
+  const policy = selectDeliveryReadyTasks(allTasks.filter((task) => task.state !== V4_STATES.READY || runnableIds.has(task.task_id)));
+  const readyTasks = policy.selected;
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
-  const readyStreams = new Set(readyTasks.map((task) => task.stream));
+  const readyStreams = new Set(runnableTasks.map((task) => task.stream));
   const jobs = [];
   for (const task of readyTasks) {
     if (task.stream === 'INTEGRATION_RELEASE') continue;
@@ -133,5 +138,7 @@ export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, com
     occupied.add(slot.workerId);
     jobs.push(runV4Task({ db, repoRoot, workspaceRoot, taskId: task.task_id, slotId: slot.workerId, command: spec.command, args: spec.args ?? [], timeoutMs, stallMs, execute, finalizeSuccess, buildCorrectionAttempt: spec.buildCorrectionAttempt, maxCorrectionAttempts: spec.maxCorrectionAttempts ?? 3 }));
   }
-  return Promise.allSettled(jobs);
+  const settled = await Promise.allSettled(jobs);
+  Object.defineProperty(settled, 'deliveryPolicy', { value: policy, enumerable: false });
+  return settled;
 }

@@ -16,6 +16,23 @@ Goal: maximize reliable development throughput while preserving roadmap scope, r
 - Use the cheapest capable model for deterministic work and stronger reasoning for architecture/review-sensitive work.
 - Track model/session/cost metadata where available.
 
+## Production vertical-slice delivery
+
+The primary unit of progress is a production-verified user or business workflow, not an isolated issue, file, or pull request.
+
+- Keep at most three vertical slices active at once.
+- Each slice moves through `DISCOVERY → CONTRACT → IMPLEMENTATION → INTEGRATION → PRODUCTION_VERIFICATION`.
+- A slice is not operational until its production-verification task is complete with real evidence.
+- Platform primitives enter active work only when they unlock an active slice. Defects that block an active slice receive priority.
+- Dependencies are task IDs and must be `COMPLETE` before dependent work is scheduled.
+- Permit up to three independent tasks inside one slice and up to five executable tasks per poll; file ownership and schema/semantic serialization rules still apply.
+- New vertical-slice tasks must name the outcome, end-to-end user flow, definition of done, dependencies, and machine-run quality gates.
+- `DIFF_CHECK`, `TYPECHECK`, and `TEST` are mandatory. Integration tasks also require `BUILD`. Add `LINT` when the owned surface is lintable.
+- Coded, integrated, and production verified are separate statuses. Only production verified counts as delivered capability.
+- V4 heartbeat and `npm run delivery:status` expose slice progress, WIP, blocked slices, ready work, and dependency deferrals.
+
+Initial outcome lanes should stay concentrated on relationship/opportunity follow-up, high-value opportunity discovery/qualification, and the executive brief/decision inbox until those flows are operational.
+
 ## Worker activation
 
 Once the natural-language task adapter is proven, activate a controlled 3-worker pool:

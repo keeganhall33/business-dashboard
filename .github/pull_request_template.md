@@ -1,5 +1,14 @@
 # Summary
 
+## Delivery outcome
+- Delivery mode (Vertical Slice | Defect | Platform Primitive):
+- Slice ID and stage:
+- User/business outcome advanced:
+- End-to-end flow exercised:
+- Dependencies completed:
+- Operational status (Coded | Integrated | Production Verified):
+- Production evidence, or why this is not the verification stage:
+
 ## Roadmap traceability (required for intelligence PRs)
 - Roadmap phase advanced:
 - Permanent capability advanced (Internal | External | Learning | Predictive/Strategic):
@@ -16,3 +25,4 @@
 - [ ] npm run test
 - [ ] npm run lint
 - [ ] npm run build
+- [ ] Required V4 quality gates passed with machine-observed exit codes

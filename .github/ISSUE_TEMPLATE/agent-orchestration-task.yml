@@ -48,6 +48,9 @@ body:
         - CORE_INTELLIGENCE
         - DISCOVERY_INTELLIGENCE
         - INTELLIGENCE_UX
+        - PRODUCTION_VALUE
+        - QA_EVALUATION
+        - INTEGRATION_RELEASE
         - AGENT_ORCHESTRATION
         - OTHER
     validations:
@@ -130,6 +133,91 @@ body:
       required: true
 
   - type: dropdown
+    id: delivery_mode
+    attributes:
+      label: delivery_mode
+      description: Prefer VERTICAL_SLICE. Use PLATFORM_PRIMITIVE only when it directly unlocks an active slice.
+      options:
+        - VERTICAL_SLICE
+        - DEFECT
+        - PLATFORM_PRIMITIVE
+    validations:
+      required: true
+
+  - type: input
+    id: slice_id
+    attributes:
+      label: slice_id
+      description: Stable workflow identifier shared by all tasks required to make one outcome operational.
+      placeholder: relationship-followup-v1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: slice_stage
+    attributes:
+      label: slice_stage
+      options:
+        - DISCOVERY
+        - CONTRACT
+        - IMPLEMENTATION
+        - INTEGRATION
+        - PRODUCTION_VERIFICATION
+    validations:
+      required: true
+
+  - type: input
+    id: depends_on
+    attributes:
+      label: depends_on
+      description: Comma-separated task_ids that must be COMPLETE, or NONE.
+      placeholder: NONE
+    validations:
+      required: true
+
+  - type: input
+    id: quality_gates
+    attributes:
+      label: quality_gates
+      description: Fixed fail-closed gates. Integration slices must also include BUILD.
+      placeholder: DIFF_CHECK,TYPECHECK,TEST
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: outcome
+      description: The real user or business result that becomes possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: user_flow
+    attributes:
+      label: user_flow
+      description: The complete input → decision → action → outcome path this task advances.
+    validations:
+      required: true
+
+  - type: textarea
+    id: definition_of_done
+    attributes:
+      label: definition_of_done
+      description: Real data, persistence, visible output, agent use, controls, outcome capture, and verification required for operational completion.
+    validations:
+      required: true
+
+  - type: textarea
+    id: production_evidence
+    attributes:
+      label: production_evidence
+      description: Required evidence for PRODUCTION_VERIFICATION; use NOT_THIS_STAGE earlier.
+      placeholder: NOT_THIS_STAGE
+    validations:
+      required: true
+
+  - type: dropdown
     id: human_approval_required
     attributes:
       label: human_approval_required
@@ -145,6 +233,17 @@ body:
       label: max_attempts
       description: Hard retry ceiling. Reaching the ceiling requires reroute, escalation, or stop.
       value: "3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: task_mutability
+    attributes:
+      label: task_mutability
+      options:
+        - IMPLEMENTATION_MUTATION_REQUIRED
+        - VALIDATION_EVIDENCE_ONLY
+        - EVIDENCE_ONLY
     validations:
       required: true
 
@@ -172,6 +271,24 @@ body:
       label: Retry / reroute policy
       description: What to do if the same failure repeats without measurable progress.
       placeholder: Retry only with new evidence; otherwise use alternate route X, then escalate if still blocked.
+    validations:
+      required: true
+
+  - type: input
+    id: file_ownership
+    attributes:
+      label: file_ownership
+      description: Comma-separated exact files or narrow directories this task may mutate.
+      placeholder: src/lib/example,test/example
+    validations:
+      required: true
+
+  - type: input
+    id: target_pr
+    attributes:
+      label: Target PR
+      description: Required for INTEGRATION_RELEASE; use NONE for other streams.
+      placeholder: NONE
     validations:
       required: true
 

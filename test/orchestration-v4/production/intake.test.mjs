@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openV4StateStore, getTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { importReadyIssues } from '../../../scripts/orchestration-v4/production/github-intake.mjs';
-import { validateTaskContract } from '../../../scripts/orchestration-v4/production/task-contract.mjs';
+import { parseTaskContract, validateTaskContract } from '../../../scripts/orchestration-v4/production/task-contract.mjs';
 import { promptForTask } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 
 function issue(number, overrides = {}) {
@@ -76,7 +76,7 @@ test('malformed, human-gated, ambiguous-mutability, and non-watcher-visible task
   const db = openV4StateStore(path.join(root, 'state.sqlite'));
   try {
     const human = issue(20, { body: issue(20).body.replace('human_approval_required:** false', 'human_approval_required:** true') });
-    const unlabeled = issue(21, { labels: [{ name: 'orch:ready' }] });
+    const unlabeled = issue(21, { labels: [{ name: 'agent-orchestration' }] });
     const missingOwnership = issue(22, { body: issue(22).body.replace('**file_ownership:** src/example/**', '') });
     const ambiguousMutability = issue(23, { body: issue(23).body.replace('IMPLEMENTATION_MUTATION_REQUIRED', 'write') });
     const result = importReadyIssues({ db, issues: [human, unlabeled, missingOwnership, ambiguousMutability], baseSha: 'c'.repeat(40) });
@@ -193,4 +193,63 @@ test('missing dependency fails closed instead of becoming runnable', () => {
     assert.equal(getTask(db, 'task-63').state, 'BLOCKED');
     assert.equal(getTask(db, 'task-63').terminal_reason, 'DEPENDENCY_CONTRACT_INVALID');
   } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('vertical-slice contracts require outcome flow completion and quality evidence', () => {
+  const body = `${issue(40).body}
+**milestone:** FOLLOWUP_FLOW
+**priority:** P1
+**delivery_mode:** VERTICAL_SLICE
+**slice_id:** relationship-followup-v1
+**slice_stage:** IMPLEMENTATION
+**depends_on:** NONE
+**quality_gates:** DIFF_CHECK,TYPECHECK,TEST,LINT
+**outcome:** Keegan sees the correct follow-up at the correct time.
+**user_flow:** communication -> current state -> recommendation -> approval -> outcome
+**definition_of_done:** Real data persists, appears in the dashboard, informs an agent, and captures the outcome.
+**production_evidence:** NOT_THIS_STAGE`;
+  const valid = validateTaskContract(issue(40, { body }));
+  assert.equal(valid.ok, true);
+  assert.equal(valid.task.deliveryMode, 'VERTICAL_SLICE');
+  assert.equal(valid.task.sliceId, 'relationship-followup-v1');
+
+  const invalid = validateTaskContract(issue(41, { body: body.replace('**definition_of_done:** Real data persists, appears in the dashboard, informs an agent, and captures the outcome.\n', '').replace('DIFF_CHECK,TYPECHECK,TEST,LINT', 'DIFF_CHECK') }));
+  assert.equal(invalid.ok, false);
+  assert.ok(invalid.errors.includes('DEFINITION_OF_DONE_REQUIRED'));
+  assert.ok(invalid.errors.includes('QUALITY_GATE_TYPECHECK_REQUIRED'));
+  assert.ok(invalid.errors.includes('QUALITY_GATE_TEST_REQUIRED'));
+});
+
+test('production verification fails closed without named production evidence', () => {
+  const body = `${issue(42).body}
+**priority:** P1
+**delivery_mode:** VERTICAL_SLICE
+**slice_id:** executive-brief-v1
+**slice_stage:** PRODUCTION_VERIFICATION
+**depends_on:** implementation-brief
+**quality_gates:** DIFF_CHECK,TYPECHECK,TEST
+**outcome:** The daily brief reliably identifies the next decision.
+**user_flow:** live evidence -> fusion -> brief -> decision
+**definition_of_done:** The live production flow is observed end to end.`;
+  const result = validateTaskContract(issue(42, { body }));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.includes('PRODUCTION_EVIDENCE_REQUIRED'));
+});
+
+test('task parser accepts real GitHub issue-form headings and multiline values', () => {
+  const parsed = parseTaskContract(`### task_id
+form-task-1
+
+### delivery_mode
+VERTICAL_SLICE
+
+### definition_of_done
+Real data is persisted.
+The production outcome is verified.
+
+### quality_gates
+DIFF_CHECK,TYPECHECK,TEST`);
+  assert.equal(parsed.task_id, 'form-task-1');
+  assert.equal(parsed.delivery_mode, 'VERTICAL_SLICE');
+  assert.match(parsed.definition_of_done, /production outcome/);
 });
