@@ -1,5 +1,6 @@
 import { ExecutiveStrategyWorkspaceV1 } from "@/components/strategy/ExecutiveStrategyWorkspaceV1";
 import { assessRecommendationContradictionsV1 } from "@/lib/core-intelligence/recommendation-contradiction/adapter";
+import type { RecommendationContradictionAssessmentV1 } from "@/lib/core-intelligence/recommendation-contradiction/contracts";
 import { buildExecutiveActionSynthesisV1 } from "@/lib/core-intelligence/executive-action-synthesis/adapter";
 import { buildStrategyEvidenceReviewQueueV1 } from "@/lib/core-intelligence/strategy-evidence-review/adapter";
 import { getDashboardOverview } from "@/lib/api/dashboard";
@@ -28,6 +29,7 @@ export default async function StrategyPage({ searchParams }: PageProps) {
   const comparison = computePreviousInclusiveDateRange({ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate });
 
   let recommendations: RecommendationsResponse | null = null;
+  let contradictionAssessment: RecommendationContradictionAssessmentV1 | null = null;
   let evidenceReview = null;
   let synthesis = null;
 
@@ -72,7 +74,7 @@ export default async function StrategyPage({ searchParams }: PageProps) {
       // in the current recommendation route until their canonical telemetry is wired there.
       recommendations = buildRecommendationsFromExplanation({ explanation, missingSources: ["email", "matchback"] });
       const generatedAt = recommendations.generatedAt;
-      const contradictionAssessment = assessRecommendationContradictionsV1({
+      contradictionAssessment = assessRecommendationContradictionsV1({
         contract_version: "recommendation_contradiction_input_v1",
         generated_at: generatedAt,
         recommendations: recommendations.recommendations,
@@ -94,6 +96,7 @@ export default async function StrategyPage({ searchParams }: PageProps) {
       });
     } catch {
       recommendations = null;
+      contradictionAssessment = null;
       evidenceReview = null;
       synthesis = null;
     }
@@ -101,6 +104,7 @@ export default async function StrategyPage({ searchParams }: PageProps) {
 
   const model = buildExecutiveStrategyWorkspaceV1({
     recommendations,
+    contradictionAssessment,
     evidenceReview,
     synthesis,
     generatedAt: sanitized.timestamp,
