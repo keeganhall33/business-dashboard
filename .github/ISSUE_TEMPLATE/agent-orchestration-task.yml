@@ -13,6 +13,7 @@ body:
         - Use durable references (e.g. `docs/intelligence/ROADMAP.md`) and specify a small delta.
         - Keep it bounded. No credentials. No outreach.
         - New tasks use the Business Value V2 contract so technical output stays tied to a measurable business result.
+        - Retries must be evidence-driven. Repeated failure without measurable progress must reroute, escalate, or stop.
 
   - type: input
     id: contract_version
@@ -135,6 +136,42 @@ body:
       options:
         - "false"
         - "true"
+    validations:
+      required: true
+
+  - type: input
+    id: max_attempts
+    attributes:
+      label: max_attempts
+      description: Hard retry ceiling. Reaching the ceiling requires reroute, escalation, or stop.
+      value: "3"
+    validations:
+      required: true
+
+  - type: input
+    id: max_tool_calls
+    attributes:
+      label: max_tool_calls
+      description: Maximum tool calls allowed for this task unless explicitly revised.
+      value: "20"
+    validations:
+      required: true
+
+  - type: textarea
+    id: progress_signal
+    attributes:
+      label: Measurable progress signal
+      description: What new evidence or state change proves that another attempt is productive.
+      placeholder: A failing test count decreases, a missing primary source is found, or a previously blocked verifier gate passes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: retry_reroute_policy
+    attributes:
+      label: Retry / reroute policy
+      description: What to do if the same failure repeats without measurable progress.
+      placeholder: Retry only with new evidence; otherwise use alternate route X, then escalate if still blocked.
     validations:
       required: true
 
