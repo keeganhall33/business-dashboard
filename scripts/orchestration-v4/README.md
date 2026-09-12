@@ -24,6 +24,8 @@ Use `npm run delivery:status` against the V4 state database for the completion s
 
 Production-verified features launch independently by default. Version names group features for certification but do not hold an otherwise safe feature. `delivery:status` exposes each feature's launch state, target release, cycle time, seven-day throughput, and whether a bundled exception is holding it.
 
+A production-verification worker exiting successfully is not proof by itself. The worker must produce the task-bound, privacy-safe `.openclaw/tmp/production-verification-v1.json` artifact after the live command and safety checks pass. V4 validates that artifact before completing the task, and delivery health reports `EVIDENCE_MISSING` instead of `AVAILABLE` for older or malformed completion records without validated proof.
+
 ## Phase 1
 
 This branch establishes the state machine, immutable execution context, disposable Git workspace lifecycle, semantic progress classifier, slot-only scheduler semantics, and deterministic isolation tests.

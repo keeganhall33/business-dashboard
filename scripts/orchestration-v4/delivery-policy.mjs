@@ -90,6 +90,20 @@ function isDependencyComplete(taskById, dependencyId) {
   return taskById.get(dependencyId)?.state === 'COMPLETE';
 }
 
+function hasVerifiedProductionEvidence(task) {
+  if (task?.state !== 'COMPLETE') return false;
+  try {
+    const result = JSON.parse(task.result_json || '{}');
+    const proof = result?.productionVerification;
+    return proof?.verified === true
+      && proof.taskId === task.task_id
+      && proof.issueNumber === task.issue_number
+      && proof.contractVersion === 'PRODUCTION_VERIFICATION_V1';
+  } catch {
+    return false;
+  }
+}
+
 export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = 5 } = {}) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
   const active = tasks.filter((task) => ACTIVE_STATES.has(task.state));
@@ -182,7 +196,9 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       return [stage, stageTask?.state ?? null];
     }));
     const latestVerification = latestTask(sourceTasks.filter((task) => deliveryMetadata(getTaskContract(task)).stage === 'PRODUCTION_VERIFICATION'));
-    const verified = latestVerification?.state === 'COMPLETE';
+    const verificationComplete = latestVerification?.state === 'COMPLETE';
+    const verified = hasVerifiedProductionEvidence(latestVerification);
+    const evidenceMissing = verificationComplete && !verified;
     const launchPolicy = metadata.launchPolicy || 'UNSPECIFIED';
     const operational = verified && launchPolicy === 'IMMEDIATE_AFTER_VERIFICATION';
     const blockedTasks = Object.values(stageStates).filter((state) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(state)).length;
@@ -197,6 +213,7 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       : null;
     const launchState = operational ? 'AVAILABLE'
       : verified && launchPolicy === 'BUNDLED_ONLY' ? 'VERIFIED_HELD'
+        : evidenceMissing ? 'EVIDENCE_MISSING'
         : stalledTasks > 0 ? 'RECOVERING'
         : latestVerification && (latestVerification.state === 'READY' || ACTIVE_STATES.has(latestVerification.state)) ? 'VERIFYING'
           : stageStates.INTEGRATION === 'COMPLETE' ? 'AWAITING_PRODUCTION_VERIFICATION'
@@ -217,8 +234,8 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       blockedTasks,
       stalledTasks,
       correctionAttempts,
-      blockerReason: latestBlockedTask?.terminal_reason ?? null,
-      status: operational ? 'OPERATIONAL' : blockedTasks > 0 ? 'BLOCKED' : stalledTasks > 0 ? 'RECOVERING' : hasActiveWork ? 'ACTIVE' : 'PLANNED',
+      blockerReason: evidenceMissing ? 'PRODUCTION_EVIDENCE_NOT_VERIFIED' : latestBlockedTask?.terminal_reason ?? null,
+      status: operational ? 'OPERATIONAL' : evidenceMissing || blockedTasks > 0 ? 'BLOCKED' : stalledTasks > 0 ? 'RECOVERING' : hasActiveWork ? 'ACTIVE' : 'PLANNED',
     };
   }).sort((a, b) => a.sliceId.localeCompare(b.sliceId));
   const releases = [...new Set(rows.map((row) => row.releaseTarget))].sort().map((releaseTarget) => {
@@ -239,7 +256,7 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
     generatedAt,
     activeSlices: rows.filter((slice) => slice.status === 'ACTIVE' || slice.status === 'RECOVERING').length,
     operationalSlices: rows.filter((slice) => slice.operational).length,
-    blockedSlices: rows.filter((slice) => slice.blockedTasks > 0 && !slice.operational).length,
+    blockedSlices: rows.filter((slice) => slice.status === 'BLOCKED').length,
     stalledSlices: rows.filter((slice) => slice.stalledTasks > 0).length,
     availableFeatures: rows.filter((slice) => slice.launchState === 'AVAILABLE').length,
     verifiedHeldFeatures: rows.filter((slice) => slice.launchState === 'VERIFIED_HELD').length,
