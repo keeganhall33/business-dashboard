@@ -31,6 +31,11 @@ export function taskMutationMode(task) {
   return validateAgentMutationMode(match[1]);
 }
 
+export function taskAttemptLimit(task) {
+  const value = getTaskContract(task)?.maxAttempts;
+  return Number.isInteger(value) && value >= 1 ? value : 3;
+}
+
 export function buildCorrectionAgentAttempt({ packet, command, args, createState = createEphemeralAgentState, retainState = () => {} }) {
   const prompt = `${args[1]}\n\n${correctionPrompt(packet)}`;
   if (correctionMutationMode(packet) !== CORRECTION_MUTATION_MODES.SHELL_ONLY) {
@@ -200,7 +205,7 @@ export async function runProductionPoll({
           args,
           retainState: (correctionState) => ephemeral.push(correctionState),
         }),
-        maxCorrectionAttempts: 3,
+        maxCorrectionAttempts: taskAttemptLimit(task),
       };
     }
 
