@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import * as commandModule from "../../scripts/run-ionos-historical-intelligence-preview-v1";
 import { runIonosHistoricalIntelligencePreviewCommandV1 } from "../../scripts/run-ionos-historical-intelligence-preview-v1";
 import { IONOS_MAILBOX_ROLES_V1 } from "@/lib/email/ionos-mailbox-config-v1";
+
+const PRODUCTION_EVIDENCE_ARTIFACT = ".openclaw/tmp/production-verification-v1.json";
 
 const mailboxConfig = IONOS_MAILBOX_ROLES_V1.map((role, index) => ({
   id: `mailbox-${index + 1}`,
@@ -37,6 +42,19 @@ function env(overrides: Record<string, string | undefined> = {}) {
     IONOS_HISTORICAL_PREVIEW_TIMEOUT_MS: "120000",
     ...overrides
   };
+}
+
+function evidenceEnv(workspacePath: string, overrides: Record<string, string | undefined> = {}) {
+  return env({
+    OPENCLAW_WORKSPACE_DIR: workspacePath,
+    V4_PRODUCTION_TASK_ID: "ionos-historical-live-verification-v4-20260912",
+    V4_PRODUCTION_ISSUE_NUMBER: "1507",
+    ...overrides
+  });
+}
+
+function evidencePath(workspacePath: string) {
+  return path.join(workspacePath, PRODUCTION_EVIDENCE_ARTIFACT);
 }
 
 function result(failedMailboxCount = 0) {
@@ -111,20 +129,155 @@ test("uses the approved shell-disabled 1Password boundary and prints telemetry o
   assert.doesNotMatch(output[0], /must-not-print|resolved@example|secret-password|op:\/\//i);
 });
 
-test("partial mailbox failure preserves redacted stdout summary and exits with one fixed failure code", async () => {
-  const output: string[] = [];
-  await assert.rejects(
-    runIonosHistoricalIntelligencePreviewCommandV1({
-      env: env(),
+test("manual preview remains unchanged and does not create V4 evidence", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-manual-"));
+  try {
+    await runIonosHistoricalIntelligencePreviewCommandV1({
+      env: env({ OPENCLAW_WORKSPACE_DIR: workspacePath }),
       now: () => 1_000,
-      runPreview: async () => result(1),
-      writeStdout: (text) => output.push(text)
-    }),
-    /IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE/
-  );
-  assert.equal(output.length, 1);
-  assert.match(output[0], /"failedMailboxCount":1/);
-  assert.match(output[0], /"reason":"PROVIDER_FAILED"/);
+      runPreview: async () => result(),
+      writeStdout: () => undefined
+    });
+    assert.equal(fs.existsSync(evidencePath(workspacePath)), false);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("successful V4-bound preview writes the existing fail-closed evidence artifact", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-evidence-"));
+  const commandCalls: Array<{ file: string; args: readonly string[]; options: any }> = [];
+  try {
+    const telemetry = await runIonosHistoricalIntelligencePreviewCommandV1({
+      env: evidenceEnv(workspacePath),
+      now: () => 1_000,
+      runCommand: async (file, args, options) => {
+        commandCalls.push({ file, args, options });
+        if (file === "git") return { stdout: "" };
+        return { stdout: "secret-value" };
+      },
+      runPreview: async () => result(),
+      writeStdout: () => undefined
+    });
+
+    assert.equal(telemetry.failedMailboxCount, 0);
+    assert.equal(commandCalls.length, 1);
+    assert.equal(commandCalls[0].file, "git");
+    assert.deepEqual(commandCalls[0].args, ["-C", workspacePath, "status", "--porcelain"]);
+    assert.equal(commandCalls[0].options.shell, false);
+    assert.equal(commandCalls[0].options.encoding, "utf8");
+    assert.ok(commandCalls[0].options.timeout > 0);
+
+    const artifact = JSON.parse(fs.readFileSync(evidencePath(workspacePath), "utf8"));
+    assert.equal(artifact.contractVersion, "PRODUCTION_VERIFICATION_V1");
+    assert.equal(artifact.taskId, "ionos-historical-live-verification-v4-20260912");
+    assert.equal(artifact.issueNumber, 1507);
+    assert.equal(artifact.verdict, "PASS");
+    assert.equal(artifact.observedAt, "1970-01-01T00:00:01.000Z");
+    assert.equal(artifact.liveExecution, true);
+    assert.equal(artifact.repositoryClean, true);
+    assert.equal(artifact.privacySafe, true);
+    assert.equal(artifact.externalMutation, false);
+    assert.equal(artifact.telemetry.failedMailboxCount, 0);
+    assert.equal(artifact.telemetry.canonicalRecordCount, 2);
+    assert.ok(Array.isArray(artifact.checks));
+    assert.ok(artifact.checks.length >= 8);
+    assert.equal(artifact.checks.every((check: any) => check.passed === true), true);
+    assert.doesNotMatch(JSON.stringify(artifact), /must-not-print|secret-value|op:\/\/|resolved@example/i);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("partial mailbox failure preserves redacted stdout summary and writes no PASS evidence", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-partial-"));
+  const output: string[] = [];
+  try {
+    await assert.rejects(
+      runIonosHistoricalIntelligencePreviewCommandV1({
+        env: evidenceEnv(workspacePath),
+        now: () => 1_000,
+        runPreview: async () => result(1),
+        writeStdout: (text) => output.push(text)
+      }),
+      /IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE/
+    );
+    assert.equal(output.length, 1);
+    assert.match(output[0], /"failedMailboxCount":1/);
+    assert.match(output[0], /"reason":"PROVIDER_FAILED"/);
+    assert.equal(fs.existsSync(evidencePath(workspacePath)), false);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("dirty repository fails closed and writes no PASS evidence", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-dirty-"));
+  try {
+    await assert.rejects(
+      runIonosHistoricalIntelligencePreviewCommandV1({
+        env: evidenceEnv(workspacePath),
+        now: () => 1_000,
+        runCommand: async (file) => ({ stdout: file === "git" ? " M tracked-file.ts\n" : "secret-value" }),
+        runPreview: async () => result(),
+        writeStdout: () => undefined
+      }),
+      /IONOS_HISTORICAL_PREVIEW_REPOSITORY_DIRTY/
+    );
+    assert.equal(fs.existsSync(evidencePath(workspacePath)), false);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("unsafe telemetry fails closed and writes no PASS evidence", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-unsafe-"));
+  try {
+    const unsafe = result();
+    unsafe.telemetry.leaked = "owner@example.test";
+    await assert.rejects(
+      runIonosHistoricalIntelligencePreviewCommandV1({
+        env: evidenceEnv(workspacePath),
+        now: () => 1_000,
+        runCommand: async () => ({ stdout: "" }),
+        runPreview: async () => unsafe,
+        writeStdout: () => undefined
+      }),
+      /IONOS_HISTORICAL_PREVIEW_EVIDENCE_PRIVACY_VIOLATION/
+    );
+    assert.equal(fs.existsSync(evidencePath(workspacePath)), false);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("missing, malformed, or non-workspace V4 identity fails before provider work", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ionos-preview-identity-"));
+  try {
+    const cases = [
+      env({ OPENCLAW_WORKSPACE_DIR: workspacePath, V4_PRODUCTION_TASK_ID: "task-only" }),
+      evidenceEnv(workspacePath, { V4_PRODUCTION_ISSUE_NUMBER: "not-a-number" }),
+      evidenceEnv(workspacePath, { V4_PRODUCTION_TASK_ID: "invalid task id" }),
+      evidenceEnv(workspacePath, { OPENCLAW_WORKSPACE_DIR: "relative/workspace" })
+    ];
+    for (const candidate of cases) {
+      let called = false;
+      await assert.rejects(
+        runIonosHistoricalIntelligencePreviewCommandV1({
+          env: candidate,
+          runPreview: async () => {
+            called = true;
+            return result();
+          }
+        }),
+        /IONOS_HISTORICAL_PREVIEW_EVIDENCE_IDENTITY_INVALID/
+      );
+      assert.equal(called, false);
+    }
+    assert.equal(fs.existsSync(evidencePath(workspacePath)), false);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
 });
 
 test("malformed config and unbounded timeout fail before any provider or secret work", async () => {
