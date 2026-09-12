@@ -167,6 +167,57 @@ body:
       required: true
 
   - type: input
+    id: feature_name
+    attributes:
+      label: feature_name
+      description: Short user-facing name for the independently launchable capability.
+      placeholder: Strategy workspace
+    validations:
+      required: true
+
+  - type: dropdown
+    id: release_target
+    attributes:
+      label: release_target
+      description: Certification milestone this feature contributes to. This does not delay an independently verified launch.
+      options:
+        - V1
+        - V1.1
+        - V1.5
+        - V2
+        - CONTINUOUS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: launch_policy
+    attributes:
+      label: launch_policy
+      description: Use immediate launch unless an explicit atomic dependency makes independent release unsafe.
+      options:
+        - IMMEDIATE_AFTER_VERIFICATION
+        - BUNDLED_ONLY
+    validations:
+      required: true
+
+  - type: textarea
+    id: bundle_reason
+    attributes:
+      label: bundle_reason
+      description: Required justification for BUNDLED_ONLY. Enter NOT_BUNDLED for immediate launches.
+      placeholder: NOT_BUNDLED
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback_condition
+    attributes:
+      label: rollback_condition
+      description: Observable production condition that requires disabling or reverting this feature.
+    validations:
+      required: true
+
+  - type: input
     id: depends_on
     attributes:
       label: depends_on

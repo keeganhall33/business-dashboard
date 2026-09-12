@@ -33,6 +33,20 @@ The primary unit of progress is a production-verified user or business workflow,
 
 Initial outcome lanes should stay concentrated on relationship/opportunity follow-up, high-value opportunity discovery/qualification, and the executive brief/decision inbox until those flows are operational.
 
+## Rolling feature launches
+
+V1, V1.1, V1.5, and later versions are certification milestones, not deployment batches. A feature must not wait for every feature in its target version when it is independently safe and useful.
+
+- Every vertical slice names a user-facing feature, release target, launch policy, and observable rollback condition.
+- `IMMEDIATE_AFTER_VERIFICATION` is the default. Once the latest production-verification task completes, the feature is `AVAILABLE` even when its broader release is not yet certified.
+- `BUNDLED_ONLY` is an exception for an explicit atomic dependency such as an inseparable schema cutover. It requires a written bundle reason and remains `VERIFIED_HELD` after verification.
+- Pull requests continue to receive Vercel previews. Merged `main` remains the sole production deployment path; do not create a second deployment pipeline or introduce deployment credentials into V4.
+- Version certification is ready only when every registered feature for that version is available. Certification does not retroactively delay an already available feature.
+- Failed production verification prevents launch. A later successful, independently reviewed verification attempt supersedes an older failed attempt without deleting its history.
+- Delivery Health reports feature launch state, release progress, seven-day throughput, and median production cycle time so speed claims are based on delivered outcomes rather than PR count.
+
+Launch states are `PLANNED`, `BUILDING`, `AWAITING_PRODUCTION_VERIFICATION`, `VERIFYING`, `AVAILABLE`, `VERIFIED_HELD`, and `BLOCKED`.
+
 ## Worker activation
 
 Once the natural-language task adapter is proven, activate a controlled 3-worker pool:

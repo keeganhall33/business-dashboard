@@ -3,6 +3,8 @@ import { getTaskContract } from './state-store/sqlite-store.mjs';
 export const DELIVERY_MODES = Object.freeze(['VERTICAL_SLICE', 'PLATFORM_PRIMITIVE', 'DEFECT', 'LEGACY']);
 export const SLICE_STAGES = Object.freeze(['DISCOVERY', 'CONTRACT', 'IMPLEMENTATION', 'INTEGRATION', 'PRODUCTION_VERIFICATION']);
 export const QUALITY_GATES = Object.freeze(['DIFF_CHECK', 'TYPECHECK', 'TEST', 'LINT', 'BUILD']);
+export const RELEASE_TARGETS = Object.freeze(['V1', 'V1.1', 'V1.5', 'V2', 'CONTINUOUS']);
+export const LAUNCH_POLICIES = Object.freeze(['IMMEDIATE_AFTER_VERIFICATION', 'BUNDLED_ONLY']);
 const ACTIVE_STATES = new Set(['CLAIMED', 'RUNNING', 'VALIDATING', 'PR_OPENED']);
 const PRIORITY = Object.freeze({ P0: 0, P1: 1, P2: 2, P3: 3 });
 const MODE = Object.freeze({ DEFECT: 0, VERTICAL_SLICE: 1, PLATFORM_PRIMITIVE: 2, LEGACY: 3 });
@@ -24,6 +26,11 @@ export function deliveryMetadata(contract = {}) {
     userFlow: contract.userFlow || null,
     definitionOfDone: contract.definitionOfDone || null,
     productionEvidence: contract.productionEvidence || null,
+    featureName: contract.featureName || contract.outcome || null,
+    releaseTarget: contract.releaseTarget || null,
+    launchPolicy: contract.launchPolicy || null,
+    bundleReason: contract.bundleReason || null,
+    rollbackCondition: contract.rollbackCondition || null,
   });
 }
 
@@ -39,6 +46,11 @@ export function validateDeliveryFields(fields = {}) {
     if (!fields.outcome) errors.push('SLICE_OUTCOME_REQUIRED');
     if (!fields.user_flow) errors.push('SLICE_USER_FLOW_REQUIRED');
     if (!fields.definition_of_done) errors.push('DEFINITION_OF_DONE_REQUIRED');
+    if (!fields.feature_name) errors.push('FEATURE_NAME_REQUIRED');
+    if (!RELEASE_TARGETS.includes(fields.release_target)) errors.push('RELEASE_TARGET_INVALID');
+    if (!LAUNCH_POLICIES.includes(fields.launch_policy)) errors.push('LAUNCH_POLICY_INVALID');
+    if (!fields.rollback_condition) errors.push('ROLLBACK_CONDITION_REQUIRED');
+    if (fields.launch_policy === 'BUNDLED_ONLY' && (!fields.bundle_reason || fields.bundle_reason === 'NOT_BUNDLED')) errors.push('BUNDLE_REASON_REQUIRED');
     const gates = csv(fields.quality_gates);
     for (const gate of gates) if (!QUALITY_GATES.includes(gate)) errors.push(`QUALITY_GATE_UNKNOWN:${gate}`);
     for (const required of ['DIFF_CHECK', 'TYPECHECK', 'TEST']) {
@@ -53,6 +65,25 @@ export function validateDeliveryFields(fields = {}) {
     if (!fields.definition_of_done) errors.push('DEFINITION_OF_DONE_REQUIRED');
   }
   return errors;
+}
+
+function timestamp(value) {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function latestTask(tasks) {
+  return [...tasks].sort((left, right) =>
+    (timestamp(right.updated_at) ?? timestamp(right.created_at) ?? 0) - (timestamp(left.updated_at) ?? timestamp(left.created_at) ?? 0)
+    || right.issue_number - left.issue_number
+    || right.task_id.localeCompare(left.task_id))[0] ?? null;
+}
+
+function median(values) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function isDependencyComplete(taskById, dependencyId) {
@@ -122,28 +153,58 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
     slices.set(metadata.sliceId, current);
   }
   const rows = [...slices.values()].map((slice) => {
+    const sourceTasks = tasks.filter((task) => deliveryMetadata(getTaskContract(task)).sliceId === slice.sliceId);
+    const metadata = deliveryMetadata(getTaskContract(latestTask(sourceTasks)));
     const stageStates = Object.fromEntries(SLICE_STAGES.map((stage) => {
-      const states = slice.tasks.filter((task) => task.stage === stage).map((task) => task.state);
-      const aggregate = states.length === 0 ? null
-        : states.every((state) => state === 'COMPLETE') ? 'COMPLETE'
-          : states.find((state) => ['FAILED', 'TIMED_OUT', 'BLOCKED'].includes(state))
-            || states.find((state) => ACTIVE_STATES.has(state))
-            || states.find((state) => state === 'READY')
-            || states[0];
-      return [stage, aggregate];
+      const stageTask = latestTask(sourceTasks.filter((task) => deliveryMetadata(getTaskContract(task)).stage === stage));
+      return [stage, stageTask?.state ?? null];
     }));
-    const verificationTasks = slice.tasks.filter((task) => task.stage === 'PRODUCTION_VERIFICATION');
-    const operational = verificationTasks.length > 0 && verificationTasks.every((task) => task.state === 'COMPLETE');
-    const blockedTasks = slice.tasks.filter((task) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(task.state)).length;
+    const latestVerification = latestTask(sourceTasks.filter((task) => deliveryMetadata(getTaskContract(task)).stage === 'PRODUCTION_VERIFICATION'));
+    const verified = latestVerification?.state === 'COMPLETE';
+    const launchPolicy = metadata.launchPolicy || 'UNSPECIFIED';
+    const operational = verified && launchPolicy === 'IMMEDIATE_AFTER_VERIFICATION';
+    const blockedTasks = Object.values(stageStates).filter((state) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(state)).length;
     const hasActiveWork = slice.tasks.some((task) => task.state === 'READY' || ACTIVE_STATES.has(task.state));
+    const startedAtMs = Math.min(...sourceTasks.map((task) => timestamp(task.created_at)).filter((value) => value !== null));
+    const availableAtMs = operational ? (timestamp(latestVerification.updated_at) ?? timestamp(latestVerification.created_at)) : null;
+    const cycleTimeHours = availableAtMs !== null && Number.isFinite(startedAtMs)
+      ? Math.round(((availableAtMs - startedAtMs) / 3_600_000) * 100) / 100
+      : null;
+    const launchState = operational ? 'AVAILABLE'
+      : verified && launchPolicy === 'BUNDLED_ONLY' ? 'VERIFIED_HELD'
+        : latestVerification && (latestVerification.state === 'READY' || ACTIVE_STATES.has(latestVerification.state)) ? 'VERIFYING'
+          : stageStates.INTEGRATION === 'COMPLETE' ? 'AWAITING_PRODUCTION_VERIFICATION'
+            : blockedTasks > 0 ? 'BLOCKED'
+              : hasActiveWork ? 'BUILDING' : 'PLANNED';
     return {
       ...slice,
+      featureName: metadata.featureName || slice.outcome || slice.sliceId,
+      releaseTarget: metadata.releaseTarget || 'UNASSIGNED',
+      launchPolicy,
+      rollbackCondition: metadata.rollbackCondition,
       stages: stageStates,
+      verified,
       operational,
+      launchState,
+      availableAt: availableAtMs === null ? null : new Date(availableAtMs).toISOString(),
+      cycleTimeHours,
       blockedTasks,
       status: operational ? 'OPERATIONAL' : blockedTasks > 0 ? 'BLOCKED' : hasActiveWork ? 'ACTIVE' : 'STALLED',
     };
   }).sort((a, b) => a.sliceId.localeCompare(b.sliceId));
+  const releases = [...new Set(rows.map((row) => row.releaseTarget))].sort().map((releaseTarget) => {
+    const features = rows.filter((row) => row.releaseTarget === releaseTarget);
+    return {
+      releaseTarget,
+      totalFeatures: features.length,
+      availableFeatures: features.filter((feature) => feature.launchState === 'AVAILABLE').length,
+      heldFeatures: features.filter((feature) => feature.launchState === 'VERIFIED_HELD').length,
+      blockedFeatures: features.filter((feature) => feature.launchState === 'BLOCKED').length,
+      certificationReady: features.length > 0 && features.every((feature) => feature.launchState === 'AVAILABLE'),
+    };
+  });
+  const completedCycles = rows.map((row) => row.cycleTimeHours).filter((value) => value !== null);
+  const generatedAtMs = timestamp(generatedAt) ?? Date.now();
   return Object.freeze({
     contractVersion: 'delivery_health_v1',
     generatedAt,
@@ -151,6 +212,11 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
     operationalSlices: rows.filter((slice) => slice.operational).length,
     blockedSlices: rows.filter((slice) => slice.blockedTasks > 0 && !slice.operational).length,
     stalledSlices: rows.filter((slice) => slice.status === 'STALLED').length,
+    availableFeatures: rows.filter((slice) => slice.launchState === 'AVAILABLE').length,
+    verifiedHeldFeatures: rows.filter((slice) => slice.launchState === 'VERIFIED_HELD').length,
+    throughputLast7Days: rows.filter((slice) => slice.availableAt && generatedAtMs - timestamp(slice.availableAt) <= 7 * 86_400_000).length,
+    medianCycleTimeHours: median(completedCycles),
+    releases,
     slices: rows,
   });
 }

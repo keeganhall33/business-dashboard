@@ -202,6 +202,11 @@ test('vertical-slice contracts require outcome flow completion and quality evide
 **delivery_mode:** VERTICAL_SLICE
 **slice_id:** relationship-followup-v1
 **slice_stage:** IMPLEMENTATION
+**feature_name:** Relationship follow-up
+**release_target:** V1
+**launch_policy:** IMMEDIATE_AFTER_VERIFICATION
+**bundle_reason:** NOT_BUNDLED
+**rollback_condition:** Rollback if production verification fails.
 **depends_on:** NONE
 **quality_gates:** DIFF_CHECK,TYPECHECK,TEST,LINT
 **outcome:** Keegan sees the correct follow-up at the correct time.
@@ -226,6 +231,11 @@ test('production verification fails closed without named production evidence', (
 **delivery_mode:** VERTICAL_SLICE
 **slice_id:** executive-brief-v1
 **slice_stage:** PRODUCTION_VERIFICATION
+**feature_name:** Executive brief
+**release_target:** V1
+**launch_policy:** IMMEDIATE_AFTER_VERIFICATION
+**bundle_reason:** NOT_BUNDLED
+**rollback_condition:** Rollback if the live brief is misleading or unavailable.
 **depends_on:** implementation-brief
 **quality_gates:** DIFF_CHECK,TYPECHECK,TEST
 **outcome:** The daily brief reliably identifies the next decision.
