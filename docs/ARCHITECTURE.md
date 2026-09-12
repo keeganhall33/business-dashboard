@@ -50,7 +50,12 @@ External research does not bypass Fusion to become an operating recommendation. 
 
 ### Agent model
 - `src/lib/agents/operating-model.ts`
+- `src/lib/agents/execution-control.ts`
+- `src/lib/agents/task-contract.ts`
 - `docs/intelligence/AGENT_OPERATING_MODEL.md`
+- `docs/intelligence/AGENT_EXECUTION_CONTROL.md`
+
+Agent execution follows a layered graph → harness → loop model. The canonical decision flow routes work, task contracts constrain each worker's environment and budget, and independent verification determines whether an attempt is accepted, retried, rerouted, or escalated. These controls harden existing owners; they do not create a parallel recommendation engine.
 
 ### Internal and external intelligence
 - `docs/intelligence/EXTERNAL_KNOWLEDGE_MODEL.md`
@@ -93,6 +98,8 @@ Evidence refresh jobs may normalize/persist observations. They must not invent e
 - `outcome_memory` records real-world results and is part of the learning loop.
 - Historical migrations are retained even when the feature they introduced is later retired.
 - Seed/E2E/staging fixture data must be explicitly labeled and must never silently masquerade as production evidence.
+- Decision provenance records why important agent or workflow outputs were accepted, rerouted, rejected, or escalated. Confidence alone is never proof of completion.
+- Task-specific context packets should include only relevant domains rather than exposing the full business knowledge base to every worker.
 
 ## Documentation policy
 
@@ -103,3 +110,5 @@ New architectural decisions belong under `docs/`, preferably `docs/intelligence/
 ## Change rule
 
 Before adding a new recommendation engine, scheduler, memory store, deployment path, agent role, or source-of-truth document, first determine whether an existing canonical component owns that responsibility. Extend the existing component unless there is a documented reason to create a new boundary.
+
+Before adding another agent, first determine whether the problem can be solved by narrowing the existing worker's task contract, context, tools, verifier, or route. New agents are justified by a real ownership, permission, context, or workflow boundary, not by prompt specialization alone.
