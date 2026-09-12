@@ -3,6 +3,9 @@
 ## Delivery outcome
 - Delivery mode (Vertical Slice | Defect | Platform Primitive):
 - Slice ID and stage:
+- Feature name and release target:
+- Launch policy (Immediate after verification | Bundled exception):
+- Rollback condition:
 - User/business outcome advanced:
 - End-to-end flow exercised:
 - Dependencies completed:

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildDeliveryHealth, selectDeliveryReadyTasks } from '../../scripts/orchestration-v4/delivery-policy.mjs';
+import { buildDeliveryHealth, selectDeliveryReadyTasks, validateDeliveryFields } from '../../scripts/orchestration-v4/delivery-policy.mjs';
 import { runRequiredQualityGates } from '../../scripts/orchestration-v4/quality-gates.mjs';
 
 function task(id, overrides = {}) {
@@ -12,6 +12,10 @@ function task(id, overrides = {}) {
     dependsOn: '',
     qualityGates: 'DIFF_CHECK,TYPECHECK,TEST',
     outcome: 'A real outcome',
+    featureName: 'Useful feature',
+    releaseTarget: 'V1',
+    launchPolicy: 'IMMEDIATE_AFTER_VERIFICATION',
+    rollbackCondition: 'Rollback on production verification failure.',
     ...overrides.contract,
   };
   return {
@@ -20,6 +24,7 @@ function task(id, overrides = {}) {
     stream: 'CORE_INTELLIGENCE',
     state: 'READY',
     created_at: '2026-09-12T00:00:00.000Z',
+    updated_at: '2026-09-12T00:00:00.000Z',
     contract_json: JSON.stringify(contract),
     ...overrides,
     contract_json: JSON.stringify(contract),
@@ -49,7 +54,46 @@ test('delivery health counts only production-verified slices as operational', ()
   ], '2026-09-12T12:00:00.000Z');
   assert.equal(health.activeSlices, 1);
   assert.equal(health.operationalSlices, 1);
+  assert.equal(health.availableFeatures, 1);
+  assert.equal(health.releases.find((release) => release.releaseTarget === 'V1')?.availableFeatures, 1);
   assert.equal(health.slices.find((slice) => slice.sliceId === 'followup')?.operational, false);
+});
+
+test('verified features launch independently without waiting for their release bundle', () => {
+  const health = buildDeliveryHealth([
+    task('verify-10', {
+      state: 'COMPLETE',
+      created_at: '2026-09-10T00:00:00.000Z',
+      updated_at: '2026-09-11T00:00:00.000Z',
+      contract: { sliceId: 'crm-links', sliceStage: 'PRODUCTION_VERIFICATION', featureName: 'CRM links', releaseTarget: 'V1' },
+    }),
+    task('build-11', { contract: { sliceId: 'strategy', featureName: 'Strategy', releaseTarget: 'V1' } }),
+  ], '2026-09-12T00:00:00.000Z');
+  assert.equal(health.slices.find((slice) => slice.sliceId === 'crm-links')?.launchState, 'AVAILABLE');
+  assert.equal(health.slices.find((slice) => slice.sliceId === 'strategy')?.launchState, 'BUILDING');
+  assert.equal(health.releases[0].certificationReady, false);
+  assert.equal(health.medianCycleTimeHours, 24);
+  assert.equal(health.throughputLast7Days, 1);
+});
+
+test('bundling requires an explicit exception and holds a verified feature', () => {
+  const health = buildDeliveryHealth([
+    task('verify-20', {
+      state: 'COMPLETE',
+      contract: { sliceId: 'atomic-change', sliceStage: 'PRODUCTION_VERIFICATION', launchPolicy: 'BUNDLED_ONLY', bundleReason: 'Requires an atomic schema cutover.' },
+    }),
+  ]);
+  assert.equal(health.availableFeatures, 0);
+  assert.equal(health.verifiedHeldFeatures, 1);
+  assert.equal(health.slices[0].launchState, 'VERIFIED_HELD');
+});
+
+test('latest production verification supersedes an older failed attempt', () => {
+  const health = buildDeliveryHealth([
+    task('verify-30', { state: 'FAILED', updated_at: '2026-09-11T00:00:00.000Z', contract: { sliceId: 'retry', sliceStage: 'PRODUCTION_VERIFICATION' } }),
+    task('verify-31', { state: 'COMPLETE', updated_at: '2026-09-12T00:00:00.000Z', contract: { sliceId: 'retry', sliceStage: 'PRODUCTION_VERIFICATION' } }),
+  ]);
+  assert.equal(health.slices[0].launchState, 'AVAILABLE');
 });
 
 test('quality gates are machine-run and fail closed on the first failure', () => {
@@ -65,4 +109,17 @@ test('quality gates are machine-run and fail closed on the first failure', () =>
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'V4_QUALITY_GATE_FAILED:TYPECHECK');
   assert.equal(calls.length, 2);
+});
+
+test('rolling launch contracts default to independent release and fail closed when incomplete', () => {
+  const base = {
+    delivery_mode: 'VERTICAL_SLICE', priority: 'P1', slice_id: 'strategy', slice_stage: 'IMPLEMENTATION',
+    outcome: 'Strategy is usable.', user_flow: 'evidence -> decision', definition_of_done: 'Production verified.',
+    quality_gates: 'DIFF_CHECK,TYPECHECK,TEST', feature_name: 'Strategy workspace', release_target: 'V1',
+    launch_policy: 'IMMEDIATE_AFTER_VERIFICATION', rollback_condition: 'Rollback when production verification fails.',
+  };
+  assert.deepEqual(validateDeliveryFields(base), []);
+  assert.ok(validateDeliveryFields({ ...base, feature_name: '' }).includes('FEATURE_NAME_REQUIRED'));
+  assert.ok(validateDeliveryFields({ ...base, release_target: 'SOMEDAY' }).includes('RELEASE_TARGET_INVALID'));
+  assert.ok(validateDeliveryFields({ ...base, launch_policy: 'BUNDLED_ONLY', bundle_reason: 'NOT_BUNDLED' }).includes('BUNDLE_REASON_REQUIRED'));
 });

@@ -72,6 +72,9 @@ export function promptForTask(task) {
     `Delivery mode: ${deliveryMetadata(contract).mode}`,
     `Vertical slice: ${deliveryMetadata(contract).sliceId ?? 'none'}`,
     `Slice stage: ${deliveryMetadata(contract).stage ?? 'none'}`,
+    `Feature: ${deliveryMetadata(contract).featureName ?? 'none'}`,
+    `Release target: ${deliveryMetadata(contract).releaseTarget ?? 'unassigned'}`,
+    `Launch policy: ${deliveryMetadata(contract).launchPolicy ?? 'unspecified'}`,
     '',
     'Authoritative issue body and acceptance criteria:',
     contract.body,
@@ -86,6 +89,7 @@ export function promptForTask(task) {
     'Every completion claim must cite evidence produced or inspected during this run. Never treat your own confidence as verification.',
     'Optimize for the stated user outcome and end-to-end flow, not merely file completion.',
     'A task is coded when its acceptance passes; a slice is operational only after its PRODUCTION_VERIFICATION stage passes.',
+    'A production-verified feature with IMMEDIATE_AFTER_VERIFICATION launches independently. Do not hold it for the full version milestone.',
   ].join('\n');
 }
 

@@ -117,6 +117,11 @@ export function validateTaskContract(issue) {
       userFlow: fields.user_flow ?? null,
       definitionOfDone: fields.definition_of_done ?? null,
       productionEvidence: fields.production_evidence ?? null,
+      featureName: fields.feature_name ?? null,
+      releaseTarget: fields.release_target ?? null,
+      launchPolicy: fields.launch_policy ?? null,
+      bundleReason: fields.bundle_reason ?? null,
+      rollbackCondition: fields.rollback_condition ?? null,
     }),
   };
 }

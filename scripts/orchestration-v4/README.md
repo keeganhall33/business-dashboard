@@ -22,6 +22,8 @@ Each new vertical slice names one user/business outcome and advances through `DI
 
 Use `npm run delivery:status` against the V4 state database for the completion scoreboard. The same delivery snapshot is embedded in `heartbeat.json` so operational monitoring can show active, blocked, and production-verified slices without treating issue count as product progress.
 
+Production-verified features launch independently by default. Version names group features for certification but do not hold an otherwise safe feature. `delivery:status` exposes each feature's launch state, target release, cycle time, seven-day throughput, and whether a bundled exception is holding it.
+
 ## Phase 1
 
 This branch establishes the state machine, immutable execution context, disposable Git workspace lifecycle, semantic progress classifier, slot-only scheduler semantics, and deterministic isolation tests.
