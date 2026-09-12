@@ -1,4 +1,5 @@
 import type { ExecutiveActionItemV1, ExecutiveActionSynthesisV1 } from "@/lib/core-intelligence/executive-action-synthesis/contracts";
+import type { RecommendationContradictionAssessmentV1 } from "@/lib/core-intelligence/recommendation-contradiction/contracts";
 import type { StrategyEvidenceReviewQueueItemV1, StrategyEvidenceReviewQueueV1 } from "@/lib/core-intelligence/strategy-evidence-review/contracts";
 import type { Recommendation, RecommendationsResponse } from "@/lib/intelligence/recommendation-contract";
 
@@ -56,11 +57,21 @@ export type ExecutiveStrategyWorkspaceModelV1 = {
   notice: string;
 };
 
-function epistemicState(item: ExecutiveActionItemV1): StrategyEpistemicStateV1 {
+function inferredRecommendationIds(assessment: RecommendationContradictionAssessmentV1 | null) {
+  const ids = new Set<string>();
+  for (const pair of assessment?.compatible_pairs ?? []) {
+    if (pair.truth_state !== "INFERRED") continue;
+    for (const id of pair.recommendation_ids) ids.add(id);
+  }
+  return ids;
+}
+
+function epistemicState(item: ExecutiveActionItemV1, inferredIds: Set<string>): StrategyEpistemicStateV1 {
   if (item.evidence_state.truth_state === "CONFLICTED") return "CONFLICTED";
   if (item.evidence_state.truth_state === "UNKNOWN") return "UNKNOWN";
   if (item.evidence_state.freshness_state === "REVIEW_REQUIRED") return "STALE";
   if (item.evidence_state.freshness_state === "UNKNOWN") return "UNKNOWN";
+  if (inferredIds.has(item.recommendation_id)) return "INFERRED";
   return "KNOWN";
 }
 
@@ -97,6 +108,7 @@ function toRecord(
   item: ExecutiveActionItemV1,
   recommendations: Map<string, Recommendation>,
   reviews: Map<string, StrategyEvidenceReviewQueueItemV1>,
+  inferredIds: Set<string>,
 ): StrategyWorkspaceRecordV1 {
   const recommendation = recommendations.get(item.recommendation_id) ?? null;
   const review = reviews.get(item.recommendation_id) ?? null;
@@ -113,7 +125,7 @@ function toRecord(
     urgency: item.urgency ?? null,
     approvalLevel: item.approval_level ?? null,
     recommendationStatus: item.recommendation_status ?? null,
-    epistemicState: epistemicState(item),
+    epistemicState: epistemicState(item, inferredIds),
     freshnessState: item.evidence_state.freshness_state ?? "UNKNOWN",
     blocker: item.blocking_reason,
     dependencies,
@@ -138,6 +150,7 @@ function isBlocked(item: StrategyWorkspaceRecordV1) {
 export function buildExecutiveStrategyWorkspaceV1(input: {
   recommendations: RecommendationsResponse | null;
   evidenceReview: StrategyEvidenceReviewQueueV1 | null;
+  contradictionAssessment?: RecommendationContradictionAssessmentV1 | null;
   synthesis: ExecutiveActionSynthesisV1 | null;
   generatedAt?: string;
 }): ExecutiveStrategyWorkspaceModelV1 {
@@ -161,7 +174,8 @@ export function buildExecutiveStrategyWorkspaceV1(input: {
 
   const recommendations = new Map(input.recommendations.recommendations.map((item) => [item.id, item] as const));
   const reviews = new Map(input.evidenceReview.queue.map((item) => [item.recommendation_id, item] as const));
-  const records = input.synthesis.queue.map((item) => toRecord(item, recommendations, reviews));
+  const inferredIds = inferredRecommendationIds(input.contradictionAssessment ?? null);
+  const records = input.synthesis.queue.map((item) => toRecord(item, recommendations, reviews, inferredIds));
   const sourceMode = input.recommendations.dataMode ?? "UNAVAILABLE";
   const state = sourceMode === "LIVE_DATA" ? "AVAILABLE" : "PARTIAL";
   const actionable = records.filter((item) => item.lane !== "DEPRIORITIZE");
