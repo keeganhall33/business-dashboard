@@ -60,11 +60,13 @@ test("Learning and Sports Art Partner production routes fail closed instead of p
   assert.doesNotMatch(sportsPartners, /SPORTS_ART_PARTNER_UNIVERSE_FIXTURE_V1|fixtures\//);
 });
 
-test("company detail keeps the implemented route but refuses to fabricate missing production records", () => {
+test("company detail uses canonical production records and still refuses to fabricate unsupported data", () => {
   const route = source("src/app/(app)/relationships/companies/[id]/page.tsx");
 
-  assert.match(route, /resolveCrmCompanyDetailV1\(EMPTY_CRM_DIRECTORY_INDEX_V1,\s*id\)/);
+  assert.match(route, /loadCrmDirectoryIndexV1/);
+  assert.match(route, /const index = await loadCrmDirectoryIndexV1\(\)/);
+  assert.match(route, /resolveCrmCompanyDetailV1\(index,\s*id\)/);
   assert.match(route, /if \(!company\) notFound\(\)/);
   assert.match(route, /<CrmCompanyDetailV1 company=\{company\}/);
-  assert.doesNotMatch(route, /FIXTURE_V1|fixtures\//);
+  assert.doesNotMatch(route, /EMPTY_CRM_DIRECTORY_INDEX_V1|FIXTURE_V1|fixtures\//);
 });
