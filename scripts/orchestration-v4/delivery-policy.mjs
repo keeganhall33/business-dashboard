@@ -5,6 +5,7 @@ export const SLICE_STAGES = Object.freeze(['DISCOVERY', 'CONTRACT', 'IMPLEMENTAT
 export const QUALITY_GATES = Object.freeze(['DIFF_CHECK', 'TYPECHECK', 'TEST', 'LINT', 'BUILD']);
 export const RELEASE_TARGETS = Object.freeze(['V1', 'V1.1', 'V1.5', 'V2', 'CONTINUOUS']);
 export const LAUNCH_POLICIES = Object.freeze(['IMMEDIATE_AFTER_VERIFICATION', 'BUNDLED_ONLY']);
+export const PRODUCT_LANE_CAPACITY = 6;
 const ACTIVE_STATES = new Set(['CLAIMED', 'RUNNING', 'VALIDATING', 'PR_OPENED']);
 const PRIORITY = Object.freeze({ P0: 0, P1: 1, P2: 2, P3: 3 });
 const MODE = Object.freeze({ DEFECT: 0, VERTICAL_SLICE: 1, PLATFORM_PRIMITIVE: 2, LEGACY: 3 });
@@ -127,7 +128,7 @@ function hasVerifiedProductionEvidence(task) {
   }
 }
 
-export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = 5, dependencies = [] } = {}) {
+export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = PRODUCT_LANE_CAPACITY, dependencies = [] } = {}) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
   const durableByTask = durableDependenciesByTask(dependencies);
   const active = tasks.filter((task) => ACTIVE_STATES.has(task.state));
