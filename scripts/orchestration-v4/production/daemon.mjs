@@ -212,17 +212,27 @@ function gitOutput(repoRoot, args, exec = execFileSync) {
   return String(exec('git', ['-C', repoRoot, ...args], { encoding: 'utf8', timeout: 30_000 })).trim();
 }
 
-export function refreshRuntimeMain({ repoRoot, tasks = [], fetchMain = refreshCanonicalMain, exec = execFileSync }) {
+export function refreshRuntimeMain({
+  repoRoot,
+  tasks = [],
+  allowAdvance = false,
+  expectedFrom = null,
+  expectedTo = null,
+  fetchMain = refreshCanonicalMain,
+  exec = execFileSync,
+}) {
   const latestHead = fetchMain(repoRoot);
   let head = gitOutput(repoRoot, ['rev-parse', 'HEAD'], exec);
   const clean = gitOutput(repoRoot, ['status', '--porcelain'], exec) === '';
   const branch = gitOutput(repoRoot, ['branch', '--show-current'], exec);
   const idle = !tasks.some((task) => ACTIVE_STATES.has(task.state));
-  let refreshState = head === latestHead ? 'CURRENT' : 'DEFERRED_ACTIVE';
+  if (expectedFrom && head !== expectedFrom) throw new Error('V4_RUNTIME_REFRESH_SNAPSHOT_DRIFT');
+  if (expectedTo && latestHead !== expectedTo) throw new Error('V4_RUNTIME_REFRESH_SNAPSHOT_DRIFT');
+  let refreshState = head === latestHead ? 'CURRENT' : (allowAdvance ? 'DEFERRED_ACTIVE' : 'OBSERVED_STALE');
 
-  if (head !== latestHead && idle && !clean) refreshState = 'DEFERRED_DIRTY';
-  if (head !== latestHead && idle && clean && branch !== 'main') refreshState = 'DEFERRED_NOT_MAIN';
-  if (head !== latestHead && idle && clean && branch === 'main') {
+  if (allowAdvance && head !== latestHead && idle && !clean) refreshState = 'DEFERRED_DIRTY';
+  if (allowAdvance && head !== latestHead && idle && clean && branch !== 'main') refreshState = 'DEFERRED_NOT_MAIN';
+  if (allowAdvance && head !== latestHead && idle && clean && branch === 'main') {
     gitOutput(repoRoot, ['merge', '--ff-only', 'refs/remotes/origin/main'], exec);
     head = gitOutput(repoRoot, ['rev-parse', 'HEAD'], exec);
     if (head !== latestHead) throw new Error('V4_RUNTIME_FAST_FORWARD_MISMATCH');
@@ -381,7 +391,11 @@ function recordContinuityActionOnce(db, { action, task = null, now = new Date() 
   return true;
 }
 
-export function executeContinuityControlActions(db, decision, { killGroup = signalGroup, now = new Date() } = {}) {
+export function executeContinuityControlActions(db, decision, {
+  killGroup = signalGroup,
+  refreshMain = null,
+  now = new Date(),
+} = {}) {
   const executed = [];
   for (const action of decision.actions) {
     if (CLAIM_ACTIONS.has(action.type) || action.type === 'WAIT_FOR_ACTIVE_PROGRESS' || action.type === 'NO_ACTION') continue;
@@ -395,6 +409,14 @@ export function executeContinuityControlActions(db, decision, { killGroup = sign
       }
       recordContinuityActionOnce(db, { action, task, now });
       executed.push(action);
+      continue;
+    }
+    if (action.type === 'REFRESH_CLEAN_IDLE_RUNTIME') {
+      const key = actionIdempotencyKey(action, task);
+      if (continuityActionWasRecorded(db, key) || typeof refreshMain !== 'function') continue;
+      const result = refreshMain(action);
+      recordContinuityActionOnce(db, { action, task, now });
+      executed.push(Object.freeze({ ...action, result }));
       continue;
     }
     if (recordContinuityActionOnce(db, { action, task, now })) executed.push(action);
@@ -514,7 +536,7 @@ export async function runProductionPoll({
     throw new Error('V4_PRODUCTION_STALL_TIMEOUT_INVALID');
   }
   const beforeRefresh = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
-  const runtime = refreshRuntime({ repoRoot, tasks: beforeRefresh });
+  const runtime = refreshRuntime({ repoRoot, tasks: beforeRefresh, allowAdvance: false });
   const baseSha = runtime.latestHead;
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
@@ -539,13 +561,23 @@ export async function runProductionPoll({
     ? deliverySelection.selected.filter((task) => continuityTaskIds.has(task.task_id))
     : deliverySelection.selected;
   const controlActions = continuityEnabled
-    ? executeContinuityControlActions(db, continuityDecision, { now: now() })
+    ? executeContinuityControlActions(db, continuityDecision, {
+        now: now(),
+        refreshMain: (action) => refreshRuntime({
+          repoRoot,
+          tasks: beforeRefresh,
+          allowAdvance: true,
+          expectedFrom: action.fromHead,
+          expectedTo: action.toHead,
+        }),
+      })
     : [];
+  const refreshedRuntime = controlActions.find((action) => action.type === 'REFRESH_CLEAN_IDLE_RUNTIME')?.result || runtime;
   const continuity = buildContinuityState({
     snapshot: continuitySnapshot,
     decision: continuityDecision,
     intake,
-    runtime,
+    runtime: refreshedRuntime,
     generatedAt: now().toISOString(),
   });
   recordContinuityStateIfChanged(db, continuity, now());

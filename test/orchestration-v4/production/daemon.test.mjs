@@ -300,7 +300,7 @@ test('deterministic verifier bypasses OpenClaw state while ordinary work is unch
   assert.equal(retained.length, 1);
 });
 
-test('clean idle runtime fast-forwards while active or dirty runtime never mutates', () => {
+test('runtime observation is non-mutating and policy-authorized clean idle refresh fast-forwards', () => {
   const latest = 'b'.repeat(40);
   const createExec = ({ active = false, dirty = false } = {}) => {
     let head = 'a'.repeat(40);
@@ -320,14 +320,17 @@ test('clean idle runtime fast-forwards while active or dirty runtime never mutat
   };
 
   const idle = createExec();
-  const advanced = refreshRuntimeMain({ repoRoot: '/repo', tasks: idle.tasks, fetchMain: () => latest, exec: idle.exec });
+  const observed = refreshRuntimeMain({ repoRoot: '/repo', tasks: idle.tasks, fetchMain: () => latest, exec: idle.exec });
+  assert.equal(observed.refreshState, 'OBSERVED_STALE');
+  assert.equal(idle.calls.some((args) => args[0] === 'merge'), false);
+  const advanced = refreshRuntimeMain({ repoRoot: '/repo', tasks: idle.tasks, allowAdvance: true, fetchMain: () => latest, exec: idle.exec });
   assert.equal(advanced.refreshState, 'ADVANCED');
   assert.equal(advanced.head, latest);
   assert.equal(idle.calls.some((args) => args[0] === 'merge'), true);
 
   for (const options of [{ active: true }, { dirty: true }]) {
     const fixture = createExec(options);
-    const result = refreshRuntimeMain({ repoRoot: '/repo', tasks: fixture.tasks, fetchMain: () => latest, exec: fixture.exec });
+    const result = refreshRuntimeMain({ repoRoot: '/repo', tasks: fixture.tasks, allowAdvance: true, fetchMain: () => latest, exec: fixture.exec });
     assert.equal(result.refreshState, options.active ? 'DEFERRED_ACTIVE' : 'DEFERRED_DIRTY');
     assert.equal(fixture.calls.some((args) => args[0] === 'merge'), false);
   }
@@ -394,6 +397,26 @@ test('stall termination action is process-owned and idempotent across duplicate 
     assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
     assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
     assert.deepEqual(signals, [[4567, 'SIGTERM']]);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runtime refresh executes only through the emitted allow-listed action and only once', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-refresh-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const refreshes = [];
+  try {
+    const action = { type: 'REFRESH_CLEAN_IDLE_RUNTIME', fromHead: 'a'.repeat(40), toHead: 'b'.repeat(40) };
+    const decision = { actions: [action] };
+    const options = {
+      refreshMain: (value) => { refreshes.push(value); return { refreshState: 'ADVANCED' }; },
+      now: new Date('2026-09-13T20:00:00Z'),
+    };
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
+    assert.deepEqual(refreshes, [action]);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
