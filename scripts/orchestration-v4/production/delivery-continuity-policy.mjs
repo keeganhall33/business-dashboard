@@ -22,6 +22,13 @@ function boundedInteger(value, fallback, minimum = 0) {
   return Number.isSafeInteger(value) && value >= minimum ? value : fallback;
 }
 
+function requiredBoundedInteger(value, code, minimum = 0) {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(code);
+  }
+  return value;
+}
+
 function strings(value) {
   return Array.isArray(value)
     ? [...new Set(value.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim()))].sort()
@@ -66,6 +73,20 @@ function normalizeSnapshot(snapshot) {
   const taskIds = new Set();
   for (const task of tasks) {
     if (!task?.taskId || taskIds.has(task.taskId)) throw new Error('V4_CONTINUITY_TASK_INVALID');
+    if (ACTIVE_STATES.has(task.state)) {
+      if (task.semanticProgressAt !== undefined && time(task.semanticProgressAt) === null) {
+        throw new Error('V4_CONTINUITY_ACTIVE_PROGRESS_INVALID');
+      }
+      if (task.startedAt !== undefined && time(task.startedAt) === null) {
+        throw new Error('V4_CONTINUITY_ACTIVE_PROGRESS_INVALID');
+      }
+      if (time(task.semanticProgressAt) === null && time(task.startedAt) === null) {
+        throw new Error('V4_CONTINUITY_ACTIVE_PROGRESS_REQUIRED');
+      }
+      if (task.deadlineAt !== undefined && time(task.deadlineAt) === null) {
+        throw new Error('V4_CONTINUITY_ACTIVE_DEADLINE_INVALID');
+      }
+    }
     taskIds.add(task.taskId);
   }
   const slotIds = new Set();
@@ -73,17 +94,20 @@ function normalizeSnapshot(snapshot) {
     if (!slot?.slotId || slotIds.has(slot.slotId)) throw new Error('V4_CONTINUITY_SLOT_INVALID');
     slotIds.add(slot.slotId);
   }
+  if (!snapshot.limits || typeof snapshot.limits !== 'object' || Array.isArray(snapshot.limits)) {
+    throw new Error('V4_CONTINUITY_LIMITS_REQUIRED');
+  }
   return {
     now,
     tasks,
     slots,
     limits: {
-      global: boundedInteger(snapshot.limits?.global, slots.length),
-      perSlice: boundedInteger(snapshot.limits?.perSlice, 3),
-      perStream: boundedInteger(snapshot.limits?.perStream, 1),
-      executable: boundedInteger(snapshot.limits?.executable, slots.length),
+      global: requiredBoundedInteger(snapshot.limits.global, 'V4_CONTINUITY_GLOBAL_LIMIT_INVALID'),
+      perSlice: requiredBoundedInteger(snapshot.limits.perSlice, 'V4_CONTINUITY_SLICE_LIMIT_INVALID'),
+      perStream: requiredBoundedInteger(snapshot.limits.perStream, 'V4_CONTINUITY_STREAM_LIMIT_INVALID'),
+      executable: requiredBoundedInteger(snapshot.limits.executable, 'V4_CONTINUITY_EXECUTABLE_LIMIT_INVALID'),
     },
-    semanticProgressWindowMs: boundedInteger(snapshot.semanticProgressWindowMs, 15 * 60_000, 1),
+    semanticProgressWindowMs: requiredBoundedInteger(snapshot.semanticProgressWindowMs, 'V4_CONTINUITY_PROGRESS_WINDOW_INVALID', 1),
     runtime: snapshot.runtime || {},
     completedTaskIds: new Set(strings(snapshot.completedTaskIds)),
     terminalTransition: snapshot.terminalTransition || null,
@@ -153,7 +177,8 @@ export function decideDeliveryContinuity(snapshot) {
   }
 
   const staleRuntimeNeeded = ready.some((task) => !requiredBaseAvailable(task, context.runtime));
-  if (staleRuntimeNeeded && context.runtime.clean === true && context.runtime.idle === true && context.runtime.head !== context.runtime.latestHead) {
+  const snapshotOwnsExecution = active.length > 0 || context.slots.some((slot) => Boolean(slot.taskId));
+  if (staleRuntimeNeeded && !snapshotOwnsExecution && context.runtime.clean === true && context.runtime.idle === true && context.runtime.head !== context.runtime.latestHead) {
     actions.push(action('REFRESH_CLEAN_IDLE_RUNTIME', { fromHead: context.runtime.head || null, toHead: context.runtime.latestHead || null }));
   }
 

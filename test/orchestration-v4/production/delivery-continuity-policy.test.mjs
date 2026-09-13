@@ -119,6 +119,28 @@ test('runtime refresh occurs only when clean and idle', () => {
   assert.equal(dirty.actions[0].type, 'REPORT_BACKLOG_STARVATION');
 });
 
+test('runtime refresh fails closed when task or slot state contradicts idle runtime', () => {
+  const stale = ready('new-base', { requiredBase: 'head-b' });
+  const active = {
+    ...ready('active'),
+    state: 'RUNNING',
+    slotId: 'local-a',
+    childProcessAlive: true,
+    semanticProgressAt: now,
+  };
+  const decision = decideDeliveryContinuity(snapshot({
+    tasks: [active, stale],
+    slots: [
+      { slotId: 'local-a', streams: ['CORE_INTELLIGENCE'], taskId: 'active' },
+      { slotId: 'local-c', streams: ['INTELLIGENCE_UX'] },
+      { slotId: 'local-d', streams: ['AGENT_ORCHESTRATION'] },
+    ],
+    runtime: { head: 'head-a', latestHead: 'head-b', clean: true, idle: true },
+  }));
+  assert.equal(decision.actions.some((entry) => entry.type === 'REFRESH_CLEAN_IDLE_RUNTIME'), false);
+  assert.deepEqual(decision.actions, [{ type: 'WAIT_FOR_ACTIVE_PROGRESS' }]);
+});
+
 test('terminal work never retries beyond max attempts and does not suppress successors', () => {
   const decision = decideDeliveryContinuity(snapshot({ tasks: [
     { ...ready('old'), state: 'FAILED', attempt: 1, maxAttempts: 1, successorTaskId: 'successor' },
@@ -139,4 +161,26 @@ test('identical snapshots are idempotent and malformed or unbounded input fails 
   assert.deepEqual(decideDeliveryContinuity(input), decideDeliveryContinuity(input));
   assert.throws(() => decideDeliveryContinuity(null), /SNAPSHOT_INVALID/);
   assert.throws(() => decideDeliveryContinuity(snapshot({ tasks: Array.from({ length: 1_001 }, (_, index) => ready(`t-${index}`)) })), /SNAPSHOT_UNBOUNDED/);
+});
+
+test('malformed safety-critical limits and active progress timestamps fail closed', () => {
+  assert.throws(
+    () => decideDeliveryContinuity(snapshot({ limits: { global: '3', perSlice: 3, perStream: 1, executable: 3 } })),
+    /GLOBAL_LIMIT_INVALID/,
+  );
+  assert.throws(
+    () => decideDeliveryContinuity(snapshot({ semanticProgressWindowMs: 0 })),
+    /PROGRESS_WINDOW_INVALID/,
+  );
+  assert.throws(
+    () => decideDeliveryContinuity(snapshot({ tasks: [{ ...ready('active'), state: 'RUNNING', slotId: 'local-a', childProcessAlive: true }] })),
+    /ACTIVE_PROGRESS_REQUIRED/,
+  );
+  assert.throws(
+    () => decideDeliveryContinuity(snapshot({ tasks: [{
+      ...ready('active'), state: 'RUNNING', slotId: 'local-a', childProcessAlive: true,
+      startedAt: now, semanticProgressAt: 'not-a-timestamp',
+    }] })),
+    /ACTIVE_PROGRESS_INVALID/,
+  );
 });
