@@ -117,6 +117,14 @@ const DAEMON_SOURCE = fs.readFileSync(
   new URL('../../../scripts/orchestration-v4/production/daemon.mjs', import.meta.url),
   'utf8'
 );
+const DELIVERY_POLICY_SOURCE = fs.readFileSync(
+  new URL('../../../scripts/orchestration-v4/delivery-policy.mjs', import.meta.url),
+  'utf8'
+);
+const TASK_RUNNER_SOURCE = fs.readFileSync(
+  new URL('../../../scripts/orchestration-v4/runner/task-runner.mjs', import.meta.url),
+  'utf8'
+);
 
 // Extract default timeout values
 const TIMEOUT_MS_MATCH = DAEMON_SOURCE.match(/timeoutMs = (\d+) \* 60_000,/);
@@ -143,8 +151,10 @@ test('continuity steward defaults on after exact-head rollout approval and retai
 
 test('production continuity exposes all six product execution lanes', () => {
   assert.equal(PRODUCT_LANE_CAPACITY, 6);
+  assert.match(DELIVERY_POLICY_SOURCE, /maxExecutableTasks = PRODUCT_LANE_CAPACITY/);
   assert.match(DAEMON_SOURCE, /limits: \{ global: PRODUCT_LANE_CAPACITY, perSlice: 3, perStream: 3, executable: PRODUCT_LANE_CAPACITY \}/);
   assert.match(DAEMON_SOURCE, /selectDeliveryReadyTasks\(allTasks, \{ maxExecutableTasks: PRODUCT_LANE_CAPACITY \}\)/);
+  assert.match(TASK_RUNNER_SOURCE, /maxExecutableTasks: PRODUCT_LANE_CAPACITY/);
 });
 
 test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
