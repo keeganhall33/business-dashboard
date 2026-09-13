@@ -14,6 +14,7 @@ import {
   listCorrectionAttempts,
   listLearningConstraints,
   listRunnableTasks,
+  listTaskDependencies,
   recordCorrectionAttempt,
   saveLearningConstraint,
   listTasks,
@@ -93,6 +94,11 @@ test('dependency edges hold successors while independent siblings remain runnabl
       insertReadyTask(f.db, { taskId, issueNumber, stream: 'CORE_INTELLIGENCE', baseSha: 'e'.repeat(40) });
     }
     addTaskDependency(f.db, { taskId: 'successor', dependsOnTaskId: 'upstream', artifact: 'verified-output' });
+    assert.deepEqual(listTaskDependencies(f.db).map(({ task_id, depends_on_task_id, artifact }) => ({ task_id, depends_on_task_id, artifact })), [{
+      task_id: 'successor',
+      depends_on_task_id: 'upstream',
+      artifact: 'verified-output',
+    }]);
     assert.deepEqual(listRunnableTasks(f.db).map((task) => task.task_id).sort(), ['sibling', 'upstream']);
     claimTask(f.db, { taskId: 'upstream', slotId: 'local-a' });
     transitionTask(f.db, { taskId: 'upstream', expectedState: 'CLAIMED', toState: 'RUNNING' });

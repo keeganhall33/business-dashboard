@@ -20,7 +20,7 @@ V4 is a clean execution substrate built alongside V3. It does not reuse persiste
 
 Each new vertical slice names one user/business outcome and advances through `DISCOVERY`, `CONTRACT`, `IMPLEMENTATION`, `INTEGRATION`, and `PRODUCTION_VERIFICATION`. V4 prioritizes blocking defects and outcome slices, holds dependent tasks until prerequisites are complete, caps task and slice WIP, and independently runs the declared quality gates before publishing a PR.
 
-Use `npm run delivery:status` against the V4 state database for the completion scoreboard. The same delivery snapshot is embedded in `heartbeat.json` so operational monitoring can show active, blocked, and production-verified slices without treating issue count as product progress.
+Use `npm run delivery:status` against the V4 state database for the completion scoreboard. The same delivery snapshot is embedded in `heartbeat.json` so operational monitoring can show active, blocked, and production-verified slices without treating issue count as product progress. Each slice includes its durable graph frontier, dependency waits with named artifacts, blocked branches, and completion percentage. The steward, batch runner, report, and heartbeat all read the same SQLite dependency edges.
 
 Production-verified features launch independently by default. Version names group features for certification but do not hold an otherwise safe feature. `delivery:status` exposes each feature's launch state, target release, cycle time, seven-day throughput, and whether a bundled exception is holding it.
 

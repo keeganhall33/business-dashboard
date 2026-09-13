@@ -4,7 +4,7 @@ import { classifyProgress } from '../progress.mjs';
 import { chooseAvailableSlot } from '../slot-scheduler.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { createCorrectionPacket, CORRECTION_ACTIONS, createTaskDeadline, remainingTaskExecutionMs, TOTAL_TASK_DEADLINE_EXHAUSTED } from '../policy/correction-loop.mjs';
-import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
 import { selectDeliveryReadyTasks } from '../delivery-policy.mjs';
@@ -124,7 +124,10 @@ export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, com
   const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at, task_id').all();
   const runnableTasks = listRunnableTasks(db);
   const runnableIds = new Set(runnableTasks.map((task) => task.task_id));
-  const policy = selectDeliveryReadyTasks(allTasks.filter((task) => task.state !== V4_STATES.READY || runnableIds.has(task.task_id)));
+  const policy = selectDeliveryReadyTasks(
+    allTasks.filter((task) => task.state !== V4_STATES.READY || runnableIds.has(task.task_id)),
+    { dependencies: listTaskDependencies(db) },
+  );
   const readyTasks = policy.selected;
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
   const readyStreams = new Set(runnableTasks.map((task) => task.stream));

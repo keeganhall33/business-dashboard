@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openV4StateStore, listTasks } from './state-store/sqlite-store.mjs';
+import { openV4StateStore, listTaskDependencies, listTasks } from './state-store/sqlite-store.mjs';
 import { buildDeliveryHealth, selectDeliveryReadyTasks } from './delivery-policy.mjs';
 
 export function latestContinuityState(db) {
@@ -16,10 +16,11 @@ export function latestContinuityState(db) {
 
 export function createDeliveryReport(db, generatedAt = new Date().toISOString()) {
   const tasks = listTasks(db);
+  const dependencies = listTaskDependencies(db);
   const correctionAttempts = db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all();
-  const selection = selectDeliveryReadyTasks(tasks);
+  const selection = selectDeliveryReadyTasks(tasks, { dependencies });
   return Object.freeze({
-    ...buildDeliveryHealth(tasks, generatedAt, correctionAttempts),
+    ...buildDeliveryHealth(tasks, generatedAt, correctionAttempts, dependencies),
     continuity: latestContinuityState(db),
     readyNow: selection.selected.map((task) => task.task_id),
     deferred: selection.deferred,
