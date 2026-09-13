@@ -100,8 +100,9 @@ function object(value: unknown, code: string): Record<string, unknown> {
 function exactKeys(value: Record<string, unknown>, keys: readonly string[], code: string): void {
   const allowed = new Set(keys);
   for (const key of Object.keys(value)) {
+    if (allowed.has(key)) continue;
     if (FORBIDDEN_INPUT_KEY.test(key)) fail("SENSITIVE_INPUT_FORBIDDEN");
-    if (!allowed.has(key)) fail(code + "_UNSUPPORTED_FIELD_" + key.toUpperCase());
+    fail(code + "_UNSUPPORTED_FIELD_" + key.toUpperCase());
   }
 }
 
