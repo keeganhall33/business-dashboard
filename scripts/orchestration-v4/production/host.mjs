@@ -4,6 +4,7 @@ import { openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transit
 import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
 import { buildDeliveryHealth } from '../delivery-policy.mjs';
+import { latestContinuityState } from '../delivery-report.mjs';
 
 function pidIsLive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -91,7 +92,9 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let cycles = 0;
   let skippedPolls = 0;
   let lastPollError = null;
+  let lastPollResult = null;
   let stalledReason = null;
+  const terminalTransitions = [];
   const inFlightPolls = new Set();
   const pollStartedAtByPromise = new Map();
 
@@ -103,10 +106,18 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   const launchPoll = () => {
     let tracked;
     const startedAt = now();
+    const terminalTransition = terminalTransitions.shift() || null;
     tracked = Promise.resolve()
-      .then(() => poll({ db, ...pollArgs }))
+      .then(() => poll({ db, ...pollArgs, terminalTransition }))
       .then(
-        () => ({ ok: true }),
+        (value) => {
+          const candidateAt = Date.parse(value?.continuity?.generatedAt || '') || 0;
+          const currentAt = Date.parse(lastPollResult?.continuity?.generatedAt || '') || 0;
+          if (!lastPollResult || candidateAt >= currentAt) lastPollResult = value || null;
+          lastPollError = null;
+          for (const transition of value?.terminalTransitions || []) terminalTransitions.push(transition);
+          return { ok: true, value };
+        },
         (error) => {
           lastPollError = String(error?.message || error);
           return { ok: false, error: lastPollError };
@@ -155,6 +166,8 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
           new Date().toISOString(),
           db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all(),
         ),
+        continuity: lastPollResult?.continuity || latestContinuityState(db),
+        pendingTerminalReconciliations: terminalTransitions.length,
         generatedAt: new Date(generatedAtMs).toISOString(),
       })}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
@@ -165,7 +178,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       if (shutdownDrainMs === 0) drained = false;
       else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
     }
-    return { ok: !stalledReason, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained };
+    return { ok: !stalledReason, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained, lastPollResult };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);

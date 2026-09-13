@@ -1,21 +1,40 @@
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
+import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
-import { getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced } from '../state-store/sqlite-store.mjs';
+import { getTask, getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
 import { deterministicVerificationCommandForTask } from './deterministic-verification-executor.mjs';
-import { syncTerminalTaskToGitHub } from './github-sync.mjs';
+import { ALL_STATE_LABELS, syncTerminalTaskToGitHub } from './github-sync.mjs';
 import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
 import { deliveryMetadata, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
+import { decideDeliveryContinuity } from './delivery-continuity-policy.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
 const TERMINAL_STATES = new Set(['COMPLETE','BLOCKED','FAILED','TIMED_OUT']);
+const ACTIVE_STATES = new Set(['CLAIMED','RUNNING','VALIDATING','PR_OPENED']);
+const CLAIM_ACTIONS = new Set(['CLAIM_READY_TASK','REFILL_VACATED_SLOT']);
+const ACTIVE_LABEL = Object.freeze({
+  CLAIMED: 'orch:claimed',
+  RUNNING: 'orch:running',
+  VALIDATING: 'orch:validating',
+  PR_OPENED: 'orch:pr-opened',
+});
+const LIFECYCLE_LABELS = Object.freeze([...new Set([...ALL_STATE_LABELS, ...Object.values(ACTIVE_LABEL)])]);
 const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
+const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
+const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
+
+export function continuityStewardEnabled(env = process.env) {
+  return env.JEEVES_V4_CONTINUITY_STEWARD === '1';
+}
 
 export function taskMutationMode(task) {
   const body = String(getTaskContract(task)?.body ?? '');
@@ -174,7 +193,7 @@ export async function syncPendingGithubTasks({
   repoFullName,
   gh = 'gh',
   limit = 1,
-  sync = syncTerminalTaskToGitHub,
+  sync = syncTerminalLifecycleTaskToGitHub,
 }) {
   const pending = listTasksPendingGithubSync(db, { limit });
   const results = [];
@@ -193,6 +212,337 @@ export async function syncPendingGithubTasks({
   return results;
 }
 
+function gitOutput(repoRoot, args, exec = execFileSync) {
+  return String(exec('git', ['-C', repoRoot, ...args], { encoding: 'utf8', timeout: 30_000 })).trim();
+}
+
+export function refreshRuntimeMain({
+  repoRoot,
+  tasks = [],
+  allowAdvance = false,
+  expectedFrom = null,
+  expectedTo = null,
+  fetchMain = refreshCanonicalMain,
+  exec = execFileSync,
+}) {
+  const latestHead = fetchMain(repoRoot);
+  let head = gitOutput(repoRoot, ['rev-parse', 'HEAD'], exec);
+  const clean = gitOutput(repoRoot, ['status', '--porcelain'], exec) === '';
+  const branch = gitOutput(repoRoot, ['branch', '--show-current'], exec);
+  const idle = !tasks.some((task) => ACTIVE_STATES.has(task.state));
+  if (expectedFrom && head !== expectedFrom) throw new Error('V4_RUNTIME_REFRESH_SNAPSHOT_DRIFT');
+  if (expectedTo && latestHead !== expectedTo) throw new Error('V4_RUNTIME_REFRESH_SNAPSHOT_DRIFT');
+  let refreshState = head === latestHead ? 'CURRENT' : (allowAdvance ? 'DEFERRED_ACTIVE' : 'OBSERVED_STALE');
+
+  if (allowAdvance && head !== latestHead && idle && !clean) refreshState = 'DEFERRED_DIRTY';
+  if (allowAdvance && head !== latestHead && idle && clean && branch !== 'main') refreshState = 'DEFERRED_NOT_MAIN';
+  if (allowAdvance && head !== latestHead && idle && clean && branch === 'main') {
+    gitOutput(repoRoot, ['merge', '--ff-only', 'refs/remotes/origin/main'], exec);
+    head = gitOutput(repoRoot, ['rev-parse', 'HEAD'], exec);
+    if (head !== latestHead) throw new Error('V4_RUNTIME_FAST_FORWARD_MISMATCH');
+    refreshState = 'ADVANCED';
+  }
+
+  const bases = [...new Set(tasks.map((task) => task.base_sha).filter(Boolean))];
+  const ancestorHeads = bases.filter((candidate) => {
+    if (candidate === latestHead) return true;
+    try {
+      exec('git', ['-C', repoRoot, 'merge-base', '--is-ancestor', candidate, latestHead], {
+        encoding: 'utf8', timeout: 30_000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  return Object.freeze({ head, latestHead, ancestorHeads, clean, idle, refreshState });
+}
+
+export function reconcileWithdrawnReadyTasks(db, issues, { now = new Date() } = {}) {
+  const visible = new Set((issues ?? []).map((issue) => Number(issue.number)).filter(Number.isInteger));
+  const withdrawn = db.prepare("SELECT task_id,issue_number FROM tasks WHERE state='READY' ORDER BY task_id").all()
+    .filter((task) => !visible.has(task.issue_number));
+  for (const task of withdrawn) {
+    transitionTask(db, {
+      taskId: task.task_id,
+      expectedState: 'READY',
+      toState: 'BLOCKED',
+      patch: { terminalReason: 'GITHUB_READY_WITHDRAWN' },
+      now,
+    });
+    recordOrchestrationEvent(db, {
+      taskId: task.task_id,
+      type: 'READY_WITHDRAWN',
+      payload: { reason: 'GITHUB_READY_WITHDRAWN', issueNumber: task.issue_number },
+      now,
+    });
+  }
+  return Object.freeze(withdrawn.map((task) => task.task_id));
+}
+
+function isPidLive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code !== 'ESRCH'; }
+}
+
+function ownership(contract) {
+  return String(contract?.fileOwnership || '').split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+export function buildContinuitySnapshot({
+  db,
+  runtime,
+  now = new Date(),
+  semanticProgressWindowMs,
+  terminalTransition = null,
+  registry = createSlotRegistry(),
+  reservedSlotIds = [],
+  pidIsLive = isPidLive,
+}) {
+  const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
+  const dependencies = db.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies ORDER BY task_id,depends_on_task_id').all();
+  const dependencyIds = new Map();
+  for (const row of dependencies) {
+    const values = dependencyIds.get(row.task_id) || [];
+    values.push(row.depends_on_task_id);
+    dependencyIds.set(row.task_id, values);
+  }
+  const correctionCounts = new Map(db.prepare('SELECT task_id,COUNT(*) AS count FROM correction_attempts GROUP BY task_id').all()
+    .map((row) => [row.task_id, row.count]));
+  const activeBySlot = new Map(tasks.filter((task) => ACTIVE_STATES.has(task.state) && task.slot_id)
+    .map((task) => [task.slot_id, task.task_id]));
+  for (const slotId of reservedSlotIds) {
+    if (!activeBySlot.has(slotId)) activeBySlot.set(slotId, 'INTEGRATION_RESERVED');
+  }
+
+  return Object.freeze({
+    now: new Date(now).toISOString(),
+    semanticProgressWindowMs,
+    completedTaskIds: tasks.filter((task) => task.state === 'COMPLETE').map((task) => task.task_id),
+    terminalTransition,
+    runtime,
+    limits: { global: 6, perSlice: 3, perStream: 3, executable: 5 },
+    slots: [...registry.values()].map((slot) => ({
+      slotId: slot.workerId,
+      streams: [...slot.streams],
+      taskId: activeBySlot.get(slot.workerId) || null,
+    })),
+    tasks: tasks.map((task) => {
+      const contract = getTaskContract(task);
+      const metadata = deliveryMetadata(contract);
+      return {
+        taskId: task.task_id,
+        state: task.state === 'READY' && task.stream === 'INTEGRATION_RELEASE' ? 'INTEGRATION_RESERVED' : task.state,
+        stream: task.stream,
+        slotId: task.slot_id,
+        sliceId: metadata.sliceId,
+        priority: metadata.priority,
+        readyAt: task.created_at,
+        fileOwnership: ownership(contract),
+        dependencies: dependencyIds.get(task.task_id) || [],
+        requiredBase: task.base_sha,
+        humanApprovalRequired: contract.humanApprovalRequired === true,
+        retryForbidden: Boolean(contract.retryForbidden),
+        successorTaskId: contract.successorTaskId || null,
+        childProcessAlive: ACTIVE_STATES.has(task.state) ? pidIsLive(Number(task.child_pid)) : null,
+        semanticProgressAt: task.semantic_progress_at || (ACTIVE_STATES.has(task.state) ? task.updated_at : null),
+        startedAt: ACTIVE_STATES.has(task.state) ? task.updated_at : null,
+        attempt: task.attempt,
+        maxAttempts: taskAttemptLimit(task),
+        correctionCount: correctionCounts.get(task.task_id) || 0,
+        maxCorrections: taskAttemptLimit(task),
+        terminalReason: task.terminal_reason,
+      };
+    }),
+  });
+}
+
+function stableHash(value) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function actionIdempotencyKey(action, task) {
+  return stableHash({
+    type: action.type,
+    taskId: action.taskId || null,
+    slotId: action.slotId || null,
+    reason: action.reason || null,
+    attempt: task?.attempt ?? null,
+    fromHead: action.fromHead || null,
+    toHead: action.toHead || null,
+  });
+}
+
+function continuityActionWasRecorded(db, key) {
+  const rows = db.prepare(`SELECT payload_json FROM orchestration_events WHERE type=? ORDER BY event_id DESC LIMIT 1000`).all(CONTINUITY_EVENT);
+  return rows.some((row) => {
+    try { return JSON.parse(row.payload_json).idempotencyKey === key; }
+    catch { return false; }
+  });
+}
+
+function recordContinuityActionOnce(db, { action, task = null, now = new Date() }) {
+  const idempotencyKey = actionIdempotencyKey(action, task);
+  if (continuityActionWasRecorded(db, idempotencyKey)) return false;
+  recordOrchestrationEvent(db, {
+    taskId: action.taskId || null,
+    type: CONTINUITY_EVENT,
+    payload: { idempotencyKey, ...action },
+    now,
+  });
+  return true;
+}
+
+function latestRecordedContinuityAction(db) {
+  const row = db.prepare('SELECT payload_json,created_at FROM orchestration_events WHERE type=? ORDER BY event_id DESC LIMIT 1').get(CONTINUITY_EVENT);
+  if (!row) return null;
+  try {
+    const payload = JSON.parse(row.payload_json);
+    return payload?.type ? Object.freeze({ type: payload.type, at: row.created_at }) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function executeContinuityControlActions(db, decision, {
+  killGroup = signalGroup,
+  refreshMain = null,
+  now = new Date(),
+} = {}) {
+  const executed = [];
+  for (const action of decision.actions) {
+    if (CLAIM_ACTIONS.has(action.type) || action.type === 'WAIT_FOR_ACTIVE_PROGRESS' || action.type === 'NO_ACTION') continue;
+    const task = action.taskId ? getTask(db, action.taskId) : null;
+    if (action.type === 'TERMINATE_STALLED_WORKER') {
+      if (!task || !ACTIVE_STATES.has(task.state) || task.slot_id !== action.slotId) continue;
+      const key = actionIdempotencyKey(action, task);
+      if (continuityActionWasRecorded(db, key)) continue;
+      if (Number.isInteger(task.process_group_id) && task.process_group_id > 0) {
+        killGroup(task.process_group_id, 'SIGTERM');
+      }
+      recordContinuityActionOnce(db, { action, task, now });
+      executed.push(action);
+      continue;
+    }
+    if (action.type === 'REFRESH_CLEAN_IDLE_RUNTIME') {
+      const key = actionIdempotencyKey(action, task);
+      if (continuityActionWasRecorded(db, key) || typeof refreshMain !== 'function') continue;
+      const result = refreshMain(action);
+      recordContinuityActionOnce(db, { action, task, now });
+      executed.push(Object.freeze({ ...action, result }));
+      continue;
+    }
+    if (action.type === 'REPLAN_TERMINAL_TASK' && task && ACTIVE_STATES.has(task.state)) {
+      const key = actionIdempotencyKey(action, task);
+      if (continuityActionWasRecorded(db, key)) continue;
+      transitionTask(db, {
+        taskId: task.task_id,
+        expectedState: task.state,
+        toState: 'BLOCKED',
+        patch: { terminalReason: `CONTINUITY_REPLAN:${action.reason || 'POLICY'}` },
+        now,
+      });
+      releaseSlotForTerminalTask(db, task.task_id);
+      recordContinuityActionOnce(db, { action, task, now });
+      executed.push(action);
+      continue;
+    }
+    if (recordContinuityActionOnce(db, { action, task, now })) executed.push(action);
+  }
+  return Object.freeze(executed);
+}
+
+function intakeSummary(intake) {
+  const reasons = [...new Set((intake.rejected || []).flatMap((entry) => entry.errors || []).map(String))].sort();
+  return Object.freeze({
+    imported: intake.imported?.length || 0,
+    rejected: intake.rejected?.length || 0,
+    duplicates: intake.duplicates?.length || 0,
+    rejectionReasonCodes: reasons,
+  });
+}
+
+export function buildContinuityState({ snapshot, decision, intake, runtime, latestAction = null, generatedAt = snapshot.now }) {
+  const active = snapshot.tasks.filter((task) => ACTIVE_STATES.has(task.state));
+  const ready = snapshot.tasks.filter((task) => task.state === 'READY');
+  const eligibleReadyCount = decision.actions.filter((action) => CLAIM_ACTIONS.has(action.type)).length;
+  const lastSemanticProgressAt = active.map((task) => task.semanticProgressAt).filter(Boolean).sort().at(-1) || null;
+  return Object.freeze({
+    contractVersion: 'DeliveryContinuityStateV1',
+    generatedAt,
+    utilization: { activeSlots: active.length, allowedSlots: snapshot.limits.global },
+    eligibleReadyCount,
+    ineligibleReadyCount: Math.max(0, ready.length - eligibleReadyCount),
+    readyCount: ready.length,
+    lastSemanticProgressAt,
+    mostRecentContinuityAction: latestAction?.type || null,
+    mostRecentContinuityActionAt: latestAction?.at || null,
+    stalledWorkerCount: decision.actions.filter((action) => action.type === 'TERMINATE_STALLED_WORKER').length,
+    correctionCeilingsReached: decision.actions.filter((action) => action.type === 'REPLAN_TERMINAL_TASK').length,
+    runtimeRefreshState: runtime.refreshState,
+    backlogHealth: ready.length === 0
+      ? 'BACKLOG_STARVED'
+      : eligibleReadyCount === 0
+        ? 'BACKLOG_INELIGIBLE'
+        : ready.length < snapshot.limits.global ? 'BACKLOG_LOW' : 'BACKLOG_HEALTHY',
+    intake: intakeSummary(intake),
+    actions: decision.actions,
+  });
+}
+
+function recordContinuityStateIfChanged(db, state, now = new Date()) {
+  const comparable = { ...state, generatedAt: null };
+  const stateHash = stableHash(comparable);
+  const latest = db.prepare('SELECT payload_json FROM orchestration_events WHERE type=? ORDER BY event_id DESC LIMIT 1').get(CONTINUITY_STATE_EVENT);
+  try {
+    if (latest && JSON.parse(latest.payload_json).stateHash === stateHash) return false;
+  } catch {}
+  recordOrchestrationEvent(db, { type: CONTINUITY_STATE_EVENT, payload: { stateHash, state }, now });
+  return true;
+}
+
+function labels(value) {
+  return new Set((value?.labels || []).map((entry) => entry?.name || entry).filter(Boolean));
+}
+
+export function syncActiveTaskToGitHub({ task, repoFullName, gh = 'gh', exec = execFileSync }) {
+  if (!ACTIVE_STATES.has(task?.state)) return { ok: true, skipped: true };
+  const desiredLabel = ACTIVE_LABEL[task.state];
+  const run = (args) => String(exec(gh, args, { encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }));
+  run(['label','create',desiredLabel,'--repo',repoFullName,'--force','--description','Orchestration V4 active state']);
+  const current = labels(JSON.parse(run(['issue','view',String(task.issue_number),'--repo',repoFullName,'--json','labels,state']) || '{}'));
+  for (const label of LIFECYCLE_LABELS) {
+    if (label !== desiredLabel && current.has(label)) {
+      run(['issue','edit',String(task.issue_number),'--repo',repoFullName,'--remove-label',label]);
+    }
+  }
+  if (!current.has(desiredLabel)) run(['issue','edit',String(task.issue_number),'--repo',repoFullName,'--add-label',desiredLabel]);
+  return { ok: true, skipped: false, label: desiredLabel };
+}
+
+export function syncTerminalLifecycleTaskToGitHub({ task, repoFullName, gh = 'gh', exec = execFileSync }) {
+  const run = (args) => String(exec(gh, args, { encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }));
+  const current = labels(JSON.parse(run(['issue','view',String(task.issue_number),'--repo',repoFullName,'--json','labels,state']) || '{}'));
+  for (const label of Object.values(ACTIVE_LABEL)) {
+    if (label !== 'orch:running' && current.has(label)) {
+      run(['issue','edit',String(task.issue_number),'--repo',repoFullName,'--remove-label',label]);
+    }
+  }
+  return syncTerminalTaskToGitHub({ task, repoFullName, gh, exec });
+}
+
+export async function syncActiveGithubTasks({ db, repoFullName, gh = 'gh', sync = syncActiveTaskToGitHub }) {
+  const active = db.prepare("SELECT * FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY updated_at,task_id").all();
+  const results = [];
+  for (const task of active) {
+    try { results.push(await sync({ task, repoFullName, gh })); }
+    catch (error) { results.push({ ok: false, issueNumber: task.issue_number, error: String(error?.message || error) }); }
+  }
+  return results;
+}
+
 export async function runProductionPoll({
   db,
   repoRoot,
@@ -206,6 +556,11 @@ export async function runProductionPoll({
   timeoutMs = 100 * 60_000,
   agentTimeoutMs = 90 * 60_000,
   stallMs = 30 * 60_000,
+  continuityEnabled = continuityStewardEnabled(),
+  terminalTransition = null,
+  refreshRuntime = refreshRuntimeMain,
+  syncActive = syncActiveGithubTasks,
+  now = () => new Date(),
 }) {
   if (!path.isAbsolute(repoRoot) || !path.isAbsolute(workspaceRoot) || !path.isAbsolute(configPath)) {
     throw new Error('V4_PRODUCTION_ABSOLUTE_PATHS_REQUIRED');
@@ -216,14 +571,54 @@ export async function runProductionPoll({
   if (!Number.isInteger(stallMs) || stallMs <= 0 || stallMs >= timeoutMs) {
     throw new Error('V4_PRODUCTION_STALL_TIMEOUT_INVALID');
   }
-  const baseSha = refreshCanonicalMain(repoRoot);
+  const beforeRefresh = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
+  const runtime = refreshRuntime({ repoRoot, tasks: beforeRefresh, allowAdvance: false });
+  const baseSha = runtime.latestHead;
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
+  const withdrawnReadyTasks = reconcileWithdrawnReadyTasks(db, snapshots, { now: now() });
   const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
   const ready = allTasks.filter((task) => task.state === 'READY');
   const deliverySelection = selectDeliveryReadyTasks(allTasks);
   const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE').slice(0, 1);
-  const executable = deliverySelection.selected;
+  const continuitySnapshot = buildContinuitySnapshot({
+    db,
+    runtime,
+    now: now(),
+    semanticProgressWindowMs: stallMs,
+    terminalTransition,
+    reservedSlotIds: integrationReady.length ? ['local-e'] : [],
+  });
+  const continuityDecision = continuityEnabled
+    ? decideDeliveryContinuity(continuitySnapshot)
+    : Object.freeze({ contractVersion: 'DeliveryContinuityDecisionV1', actions: Object.freeze([]) });
+  const continuityTaskIds = new Set(continuityDecision.actions.filter((action) => CLAIM_ACTIONS.has(action.type)).map((action) => action.taskId));
+  const executable = continuityEnabled
+    ? deliverySelection.selected.filter((task) => continuityTaskIds.has(task.task_id))
+    : deliverySelection.selected;
+  const controlActions = continuityEnabled
+    ? executeContinuityControlActions(db, continuityDecision, {
+        now: now(),
+        refreshMain: (action) => refreshRuntime({
+          repoRoot,
+          tasks: beforeRefresh,
+          allowAdvance: true,
+          expectedFrom: action.fromHead,
+          expectedTo: action.toHead,
+        }),
+      })
+    : [];
+  const refreshedRuntime = controlActions.find((action) => action.type === 'REFRESH_CLEAN_IDLE_RUNTIME')?.result || runtime;
+  const continuity = buildContinuityState({
+    snapshot: continuitySnapshot,
+    decision: continuityDecision,
+    intake,
+    runtime: refreshedRuntime,
+    latestAction: latestRecordedContinuityAction(db),
+    generatedAt: now().toISOString(),
+  });
+  recordContinuityStateIfChanged(db, continuity, now());
+  const activeGithubSyncBefore = await syncActive({ db, repoFullName, gh });
   const ephemeral = [];
   const commandsByTaskId = {};
 
@@ -275,18 +670,35 @@ export async function runProductionPoll({
       },
     });
 
+    const dispatchedActions = [];
+    const terminalTransitions = [];
+    for (const action of continuityDecision.actions.filter((entry) => CLAIM_ACTIONS.has(entry.type))) {
+      const task = getTask(db, action.taskId);
+      if (!task || task.state === 'READY') continue;
+      if (recordContinuityActionOnce(db, { action, task, now: now() })) dispatchedActions.push(action);
+      if (TERMINAL_STATES.has(task.state)) {
+        terminalTransitions.push({ taskId: task.task_id, slotId: action.slotId, at: now().toISOString() });
+      }
+    }
+
     const githubSync = await syncPendingGithubTasks({ db, repoFullName, gh });
+    const activeGithubSyncAfter = await syncActive({ db, repoFullName, gh });
 
     return Object.freeze({
       baseSha,
       intake,
+      withdrawnReadyTasks,
       attempted: settled.length,
       settled,
       integrationAttempted: integrationSettled.length,
       integrationSettled,
       githubSync,
+      activeGithubSyncBefore,
+      activeGithubSyncAfter,
+      continuity: Object.freeze({ ...continuity, executedControlActions: [...controlActions, ...dispatchedActions] }),
+      terminalTransitions,
       deliveryPolicy: {
-        selected: deliverySelection.selected.map((task) => task.task_id),
+        selected: executable.map((task) => task.task_id),
         deferred: deliverySelection.deferred,
         activeSliceIds: deliverySelection.activeSliceIds,
       },

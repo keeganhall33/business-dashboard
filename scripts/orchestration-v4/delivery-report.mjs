@@ -3,12 +3,24 @@ import { fileURLToPath } from 'node:url';
 import { openV4StateStore, listTasks } from './state-store/sqlite-store.mjs';
 import { buildDeliveryHealth, selectDeliveryReadyTasks } from './delivery-policy.mjs';
 
+export function latestContinuityState(db) {
+  const row = db.prepare("SELECT payload_json FROM orchestration_events WHERE type='CONTINUITY_STATE_V1' ORDER BY event_id DESC LIMIT 1").get();
+  if (!row) return null;
+  try {
+    const payload = JSON.parse(row.payload_json || '{}');
+    return payload?.state?.contractVersion === 'DeliveryContinuityStateV1' ? payload.state : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createDeliveryReport(db, generatedAt = new Date().toISOString()) {
   const tasks = listTasks(db);
   const correctionAttempts = db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all();
   const selection = selectDeliveryReadyTasks(tasks);
   return Object.freeze({
     ...buildDeliveryHealth(tasks, generatedAt, correctionAttempts),
+    continuity: latestContinuityState(db),
     readyNow: selection.selected.map((task) => task.task_id),
     deferred: selection.deferred,
     wip: {
