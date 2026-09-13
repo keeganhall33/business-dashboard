@@ -11,6 +11,7 @@ import {
   cleanupProductionAgentStates,
   continuityStewardEnabled,
   executeContinuityControlActions,
+  PRODUCT_LANE_CAPACITY,
   reconcileWithdrawnReadyTasks,
   refreshRuntimeMain,
   syncActiveTaskToGitHub,
@@ -138,6 +139,12 @@ test('continuity steward defaults on after exact-head rollout approval and retai
   assert.equal(continuityStewardEnabled({}), true);
   assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '0' }), false);
   assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '1' }), true);
+});
+
+test('production continuity exposes all six product execution lanes', () => {
+  assert.equal(PRODUCT_LANE_CAPACITY, 6);
+  assert.match(DAEMON_SOURCE, /limits: \{ global: PRODUCT_LANE_CAPACITY, perSlice: 3, perStream: 3, executable: PRODUCT_LANE_CAPACITY \}/);
+  assert.match(DAEMON_SOURCE, /selectDeliveryReadyTasks\(allTasks, \{ maxExecutableTasks: PRODUCT_LANE_CAPACITY \}\)/);
 });
 
 test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {

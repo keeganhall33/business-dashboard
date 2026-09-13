@@ -32,6 +32,7 @@ const LIFECYCLE_LABELS = Object.freeze([...new Set([...ALL_STATE_LABELS, ...Obje
 const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
 const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
 const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
+export const PRODUCT_LANE_CAPACITY = 6;
 
 export function continuityStewardEnabled(env = process.env) {
   return env.JEEVES_V4_CONTINUITY_STEWARD !== '0';
@@ -324,7 +325,7 @@ export function buildContinuitySnapshot({
     completedTaskIds: tasks.filter((task) => task.state === 'COMPLETE').map((task) => task.task_id),
     terminalTransition,
     runtime,
-    limits: { global: 6, perSlice: 3, perStream: 3, executable: 5 },
+    limits: { global: PRODUCT_LANE_CAPACITY, perSlice: 3, perStream: 3, executable: PRODUCT_LANE_CAPACITY },
     slots: [...registry.values()].map((slot) => ({
       slotId: slot.workerId,
       streams: [...slot.streams],
@@ -601,7 +602,7 @@ export async function runProductionPoll({
   const dependencies = listTaskDependencies(db);
   const ready = allTasks.filter((task) => task.state === 'READY');
   const runnableTaskIds = new Set(listRunnableTasks(db).map((task) => task.task_id));
-  const deliverySelection = selectDeliveryReadyTasks(allTasks, { dependencies });
+  const deliverySelection = selectDeliveryReadyTasks(allTasks, { maxExecutableTasks: PRODUCT_LANE_CAPACITY });
   const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE' && runnableTaskIds.has(task.task_id)).slice(0, 1);
   const continuitySnapshot = buildContinuitySnapshot({
     db,
