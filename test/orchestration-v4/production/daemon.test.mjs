@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   buildCorrectionAgentAttempt,
+  buildTaskExecutionSpec,
   cleanupProductionAgentStates,
   syncPendingGithubTasks,
   runProductionPoll,
@@ -228,4 +229,56 @@ test('unrelated correction retains the primary configuration', () => {
   assert.equal(next.args[2], '/primary/config.json');
   assert.equal(next.args[3], '/primary/state');
   assert.doesNotMatch(next.args[1], /MUTATION_MODE: SHELL_ONLY/);
+});
+
+
+test('deterministic verifier bypasses OpenClaw state while ordinary work is unchanged', () => {
+  const deterministicTask = {
+    task_id: 'ionos-live-verification',
+    issue_number: 1508,
+    contract_json: JSON.stringify({
+      taskId: 'ionos-live-verification',
+      issueNumber: 1508,
+      taskMutability: 'VALIDATION_EVIDENCE_ONLY',
+      sliceStage: 'PRODUCTION_VERIFICATION',
+      deterministicVerifier: 'IONOS_HISTORICAL_PREVIEW_V1',
+    }),
+  };
+  const deterministic = buildTaskExecutionSpec({
+    task: deterministicTask,
+    agentTimeoutMs: 90 * 60_000,
+    openclaw: '/openclaw',
+    createState: () => { throw new Error('DETERMINISTIC_ROUTE_MUST_NOT_CREATE_AGENT_STATE'); },
+  });
+  assert.match(deterministic.args[0], /deterministic-verification-executor\.mjs$/);
+  assert.equal(deterministic.buildCorrectionAttempt, undefined);
+
+  const retained = [];
+  const ordinaryTask = {
+    task_id: 'ordinary',
+    issue_number: 42,
+    contract_json: JSON.stringify({
+      taskId: 'ordinary',
+      issueNumber: 42,
+      title: 'Ordinary',
+      body: '**mutation_mode:** SHELL_ONLY',
+      fileOwnership: 'src/example.mjs',
+      taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED',
+    }),
+  };
+  const ordinary = buildTaskExecutionSpec({
+    task: ordinaryTask,
+    agentTimeoutMs: 90 * 60_000,
+    openclaw: '/openclaw',
+    createState: (options) => {
+      assert.deepEqual(options, { taskId: 'ordinary', applyPatchEnabled: false });
+      return { configPath: '/state/config.json', stateDir: '/state' };
+    },
+    retainState: (state) => retained.push(state),
+  });
+  assert.equal(ordinary.command, process.execPath);
+  assert.equal(ordinary.args[2], '/state/config.json');
+  assert.equal(ordinary.args[3], '/state');
+  assert.equal(ordinary.args.at(-1), '/openclaw');
+  assert.equal(retained.length, 1);
 });
