@@ -32,6 +32,10 @@ const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
 const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
 const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
 
+export function continuityStewardEnabled(env = process.env) {
+  return env.JEEVES_V4_CONTINUITY_STEWARD === '1';
+}
+
 export function taskMutationMode(task) {
   const body = String(getTaskContract(task)?.body ?? '');
   const directives = body
@@ -391,6 +395,17 @@ function recordContinuityActionOnce(db, { action, task = null, now = new Date() 
   return true;
 }
 
+function latestRecordedContinuityAction(db) {
+  const row = db.prepare('SELECT payload_json,created_at FROM orchestration_events WHERE type=? ORDER BY event_id DESC LIMIT 1').get(CONTINUITY_EVENT);
+  if (!row) return null;
+  try {
+    const payload = JSON.parse(row.payload_json);
+    return payload?.type ? Object.freeze({ type: payload.type, at: row.created_at }) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function executeContinuityControlActions(db, decision, {
   killGroup = signalGroup,
   refreshMain = null,
@@ -434,23 +449,29 @@ function intakeSummary(intake) {
   });
 }
 
-export function buildContinuityState({ snapshot, decision, intake, runtime, generatedAt = snapshot.now }) {
+export function buildContinuityState({ snapshot, decision, intake, runtime, latestAction = null, generatedAt = snapshot.now }) {
   const active = snapshot.tasks.filter((task) => ACTIVE_STATES.has(task.state));
   const ready = snapshot.tasks.filter((task) => task.state === 'READY');
-  const actionable = decision.actions.filter((action) => !['WAIT_FOR_ACTIVE_PROGRESS','NO_ACTION'].includes(action.type));
+  const eligibleReadyCount = decision.actions.filter((action) => CLAIM_ACTIONS.has(action.type)).length;
   const lastSemanticProgressAt = active.map((task) => task.semanticProgressAt).filter(Boolean).sort().at(-1) || null;
   return Object.freeze({
     contractVersion: 'DeliveryContinuityStateV1',
     generatedAt,
     utilization: { activeSlots: active.length, allowedSlots: snapshot.limits.global },
-    eligibleReadyCount: decision.actions.filter((action) => CLAIM_ACTIONS.has(action.type)).length,
+    eligibleReadyCount,
+    ineligibleReadyCount: Math.max(0, ready.length - eligibleReadyCount),
     readyCount: ready.length,
     lastSemanticProgressAt,
-    mostRecentContinuityAction: actionable[0]?.type || null,
+    mostRecentContinuityAction: latestAction?.type || null,
+    mostRecentContinuityActionAt: latestAction?.at || null,
     stalledWorkerCount: decision.actions.filter((action) => action.type === 'TERMINATE_STALLED_WORKER').length,
     correctionCeilingsReached: decision.actions.filter((action) => action.type === 'REPLAN_TERMINAL_TASK').length,
     runtimeRefreshState: runtime.refreshState,
-    backlogHealth: ready.length === 0 ? 'BACKLOG_STARVED' : ready.length < snapshot.limits.global ? 'BACKLOG_LOW' : 'BACKLOG_HEALTHY',
+    backlogHealth: ready.length === 0
+      ? 'BACKLOG_STARVED'
+      : eligibleReadyCount === 0
+        ? 'BACKLOG_INELIGIBLE'
+        : ready.length < snapshot.limits.global ? 'BACKLOG_LOW' : 'BACKLOG_HEALTHY',
     intake: intakeSummary(intake),
     actions: decision.actions,
   });
@@ -520,7 +541,7 @@ export async function runProductionPoll({
   timeoutMs = 100 * 60_000,
   agentTimeoutMs = 90 * 60_000,
   stallMs = 30 * 60_000,
-  continuityEnabled = process.env.JEEVES_V4_CONTINUITY_STEWARD === '1',
+  continuityEnabled = continuityStewardEnabled(),
   terminalTransition = null,
   refreshRuntime = refreshRuntimeMain,
   syncActive = syncActiveGithubTasks,
@@ -578,6 +599,7 @@ export async function runProductionPoll({
     decision: continuityDecision,
     intake,
     runtime: refreshedRuntime,
+    latestAction: latestRecordedContinuityAction(db),
     generatedAt: now().toISOString(),
   });
   recordContinuityStateIfChanged(db, continuity, now());

@@ -9,6 +9,7 @@ import {
   buildCorrectionAgentAttempt,
   buildTaskExecutionSpec,
   cleanupProductionAgentStates,
+  continuityStewardEnabled,
   executeContinuityControlActions,
   reconcileWithdrawnReadyTasks,
   refreshRuntimeMain,
@@ -134,8 +135,9 @@ test('runProductionPoll uses updated default timeouts: 100-min outer, 90-min age
 });
 
 test('continuity steward remains default-off until exact-head rollout approval', async () => {
-  const source = fs.readFileSync(new URL('../../../scripts/orchestration-v4/production/daemon.mjs', import.meta.url), 'utf8');
-  assert.match(source, /continuityEnabled = process\.env\.JEEVES_V4_CONTINUITY_STEWARD === '1'/);
+  assert.equal(continuityStewardEnabled({}), false);
+  assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '0' }), false);
+  assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '1' }), true);
 });
 
 test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
@@ -490,6 +492,8 @@ test('continuity state exposes bounded rejection reasons and clears them on corr
     intake: { imported: [], duplicates: [], rejected: [{ issueNumber: 9, errors: ['CONTRACT_INVALID'] }] },
   });
   assert.deepEqual(rejected.intake, { imported: 0, rejected: 1, duplicates: 0, rejectionReasonCodes: ['CONTRACT_INVALID'] });
+  assert.equal(rejected.ineligibleReadyCount, 0);
+  assert.equal(rejected.mostRecentContinuityActionAt, null);
   const corrected = buildContinuityState({ snapshot, decision, runtime, intake: { imported: [{}], duplicates: [], rejected: [] } });
   assert.deepEqual(corrected.intake.rejectionReasonCodes, []);
   assert.equal(corrected.intake.imported, 1);
