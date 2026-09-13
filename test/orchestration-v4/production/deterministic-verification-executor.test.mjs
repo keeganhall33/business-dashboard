@@ -6,6 +6,7 @@ import {
   deterministicVerificationCommandForTask,
   runDeterministicVerification,
 } from '../../../scripts/orchestration-v4/production/deterministic-verification-executor.mjs';
+import { validateTaskContract } from '../../../scripts/orchestration-v4/production/task-contract.mjs';
 
 function task(contract = {}) {
   const taskId = contract.taskId ?? 'ionos-live-verification';
@@ -93,4 +94,44 @@ test('missing inherited configuration and timeout overrides fail before executio
     timeoutMs: 1,
     spawnProcess: () => { throw new Error('MUST_NOT_EXECUTE'); },
   }), /V4_DETERMINISTIC_TIMEOUT_OVERRIDE_FORBIDDEN/);
+});
+
+
+function admittedIssue(extra = '') {
+  return {
+    number: 1508,
+    title: 'Deterministic verification',
+    body: `**task_id:** ionos-live-verification
+**stream:** QA_EVALUATION
+**human_approval_required:** false
+**task_mutability:** VALIDATION_EVIDENCE_ONLY
+**file_ownership:** NONE
+**deterministic_verifier:** IONOS_HISTORICAL_PREVIEW_V1
+**slice_stage:** PRODUCTION_VERIFICATION
+${extra}`,
+  };
+}
+
+test('task admission parses the single allow-listed verifier and rejects unsafe directives', () => {
+  const admitted = validateTaskContract(admittedIssue());
+  assert.equal(admitted.ok, true, admitted.errors.join(','));
+  assert.equal(admitted.task.deterministicVerifier, 'IONOS_HISTORICAL_PREVIEW_V1');
+
+  const unknown = validateTaskContract({
+    ...admittedIssue(),
+    body: admittedIssue().body.replace('IONOS_HISTORICAL_PREVIEW_V1', 'ARBITRARY'),
+  });
+  assert.equal(unknown.ok, false);
+  assert.ok(unknown.errors.includes('DETERMINISTIC_VERIFIER_INVALID'));
+
+  const duplicate = validateTaskContract(admittedIssue('**deterministic_verifier:** IONOS_HISTORICAL_PREVIEW_V1'));
+  assert.equal(duplicate.ok, false);
+  assert.ok(duplicate.errors.includes('DETERMINISTIC_VERIFIER_DUPLICATE'));
+
+  const wrongStage = validateTaskContract({
+    ...admittedIssue(),
+    body: admittedIssue().body.replace('PRODUCTION_VERIFICATION', 'IMPLEMENTATION'),
+  });
+  assert.equal(wrongStage.ok, false);
+  assert.ok(wrongStage.errors.includes('DETERMINISTIC_VERIFIER_TASK_INELIGIBLE'));
 });
