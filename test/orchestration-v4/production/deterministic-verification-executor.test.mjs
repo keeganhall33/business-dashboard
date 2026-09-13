@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   DETERMINISTIC_VERIFIERS,
   buildIonosPreviewInvocation,
+  safeIonosPreviewFailureReason,
   deterministicVerificationCommandForTask,
   runDeterministicVerification,
 } from '../../../scripts/orchestration-v4/production/deterministic-verification-executor.mjs';
@@ -134,4 +139,82 @@ test('task admission parses the single allow-listed verifier and rejects unsafe 
   });
   assert.equal(wrongStage.ok, false);
   assert.ok(wrongStage.errors.includes('DETERMINISTIC_VERIFIER_TASK_INELIGIBLE'));
+});
+
+
+test('safe inner preview reason accepts one bounded code and rejects sensitive or ambiguous output', () => {
+  assert.equal(
+    safeIonosPreviewFailureReason('IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE\n'),
+    'IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE',
+  );
+  for (const rejected of [
+    'IONOS_HISTORICAL_PREVIEW_SECRET_FAILED\nextra',
+    'user@example.com',
+    'op://vault/item/field',
+    'arbitrary provider failure',
+    `IONOS_HISTORICAL_PREVIEW_${'A'.repeat(1100)}`,
+  ]) {
+    assert.equal(safeIonosPreviewFailureReason(rejected), null);
+  }
+  assert.equal(safeIonosPreviewFailureReason('IONOS_HISTORICAL_PREVIEW_SECRET_FAILED', true), null);
+});
+
+function deterministicChild(stderr, code = 1) {
+  const child = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => true;
+  queueMicrotask(() => {
+    child.stderr.emit('data', stderr);
+    child.emit('exit', code, null);
+  });
+  return child;
+}
+
+async function withPreviewWorkspace(run) {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-deterministic-'));
+  const scriptPath = path.join(workspacePath, 'scripts/run-ionos-historical-intelligence-preview-v1.ts');
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+  fs.writeFileSync(scriptPath, '');
+  try {
+    await run(workspacePath);
+  } finally {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  }
+}
+
+test('deterministic verifier preserves one approved inner reason and keeps stdout suppressed', async () => {
+  await withPreviewWorkspace(async (workspacePath) => {
+    let spawnOptions = null;
+    await assert.rejects(runDeterministicVerification({
+      verifier: DETERMINISTIC_VERIFIERS.IONOS_HISTORICAL_PREVIEW_V1,
+      taskId: 'ionos-live-verification',
+      issueNumber: 1508,
+      workspacePath,
+      env: {
+        IONOS_MAILBOX_CONFIG_JSON: 'present',
+        IONOS_HISTORICAL_PREVIEW_JSON: 'present',
+      },
+      spawnProcess(_command, _args, options) {
+        spawnOptions = options;
+        return deterministicChild('IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE\n');
+      },
+    }), /V4_DETERMINISTIC_TERMINAL_REASON:IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE/);
+    assert.deepEqual(spawnOptions.stdio, ['ignore', 'ignore', 'pipe']);
+  });
+});
+
+test('deterministic verifier collapses multiline inner output to the existing generic exit', async () => {
+  await withPreviewWorkspace(async (workspacePath) => {
+    await assert.rejects(runDeterministicVerification({
+      verifier: DETERMINISTIC_VERIFIERS.IONOS_HISTORICAL_PREVIEW_V1,
+      taskId: 'ionos-live-verification',
+      issueNumber: 1508,
+      workspacePath,
+      env: {
+        IONOS_MAILBOX_CONFIG_JSON: 'present',
+        IONOS_HISTORICAL_PREVIEW_JSON: 'present',
+      },
+      spawnProcess: () => deterministicChild('IONOS_HISTORICAL_PREVIEW_SECRET_FAILED\nunsafe detail\n'),
+    }), /V4_DETERMINISTIC_PREVIEW_EXIT:1/);
+  });
 });
