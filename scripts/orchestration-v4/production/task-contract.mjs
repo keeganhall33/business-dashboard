@@ -9,6 +9,9 @@ const ALLOWED_TASK_MUTABILITY = new Set([
   'VALIDATION_EVIDENCE_ONLY',
   'EVIDENCE_ONLY',
 ]);
+const SUPPORTED_DETERMINISTIC_VERIFIERS = new Set([
+  'IONOS_HISTORICAL_PREVIEW_V1',
+]);
 const SUPPORTED_TASK_STREAMS = new Set(
   Object.values(DEFAULT_SLOT_STREAMS).flat(),
 );
@@ -54,6 +57,11 @@ export function validateTaskContract(issue) {
   if (!fields.task_mutability) errors.push('TASK_MUTABILITY_REQUIRED');
   else if (!ALLOWED_TASK_MUTABILITY.has(fields.task_mutability)) errors.push('TASK_MUTABILITY_INVALID');
   if (!fields.file_ownership || fields.file_ownership.trim() === '') errors.push('FILE_OWNERSHIP_REQUIRED');
+  const deterministicDirectives = [...String(issue?.body ?? '').matchAll(/^\*\*deterministic_verifier:\*\*\s*(.*?)\s*$/gm)];
+  if (deterministicDirectives.length > 1) errors.push('DETERMINISTIC_VERIFIER_DUPLICATE');
+  if (deterministicDirectives.length === 1 && !SUPPORTED_DETERMINISTIC_VERIFIERS.has(deterministicDirectives[0][1])) {
+    errors.push('DETERMINISTIC_VERIFIER_INVALID');
+  }
   const maxAttempts = fields.max_attempts == null
     ? DEFAULT_MAX_ATTEMPTS
     : Number(fields.max_attempts);
@@ -131,11 +139,12 @@ export function validateTaskContract(issue) {
       launchPolicy: fields.launch_policy ?? null,
       bundleReason: fields.bundle_reason ?? null,
       rollbackCondition: fields.rollback_condition ?? null,
+      deterministicVerifier: fields.deterministic_verifier ?? null,
     }),
   };
 }
 
-export { BUSINESS_VALUE_CONTRACT, SUPPORTED_TASK_STREAMS };
+export { BUSINESS_VALUE_CONTRACT, SUPPORTED_DETERMINISTIC_VERIFIERS, SUPPORTED_TASK_STREAMS };
 
 export function hasWatcherVisibleLabels(issue) {
   const names = new Set((issue?.labels ?? []).map((label) => typeof label === 'string' ? label : label?.name).filter(Boolean));
