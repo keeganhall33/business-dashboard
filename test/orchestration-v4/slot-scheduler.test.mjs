@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 
 import { createSlotRegistry, candidateSlots, chooseAvailableSlot, claimSlot, releaseSlot } from '../../scripts/orchestration-v4/slot-scheduler.mjs';
 
-test('slots express capacity and routing only', () => {
+test('slots express primary capacity and safe product fallback routing', () => {
   const registry = createSlotRegistry();
-  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-a', 'local-b', 'local-e']);
-  assert.deepEqual(candidateSlots(registry, 'DISCOVERY_INTELLIGENCE'), ['local-b', 'local-e']);
-  assert.deepEqual(candidateSlots(registry, 'INTELLIGENCE_UX'), ['local-c', 'local-e']);
-  assert.deepEqual(candidateSlots(registry, 'PRODUCTION_VALUE'), ['local-c', 'local-e']);
-  assert.deepEqual(candidateSlots(registry, 'HIGHEST_VALUE_SPECIALIST'), ['local-d', 'local-e']);
+  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-a', 'local-b', 'local-e', 'local-f']);
+  assert.deepEqual(candidateSlots(registry, 'DISCOVERY_INTELLIGENCE'), ['local-b', 'local-e', 'local-f']);
+  assert.deepEqual(candidateSlots(registry, 'INTELLIGENCE_UX'), ['local-c', 'local-e', 'local-f']);
+  assert.deepEqual(candidateSlots(registry, 'PRODUCTION_VALUE'), ['local-c', 'local-e', 'local-f']);
+  assert.deepEqual(candidateSlots(registry, 'HIGHEST_VALUE_SPECIALIST'), ['local-d', 'local-e', 'local-f']);
   assert.deepEqual(candidateSlots(registry, 'AGENT_ORCHESTRATION'), ['local-d']);
   assert.deepEqual(candidateSlots(registry, 'ORCHESTRATION_SYSTEMS'), ['local-d']);
   assert.deepEqual(candidateSlots(registry, 'INTEGRATION_RELEASE'), ['local-e']);
@@ -28,7 +28,7 @@ test('overflow uses compatible idle capacity only when its primary stream is not
   const overflow = chooseAvailableSlot(registry, { stream: 'CORE_INTELLIGENCE', occupied, readyStreams: new Set(['CORE_INTELLIGENCE']) });
   assert.equal(overflow?.workerId, 'local-b');
 
-  const protectedDiscovery = chooseAvailableSlot(registry, { stream: 'CORE_INTELLIGENCE', occupied, readyStreams: new Set(['CORE_INTELLIGENCE', 'DISCOVERY_INTELLIGENCE', 'INTEGRATION_RELEASE']) });
+  const protectedDiscovery = chooseAvailableSlot(registry, { stream: 'CORE_INTELLIGENCE', occupied, readyStreams: new Set(['CORE_INTELLIGENCE', 'DISCOVERY_INTELLIGENCE', 'INTEGRATION_RELEASE', 'QA_EVALUATION']) });
   assert.equal(protectedDiscovery, null);
 
   const primaryDiscovery = chooseAvailableSlot(registry, { stream: 'DISCOVERY_INTELLIGENCE', occupied: new Set(), readyStreams: new Set(['DISCOVERY_INTELLIGENCE']) });
@@ -48,7 +48,7 @@ test('local-e preserves integration priority but backfills useful work when inte
   const protectedLocalE = chooseAvailableSlot(registry, {
     stream: 'INTELLIGENCE_UX',
     occupied: new Set(['local-c']),
-    readyStreams: new Set(['INTELLIGENCE_UX', 'INTEGRATION_RELEASE']),
+    readyStreams: new Set(['INTELLIGENCE_UX', 'INTEGRATION_RELEASE', 'QA_EVALUATION']),
   });
   assert.equal(protectedLocalE, null);
 
@@ -67,6 +67,32 @@ test('local-e preserves integration priority but backfills useful work when inte
   assert.equal(specialistFallback?.workerId, 'local-e');
 });
 
+test('local-f protects QA first and backfills product work only when QA is absent', () => {
+  const registry = createSlotRegistry();
+  const occupied = new Set(['local-a', 'local-b', 'local-e']);
+
+  const protectedForQa = chooseAvailableSlot(registry, {
+    stream: 'CORE_INTELLIGENCE',
+    occupied,
+    readyStreams: new Set(['CORE_INTELLIGENCE', 'QA_EVALUATION']),
+  });
+  assert.equal(protectedForQa, null);
+
+  const productFallback = chooseAvailableSlot(registry, {
+    stream: 'CORE_INTELLIGENCE',
+    occupied,
+    readyStreams: new Set(['CORE_INTELLIGENCE']),
+  });
+  assert.equal(productFallback?.workerId, 'local-f');
+
+  const qaPrimary = chooseAvailableSlot(registry, {
+    stream: 'QA_EVALUATION',
+    occupied: new Set(),
+    readyStreams: new Set(['QA_EVALUATION', 'CORE_INTELLIGENCE']),
+  });
+  assert.equal(qaPrimary?.workerId, 'local-f');
+});
+
 test('claim and release are task-scoped and fail closed on cross-task release', () => {
   let registry = createSlotRegistry();
   registry = claimSlot(registry, {
@@ -75,25 +101,25 @@ test('claim and release are task-scoped and fail closed on cross-task release', 
     issueNumber: 101,
     stream: 'CORE_INTELLIGENCE',
   });
-  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-b', 'local-e']);
+  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-b', 'local-e', 'local-f']);
   assert.throws(() => releaseSlot(registry, { workerId: 'local-a', taskId: 'task-two' }), /V4_SLOT_OWNERSHIP_MISMATCH/);
   registry = releaseSlot(registry, { workerId: 'local-a', taskId: 'task-one' });
-  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-a', 'local-b', 'local-e']);
+  assert.deepEqual(candidateSlots(registry, 'CORE_INTELLIGENCE'), ['local-a', 'local-b', 'local-e', 'local-f']);
 });
 
-test('wrong-stream claims are rejected before execution', () => {
+test('orchestration and integration claims remain forbidden on local-f', () => {
   const registry = createSlotRegistry();
   assert.throws(() => claimSlot(registry, {
     workerId: 'local-f',
-    taskId: 'bad-route',
+    taskId: 'bad-orchestration-route',
     issueNumber: 102,
-    stream: 'CORE_INTELLIGENCE',
+    stream: 'AGENT_ORCHESTRATION',
   }), /V4_SLOT_STREAM_MISMATCH/);
   assert.throws(() => claimSlot(registry, {
-    workerId: 'local-e',
-    taskId: 'bad-orchestration-route',
+    workerId: 'local-f',
+    taskId: 'bad-integration-route',
     issueNumber: 103,
-    stream: 'AGENT_ORCHESTRATION',
+    stream: 'INTEGRATION_RELEASE',
   }), /V4_SLOT_STREAM_MISMATCH/);
   assert.throws(() => claimSlot(registry, {
     workerId: 'local-e',
