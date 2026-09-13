@@ -136,8 +136,9 @@ function record(value: unknown, code: string): Record<string, unknown> {
 
 function exactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, code: string): void {
   for (const key of Object.keys(value)) {
+    if (allowed.has(key)) continue;
     if (FORBIDDEN_UNKNOWN_KEY.test(key)) fail("RAW_SECRET_OR_RESULT_FIELD_FORBIDDEN");
-    if (!allowed.has(key)) fail(`${code}_UNSUPPORTED_FIELD_${key.toUpperCase()}`);
+    fail(`${code}_UNSUPPORTED_FIELD_${key.toUpperCase()}`);
   }
 }
 
