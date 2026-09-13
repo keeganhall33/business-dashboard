@@ -134,8 +134,8 @@ test('runProductionPoll uses updated default timeouts: 100-min outer, 90-min age
   assert.equal(TIMEOUT_MINUTES.DEFAULT_STALL_MS, 30, 'stall timeout default should be 30 minutes');
 });
 
-test('continuity steward remains default-off until exact-head rollout approval', async () => {
-  assert.equal(continuityStewardEnabled({}), false);
+test('continuity steward defaults on after exact-head rollout approval and retains an explicit rollback', async () => {
+  assert.equal(continuityStewardEnabled({}), true);
   assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '0' }), false);
   assert.equal(continuityStewardEnabled({ JEEVES_V4_CONTINUITY_STEWARD: '1' }), true);
 });
