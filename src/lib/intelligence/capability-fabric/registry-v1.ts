@@ -216,7 +216,7 @@ function canonicalJson(value: unknown): string {
       .map(([key, child]) => JSON.stringify(key) + ":" + canonicalJson(child))
       .join(",") + "}";
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "undefined";
 }
 
 function dedupe<T extends { version: string }>(
