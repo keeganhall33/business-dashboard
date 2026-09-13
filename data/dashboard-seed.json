@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-11T15:00:00.000Z",
+  "timestamp": "2026-09-13T18:50:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -252,6 +252,49 @@
           "sender": "Ioana Hall — Manager, Keegan Hall",
           "date": "2026-09-11",
           "summary": "Introduced Keegan around Ralph Lauren's 60th anniversary; established Jordan, Rory/Augusta National, charity and 800+ hour craftsmanship credibility; framed the fit around sport, craftsmanship, heritage and iconic achievement; invited a conversation around Ralph Lauren's existing milestone plans rather than prescribing a concept."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "mariners-randy-johnson-statue-20260913",
+        "name": "Seattle Mariners — Randy Johnson 2027 Statue Activation",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "team-legacy-activation",
+        "company": {
+          "name": "Seattle Mariners",
+          "website": "https://www.mlb.com/mariners",
+          "location": "Seattle, Washington, United States",
+          "description": "Seattle Mariners 2027 Randy Johnson statue unveiling opportunity with potential original art, collector edition, fan/VIP activation and charitable component."
+        },
+        "primaryContact": {
+          "name": "Gregg Greene",
+          "title": "SVP, Marketing & Communications",
+          "email": null
+        },
+        "lastOutreachAt": "2026-09-13T18:50:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Gregg Greene's response. If no reply, do not over-pursue immediately; follow up once after roughly 7-10 business days with a short note only if the 2027 unveiling planning window still makes the timing useful.",
+        "nextMoveDueAt": "2026-09-24T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-fit Seattle legacy activation with existing relationship, strong local collector appeal, potential Randy Johnson access, signed edition economics, team/VIP use, sponsor participation and charity upside.",
+        "notes": [
+          "Keegan sent the initial email directly to Gregg Greene on September 13, 2026 because Gregg already knows Keegan and has supported a prior Keegan/Topps promotional campaign with four Mariners game tickets.",
+          "Keegan has pitched Gregg on multiple art-related Mariners concepts over the years, including similar statue/legacy ideas, without a project materializing. This history means the follow-up should stay light and this opportunity should not be treated as a cold lead requiring a full credibility pitch.",
+          "Why this one may be different: Randy Johnson's 2027 statue is a confirmed franchise legacy moment, giving the Mariners an existing activation to extend rather than asking them to invent and fund a standalone Keegan project.",
+          "Initial concept space mentioned: original artwork, Randy-signed collector edition, charitable component, fan giveaway, VIP gifting, or another element that fits what the Mariners are already planning around the unveiling.",
+          "Best positioning: make the artwork part of the larger Randy Johnson statue activation, not a standalone drawing or merchandise pitch.",
+          "Potential economics should include a paid creative/project fee and/or meaningful collector-edition revenue. Charity can be an additional component but should not default to Keegan donating hundreds of hours of artwork without commercial or strategic return.",
+          "If Gregg shows interest, next discovery questions are: what is already planned around the unveiling, who owns the activation internally, whether Randy will participate, sponsor involvement, rights/IP approvals, collector edition feasibility, team-store or VIP use, and whether Mariners Care or another beneficiary is part of the moment.",
+          "If Gregg declines or does not engage after one follow-up, avoid repeated pitching. Revisit only if a meaningful new trigger appears, such as an unveiling date, presenting sponsor, Randy participation, ticketed event, collector program or charity announcement."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Keegan Hall",
+          "date": "2026-09-13",
+          "summary": "Keegan told Gregg he saw the Randy Johnson statue announcement, acknowledged that they have discussed art-related projects before, and suggested this one could be especially compelling if it combined an original piece with elements such as a Randy-signed collector edition, charity, fan giveaway, VIP gifting or another component tied to the Mariners' larger unveiling activation. He emphasized getting the idea in front of Gregg early while plans are still taking shape."
         },
         "supportingDocs": null
       }
