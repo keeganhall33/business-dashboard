@@ -4,22 +4,34 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  buildContinuitySnapshot,
+  buildContinuityState,
   buildCorrectionAgentAttempt,
   buildTaskExecutionSpec,
   cleanupProductionAgentStates,
+  executeContinuityControlActions,
+  reconcileWithdrawnReadyTasks,
+  refreshRuntimeMain,
+  syncActiveTaskToGitHub,
+  syncTerminalLifecycleTaskToGitHub,
   syncPendingGithubTasks,
   runProductionPoll,
   taskMutationMode,
 } from '../../../scripts/orchestration-v4/production/daemon.mjs';
+import { decideDeliveryContinuity } from '../../../scripts/orchestration-v4/production/delivery-continuity-policy.mjs';
+import { runProductionHost } from '../../../scripts/orchestration-v4/production/host.mjs';
 import { createEphemeralAgentState } from '../../../scripts/orchestration-v4/runner/agent-executor.mjs';
 import {
   claimTask,
   getGithubSyncMarker,
+  getTask,
   insertReadyTask,
   openV4StateStore,
   transitionTask,
 } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { V4_STATES } from '../../../scripts/orchestration-v4/state-machine.mjs';
+
+const BASE_SHA = 'a'.repeat(40);
 
 function terminalFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-github-sync-'));
@@ -119,6 +131,11 @@ test('runProductionPoll uses updated default timeouts: 100-min outer, 90-min age
   assert.equal(TIMEOUT_MINUTES.DEFAULT_TIMEOUT_MS, 100, 'outer timeout default should be 100 minutes');
   assert.equal(TIMEOUT_MINUTES.DEFAULT_AGENT_TIMEOUT_MS, 90, 'agent timeout default should be 90 minutes');
   assert.equal(TIMEOUT_MINUTES.DEFAULT_STALL_MS, 30, 'stall timeout default should be 30 minutes');
+});
+
+test('continuity steward remains default-off until exact-head rollout approval', async () => {
+  const source = fs.readFileSync(new URL('../../../scripts/orchestration-v4/production/daemon.mjs', import.meta.url), 'utf8');
+  assert.match(source, /continuityEnabled = process\.env\.JEEVES_V4_CONTINUITY_STEWARD === '1'/);
 });
 
 test('timeout invariant: stallMs < agentTimeoutMs < timeoutMs', async () => {
@@ -281,4 +298,208 @@ test('deterministic verifier bypasses OpenClaw state while ordinary work is unch
   assert.equal(ordinary.args[3], '/state');
   assert.equal(ordinary.args.at(-1), '/openclaw');
   assert.equal(retained.length, 1);
+});
+
+test('clean idle runtime fast-forwards while active or dirty runtime never mutates', () => {
+  const latest = 'b'.repeat(40);
+  const createExec = ({ active = false, dirty = false } = {}) => {
+    let head = 'a'.repeat(40);
+    const calls = [];
+    const exec = (_command, args) => {
+      calls.push(args.slice(2));
+      const gitArgs = args.slice(2);
+      if (gitArgs[0] === 'rev-parse') return `${head}\n`;
+      if (gitArgs[0] === 'status') return dirty ? ' M owned.mjs\n' : '';
+      if (gitArgs[0] === 'branch') return 'main\n';
+      if (gitArgs[0] === 'merge') { head = latest; return 'fast-forward\n'; }
+      if (gitArgs[0] === 'merge-base') return '';
+      throw new Error(`UNEXPECTED_GIT:${gitArgs.join(':')}`);
+    };
+    const tasks = active ? [{ state: 'RUNNING', base_sha: 'a'.repeat(40) }] : [];
+    return { exec, calls, tasks };
+  };
+
+  const idle = createExec();
+  const advanced = refreshRuntimeMain({ repoRoot: '/repo', tasks: idle.tasks, fetchMain: () => latest, exec: idle.exec });
+  assert.equal(advanced.refreshState, 'ADVANCED');
+  assert.equal(advanced.head, latest);
+  assert.equal(idle.calls.some((args) => args[0] === 'merge'), true);
+
+  for (const options of [{ active: true }, { dirty: true }]) {
+    const fixture = createExec(options);
+    const result = refreshRuntimeMain({ repoRoot: '/repo', tasks: fixture.tasks, fetchMain: () => latest, exec: fixture.exec });
+    assert.equal(result.refreshState, options.active ? 'DEFERRED_ACTIVE' : 'DEFERRED_DIRTY');
+    assert.equal(fixture.calls.some((args) => args[0] === 'merge'), false);
+  }
+});
+
+test('withdrawn GitHub-ready work is terminalized before it can create a duplicate PR', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-withdrawn-ready-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    insertReadyTask(db, { taskId: 'still-ready', issueNumber: 2001, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+    insertReadyTask(db, { taskId: 'already-complete-on-github', issueNumber: 2002, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+    const withdrawn = reconcileWithdrawnReadyTasks(db, [{ number: 2001 }], { now: new Date('2026-09-13T20:00:00Z') });
+    assert.deepEqual(withdrawn, ['already-complete-on-github']);
+    assert.equal(getTask(db, 'still-ready').state, V4_STATES.READY);
+    assert.equal(getTask(db, 'already-complete-on-github').state, V4_STATES.BLOCKED);
+    assert.equal(getTask(db, 'already-complete-on-github').terminal_reason, 'GITHUB_READY_WITHDRAWN');
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runtime snapshot drives compatible startup claims and terminal slot refill', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-snapshot-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    insertReadyTask(db, {
+      taskId: 'core-next', issueNumber: 2011, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA,
+      contract: { fileOwnership: 'src/core.mjs', priority: 'P0', maxAttempts: 1 },
+    });
+    insertReadyTask(db, {
+      taskId: 'ux-next', issueNumber: 2012, stream: 'INTELLIGENCE_UX', baseSha: BASE_SHA,
+      contract: { fileOwnership: 'src/ux.mjs', priority: 'P1', maxAttempts: 1 },
+    });
+    const snapshot = buildContinuitySnapshot({
+      db,
+      runtime: { head: BASE_SHA, latestHead: BASE_SHA, ancestorHeads: [], clean: true, idle: true, refreshState: 'CURRENT' },
+      now: new Date('2026-09-13T20:00:00Z'),
+      semanticProgressWindowMs: 30 * 60_000,
+      terminalTransition: { taskId: 'previous', slotId: 'local-a', at: '2026-09-13T19:59:59Z' },
+    });
+    const decision = decideDeliveryContinuity(snapshot);
+    assert.equal(decision.actions.some((action) => action.type === 'REFILL_VACATED_SLOT' && action.taskId === 'core-next'), true);
+    assert.equal(decision.actions.some((action) => action.type === 'CLAIM_READY_TASK' && action.taskId === 'ux-next'), true);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('stall termination action is process-owned and idempotent across duplicate polls', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-action-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const signals = [];
+  try {
+    insertReadyTask(db, { taskId: 'stalled', issueNumber: 2021, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+    claimTask(db, { taskId: 'stalled', slotId: 'local-a' });
+    transitionTask(db, {
+      taskId: 'stalled', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING,
+      patch: { childPid: 4567, processGroupId: 4567 },
+    });
+    const decision = { actions: [{ type: 'TERMINATE_STALLED_WORKER', taskId: 'stalled', slotId: 'local-a', reason: 'SEMANTIC_PROGRESS_STALL' }] };
+    const options = { killGroup: (pgid, signal) => { signals.push([pgid, signal]); return true; }, now: new Date('2026-09-13T20:00:00Z') };
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
+    assert.deepEqual(signals, [[4567, 'SIGTERM']]);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('active GitHub lifecycle sync removes contradictory labels before adding running', () => {
+  const calls = [];
+  const exec = (_command, args) => {
+    calls.push(args);
+    if (args[0] === 'issue' && args[1] === 'view') return JSON.stringify({ labels: [{ name: 'orch:ready' }, { name: 'orch:blocked' }] });
+    return '';
+  };
+  const result = syncActiveTaskToGitHub({
+    task: { state: V4_STATES.RUNNING, issue_number: 2031 },
+    repoFullName: 'owner/repo',
+    exec,
+  });
+  assert.equal(result.label, 'orch:running');
+  assert.equal(calls.some((args) => args.includes('--remove-label') && args.includes('orch:ready')), true);
+  assert.equal(calls.some((args) => args.includes('--remove-label') && args.includes('orch:blocked')), true);
+  assert.equal(calls.some((args) => args.includes('--add-label') && args.includes('orch:running')), true);
+});
+
+test('active lifecycle labels preserve claimed, validating, and PR-opened distinctions', () => {
+  for (const [state, expected] of [
+    [V4_STATES.CLAIMED, 'orch:claimed'],
+    [V4_STATES.VALIDATING, 'orch:validating'],
+    [V4_STATES.PR_OPENED, 'orch:pr-opened'],
+  ]) {
+    const calls = [];
+    const exec = (_command, args) => {
+      calls.push(args);
+      if (args[0] === 'issue' && args[1] === 'view') return JSON.stringify({ labels: [{ name: 'orch:ready' }] });
+      return '';
+    };
+    assert.equal(syncActiveTaskToGitHub({ task: { state, issue_number: 2032 }, repoFullName: 'owner/repo', exec }).label, expected);
+    assert.equal(calls.some((args) => args.includes('--add-label') && args.includes(expected)), true);
+  }
+});
+
+test('terminal lifecycle sync removes active-only labels before applying terminal state', () => {
+  const calls = [];
+  let views = 0;
+  const exec = (_command, args) => {
+    calls.push(args);
+    if (args[0] === 'issue' && args[1] === 'view') {
+      views += 1;
+      return JSON.stringify({ labels: views === 1 ? [{ name: 'orch:claimed' }] : [{ name: 'orch:complete' }] });
+    }
+    return '';
+  };
+  const result = syncTerminalLifecycleTaskToGitHub({
+    task: { state: V4_STATES.COMPLETE, issue_number: 2033 },
+    repoFullName: 'owner/repo',
+    exec,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls.some((args) => args.includes('--remove-label') && args.includes('orch:claimed')), true);
+});
+
+test('continuity state exposes bounded rejection reasons and clears them on corrected intake', () => {
+  const snapshot = {
+    now: '2026-09-13T20:00:00.000Z', limits: { global: 6 },
+    tasks: [],
+  };
+  const decision = { actions: [{ type: 'REPORT_BACKLOG_STARVATION', reason: 'NO_READY_TASKS' }] };
+  const runtime = { refreshState: 'CURRENT' };
+  const rejected = buildContinuityState({
+    snapshot, decision, runtime,
+    intake: { imported: [], duplicates: [], rejected: [{ issueNumber: 9, errors: ['CONTRACT_INVALID'] }] },
+  });
+  assert.deepEqual(rejected.intake, { imported: 0, rejected: 1, duplicates: 0, rejectionReasonCodes: ['CONTRACT_INVALID'] });
+  const corrected = buildContinuityState({ snapshot, decision, runtime, intake: { imported: [{}], duplicates: [], rejected: [] } });
+  assert.deepEqual(corrected.intake.rejectionReasonCodes, []);
+  assert.equal(corrected.intake.imported, 1);
+});
+
+test('host publishes continuity telemetry and carries terminal transition into the next reconciliation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-continuity-'));
+  const observedTransitions = [];
+  let calls = 0;
+  const continuity = {
+    contractVersion: 'DeliveryContinuityStateV1',
+    utilization: { activeSlots: 1, allowedSlots: 6 },
+    backlogHealth: 'BACKLOG_LOW',
+  };
+  try {
+    await runProductionHost({
+      stateRoot: root,
+      maxCycles: 2,
+      intervalMs: 1,
+      sleep: async () => { await new Promise((resolve) => setImmediate(resolve)); },
+      poll: async ({ terminalTransition }) => {
+        calls += 1;
+        observedTransitions.push(terminalTransition);
+        return calls === 1
+          ? { continuity, terminalTransitions: [{ taskId: 'done', slotId: 'local-a', at: '2026-09-13T20:00:00.000Z' }] }
+          : { continuity, terminalTransitions: [] };
+      },
+    });
+    assert.equal(observedTransitions[0], null);
+    assert.deepEqual(observedTransitions[1], { taskId: 'done', slotId: 'local-a', at: '2026-09-13T20:00:00.000Z' });
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.deepEqual(heartbeat.continuity, continuity);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
