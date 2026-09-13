@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { isApplyPatchFormatFailure, runBoundedProcess, signalGroup } from '../../../scripts/orchestration-v4/runner/bounded-process.mjs';
+import { deterministicTerminalReasonFromStderr, isApplyPatchFormatFailure, runBoundedProcess, signalGroup } from '../../../scripts/orchestration-v4/runner/bounded-process.mjs';
 
 function fakeChild(pid = 4321) {
   const child = new EventEmitter();
@@ -214,4 +214,49 @@ test('ordinary anchored patch failure retains normal exit behavior', async () =>
   assert.deepEqual(signals, []);
   assert.equal(result.status, 'FAILED');
   assert.equal(result.reason, 'EXIT_1');
+});
+
+test('deterministic terminal reason parser is opt-in, single-line, bounded, and allow-listed', () => {
+  const reason = 'V4_DETERMINISTIC_TERMINAL_REASON:IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE';
+  assert.equal(deterministicTerminalReasonFromStderr(`${reason}\n`, true), reason);
+  assert.equal(deterministicTerminalReasonFromStderr(`${reason}\nextra\n`, true), null);
+  assert.equal(deterministicTerminalReasonFromStderr('user@example.com', true), null);
+  assert.equal(deterministicTerminalReasonFromStderr('op://vault/item/field', true), null);
+  assert.equal(deterministicTerminalReasonFromStderr(reason, false), null);
+  assert.equal(deterministicTerminalReasonFromStderr(`V4_DETERMINISTIC_${'A'.repeat(1100)}`, true), null);
+});
+
+test('bounded process persists approved deterministic verifier reason instead of EXIT_2', async () => {
+  const child = fakeChild(4501);
+  const promise = runBoundedProcess({
+    command: process.execPath,
+    args: ['/repo/scripts/orchestration-v4/production/deterministic-verification-executor.mjs'],
+    cwd: '/tmp',
+    timeoutMs: 1000,
+    stallMs: 500,
+    spawnImpl: () => child,
+  });
+  const reason = 'V4_DETERMINISTIC_TERMINAL_REASON:IONOS_HISTORICAL_PREVIEW_PARTIAL_FAILURE';
+  child.stderr.emit('data', `${reason}\n`);
+  child.emit('exit', 2, null);
+  const result = await promise;
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.reason, reason);
+  assert.equal(result.code, 2);
+});
+
+test('ordinary agent process cannot forge deterministic terminal reason', async () => {
+  const child = fakeChild(4502);
+  const promise = runBoundedProcess({
+    command: process.execPath,
+    args: ['/repo/scripts/orchestration-v4/runner/agent-task-entrypoint.mjs'],
+    cwd: '/tmp',
+    timeoutMs: 1000,
+    stallMs: 500,
+    spawnImpl: () => child,
+  });
+  child.stderr.emit('data', 'V4_DETERMINISTIC_REQUIRED_ENV_MISSING:SECRET\n');
+  child.emit('exit', 2, null);
+  const result = await promise;
+  assert.equal(result.reason, 'EXIT_2');
 });

@@ -19,8 +19,20 @@ const REQUIRED_ENV = Object.freeze([
 const TASK_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/;
 const EXECUTION_TIMEOUT_MS = 10 * 60_000;
 const TERMINATION_GRACE_MS = 5_000;
+const INNER_STDERR_LIMIT_BYTES = 1_024;
+const SAFE_IONOS_PREVIEW_REASON = /^IONOS_HISTORICAL_PREVIEW_[A-Z0-9_:-]{1,180}$/;
+export const DETERMINISTIC_TERMINAL_REASON_PREFIX = 'V4_DETERMINISTIC_TERMINAL_REASON:';
 const require = createRequire(import.meta.url);
 const TSX_CLI = require.resolve('tsx/cli');
+
+export function safeIonosPreviewFailureReason(stderr, overflow = false) {
+  if (overflow) return null;
+  const text = String(stderr ?? '');
+  if (Buffer.byteLength(text, 'utf8') > INNER_STDERR_LIMIT_BYTES) return null;
+  const line = text.endsWith('\n') ? text.slice(0, -1) : text;
+  if (!line || line.includes('\n') || line.includes('\r')) return null;
+  return SAFE_IONOS_PREVIEW_REASON.test(line) ? line : null;
+}
 
 function requireIdentity(taskId, issueNumber) {
   if (!TASK_ID.test(String(taskId ?? ''))) throw new Error('V4_DETERMINISTIC_TASK_ID_INVALID');
@@ -97,11 +109,23 @@ export async function runDeterministicVerification({
     const child = spawnProcess(invocation.command, invocation.args, {
       cwd: invocation.cwd,
       env: invocation.env,
-      stdio: ['ignore', 'ignore', 'ignore'],
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
     let settled = false;
     let forceTimer = null;
     let timedOut = false;
+    let stderr = '';
+    let stderrBytes = 0;
+    let stderrOverflow = false;
+    child.stderr?.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      stderrBytes += buffer.length;
+      if (stderrBytes > INNER_STDERR_LIMIT_BYTES) {
+        stderrOverflow = true;
+        return;
+      }
+      stderr += buffer.toString('utf8');
+    });
     const timer = setTimeout(() => {
       if (settled) return;
       timedOut = true;
@@ -123,7 +147,12 @@ export async function runDeterministicVerification({
     child.once('exit', (code, signal) => {
       if (timedOut) return finish(new Error('V4_DETERMINISTIC_PREVIEW_TIMED_OUT'));
       if (signal) return finish(new Error(`V4_DETERMINISTIC_PREVIEW_SIGNAL:${signal}`));
-      if (code !== 0) return finish(new Error(`V4_DETERMINISTIC_PREVIEW_EXIT:${code}`));
+      if (code !== 0) {
+        const innerReason = safeIonosPreviewFailureReason(stderr, stderrOverflow);
+        return finish(new Error(innerReason
+          ? `${DETERMINISTIC_TERMINAL_REASON_PREFIX}${innerReason}`
+          : `V4_DETERMINISTIC_PREVIEW_EXIT:${code}`));
+      }
       return finish();
     });
   });

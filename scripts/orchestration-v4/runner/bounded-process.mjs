@@ -4,6 +4,9 @@ const ALLOWED_CHILD_EVENT_KINDS = new Set(['WORKTREE_MUTATION','COMMIT_CREATED',
 const OUTPUT_TAIL_LIMIT = 16_384;
 const TERMINATION_REAP_GRACE_MS = 2000;
 const APPLY_PATCH_TOOL_FAILURE = /^\[tools\]\s+apply_patch failed:\s*(.+)$/i;
+const DETERMINISTIC_ENTRYPOINT = /(?:^|[\\/])deterministic-verification-executor\.mjs$/;
+const SAFE_DETERMINISTIC_TERMINAL_REASON = /^V4_DETERMINISTIC_[A-Z0-9_:.-]{1,240}$/;
+const DETERMINISTIC_REASON_LIMIT_BYTES = 1_024;
 const APPLY_PATCH_FORMAT_MESSAGES = Object.freeze([
   /invalid patch hunk/i,
   /not a valid hunk header/i,
@@ -19,6 +22,15 @@ const APPLY_PATCH_FORMAT_MESSAGES = Object.freeze([
 export function isApplyPatchFormatFailure(line) {
   const match = String(line ?? '').match(APPLY_PATCH_TOOL_FAILURE);
   return Boolean(match && APPLY_PATCH_FORMAT_MESSAGES.some((pattern) => pattern.test(match[1])));
+}
+
+export function deterministicTerminalReasonFromStderr(stderr, enabled = false) {
+  if (!enabled) return null;
+  const text = String(stderr ?? '');
+  if (Buffer.byteLength(text, 'utf8') > DETERMINISTIC_REASON_LIMIT_BYTES) return null;
+  const line = text.endsWith('\n') ? text.slice(0, -1) : text;
+  if (!line || line.includes('\n') || line.includes('\r')) return null;
+  return SAFE_DETERMINISTIC_TERMINAL_REASON.test(line) ? line : null;
 }
 
 export function signalGroup(pgid, signal, killImpl = process.kill) {
@@ -69,6 +81,7 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
     let stdoutTail = '';
     let stderrTail = '';
     const child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const acceptsDeterministicTerminalReason = DETERMINISTIC_ENTRYPOINT.test(String(args?.[0] ?? ''));
     const pgid = child.pid;
     onStarted({ childPid: child.pid, processGroupId: pgid, startedAt });
 
@@ -161,7 +174,15 @@ export function runBoundedProcess({ command, args = [], cwd, env = process.env, 
         finish({ ...terminationResult, code, observedSignal: signal });
         return;
       }
-      finish({ status: code === 0 ? 'COMPLETE' : 'FAILED', code, signal, reason: code === 0 ? null : `EXIT_${code ?? signal}` });
+      const deterministicReason = code !== 0 && signal == null
+        ? deterministicTerminalReasonFromStderr(stderrTail, acceptsDeterministicTerminalReason)
+        : null;
+      finish({
+        status: code === 0 ? 'COMPLETE' : 'FAILED',
+        code,
+        signal,
+        reason: code === 0 ? null : (deterministicReason ?? `EXIT_${code ?? signal}`),
+      });
     });
 
     const timer = setInterval(() => {
