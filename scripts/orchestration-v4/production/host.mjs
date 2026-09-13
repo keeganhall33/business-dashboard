@@ -110,6 +110,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let lastPollError = null;
   let lastPollResult = null;
   let stalledReason = null;
+  let restartRequested = false;
   let continuityPublishError = null;
   let continuityPublishResult = null;
   const continuityPublisherState = {};
@@ -133,6 +134,9 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
           const candidateAt = Date.parse(value?.continuity?.generatedAt || '') || 0;
           const currentAt = Date.parse(lastPollResult?.continuity?.generatedAt || '') || 0;
           if (!lastPollResult || candidateAt >= currentAt) lastPollResult = value || null;
+          if (value?.continuity?.executedControlActions?.some((action) => action?.type === 'REFRESH_CLEAN_IDLE_RUNTIME')) {
+            restartRequested = true;
+          }
           lastPollError = null;
           for (const transition of value?.terminalTransitions || []) terminalTransitions.push(transition);
           return { ok: true, value };
@@ -154,9 +158,11 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   try {
     while (!stopped && cycles < maxCycles) {
       cycles += 1;
-      if (inFlightPolls.size < maxConcurrentPolls) {
+      if (restartRequested && inFlightPolls.size === 0) {
+        stopped = true;
+      } else if (!restartRequested && inFlightPolls.size < maxConcurrentPolls) {
         launchPoll();
-      } else {
+      } else if (!restartRequested) {
         skippedPolls += 1;
         const activeTasks = db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").get().count;
         const pollStartedAt = oldestPollStartedAt();
@@ -176,8 +182,9 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         skippedPolls,
         recoveredStaleTasks: recoveredStaleTasks.length,
         lastPollError,
-        pollState: stalledReason ? 'STALLED' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
+        pollState: stalledReason ? 'STALLED' : restartRequested ? 'RESTARTING' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
         stalledReason,
+        restartRequested,
         pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
         currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
         delivery: buildDeliveryHealth(
@@ -216,7 +223,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       if (shutdownDrainMs === 0) drained = false;
       else drained = await Promise.race([drain, sleep(shutdownDrainMs).then(() => false)]);
     }
-    return { ok: !stalledReason, cycles, stopped, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained, lastPollResult };
+    return { ok: !stalledReason, cycles, stopped, restartRequested, skippedPolls, recoveredStaleTasks, lastPollError, stalledReason, drained, lastPollResult };
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
