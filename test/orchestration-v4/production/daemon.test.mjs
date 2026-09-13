@@ -519,6 +519,30 @@ test('continuity state exposes bounded rejection reasons and clears them on corr
   assert.equal(corrected.intake.imported, 1);
 });
 
+test('continuity state exposes an exact bounded candidate deficit from replenishment', () => {
+  const state = buildContinuityState({
+    snapshot: { now: '2026-09-13T22:00:00.000Z', limits: { global: 6 }, tasks: [] },
+    decision: { actions: [{ type: 'REPORT_BACKLOG_STARVATION', reason: 'NO_READY_TASKS' }] },
+    runtime: { refreshState: 'CURRENT' },
+    intake: { imported: [], duplicates: [], rejected: [] },
+    replenishment: {
+      reserveTarget: 12,
+      hardCap: 20,
+      readyBefore: 0,
+      promoted: 2,
+      deficit: 10,
+    },
+  });
+  assert.equal(state.backlogHealth, 'BACKLOG_CANDIDATE_DEFICIT_10');
+  assert.deepEqual(state.backlogReserve, {
+    target: 12,
+    hardCap: 20,
+    readyBefore: 0,
+    promoted: 2,
+    deficit: 10,
+  });
+});
+
 test('host publishes continuity telemetry and carries terminal transition into the next reconciliation', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-continuity-'));
   const observedTransitions = [];

@@ -8,6 +8,7 @@ import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
 import { blockTasksWithFailedDependencies, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
+import { replenishBacklog } from './backlog-replenisher.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
 import { deterministicVerificationCommandForTask } from './deterministic-verification-executor.mjs';
@@ -464,7 +465,7 @@ function intakeSummary(intake) {
   });
 }
 
-export function buildContinuityState({ snapshot, decision, intake, runtime, latestAction = null, generatedAt = snapshot.now }) {
+export function buildContinuityState({ snapshot, decision, intake, runtime, replenishment = null, latestAction = null, generatedAt = snapshot.now }) {
   const active = snapshot.tasks.filter((task) => ACTIVE_STATES.has(task.state));
   const ready = snapshot.tasks.filter((task) => task.state === 'READY');
   const eligibleReadyCount = decision.actions.filter((action) => CLAIM_ACTIONS.has(action.type)).length;
@@ -482,11 +483,20 @@ export function buildContinuityState({ snapshot, decision, intake, runtime, late
     stalledWorkerCount: decision.actions.filter((action) => action.type === 'TERMINATE_STALLED_WORKER').length,
     correctionCeilingsReached: decision.actions.filter((action) => action.type === 'REPLAN_TERMINAL_TASK').length,
     runtimeRefreshState: runtime.refreshState,
-    backlogHealth: ready.length === 0
-      ? 'BACKLOG_STARVED'
-      : eligibleReadyCount === 0
-        ? 'BACKLOG_INELIGIBLE'
-        : ready.length < snapshot.limits.global ? 'BACKLOG_LOW' : 'BACKLOG_HEALTHY',
+    backlogHealth: Number.isInteger(replenishment?.deficit) && replenishment.deficit > 0
+      ? `BACKLOG_CANDIDATE_DEFICIT_${replenishment.deficit}`
+      : ready.length === 0
+        ? 'BACKLOG_STARVED'
+        : eligibleReadyCount === 0
+          ? 'BACKLOG_INELIGIBLE'
+          : ready.length < snapshot.limits.global ? 'BACKLOG_LOW' : 'BACKLOG_HEALTHY',
+    backlogReserve: replenishment ? Object.freeze({
+      target: replenishment.reserveTarget,
+      hardCap: replenishment.hardCap,
+      readyBefore: replenishment.readyBefore,
+      promoted: replenishment.promoted,
+      deficit: replenishment.deficit,
+    }) : null,
     intake: intakeSummary(intake),
     actions: decision.actions,
   });
@@ -559,6 +569,7 @@ export async function runProductionPoll({
   continuityEnabled = continuityStewardEnabled(),
   terminalTransition = null,
   refreshRuntime = refreshRuntimeMain,
+  replenish = replenishBacklog,
   syncActive = syncActiveGithubTasks,
   now = () => new Date(),
 }) {
@@ -574,6 +585,14 @@ export async function runProductionPoll({
   const beforeRefresh = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
   const runtime = refreshRuntime({ repoRoot, tasks: beforeRefresh, allowAdvance: false });
   const baseSha = runtime.latestHead;
+  const replenishment = issues === null
+    ? await replenish({
+        repoFullName,
+        gh,
+        tasks: beforeRefresh,
+        runtimeHealthy: runtime.clean === true && runtime.refreshState !== 'DIRTY',
+      })
+    : null;
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
   const withdrawnReadyTasks = reconcileWithdrawnReadyTasks(db, snapshots, { now: now() });
@@ -617,6 +636,7 @@ export async function runProductionPoll({
     decision: continuityDecision,
     intake,
     runtime: refreshedRuntime,
+    replenishment,
     latestAction: latestRecordedContinuityAction(db),
     generatedAt: now().toISOString(),
   });
@@ -690,6 +710,7 @@ export async function runProductionPoll({
     return Object.freeze({
       baseSha,
       intake,
+      replenishment,
       withdrawnReadyTasks,
       dependencyBlockedTasks,
       attempted: settled.length,
