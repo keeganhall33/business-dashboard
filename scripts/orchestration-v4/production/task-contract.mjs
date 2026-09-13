@@ -62,6 +62,10 @@ export function validateTaskContract(issue) {
   if (deterministicDirectives.length === 1 && !SUPPORTED_DETERMINISTIC_VERIFIERS.has(deterministicDirectives[0][1])) {
     errors.push('DETERMINISTIC_VERIFIER_INVALID');
   }
+  if (deterministicDirectives.length === 1
+      && (fields.task_mutability !== 'VALIDATION_EVIDENCE_ONLY' || fields.slice_stage !== 'PRODUCTION_VERIFICATION')) {
+    errors.push('DETERMINISTIC_VERIFIER_TASK_INELIGIBLE');
+  }
   const maxAttempts = fields.max_attempts == null
     ? DEFAULT_MAX_ATTEMPTS
     : Number(fields.max_attempts);
