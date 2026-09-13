@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { listTaskDependencies, openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
 import { buildDeliveryHealth } from '../delivery-policy.mjs';
 import { latestContinuityState } from '../delivery-report.mjs';
+import { publishContinuityStatusToGitHub } from './github-sync.mjs';
 
 function pidIsLive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -44,6 +46,20 @@ function acquireHostLock(lockPath) {
   }
 }
 
+export function readRuntimeCommit(repoRoot, exec = execFileSync) {
+  if (!path.isAbsolute(String(repoRoot ?? ''))) return null;
+  try {
+    const sha = String(exec('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+    })).trim();
+    return /^[a-f0-9]{40}$/.test(sha) ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
 export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive = pidIsLive } = {}) {
   const active = db.prepare("SELECT * FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY updated_at,task_id").all();
   const recovered = [];
@@ -74,7 +90,7 @@ export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive 
   return Object.freeze(recovered);
 }
 
-export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, maxConcurrentPolls = 6, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, maxConcurrentPolls = 6, publishContinuity = publishContinuityStatusToGitHub, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
   if (!Number.isInteger(emptyPollTimeoutMs) || emptyPollTimeoutMs <= 0) throw new Error('V4_HOST_EMPTY_POLL_TIMEOUT_INVALID');
@@ -94,6 +110,9 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let lastPollError = null;
   let lastPollResult = null;
   let stalledReason = null;
+  let continuityPublishError = null;
+  let continuityPublishResult = null;
+  const continuityPublisherState = {};
   const terminalTransitions = [];
   const inFlightPolls = new Set();
   const pollStartedAtByPromise = new Map();
@@ -150,7 +169,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       }
       const generatedAtMs = now();
       const pollStartedAt = oldestPollStartedAt();
-      fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify({
+      const heartbeat = {
         pid: process.pid,
         cycles,
         inFlightPolls: inFlightPolls.size,
@@ -169,8 +188,26 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         ),
         continuity: lastPollResult?.continuity || latestContinuityState(db),
         pendingTerminalReconciliations: terminalTransitions.length,
+        runtimeCommit: readRuntimeCommit(pollArgs.repoRoot),
         generatedAt: new Date(generatedAtMs).toISOString(),
-      })}\n`);
+      };
+      try {
+        continuityPublishResult = await publishContinuity({
+          repoFullName: pollArgs.repoFullName,
+          heartbeat,
+          tasks: db.prepare("SELECT issue_number,state,slot_id,semantic_progress_at,updated_at FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY issue_number").all(),
+          publisherState: continuityPublisherState,
+          now: new Date(generatedAtMs),
+        });
+        continuityPublishError = null;
+      } catch (error) {
+        continuityPublishError = String(error?.message || error);
+      }
+      heartbeat.githubContinuitySync = {
+        lastError: continuityPublishError,
+        lastResult: continuityPublishResult,
+      };
+      fs.writeFileSync(path.join(stateRoot, 'heartbeat.json'), `${JSON.stringify(heartbeat)}\n`);
       if (!stopped && cycles < maxCycles) await sleep(intervalMs);
     }
     let drained = true;

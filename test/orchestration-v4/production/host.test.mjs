@@ -3,11 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runProductionHost } from '../../../scripts/orchestration-v4/production/host.mjs';
+import { readRuntimeCommit, runProductionHost } from '../../../scripts/orchestration-v4/production/host.mjs';
 import { claimTask, getTask, insertReadyTask, openV4StateStore, recordExecutionIdentity, transitionTask } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { V4_STATES } from '../../../scripts/orchestration-v4/state-machine.mjs';
 
 const BASE_SHA = 'a'.repeat(40);
+
+test('runtime commit telemetry reports only an exact repository SHA', () => {
+  assert.equal(readRuntimeCommit('/repo', () => `${BASE_SHA}\n`), BASE_SHA);
+  assert.equal(readRuntimeCommit('/repo', () => 'not-a-sha\n'), null);
+  assert.equal(readRuntimeCommit('relative/repo', () => `${BASE_SHA}\n`), null);
+  assert.equal(readRuntimeCommit('/repo', () => { throw new Error('git unavailable'); }), null);
+});
 
 test('host loops, writes heartbeat, releases lock, and restarts', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-'));
@@ -181,6 +188,31 @@ test('host reclaims an invalid stale lock', async () => {
     const result = await runProductionHost({ stateRoot: root, poll: async () => {}, maxCycles: 1 });
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(root, 'host.lock')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('continuity publication failure is recorded locally without stopping workers or mutating task truth', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-continuity-publish-failure-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    insertReadyTask(db, { taskId: 'unrelated-ready-task', issueNumber: 9931, stream: 'PRODUCT', baseSha: BASE_SHA });
+  } finally {
+    db.close();
+  }
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      pollArgs: { repoFullName: 'owner/repo' },
+      poll: async () => ({ baseSha: BASE_SHA }),
+      publishContinuity: async () => { throw new Error('V4_GITHUB_CONTINUITY_PUBLISH_FAILED'); },
+      maxCycles: 1,
+    });
+    assert.equal(result.ok, true);
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.equal(heartbeat.githubContinuitySync.lastError, 'V4_GITHUB_CONTINUITY_PUBLISH_FAILED');
+    const verifyDb = openV4StateStore(path.join(root, 'state.sqlite'));
+    try { assert.equal(getTask(verifyDb, 'unrelated-ready-task').state, V4_STATES.READY); }
+    finally { verifyDb.close(); }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
