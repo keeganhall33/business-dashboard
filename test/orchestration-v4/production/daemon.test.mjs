@@ -405,6 +405,26 @@ test('stall termination action is process-owned and idempotent across duplicate 
   }
 });
 
+test('terminal replan releases an orphaned active slot exactly once after a stall decision', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-replan-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    insertReadyTask(db, { taskId: 'orphaned', issueNumber: 2022, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+    claimTask(db, { taskId: 'orphaned', slotId: 'local-a' });
+    transitionTask(db, { taskId: 'orphaned', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
+    const decision = { actions: [{ type: 'REPLAN_TERMINAL_TASK', taskId: 'orphaned', reason: 'SEMANTIC_PROGRESS_STALL' }] };
+    const options = { now: new Date('2026-09-13T20:00:00Z') };
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
+    assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
+    assert.equal(getTask(db, 'orphaned').state, V4_STATES.BLOCKED);
+    assert.equal(getTask(db, 'orphaned').slot_id, null);
+    assert.equal(getTask(db, 'orphaned').terminal_reason, 'CONTINUITY_REPLAN:SEMANTIC_PROGRESS_STALL');
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('runtime refresh executes only through the emitted allow-listed action and only once', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-refresh-'));
   const db = openV4StateStore(path.join(root, 'state.sqlite'));

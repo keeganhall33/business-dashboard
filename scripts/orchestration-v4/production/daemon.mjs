@@ -6,7 +6,7 @@ import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
 import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
-import { getTask, getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, transitionTask } from '../state-store/sqlite-store.mjs';
+import { getTask, getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
@@ -432,6 +432,21 @@ export function executeContinuityControlActions(db, decision, {
       const result = refreshMain(action);
       recordContinuityActionOnce(db, { action, task, now });
       executed.push(Object.freeze({ ...action, result }));
+      continue;
+    }
+    if (action.type === 'REPLAN_TERMINAL_TASK' && task && ACTIVE_STATES.has(task.state)) {
+      const key = actionIdempotencyKey(action, task);
+      if (continuityActionWasRecorded(db, key)) continue;
+      transitionTask(db, {
+        taskId: task.task_id,
+        expectedState: task.state,
+        toState: 'BLOCKED',
+        patch: { terminalReason: `CONTINUITY_REPLAN:${action.reason || 'POLICY'}` },
+        now,
+      });
+      releaseSlotForTerminalTask(db, task.task_id);
+      recordContinuityActionOnce(db, { action, task, now });
+      executed.push(action);
       continue;
     }
     if (recordContinuityActionOnce(db, { action, task, now })) executed.push(action);
