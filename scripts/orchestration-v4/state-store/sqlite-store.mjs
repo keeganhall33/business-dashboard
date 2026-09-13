@@ -114,6 +114,14 @@ export function listTasks(db) {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at, task_id').all();
 }
 
+export function listTaskDependencies(db) {
+  return db.prepare(`
+    SELECT task_id,depends_on_task_id,artifact,created_at
+    FROM task_dependencies
+    ORDER BY task_id,depends_on_task_id,artifact
+  `).all();
+}
+
 export function addTaskDependency(db, { taskId, dependsOnTaskId, artifact, now = new Date() }) {
   if (!taskId || !dependsOnTaskId || taskId === dependsOnTaskId || !String(artifact ?? '').trim()) {
     throw new Error('V4_STATE_DEPENDENCY_INVALID');

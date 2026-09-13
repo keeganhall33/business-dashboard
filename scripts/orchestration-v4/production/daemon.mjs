@@ -6,7 +6,7 @@ import { createSlotRegistry } from '../slot-scheduler.mjs';
 import { runReadyBatch } from '../runner/task-runner.mjs';
 import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
-import { getTask, getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { blockTasksWithFailedDependencies, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
@@ -577,10 +577,13 @@ export async function runProductionPoll({
   const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
   const withdrawnReadyTasks = reconcileWithdrawnReadyTasks(db, snapshots, { now: now() });
+  const dependencyBlockedTasks = blockTasksWithFailedDependencies(db, { now: now() });
   const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
+  const dependencies = listTaskDependencies(db);
   const ready = allTasks.filter((task) => task.state === 'READY');
-  const deliverySelection = selectDeliveryReadyTasks(allTasks);
-  const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE').slice(0, 1);
+  const runnableTaskIds = new Set(listRunnableTasks(db).map((task) => task.task_id));
+  const deliverySelection = selectDeliveryReadyTasks(allTasks, { dependencies });
+  const integrationReady = ready.filter((task) => task.stream === 'INTEGRATION_RELEASE' && runnableTaskIds.has(task.task_id)).slice(0, 1);
   const continuitySnapshot = buildContinuitySnapshot({
     db,
     runtime,
@@ -688,6 +691,7 @@ export async function runProductionPoll({
       baseSha,
       intake,
       withdrawnReadyTasks,
+      dependencyBlockedTasks,
       attempted: settled.length,
       settled,
       integrationAttempted: integrationSettled.length,

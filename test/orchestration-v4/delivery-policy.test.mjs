@@ -76,6 +76,55 @@ test('delivery selection prioritizes outcomes, honors dependencies, and caps act
   assert.equal(result.deferred.find((row) => row.taskId === 'd-1')?.reason, 'SLICE_WIP_LIMIT');
 });
 
+test('delivery selection uses the durable artifact graph even when legacy contract metadata omits depends_on', () => {
+  const tasks = [
+    task('upstream-1', { state: 'RUNNING', contract: { sliceId: 'foundation' } }),
+    task('dependent-2', { contract: { sliceId: 'experience', dependsOn: '' } }),
+    task('independent-3', { contract: { sliceId: 'other', dependsOn: '' } }),
+  ];
+  const dependencies = [{
+    task_id: 'dependent-2',
+    depends_on_task_id: 'upstream-1',
+    artifact: 'verified-contract',
+  }];
+  const result = selectDeliveryReadyTasks(tasks, { dependencies });
+  assert.deepEqual(result.selected.map((row) => row.task_id), ['independent-3']);
+  assert.deepEqual(result.deferred.find((row) => row.taskId === 'dependent-2'), {
+    taskId: 'dependent-2',
+    reason: 'DEPENDENCY_NOT_COMPLETE',
+    dependencies: ['upstream-1'],
+    requiredArtifacts: [{ taskId: 'upstream-1', artifact: 'verified-contract' }],
+  });
+});
+
+test('delivery health exposes the runnable graph frontier and artifact-level dependency waits', () => {
+  const tasks = [
+    task('contract-1', { state: 'COMPLETE', contract: { sliceId: 'graph-slice', sliceStage: 'CONTRACT' } }),
+    task('implementation-2', { contract: { sliceId: 'graph-slice', sliceStage: 'IMPLEMENTATION' } }),
+    task('verification-3', { contract: { sliceId: 'graph-slice', sliceStage: 'PRODUCTION_VERIFICATION' } }),
+  ];
+  const dependencies = [
+    { task_id: 'implementation-2', depends_on_task_id: 'contract-1', artifact: 'verified-contract' },
+    { task_id: 'verification-3', depends_on_task_id: 'implementation-2', artifact: 'merged-feature' },
+  ];
+  const graph = buildDeliveryHealth(tasks, '2026-09-12T12:00:00.000Z', [], dependencies).slices[0].graph;
+  assert.deepEqual(graph, {
+    nodeCount: 3,
+    edgeCount: 2,
+    completedNodes: 1,
+    activeNodes: 0,
+    runnableNodes: 1,
+    waitingNodes: 1,
+    blockedNodes: 0,
+    completionPercent: 33,
+    runnableFrontier: ['implementation-2'],
+    dependencyWaits: [{
+      taskId: 'verification-3',
+      waitingOn: [{ taskId: 'implementation-2', artifact: 'merged-feature', state: 'READY' }],
+    }],
+  });
+});
+
 test('delivery health counts only production-verified slices as operational', () => {
   const health = buildDeliveryHealth([
     task('impl-1', { state: 'COMPLETE', contract: { sliceId: 'followup', sliceStage: 'IMPLEMENTATION' } }),

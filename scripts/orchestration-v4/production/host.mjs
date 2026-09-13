@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { listTaskDependencies, openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { V4_STATES } from '../state-machine.mjs';
 import { runProductionPoll } from './daemon.mjs';
 import { buildDeliveryHealth } from '../delivery-policy.mjs';
@@ -165,6 +165,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
           db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all(),
           new Date().toISOString(),
           db.prepare('SELECT * FROM correction_attempts ORDER BY task_id,attempt').all(),
+          listTaskDependencies(db),
         ),
         continuity: lastPollResult?.continuity || latestContinuityState(db),
         pendingTerminalReconciliations: terminalTransitions.length,

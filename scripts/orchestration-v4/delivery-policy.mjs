@@ -90,6 +90,29 @@ function isDependencyComplete(taskById, dependencyId) {
   return taskById.get(dependencyId)?.state === 'COMPLETE';
 }
 
+function durableDependenciesByTask(dependencies = []) {
+  const byTask = new Map();
+  for (const dependency of dependencies) {
+    const taskId = String(dependency?.task_id ?? dependency?.taskId ?? '').trim();
+    const dependsOnTaskId = String(dependency?.depends_on_task_id ?? dependency?.dependsOnTaskId ?? '').trim();
+    const artifact = String(dependency?.artifact ?? '').trim();
+    if (!taskId || !dependsOnTaskId) continue;
+    const current = byTask.get(taskId) || [];
+    current.push(Object.freeze({ taskId: dependsOnTaskId, artifact: artifact || null }));
+    byTask.set(taskId, current);
+  }
+  return byTask;
+}
+
+function dependencyEdgesForTask(task, metadata, durableByTask) {
+  const edges = [...(durableByTask.get(task.task_id) || [])];
+  const seen = new Set(edges.map((edge) => edge.taskId));
+  for (const taskId of metadata.dependsOn) {
+    if (!seen.has(taskId)) edges.push(Object.freeze({ taskId, artifact: null }));
+  }
+  return edges;
+}
+
 function hasVerifiedProductionEvidence(task) {
   if (task?.state !== 'COMPLETE') return false;
   try {
@@ -104,8 +127,9 @@ function hasVerifiedProductionEvidence(task) {
   }
 }
 
-export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = 5 } = {}) {
+export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = 5, dependencies = [] } = {}) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  const durableByTask = durableDependenciesByTask(dependencies);
   const active = tasks.filter((task) => ACTIVE_STATES.has(task.state));
   const activeSliceIds = new Set(active.map((task) => deliveryMetadata(getTaskContract(task)).sliceId).filter(Boolean));
   const selected = [];
@@ -130,9 +154,16 @@ export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecut
 
   for (const task of ready) {
     const metadata = deliveryMetadata(getTaskContract(task));
-    const unmet = metadata.dependsOn.filter((id) => !isDependencyComplete(taskById, id));
+    const unmetEdges = dependencyEdgesForTask(task, metadata, durableByTask)
+      .filter((edge) => !isDependencyComplete(taskById, edge.taskId));
+    const unmet = unmetEdges.map((edge) => edge.taskId);
     if (unmet.length) {
-      deferred.push({ taskId: task.task_id, reason: 'DEPENDENCY_NOT_COMPLETE', dependencies: unmet });
+      deferred.push({
+        taskId: task.task_id,
+        reason: 'DEPENDENCY_NOT_COMPLETE',
+        dependencies: unmet,
+        requiredArtifacts: unmetEdges.filter((edge) => edge.artifact).map((edge) => ({ taskId: edge.taskId, artifact: edge.artifact })),
+      });
       continue;
     }
     if (metadata.sliceId && !admittedSlices.has(metadata.sliceId) && admittedSlices.size >= maxActiveSlices) {
@@ -156,7 +187,9 @@ export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecut
   return Object.freeze({ selected, deferred, activeSliceIds: [...admittedSlices].sort() });
 }
 
-export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(), correctionAttempts = []) {
+export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(), correctionAttempts = [], dependencies = []) {
+  const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  const durableByTask = durableDependenciesByTask(dependencies);
   const correctionsByTask = new Map();
   for (const correction of correctionAttempts) {
     const rows = correctionsByTask.get(correction.task_id) || [];
@@ -211,6 +244,38 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
     const cycleTimeHours = availableAtMs !== null && Number.isFinite(startedAtMs)
       ? Math.round(((availableAtMs - startedAtMs) / 3_600_000) * 100) / 100
       : null;
+    const graphNodes = sourceTasks.map((task) => {
+      const taskMetadata = deliveryMetadata(getTaskContract(task));
+      const dependencyEdges = dependencyEdgesForTask(task, taskMetadata, durableByTask);
+      const unmetEdges = dependencyEdges.filter((edge) => !isDependencyComplete(taskById, edge.taskId));
+      const failedEdges = unmetEdges.filter((edge) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(taskById.get(edge.taskId)?.state));
+      return {
+        taskId: task.task_id,
+        state: task.state,
+        runnable: task.state === 'READY' && unmetEdges.length === 0,
+        waitingOn: unmetEdges.map((edge) => ({
+          taskId: edge.taskId,
+          artifact: edge.artifact,
+          state: taskById.get(edge.taskId)?.state ?? 'MISSING',
+        })),
+        blockedByFailure: failedEdges.map((edge) => edge.taskId),
+      };
+    });
+    const completeNodes = graphNodes.filter((node) => node.state === 'COMPLETE').length;
+    const graph = {
+      nodeCount: graphNodes.length,
+      edgeCount: graphNodes.reduce((count, node) => count + node.waitingOn.length, 0)
+        + sourceTasks.reduce((count, task) => count + dependencyEdgesForTask(task, deliveryMetadata(getTaskContract(task)), durableByTask)
+          .filter((edge) => isDependencyComplete(taskById, edge.taskId)).length, 0),
+      completedNodes: completeNodes,
+      activeNodes: graphNodes.filter((node) => ACTIVE_STATES.has(node.state)).length,
+      runnableNodes: graphNodes.filter((node) => node.runnable).length,
+      waitingNodes: graphNodes.filter((node) => node.state === 'READY' && node.waitingOn.length > 0 && node.blockedByFailure.length === 0).length,
+      blockedNodes: graphNodes.filter((node) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(node.state) || node.blockedByFailure.length > 0).length,
+      completionPercent: graphNodes.length ? Math.round((completeNodes / graphNodes.length) * 100) : 0,
+      runnableFrontier: graphNodes.filter((node) => node.runnable).map((node) => node.taskId),
+      dependencyWaits: graphNodes.filter((node) => node.waitingOn.length > 0).map((node) => ({ taskId: node.taskId, waitingOn: node.waitingOn })),
+    };
     const launchState = operational ? 'AVAILABLE'
       : verified && launchPolicy === 'BUNDLED_ONLY' ? 'VERIFIED_HELD'
         : evidenceMissing ? 'EVIDENCE_MISSING'
@@ -234,6 +299,7 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       blockedTasks,
       stalledTasks,
       correctionAttempts,
+      graph,
       blockerReason: evidenceMissing ? 'PRODUCTION_EVIDENCE_NOT_VERIFIED' : latestBlockedTask?.terminal_reason ?? null,
       status: operational ? 'OPERATIONAL' : evidenceMissing || blockedTasks > 0 ? 'BLOCKED' : stalledTasks > 0 ? 'RECOVERING' : hasActiveWork ? 'ACTIVE' : 'PLANNED',
     };
