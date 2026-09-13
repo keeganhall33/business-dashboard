@@ -7,7 +7,7 @@ import { createCorrectionPacket, CORRECTION_ACTIONS, createTaskDeadline, remaini
 import { blockTasksWithFailedDependencies, claimTask, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, recordCorrectionAttempt, recordExecutionIdentity, recordSemanticProgress, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { runBoundedProcess } from './bounded-process.mjs';
 import { createWorkspaceProgressObserver } from './workspace-progress.mjs';
-import { selectDeliveryReadyTasks } from '../delivery-policy.mjs';
+import { PRODUCT_LANE_CAPACITY, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
 
 const RESULT_TO_STATE = Object.freeze({ COMPLETE: V4_STATES.COMPLETE, BLOCKED: V4_STATES.BLOCKED, FAILED: V4_STATES.FAILED, TIMED_OUT: V4_STATES.TIMED_OUT });
 
@@ -126,7 +126,7 @@ export async function runReadyBatch({ db, registry, repoRoot, workspaceRoot, com
   const runnableIds = new Set(runnableTasks.map((task) => task.task_id));
   const policy = selectDeliveryReadyTasks(
     allTasks.filter((task) => task.state !== V4_STATES.READY || runnableIds.has(task.task_id)),
-    { dependencies: listTaskDependencies(db) },
+    { dependencies: listTaskDependencies(db), maxExecutableTasks: PRODUCT_LANE_CAPACITY },
   );
   const readyTasks = policy.selected;
   const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
