@@ -153,7 +153,7 @@ function canonicalQuery(input: unknown): RegistryQueryV1 {
     ["intent", "entity_classes", "decision_classes", "side_effect_ceiling", "budgets", "evaluated_at", "max_results"],
     "QUERY"
   );
-  if (!(query.side_effect_ceiling in SIDE_EFFECT_RANK)) fail("QUERY_SIDE_EFFECT_CEILING_INVALID");
+  if (typeof query.side_effect_ceiling !== "string" || !(query.side_effect_ceiling in SIDE_EFFECT_RANK)) {\n    fail("QUERY_SIDE_EFFECT_CEILING_INVALID");\n  }
   const evaluatedAt = nonEmptyText(query.evaluated_at, "QUERY_EVALUATED_AT_REQUIRED");
   if (!ISO_TIMESTAMP.test(evaluatedAt) || Number.isNaN(Date.parse(evaluatedAt))) fail("QUERY_EVALUATED_AT_INVALID");
   return Object.freeze({
