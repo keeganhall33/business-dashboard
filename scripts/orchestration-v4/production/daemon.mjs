@@ -7,6 +7,7 @@ import { getTaskContract, listTasksPendingGithubSync, markGithubTaskStateSynced 
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { publishImplementationResult } from './publisher.mjs';
 import { runIntegrationTask } from './integration-executor.mjs';
+import { deterministicVerificationCommandForTask } from './deterministic-verification-executor.mjs';
 import { syncTerminalTaskToGitHub } from './github-sync.mjs';
 import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
 import { deliveryMetadata, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
@@ -34,6 +35,35 @@ export function taskMutationMode(task) {
 export function taskAttemptLimit(task) {
   const value = getTaskContract(task)?.maxAttempts;
   return Number.isInteger(value) && value >= 1 ? value : 3;
+}
+
+export function buildTaskExecutionSpec({
+  task,
+  agentTimeoutMs,
+  openclaw,
+  createState = createEphemeralAgentState,
+  retainState = () => {},
+}) {
+  const deterministic = deterministicVerificationCommandForTask(task);
+  if (deterministic) return deterministic;
+
+  const mode = taskMutationMode(task);
+  const state = createState({
+    taskId: task.task_id,
+    applyPatchEnabled: mode !== AGENT_MUTATION_MODES.SHELL_ONLY,
+  });
+  retainState(state);
+  return {
+    command: process.execPath,
+    args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
+    buildCorrectionAttempt: ({ packet, command, args }) => buildCorrectionAgentAttempt({
+      packet,
+      command,
+      args,
+      retainState,
+    }),
+    maxCorrectionAttempts: taskAttemptLimit(task),
+  };
 }
 
 export function buildCorrectionAgentAttempt({ packet, command, args, createState = createEphemeralAgentState, retainState = () => {} }) {
@@ -199,23 +229,12 @@ export async function runProductionPoll({
 
   try {
     for (const task of executable) {
-      const mode = taskMutationMode(task);
-      const state = createEphemeralAgentState({
-        taskId: task.task_id,
-        applyPatchEnabled: mode !== AGENT_MUTATION_MODES.SHELL_ONLY,
+      commandsByTaskId[task.task_id] = buildTaskExecutionSpec({
+        task,
+        agentTimeoutMs,
+        openclaw,
+        retainState: (state) => ephemeral.push(state),
       });
-      ephemeral.push(state);
-      commandsByTaskId[task.task_id] = {
-        command: process.execPath,
-        args: [ENTRYPOINT, promptForTask(task), state.configPath, state.stateDir, String(Math.ceil(agentTimeoutMs / 1000)), openclaw],
-        buildCorrectionAttempt: ({ packet, command, args }) => buildCorrectionAgentAttempt({
-          packet,
-          command,
-          args,
-          retainState: (correctionState) => ephemeral.push(correctionState),
-        }),
-        maxCorrectionAttempts: taskAttemptLimit(task),
-      };
     }
 
     const { settled, integrationSettled } = await runConcurrentProductionQueues({
