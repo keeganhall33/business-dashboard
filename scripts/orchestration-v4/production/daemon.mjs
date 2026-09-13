@@ -33,7 +33,7 @@ const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
 const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
 
 export function continuityStewardEnabled(env = process.env) {
-  return env.JEEVES_V4_CONTINUITY_STEWARD === '1';
+  return env.JEEVES_V4_CONTINUITY_STEWARD !== '0';
 }
 
 export function taskMutationMode(task) {
