@@ -141,7 +141,11 @@ function exactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>,
   }
 }
 
-function text(value: unknown, field: string, maximum = CAPABILITY_FABRIC_LIMITS.maxIdentifierLength): string {
+function text(
+  value: unknown,
+  field: string,
+  maximum: number = CAPABILITY_FABRIC_LIMITS.maxIdentifierLength
+): string {
   if (typeof value !== "string") fail(`${field.toUpperCase()}_REQUIRED`);
   const normalized = value.trim();
   if (!normalized) fail(`${field.toUpperCase()}_REQUIRED`);
