@@ -14,7 +14,7 @@ import { runIntegrationTask } from './integration-executor.mjs';
 import { deterministicVerificationCommandForTask } from './deterministic-verification-executor.mjs';
 import { ALL_STATE_LABELS, syncTerminalTaskToGitHub } from './github-sync.mjs';
 import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
-import { deliveryMetadata, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
+import { deliveryMetadata, PRODUCT_LANE_CAPACITY, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
 import { decideDeliveryContinuity } from './delivery-continuity-policy.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
@@ -32,7 +32,7 @@ const LIFECYCLE_LABELS = Object.freeze([...new Set([...ALL_STATE_LABELS, ...Obje
 const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
 const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
 const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
-export const PRODUCT_LANE_CAPACITY = 6;
+export { PRODUCT_LANE_CAPACITY };
 
 export function continuityStewardEnabled(env = process.env) {
   return env.JEEVES_V4_CONTINUITY_STEWARD !== '0';
