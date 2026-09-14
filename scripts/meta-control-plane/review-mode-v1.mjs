@@ -210,7 +210,14 @@ export function createReviewModeService({ repository, metaClient, now = () => ne
       }
       if (!dryRun && !confirmLiveWrite) throw new MetaControlPlaneError("LIVE_CONFIRMATION_REQUIRED", "Live rollback requires separate confirmation");
       if (dryRun) return repository.update(id, { rollback_state: "DRY_RUN", updated_at: now() });
-      const response = await metaClient.writeObject(proposal.object_type, proposal.object_id, proposal.rollback_metadata.restore);
+      const liveState = await metaClient.readObject(proposal.object_type, proposal.object_id);
+      const restore = proposal.rollback_metadata.restore;
+      const rollbackFields = Object.keys(restore);
+      const liveStillMatchesExecution = rollbackFields.every((key) => liveState[key] === proposal.proposed_state[key]);
+      if (!liveStillMatchesExecution) {
+        return repository.update(id, { rollback_state: "STALE", updated_at: now() });
+      }
+      const response = await metaClient.writeObject(proposal.object_type, proposal.object_id, restore);
       return repository.update(id, { rollback_state: "SUCCEEDED", rollback_response: response, rolled_back_at: now(), updated_at: now() });
     }
   };
