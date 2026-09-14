@@ -72,6 +72,7 @@ test('imports QA and orchestration tasks without agent-orchestration label', () 
     });
     assert.deepEqual(result.rejected, []);
     assert.equal(result.imported.length, 2);
+    assert.deepEqual(result.refreshed, []);
     assert.deepEqual(
       db.prepare('SELECT issue_number,stream,state FROM tasks ORDER BY issue_number').all(),
       [
@@ -79,6 +80,57 @@ test('imports QA and orchestration tasks without agent-orchestration label', () 
         { issue_number: 2, stream: 'ORCHESTRATION_SYSTEMS', state: 'READY' },
       ],
     );
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('refreshes a validated unstarted READY contract with the same execution identity', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-refresh-'));
+  const db = openV4StateStore(path.join(dir, 'state.sqlite'));
+  try {
+    const original = issue(20, 'refresh-task', 'LEARNING_INTELLIGENCE');
+    original.body += '\n\n**depends_on:** #1616';
+    const first = importReadyIssues({ db, baseSha: BASE_SHA, issues: [original] });
+    assert.equal(first.imported.length, 1);
+
+    const repaired = issue(20, 'refresh-task', 'LEARNING_INTELLIGENCE');
+    repaired.body += '\n\n**depends_on:** NONE';
+    const nextSha = 'b'.repeat(40);
+    const result = importReadyIssues({ db, baseSha: nextSha, issues: [repaired] });
+
+    assert.deepEqual(result.rejected, []);
+    assert.deepEqual(result.duplicates, []);
+    assert.equal(result.imported.length, 0);
+    assert.equal(result.refreshed.length, 1);
+    const stored = db.prepare('SELECT state,attempt,base_sha,contract_json FROM tasks WHERE task_id=?').get('refresh-task');
+    assert.equal(stored.state, 'READY');
+    assert.equal(stored.attempt, 0);
+    assert.equal(stored.base_sha, nextSha);
+    assert.equal(JSON.parse(stored.contract_json).dependsOn, 'NONE');
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('refuses READY contract refresh that changes execution ownership', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-intake-refresh-reject-'));
+  const db = openV4StateStore(path.join(dir, 'state.sqlite'));
+  try {
+    const original = issue(21, 'ownership-task', 'CORE_INTELLIGENCE');
+    importReadyIssues({ db, baseSha: BASE_SHA, issues: [original] });
+
+    const widened = issue(21, 'ownership-task', 'CORE_INTELLIGENCE');
+    widened.body = widened.body.replace('src/example-21.mjs', 'src/**');
+    const result = importReadyIssues({ db, baseSha: 'b'.repeat(40), issues: [widened] });
+
+    assert.equal(result.refreshed.length, 0);
+    assert.deepEqual(result.rejected, [
+      { issueNumber: 21, errors: ['READY_CONTRACT_REFRESH_FORBIDDEN'] },
+    ]);
+    assert.equal(JSON.parse(db.prepare('SELECT contract_json FROM tasks WHERE task_id=?').get('ownership-task').contract_json).fileOwnership, 'src/example-21.mjs');
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
