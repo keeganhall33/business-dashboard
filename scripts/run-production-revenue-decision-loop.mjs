@@ -155,5 +155,5 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  await main();
+  void main();
 }
