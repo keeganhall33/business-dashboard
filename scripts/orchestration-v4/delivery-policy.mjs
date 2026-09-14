@@ -87,6 +87,18 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+function issueTaskIndex(tasks) {
+  return new Map(tasks.map((task) => [Number(task.issue_number), task]));
+}
+
+function resolveDependencyTaskId(dependencyId, taskById, taskByIssue) {
+  const value = String(dependencyId || '').trim();
+  if (taskById.has(value)) return value;
+  const issueRef = value.match(/^#?(\d+)$/);
+  if (!issueRef) return value;
+  return taskByIssue.get(Number(issueRef[1]))?.task_id || value;
+}
+
 function isDependencyComplete(taskById, dependencyId) {
   return taskById.get(dependencyId)?.state === 'COMPLETE';
 }
@@ -105,10 +117,11 @@ function durableDependenciesByTask(dependencies = []) {
   return byTask;
 }
 
-function dependencyEdgesForTask(task, metadata, durableByTask) {
+function dependencyEdgesForTask(task, metadata, durableByTask, taskById, taskByIssue) {
   const edges = [...(durableByTask.get(task.task_id) || [])];
   const seen = new Set(edges.map((edge) => edge.taskId));
-  for (const taskId of metadata.dependsOn) {
+  for (const dependencyRef of metadata.dependsOn) {
+    const taskId = resolveDependencyTaskId(dependencyRef, taskById, taskByIssue);
     if (!seen.has(taskId)) edges.push(Object.freeze({ taskId, artifact: null }));
   }
   return edges;
@@ -130,6 +143,7 @@ function hasVerifiedProductionEvidence(task) {
 
 export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecutableTasks = PRODUCT_LANE_CAPACITY, dependencies = [] } = {}) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  const taskByIssue = issueTaskIndex(tasks);
   const durableByTask = durableDependenciesByTask(dependencies);
   const active = tasks.filter((task) => ACTIVE_STATES.has(task.state));
   const activeSliceIds = new Set(active.map((task) => deliveryMetadata(getTaskContract(task)).sliceId).filter(Boolean));
@@ -155,7 +169,7 @@ export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecut
 
   for (const task of ready) {
     const metadata = deliveryMetadata(getTaskContract(task));
-    const unmetEdges = dependencyEdgesForTask(task, metadata, durableByTask)
+    const unmetEdges = dependencyEdgesForTask(task, metadata, durableByTask, taskById, taskByIssue)
       .filter((edge) => !isDependencyComplete(taskById, edge.taskId));
     const unmet = unmetEdges.map((edge) => edge.taskId);
     if (unmet.length) {
@@ -190,6 +204,7 @@ export function selectDeliveryReadyTasks(tasks, { maxActiveSlices = 3, maxExecut
 
 export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(), correctionAttempts = [], dependencies = []) {
   const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  const taskByIssue = issueTaskIndex(tasks);
   const durableByTask = durableDependenciesByTask(dependencies);
   const correctionsByTask = new Map();
   for (const correction of correctionAttempts) {
@@ -247,7 +262,7 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
       : null;
     const graphNodes = sourceTasks.map((task) => {
       const taskMetadata = deliveryMetadata(getTaskContract(task));
-      const dependencyEdges = dependencyEdgesForTask(task, taskMetadata, durableByTask);
+      const dependencyEdges = dependencyEdgesForTask(task, taskMetadata, durableByTask, taskById, taskByIssue);
       const unmetEdges = dependencyEdges.filter((edge) => !isDependencyComplete(taskById, edge.taskId));
       const failedEdges = unmetEdges.filter((edge) => ['BLOCKED', 'FAILED', 'TIMED_OUT'].includes(taskById.get(edge.taskId)?.state));
       return {
@@ -266,7 +281,7 @@ export function buildDeliveryHealth(tasks, generatedAt = new Date().toISOString(
     const graph = {
       nodeCount: graphNodes.length,
       edgeCount: graphNodes.reduce((count, node) => count + node.waitingOn.length, 0)
-        + sourceTasks.reduce((count, task) => count + dependencyEdgesForTask(task, deliveryMetadata(getTaskContract(task)), durableByTask)
+        + sourceTasks.reduce((count, task) => count + dependencyEdgesForTask(task, deliveryMetadata(getTaskContract(task)), durableByTask, taskById, taskByIssue)
           .filter((edge) => isDependencyComplete(taskById, edge.taskId)).length, 0),
       completedNodes: completeNodes,
       activeNodes: graphNodes.filter((node) => ACTIVE_STATES.has(node.state)).length,
