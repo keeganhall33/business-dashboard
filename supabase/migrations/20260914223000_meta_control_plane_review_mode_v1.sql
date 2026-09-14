@@ -20,7 +20,7 @@ create table if not exists public.meta_change_proposals (
   idempotency_key text not null unique,
   precondition_state text not null,
   rollback_metadata jsonb,
-  rollback_state text check (rollback_state in ('DRY_RUN', 'SUCCEEDED', 'FAILED')),
+  rollback_state text check (rollback_state in ('DRY_RUN', 'SUCCEEDED', 'FAILED', 'STALE')),
   rollback_response jsonb,
   rolled_back_at timestamptz,
   created_at timestamptz not null default now(),
