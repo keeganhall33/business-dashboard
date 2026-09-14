@@ -4,6 +4,9 @@ import { buildExecutiveActions, type ExecutiveActionPlan } from "@/lib/dashboard
 import { buildExecutiveSummary, getMaterialMovements } from "@/lib/dashboard/executive-summary";
 import type { DecisionRoomEvidenceRefV1 } from "@/lib/decision-room/contracts";
 import type { AskJeevesControlV1 } from "@/lib/intelligence-ux/responsive-shell-fixtures";
+import type { DurableAction } from "@/lib/actions/action-contract";
+import type { AgentFusionContext } from "@/lib/agents/fusion-context";
+import type { CanonicalRelationshipFollowUpQueueResultV1 } from "@/lib/relationships-crm/canonical-follow-up-queue-v1";
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type {
   ApprovalStateV1,
@@ -703,4 +706,292 @@ export function buildExecutiveHomeFromDashboardOverviewV1(data: DashboardOvervie
     },
     decisionRoom: buildDecisionRoom(data, topAction, confidence)
   };
+}
+
+export type ExecutiveHomeCanonicalAvailabilityV3 = "AVAILABLE" | "UNAVAILABLE";
+
+export type ExecutiveHomeCanonicalInputsV3 = {
+  now: string;
+  fusion: AgentFusionContext | null;
+  actions: readonly DurableAction[];
+  followUps: CanonicalRelationshipFollowUpQueueResultV1 | null;
+  availability: {
+    fusion: ExecutiveHomeCanonicalAvailabilityV3;
+    actions: ExecutiveHomeCanonicalAvailabilityV3;
+    followUps: ExecutiveHomeCanonicalAvailabilityV3;
+  };
+};
+
+const terminalActionStatuses = new Set<DurableAction["status"]>([
+  "rejected",
+  "expired",
+  "cancelled",
+  "successful",
+  "unsuccessful",
+  "inconclusive"
+]);
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function recordText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function actionScore(action: DurableAction): number | null {
+  const score = record(action.priority_score)?.overallScore;
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
+}
+
+function compareActions(left: DurableAction, right: DurableAction): number {
+  const leftScore = actionScore(left);
+  const rightScore = actionScore(right);
+  if (leftScore != null || rightScore != null) {
+    if (leftScore == null) return 1;
+    if (rightScore == null) return -1;
+    if (leftScore !== rightScore) return rightScore - leftScore;
+  }
+  const updated = Date.parse(right.updated_at) - Date.parse(left.updated_at);
+  return Number.isFinite(updated) && updated !== 0 ? updated : left.id.localeCompare(right.id);
+}
+
+function actionTruth(action: DurableAction | undefined): ExecutiveCommandCenterTruthStateV1 {
+  if (!action) return "UNKNOWN";
+  return action.evidence_snapshot_id && action.evidence_snapshot_hash ? "KNOWN" : "UNKNOWN";
+}
+
+function actionFreshness(action: DurableAction | undefined, now: string): FreshnessV1 {
+  if (!action) return "UNKNOWN";
+  const age = Date.parse(now) - Date.parse(action.updated_at);
+  if (!Number.isFinite(age)) return "UNKNOWN";
+  return age > 14 * 86_400_000 ? "STALE" : "FRESH";
+}
+
+function fusionFreshness(fusion: AgentFusionContext | null, now: string): FreshnessV1 {
+  if (!fusion?.generatedAt) return "UNKNOWN";
+  const age = Date.parse(now) - Date.parse(fusion.generatedAt);
+  if (!Number.isFinite(age)) return "UNKNOWN";
+  return age > 48 * 3_600_000 ? "STALE" : "FRESH";
+}
+
+function fusionConfidence(value: string | null): ConfidenceV1 {
+  const normalized = value?.toUpperCase() ?? "";
+  if (normalized === "HIGH" || normalized === "CONFIRMED") return "HIGH";
+  if (normalized === "MEDIUM" || normalized === "LIKELY" || normalized === "STRONGLY_SUPPORTED") return "MEDIUM";
+  if (normalized === "LOW" || normalized === "POSSIBLE") return "LOW";
+  return "UNKNOWN";
+}
+
+function outcomeSummary(action: DurableAction): string | null {
+  const outcome = record(action.outcome);
+  const result = record(action.result_snapshot);
+  for (const source of [outcome, result]) {
+    const direct = recordText(source?.summary) ?? recordText(source?.observed_outcome)
+      ?? recordText(source?.result) ?? recordText(source?.description);
+    if (direct) return direct;
+    const metric = recordText(source?.metric) ?? recordText(source?.metric_name);
+    const value = source?.value;
+    if (metric && (typeof value === "number" || typeof value === "string")) {
+      const unit = recordText(source?.unit);
+      return `${metric}: ${String(value)}${unit ? ` ${unit}` : ""}`;
+    }
+  }
+  return null;
+}
+
+function replaceEngineLane(
+  home: ExecutiveHomeFixtureV1,
+  id: string,
+  status: string,
+  truthState: ExecutiveCommandCenterTruthStateV1
+) {
+  const lane = home.command_center.intelligence_engine.find((item) => item.id === id);
+  if (lane) {
+    lane.status = status;
+    lane.truth_state = truthState;
+  }
+}
+
+/**
+ * Pure V3 projection over canonical read results. It never performs a read or write,
+ * and starts from the production V1 adapter so partial source failures stay isolated.
+ */
+export function buildExecutiveHomeFromCanonicalSystemsV3(
+  data: DashboardOverviewResponse,
+  canonical: ExecutiveHomeCanonicalInputsV3,
+  baseBuilder: typeof buildExecutiveHomeFromDashboardOverviewV1 = buildExecutiveHomeFromDashboardOverviewV1
+): ReturnType<typeof buildExecutiveHomeFromDashboardOverviewV1> {
+  const result = structuredClone(baseBuilder(data));
+  const home = result.home;
+  const fusion = canonical.fusion;
+  const fusionIsFresh = fusionFreshness(fusion, canonical.now);
+
+  home.command_center.system_glance.push({
+    id: "canonical-fusion",
+    label: "Fusion decision",
+    value: canonical.availability.fusion === "UNAVAILABLE"
+      ? "Unavailable"
+      : fusion?.isDecision ? "Decision ready" : "No decision",
+    truth_state: canonical.availability.fusion === "UNAVAILABLE" || !fusion
+      ? "UNKNOWN"
+      : fusionIsFresh === "STALE" ? "STALE" : fusion.isDecision ? "KNOWN" : "UNKNOWN",
+    source: fusion ? `FUSION_RUN:${fusion.runId}` : "FUSION_RUN"
+  });
+
+  if (fusion?.isDecision && fusion.recommendedAction) {
+    const fusionCard = home.cards.find((card) => card.section === "WHAT_MATTERS_NOW");
+    if (fusionCard) {
+      fusionCard.id = `fusion-${fusion.runId}`;
+      fusionCard.title = fusion.headline ?? fusion.recommendedAction;
+      fusionCard.summary = fusion.recommendedAction;
+      fusionCard.state = "RECOMMENDATION";
+      fusionCard.priority = "DO_NOW";
+      fusionCard.confidence = fusionConfidence(fusion.confidenceLevel);
+      fusionCard.freshness = fusionIsFresh;
+      fusionCard.specialist_domain = "STRATEGY";
+      fusionCard.why = fusion.why ?? "Persisted Fusion selected this governed recommendation.";
+      fusionCard.evidence = [
+        `FUSION_RUN:${fusion.runId}`,
+        `Generated: ${fusion.generatedAt ?? "UNKNOWN"}`,
+        `Missing evidence: ${fusion.missingEvidence.join("; ") || "none recorded"}`
+      ];
+      fusionCard.next_action = fusion.recommendedAction;
+    }
+    home.command_center.strategy_path.title = fusion.recommendedAction;
+    const currentStep = home.command_center.strategy_path.steps[0];
+    if (currentStep) {
+      currentStep.label = fusion.recommendedAction;
+      currentStep.why_it_matters = `${fusion.why ?? "Selected by persisted Fusion."} Provenance: FUSION_RUN:${fusion.runId}.`;
+    }
+    replaceEngineLane(home, "strategy", fusionIsFresh === "STALE" ? "Fusion decision is stale" : "Fusion recommendation ready", fusionIsFresh === "STALE" ? "STALE" : "KNOWN");
+
+    result.decisionRoom.current_recommendation = {
+      recommendation_id: fusion.selectedCandidateId ?? `fusion-${fusion.runId}`,
+      title: fusion.headline ?? fusion.recommendedAction,
+      summary: fusion.why ?? fusion.recommendedAction,
+      next_action: fusion.recommendedAction
+    };
+    result.decisionRoom.next_action = fusion.recommendedAction;
+    result.decisionRoom.evidence_refs.unshift({
+      ref_id: `fusion-${fusion.runId}`,
+      label: fusion.headline ?? "Persisted Fusion recommendation",
+      provenance: "FUSION_GOVERNED_COMMAND",
+      truth_state: fusionIsFresh === "STALE" ? "INFERRED" : "KNOWN",
+      detail: `Generated ${fusion.generatedAt ?? "UNKNOWN"}; missing evidence: ${fusion.missingEvidence.join("; ") || "none recorded"}.`
+    });
+  } else {
+    replaceEngineLane(
+      home,
+      "strategy",
+      canonical.availability.fusion === "UNAVAILABLE" ? "Fusion unavailable" : "No persisted Fusion decision",
+      "UNKNOWN"
+    );
+  }
+
+  const orderedActions = [...canonical.actions].sort(compareActions);
+  const activeAction = orderedActions.find((action) => !terminalActionStatuses.has(action.status));
+  const observedAction = orderedActions.find((action) => outcomeSummary(action) != null);
+  const actionsTruth = canonical.availability.actions === "AVAILABLE" ? actionTruth(activeAction ?? observedAction) : "UNKNOWN";
+
+  home.command_center.system_glance.push({
+    id: "canonical-actions",
+    label: "Durable actions",
+    value: canonical.availability.actions === "UNAVAILABLE"
+      ? "Unavailable"
+      : activeAction ? "Action in flight" : observedAction ? "Outcome recorded" : "No current action",
+    truth_state: actionsTruth,
+    source: activeAction || observedAction ? `DURABLE_ACTION:${(activeAction ?? observedAction)!.id}` : "DURABLE_ACTION"
+  });
+
+  if (activeAction) {
+    const actionIsStale = actionFreshness(activeAction, canonical.now) === "STALE";
+    home.command_center.do_now.unshift({
+      id: `durable-action-${activeAction.id}`,
+      label: activeAction.title,
+      state: activeAction.status === "execution_blocked" ? "BLOCKED"
+        : activeAction.status === "awaiting_approval" ? "WAITING"
+          : activeAction.status === "executed" || activeAction.status === "measuring" ? "NEEDS_VERIFICATION" : "IN_PROGRESS",
+      progress: null,
+      detail: `${activeAction.description ?? activeAction.expected_outcome ?? "No action detail recorded."} Provenance: DURABLE_ACTION:${activeAction.id}; updated ${activeAction.updated_at}.`
+    });
+    replaceEngineLane(home, "execution", actionIsStale ? `Stale action: ${activeAction.title}` : activeAction.title, actionIsStale ? "STALE" : actionsTruth);
+    if (activeAction.status === "awaiting_approval") {
+      home.command_center.keegan_actions.unshift({
+        id: `durable-action-approval-${activeAction.id}`,
+        label: activeAction.title,
+        approval_state: "KEEGAN_ACTION_REQUIRED",
+        detail: `Approval is required by DURABLE_ACTION:${activeAction.id}; no execution occurred.`
+      });
+    }
+  } else {
+    replaceEngineLane(home, "execution", canonical.availability.actions === "UNAVAILABLE" ? "Durable actions unavailable" : "No current durable action", "UNKNOWN");
+  }
+
+  const learningCardV3 = home.cards.find((card) => card.section === "LEARNING_SINCE_LAST_REVIEW");
+  if (learningCardV3 && observedAction) {
+    const observed = outcomeSummary(observedAction)!;
+    learningCardV3.id = `durable-outcome-${observedAction.id}`;
+    learningCardV3.title = observedAction.lessons ? "A measured lesson candidate is available" : "A measured outcome is available";
+    learningCardV3.summary = observed;
+    learningCardV3.state = "FACT";
+    learningCardV3.confidence = confidenceFromLabel(observedAction.confidence);
+    learningCardV3.freshness = actionFreshness(observedAction, canonical.now);
+    learningCardV3.why = observedAction.lessons
+      ? "The durable action contains an observed outcome and an explicit lesson candidate; it is not auto-promoted to policy."
+      : "The observed outcome is shown without inventing a causal lesson.";
+    learningCardV3.evidence = [
+      `DURABLE_ACTION:${observedAction.id}`,
+      `Evidence snapshot: ${observedAction.evidence_snapshot_id ?? "UNKNOWN"}`,
+      `Updated: ${observedAction.updated_at}`
+    ];
+    learningCardV3.next_action = observedAction.lessons ?? "Review attribution and confounders before recording a lesson.";
+    replaceEngineLane(home, "learning", observedAction.lessons ? "Lesson candidate available" : "Outcome recorded; attribution pending", actionTruth(observedAction));
+  } else if (canonical.availability.actions === "UNAVAILABLE") {
+    replaceEngineLane(home, "learning", "Durable outcomes unavailable", "UNKNOWN");
+  }
+
+  const topFollowUp = canonical.followUps?.items
+    .slice()
+    .sort((left, right) => right.priority - left.priority || left.itemId.localeCompare(right.itemId))[0];
+  const followUpTruth: ExecutiveCommandCenterTruthStateV1 = topFollowUp?.truthState === "CONFLICTED"
+    ? "CONFLICTED"
+    : topFollowUp?.freshnessState === "STALE" ? "STALE"
+      : topFollowUp?.truthState === "KNOWN" && topFollowUp.freshnessState === "CURRENT" ? "KNOWN" : "UNKNOWN";
+
+  home.command_center.system_glance.push({
+    id: "canonical-crm-follow-ups",
+    label: "CRM follow-ups",
+    value: canonical.availability.followUps === "UNAVAILABLE"
+      ? "Unavailable"
+      : topFollowUp ? `${canonical.followUps?.items.length ?? 0} due` : "None due",
+    truth_state: canonical.availability.followUps === "UNAVAILABLE" ? "UNKNOWN" : topFollowUp ? followUpTruth : "KNOWN",
+    source: topFollowUp ? `CRM_FOLLOW_UP:${topFollowUp.itemId}` : "CRM_FOLLOW_UP_QUEUE"
+  });
+
+  if (topFollowUp) {
+    const followUpLabel = topFollowUp.suggestedMove.replaceAll("_", " ").toLowerCase();
+    home.command_center.do_now.unshift({
+      id: `crm-follow-up-${topFollowUp.itemId}`,
+      label: followUpLabel,
+      state: topFollowUp.requiresReview || followUpTruth === "CONFLICTED" ? "BLOCKED" : "NOT_STARTED",
+      progress: null,
+      detail: `Due ${topFollowUp.dueAt ?? "UNKNOWN"}; ${topFollowUp.primaryQueueClass}; provenance CRM_FOLLOW_UP:${topFollowUp.itemId}.`
+    });
+    if (topFollowUp.requiresReview) {
+      home.command_center.keegan_actions.unshift({
+        id: `crm-follow-up-review-${topFollowUp.itemId}`,
+        label: `Verify ${followUpLabel}`,
+        approval_state: "KEEGAN_ACTION_REQUIRED",
+        detail: `CRM follow-up evidence is ${topFollowUp.truthState}/${topFollowUp.freshnessState}; no outreach occurred.`
+      });
+    }
+  }
+
+  home.command_center.do_now = home.command_center.do_now.slice(0, 4);
+  home.command_center.keegan_actions = home.command_center.keegan_actions.slice(0, 3);
+  home.command_center.system_glance = home.command_center.system_glance.slice(0, 8);
+  return result;
 }
