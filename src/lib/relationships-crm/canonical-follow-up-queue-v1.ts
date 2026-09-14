@@ -298,7 +298,7 @@ export function projectCanonicalRelationshipFollowUpQueueV1(
       projectionId,
       contactId,
       threadId,
-      opportunityIds: uniq(projection.opportunityIds.map((id) => requiredString(id, `projection ${projectionId} opportunityId`))),
+      opportunityIds: uniq(projection.opportunityIds.map((id: string) => requiredString(id, `projection ${projectionId} opportunityId`))),
       queueClasses,
       primaryQueueClass: queueClasses[0],
       priority: QUEUE_ORDER.indexOf(queueClasses[0]) + 1,
