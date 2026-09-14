@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import RelationshipFollowUpsPage from "@/app/(app)/relationships/follow-ups/page";
 import { CrmFollowUpQueueV1 } from "@/components/relationships-crm/CrmFollowUpQueueV1";
 import type {
   CanonicalRelationshipFollowUpQueueItemV1,
@@ -82,14 +81,12 @@ test("renders a truthful empty canonical queue", () => {
   assert.match(html, /supplied no actionable or verification-required records/);
 });
 
-test("production route stays unavailable until an authoritative loader exists", () => {
-  const html = renderToStaticMarkup(<RelationshipFollowUpsPage />);
+test("production route uses the authoritative server loader without fixtures", () => {
   const routeSource = readFileSync(resolve(process.cwd(), "src/app/(app)/relationships/follow-ups/page.tsx"), "utf8");
   const homeSource = readFileSync(resolve(process.cwd(), "src/app/(app)/relationships/page.tsx"), "utf8");
-  assert.match(html, /Follow-up queue unavailable/);
-  assert.match(html, /No authoritative production follow-up loader is connected/);
-  assert.match(html, /stays unavailable rather than inventing contacts, reply states, due dates, value, urgency, or work/);
-  assert.match(routeSource, /queue=\{null\}/);
+  assert.match(routeSource, /loadProductionFollowUpQueueV1/);
+  assert.match(routeSource, /queue=\{queue\}/);
+  assert.match(routeSource, /force-no-store/);
   assert.doesNotMatch(routeSource, /fixture|seed/i);
   assert.match(homeSource, /href="\/relationships\/follow-ups"/);
   assert.match(homeSource, /Open follow-up queue/);
