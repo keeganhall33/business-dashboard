@@ -100,14 +100,14 @@ test("INFERRED opportunity remains recommendation context rather than confirmed 
   assert.match(view.unknowns.join(" "), /verified before irreversible action/);
 });
 
-test("route resolves from the same dashboard-overview Executive Home projection and fails missing IDs honestly", () => {
+test("route resolves every ID from the full dashboard-overview opportunity portfolio and fails missing IDs honestly", () => {
   const source = fs.readFileSync(ROUTE_PATH, "utf8");
 
   assert.match(source, /getDashboardOverview/);
-  assert.match(source, /buildExecutiveHomeFromDashboardOverviewV1/);
-  assert.match(source, /executiveHome\.home\.command_center\.opportunities\.find/);
+  assert.match(source, /buildExecutiveOpportunityPortfolioV1/);
+  assert.match(source, /portfolio\.items\.find/);
   assert.match(source, /candidate\.id === opportunityId/);
-  assert.match(source, /if \(!opportunity \|\| opportunity\.id === "unknown-opportunity"\) notFound\(\)/);
+  assert.match(source, /if \(!item\) notFound\(\)/);
   assert.match(source, /hdrs\.get\("cookie"\)/);
   assert.match(source, /force-no-store/);
   assert.doesNotMatch(source, /EXECUTIVE_HOME_FIXTURE_V1|valueEstimate\s*=|Math\.random/);

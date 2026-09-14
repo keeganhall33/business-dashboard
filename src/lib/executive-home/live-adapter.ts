@@ -399,6 +399,29 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
   ];
 }
 
+function reportingRangeLabel(startDate: string, endDate: string): string {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return `${startDate} to ${endDate}`;
+  const startLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(start);
+  const endLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(end);
+  return `${startLabel}–${endLabel}`;
+}
+
+function opportunityProjection(opportunity: NonNullable<DashboardOverviewResponse["opportunityRadar"]>["topOpportunities"][number]): ExecutiveCommandCenterV1["opportunities"][number] {
+  return {
+    id: opportunity.id,
+    title: opportunity.name,
+    upside: opportunity.valueEstimate == null ? "UNKNOWN" : `$${Math.round(opportunity.valueEstimate).toLocaleString()}`,
+    fit: opportunity.prestigeScore == null ? "UNKNOWN" : `${Math.round(opportunity.prestigeScore * 100)}% prestige fit`,
+    timing: opportunity.nextStepDueAt ? "Next step scheduled" : "UNKNOWN",
+    effort: opportunity.nextStep ? "Next step known" : "UNKNOWN",
+    evidence: opportunity.status.toUpperCase().includes("STALE") ? "STALE" : opportunity.status.toUpperCase().includes("CONFLICT") ? "CONFLICTED" : opportunity.status.toUpperCase().includes("UNKNOWN") || opportunity.status.toUpperCase().includes("UNVERIFIED") ? "UNKNOWN" : "INFERRED",
+    next_move: opportunity.nextStep ?? "Wait for opportunity evidence.",
+    detail_href: `/opportunities-actions/opportunity/${encodeURIComponent(opportunity.id)}`
+  };
+}
+
 function buildCommandCenter(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[], confidence: ConfidenceSummary): ExecutiveCommandCenterV1 {
   const topAction = actions[0];
   const material = buildExecutiveSummary(data);
@@ -547,19 +570,9 @@ function buildCommandCenter(data: DashboardOverviewResponse, actions: ExecutiveA
         detail: approvalCount > 0 ? "Review before any external or irreversible action." : "No external action, pricing, publishing, or purchase approval is queued."
       }
     ],
-    opportunities: [
-      {
-        id: topOpportunity?.id ?? "unknown-opportunity",
-        title: topOpportunity?.name ?? "No verified opportunity",
-        upside: topOpportunity?.valueEstimate == null ? "UNKNOWN" : `$${Math.round(topOpportunity.valueEstimate).toLocaleString()}`,
-        fit: topOpportunity?.prestigeScore == null ? "UNKNOWN" : `${Math.round(topOpportunity.prestigeScore * 100)}% prestige fit`,
-        timing: topOpportunity?.nextStepDueAt ? "Prepare" : "UNKNOWN",
-        effort: topOpportunity?.nextStep ? "Next step known" : "UNKNOWN",
-        evidence: topOpportunity ? "INFERRED" : "UNKNOWN",
-        next_move: topOpportunity?.nextStep ?? "Wait for opportunity evidence.",
-        detail_href: "#decision-live-dashboard-top-priority"
-      }
-    ],
+    opportunities: data.opportunityRadar?.topOpportunities?.length
+      ? data.opportunityRadar.topOpportunities.slice(0, 3).map(opportunityProjection)
+      : [{ id: "unknown-opportunity", title: "No verified opportunity", upside: "UNKNOWN", fit: "UNKNOWN", timing: "UNKNOWN", effort: "UNKNOWN", evidence: "UNKNOWN", next_move: "Wait for opportunity evidence.", detail_href: "/opportunities-actions" }],
     system_glance: [
       { id: "projects", label: "Projects", value: data.pipelinePanel?.deals?.length == null ? "UNKNOWN" : String(data.pipelinePanel.deals.length), truth_state: data.pipelinePanel ? "KNOWN" : "UNKNOWN", source: "pipeline panel" },
       { id: "insights", label: "Insights", value: data.changeInsights?.insights?.length == null ? "UNKNOWN" : String(data.changeInsights.insights.length), truth_state: data.changeInsights ? "KNOWN" : "UNKNOWN", source: "change insights" },
@@ -670,7 +683,8 @@ export function buildExecutiveHomeFromDashboardOverviewV1(data: DashboardOvervie
       generated_at: data.timestamp,
       hero: {
         title: "Executive Home",
-        summary: `Live dashboard intelligence for ${data.range.startDate} to ${data.range.endDate}. UNKNOWN, STALE, CONFLICTED, and unavailable evidence remain explicit.`
+        summary: `Live dashboard intelligence for ${data.range.startDate} to ${data.range.endDate}. UNKNOWN, STALE, CONFLICTED, and unavailable evidence remain explicit.`,
+        range_label: reportingRangeLabel(data.range.startDate, data.range.endDate)
       },
       command_center: buildCommandCenter(data, actions, confidence),
       cards: [

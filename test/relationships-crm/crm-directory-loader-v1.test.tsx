@@ -95,3 +95,37 @@ test("canonical CRM loader preserves honest empty state for empty and unavailabl
   assert.deepEqual(empty, { people: [], companies: [] });
   assert.deepEqual(unavailable, { people: [], companies: [] });
 });
+
+test("canonical CRM loader composes Mercedes people, company, activity, follow-up, and opportunity context", async () => {
+  const entities = [
+    { entity_id: "person:michelle", entity_type: "person", canonical_name: "Michelle", resolution_status: "active" },
+    { entity_id: "person:melody", entity_type: "person", canonical_name: "Melody", resolution_status: "active" },
+    { entity_id: "organization:mercedes", entity_type: "organization", canonical_name: "Mercedes-Benz", resolution_status: "active" }
+  ];
+  const index = await loadCrmDirectoryIndexV1({
+    loadActiveEntities: async () => entities,
+    loadRelationshipStates: async () => [{ contact_entity_id: "person:michelle", primary_state: "WAITING_ON_CONTACT", states: ["WAITING_ON_CONTACT", "HIGH_VALUE"], truth_state: "KNOWN", freshness_state: "CURRENT", last_meaningful_interaction_json: { effectiveTimestamp: "2026-09-11T16:00:00.000Z" }, next_best_move_json: { move: "WAIT_FOR_CONTACT" }, generated_at: "2026-09-14T16:00:00.000Z" }],
+    loadActivities: async () => [{ contact_entity_id: "person:michelle", occurred_at: "2026-09-11T16:00:00.000Z", summary: "Follow-up sent", truth_state: "KNOWN" }],
+    loadFollowUps: async () => [{ contact_entity_id: "person:michelle", opportunity_id: "opp-mercedes", due_at: "2026-09-22T16:00:00.000Z", status: "OPEN", truth_state: "KNOWN", freshness_state: "CURRENT" }],
+    loadOpportunityLinks: async () => [
+      { opportunity_id: "opp-mercedes", entity_id: "person:michelle", role: "CONTACT", truth_state: "KNOWN", freshness_state: "CURRENT" },
+      { opportunity_id: "opp-mercedes", entity_id: "person:melody", role: "CONTACT", truth_state: "KNOWN", freshness_state: "CURRENT" },
+      { opportunity_id: "opp-mercedes", entity_id: "organization:mercedes", role: "BRAND", truth_state: "KNOWN", freshness_state: "CURRENT" }
+    ],
+    loadOpportunities: async () => [{ id: "opp-mercedes", name: "Mercedes-Benz Masters collaboration", organization: "Mercedes-Benz", status: "in_conversation", next_step: "Wait for contact", value_estimate: null }]
+  });
+
+  const michelle = index.people.find((person) => person.name === "Michelle");
+  const melody = index.people.find((person) => person.name === "Melody");
+  const mercedes = index.companies.find((company) => company.name === "Mercedes-Benz");
+  assert.equal(michelle?.companyName, "Mercedes-Benz");
+  assert.equal(michelle?.relationshipState, "Waiting On Contact");
+  assert.equal(michelle?.relationshipStrength, "HIGH");
+  assert.equal(michelle?.nextFollowUpAt, "2026-09-22T16:00:00.000Z");
+  assert.equal(michelle?.activeOpportunity, "Mercedes-Benz Masters collaboration");
+  assert.equal(michelle?.activeAsk, "Wait For Contact");
+  assert.equal(melody?.companyName, "Mercedes-Benz");
+  assert.equal(melody?.activeOpportunity, "Mercedes-Benz Masters collaboration");
+  assert.deepEqual(mercedes?.keyPeople, ["Michelle", "Melody"]);
+  assert.deepEqual(mercedes?.activeOpportunities, ["Mercedes-Benz Masters collaboration"]);
+});

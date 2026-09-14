@@ -54,7 +54,7 @@ export function ExecutiveHomeShell({
   const isDecisionRoomOpen = Boolean(decisionRoom && activeDecisionRoomId === decisionRoom.decision_id);
 
   return (
-    <div className="min-h-screen bg-[#f8f4ec] text-stone-950">
+    <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <ExecutiveHomeVisualSummaryV2
         data={data}
         decisionRoomId={decisionRoom?.decision_id}
@@ -69,7 +69,7 @@ export function ExecutiveHomeShell({
         <span>{data.error_state}</span>
       </div>
 
-      <details className="rounded-3xl border border-stone-200 bg-[#fffdf8] shadow-sm">
+      <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
         <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-stone-800">
           <span>More business detail</span>
           <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600">Explore</span>
@@ -81,7 +81,7 @@ export function ExecutiveHomeShell({
       </details>
 
       <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
-        <details className="mt-5 rounded-3xl border border-stone-200 bg-[#fffdf8] shadow-sm">
+        <details className="mt-5 rounded-3xl border border-slate-200 bg-white shadow-sm">
           <summary className="cursor-pointer list-none p-4 sm:p-5">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -171,7 +171,7 @@ export function ExecutiveHomeShell({
         </details>
 
         {isDecisionRoomOpen && decisionRoom ? <section id="decision-room-drilldown" className="mt-8" aria-label="Executive Home Decision Room drill-down">
-          <div className="mb-3 flex flex-col gap-3 rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div className="mb-3 flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Grounded drill-down</p>
               <h2 className="mt-1 text-xl font-semibold tracking-normal text-stone-950">Decision Room detail</h2>
@@ -218,7 +218,7 @@ function RecommendationComparisonContinuity({ decisionRoom }: { decisionRoom: Ex
   const explicitRiskStates = truthCounts.filter((item) => item.truthState === "UNKNOWN" || item.truthState === "CONFLICTED" || item.count > 0);
 
   return (
-    <section data-testid="executive-comparison-continuity" className="mb-4 rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm" aria-label="Recommendation comparison continuity">
+    <section data-testid="executive-comparison-continuity" className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Recommendation comparison continuity">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Comparison continuity</p>

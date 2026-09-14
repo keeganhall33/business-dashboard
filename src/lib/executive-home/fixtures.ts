@@ -118,6 +118,7 @@ export type ExecutiveHomeFixtureV1 = {
   hero: {
     title: string;
     summary: string;
+    range_label: string;
   };
   command_center: ExecutiveCommandCenterV1;
   cards: ExecutiveIntelligenceCardV1[];
@@ -130,7 +131,8 @@ export const EXECUTIVE_HOME_FIXTURE_V1: ExecutiveHomeFixtureV1 = {
   generated_at: "2026-08-17T00:00:00.000Z",
   hero: {
     title: "Executive Home",
-    summary: "A light-first command surface for the few intelligence changes that matter now."
+    summary: "A light-first command surface for the few intelligence changes that matter now.",
+    range_label: "August 11–17, 2026"
   },
   command_center: {
     generated_at: "2026-08-17T00:00:00.000Z",

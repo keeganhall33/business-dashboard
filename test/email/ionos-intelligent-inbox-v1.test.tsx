@@ -471,9 +471,13 @@ test("runtime module exports only the pure projection capability", () => {
 
 const workspaceFixture = IONOS_INTELLIGENT_INBOX_WORKSPACE_FIXTURE_V1;
 const workspaceHtml = renderToString(<IonosIntelligentInboxV1 inbox={workspaceFixture} />);
-const relationshipsPageHtml = renderToString(<RelationshipsPage />);
 
-test("relationship workspace renders every bounded queue with what why next and evidence context", () => {
+async function renderRelationshipsPageHtml() {
+  return renderToString(await RelationshipsPage());
+}
+
+test("relationship workspace renders every bounded queue with what why next and evidence context", async () => {
+  const relationshipsPageHtml = await renderRelationshipsPageHtml();
   for (const label of [
     "Needs reply",
     "Waiting on contact",
@@ -534,7 +538,8 @@ test("relationship workspace applies a compact attention limit with accessible o
   assert.match(expandedHtml, /View .*1.* more/);
 });
 
-test("Relationships preserves ExecutiveWorkspacePage and adds responsive light-mode depth", () => {
+test("Relationships preserves ExecutiveWorkspacePage and adds responsive light-mode depth", async () => {
+  const relationshipsPageHtml = await renderRelationshipsPageHtml();
   assert.match(relationshipsPageHtml, /Relationships/);
   assert.match(relationshipsPageHtml, /Intelligent relationship inbox/);
   assert.match(relationshipsPageHtml, /data-visual-mode="light"/);

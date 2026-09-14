@@ -83,23 +83,23 @@ export function ExecutiveHomeVisualSummaryV2({
 
   return (
     <section aria-label="Executive decision scan" data-testid="executive-home-visual-summary-v2" className="pb-6 pt-4 sm:pt-7">
-      <div className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-[0_18px_60px_rgba(41,37,36,0.07)] sm:p-8">
+      <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Mission Control</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-stone-950 sm:text-5xl">Your business, clearly.</h1>
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-stone-600 sm:text-base">See what changed, what matters now, and what the system is measuring next.</p>
-          <a href="/ask-jeeves" className="mx-auto mt-6 flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-stone-300 bg-white p-2 pl-5 text-left shadow-sm hover:border-stone-400">
-            <span className="text-sm text-stone-500">Ask anything about revenue, traffic, opportunities, or what to do next</span>
-            <span className="shrink-0 rounded-xl bg-stone-950 px-4 py-2 text-sm font-semibold text-white">Open Ask</span>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Mission Control</p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-5xl">Your business, clearly.</h1>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">See what changed, what matters now, and what the system is measuring next.</p>
+          <a href="/ask-jeeves" className="mx-auto mt-6 flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50 p-2 pl-5 text-left shadow-sm hover:border-blue-400">
+            <span className="text-sm text-slate-500">Ask anything about revenue, traffic, opportunities, or what to do next</span>
+            <span className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Ask Jeeves</span>
           </a>
-          <p className="mt-2 text-xs text-stone-500">Text and voice answers are being connected to verified business sources.</p>
+          <p className="mt-2 text-xs text-slate-500">Type or speak a question and get an answer from your connected business data.</p>
         </div>
       </div>
 
       <section className="mt-5" aria-label="Business pulse">
         <div className="mb-3 flex items-end justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Business pulse</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-stone-950">The numbers that matter</h2></div>
-          <a href="/data-evidence" className="text-xs font-semibold text-stone-600 underline-offset-4 hover:underline">Check sources</a>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Business pulse</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">The numbers that matter</h2><p className="mt-1 text-sm text-slate-500">{data.hero.range_label}</p></div>
+          <a href="/data-evidence" className="text-xs font-semibold text-blue-700 underline-offset-4 hover:underline">Check sources</a>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {model.businessPulse.map((metric) => <BusinessPulseCard key={metric.id} metric={metric} />)}
@@ -107,7 +107,7 @@ export function ExecutiveHomeVisualSummaryV2({
       </section>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.75fr)]">
-        <section className="rounded-3xl bg-stone-950 p-5 text-white shadow-sm sm:p-7" aria-label="Current direction">
+        <section id="current-direction" className="rounded-3xl bg-[#0b1f33] p-5 text-white shadow-sm sm:p-7" aria-label="Current direction">
           <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">What matters now</p>{model.primaryFocus ? <PlainState state={model.primaryFocus.state} /> : null}</div>
           <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-tight tracking-[-0.025em] sm:text-3xl">{model.primaryFocus?.title ?? "No verified priority is ready"}</h2>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">{model.primaryFocus?.summary ?? "The system needs stronger evidence before recommending a move."}</p>
@@ -122,7 +122,7 @@ export function ExecutiveHomeVisualSummaryV2({
           </div>
         </section>
 
-        <section className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-sm" aria-label="Result and learning">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Result and learning">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Result so far</p>
           <h2 className="mt-3 text-lg font-semibold text-stone-950">{model.result?.title ?? "No measured result yet"}</h2>
           <p className="mt-2 text-sm leading-6 text-stone-600">{model.result?.summary ?? "Results will appear after an action has a verified outcome."}</p>
@@ -149,7 +149,7 @@ export function ExecutiveHomeVisualSummaryV2({
 }
 
 function BusinessPulseCard({ metric }: { metric: ExecutiveBusinessPulseMetricV1 }) {
-  return <article className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-stone-500">{metric.label}</p><TruthDot state={metric.truth_state} /></div><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl">{metric.value}</p><p className="mt-1 truncate text-xs text-stone-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
+  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-slate-600">{metric.label}</p><TruthLabel state={metric.truth_state} /></div><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{metric.value}</p><p className="mt-1 truncate text-xs text-slate-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
 }
 
 function MiniTrend({ values, label }: { values: Array<number | null>; label: string }) {
@@ -162,16 +162,16 @@ function MiniTrend({ values, label }: { values: Array<number | null>; label: str
 }
 
 function DirectionStep({ label, value }: { label: string; value: string }) {
-  return <div className="bg-stone-950 p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p><p className="mt-2 text-sm leading-6 text-stone-200">{value}</p></div>;
+  return <div className="bg-[#0b1f33] p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className="mt-2 text-sm leading-6 text-slate-200">{value}</p></div>;
 }
 
 function DecisionPanel({ title, href, children }: { title: string; href: string; children: ReactNode }) {
-  return <section className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-sm"><div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-stone-950">{title}</h2><a href={href} className="text-xs font-semibold text-stone-600 underline-offset-4 hover:underline">View all</a></div><div className="space-y-2">{children}</div></section>;
+  return <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><a href={href} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:underline">View all</a></div><div className="space-y-2">{children}</div></section>;
 }
 
-function TruthDot({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
-  const tone = state === "KNOWN" ? "bg-emerald-500" : state === "INFERRED" ? "bg-sky-500" : state === "STALE" ? "bg-orange-500" : state === "CONFLICTED" ? "bg-rose-500" : "bg-amber-500";
-  return <span title={state} aria-label={state} className={`h-2.5 w-2.5 rounded-full ${tone}`} />;
+function TruthLabel({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
+  const label = state === "KNOWN" ? "Live" : state === "INFERRED" ? "Estimated" : state === "STALE" ? "Stale" : state === "CONFLICTED" ? "Check data" : "Unavailable";
+  return <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${TRUTH_TONE[state]}`}>{label}</span>;
 }
 
 function PlainState({ state }: { state: ExecutiveIntelligenceCardV1["state"] }) {

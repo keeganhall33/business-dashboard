@@ -162,9 +162,9 @@ test("activity UI is scan-first, chronological, provenance-aware and exposes onl
   assert.doesNotMatch(html, /message body|raw headers|credential/i);
 });
 
-test("production activity route fails closed and CRM Home exposes the real destination", () => {
+test("production activity route fails closed and CRM Home exposes the real destination", async () => {
   const activityHtml = renderToStaticMarkup(<RelationshipActivityPage />);
-  const homeHtml = renderToStaticMarkup(<RelationshipsPage />);
+  const homeHtml = renderToStaticMarkup(await RelationshipsPage());
   const activityRouteSource = readFileSync(resolve(process.cwd(), "src/app/(app)/relationships/activity/page.tsx"), "utf8");
 
   assert.match(activityHtml, /Activity timeline unavailable/);
