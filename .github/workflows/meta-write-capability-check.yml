@@ -29,33 +29,36 @@ jobs:
           campaign_id="52628985924674"
           expected_name='Impossible In Pencil | Prospecting'
 
-          echo "=== TOKEN PERMISSIONS ==="
-          perms=$(curl -fsS --get \
-            --data-urlencode "access_token=$token" \
-            "https://graph.facebook.com/me/permissions")
-          echo "$perms" | jq '{granted: [.data[]? | select(.status=="granted") | .permission]}'
+          perms=$(curl -fsS --get --data-urlencode "access_token=$token" "https://graph.facebook.com/me/permissions")
           has_scope=$(echo "$perms" | jq -r '[.data[]? | select(.permission=="ads_management" and .status=="granted")] | length > 0')
+          echo "ADS_MANAGEMENT_SCOPE=$has_scope"
           test "$has_scope" = "true"
 
-          echo "=== CURRENT CAMPAIGN ==="
           before=$(curl -fsS --get \
             --data-urlencode "fields=id,name,status,effective_status" \
             --data-urlencode "access_token=$token" \
             "https://graph.facebook.com/${campaign_id}")
-          echo "$before" | jq '{id,name,status,effective_status}'
           current_name=$(echo "$before" | jq -r '.name')
+          echo "$before" | jq '{id,name,status,effective_status}'
           test "$current_name" = "$expected_name"
 
-          echo "=== NO-OP WRITE TEST ==="
-          write=$(curl -fsS -X POST \
+          tmp=$(mktemp)
+          http=$(curl -sS -o "$tmp" -w '%{http_code}' -X POST \
             --data-urlencode "name=$current_name" \
             --data-urlencode "access_token=$token" \
             "https://graph.facebook.com/${campaign_id}")
-          echo "$write" | jq .
-          success=$(echo "$write" | jq -r '.success // false')
+          echo "WRITE_HTTP_STATUS=$http"
+          if jq -e . "$tmp" >/dev/null 2>&1; then
+            jq '{success, error: (if .error then {message:.error.message,type:.error.type,code:.error.code,error_subcode:.error.error_subcode,fbtrace_id:.error.fbtrace_id} else null end)}' "$tmp"
+          else
+            echo "WRITE_RESPONSE_NON_JSON"
+          fi
+          if [ "$http" != "200" ]; then
+            exit 1
+          fi
+          success=$(jq -r '.success // false' "$tmp")
           test "$success" = "true"
 
-          echo "=== VERIFY UNCHANGED ==="
           after=$(curl -fsS --get \
             --data-urlencode "fields=id,name,status,effective_status" \
             --data-urlencode "access_token=$token" \
@@ -63,6 +66,5 @@ jobs:
           echo "$after" | jq '{id,name,status,effective_status}'
           test "$(echo "$after" | jq -r '.name')" = "$expected_name"
           test "$(echo "$after" | jq -r '.status')" = "$(echo "$before" | jq -r '.status')"
-
           echo "META_WRITE_READY=true"
           BASH
