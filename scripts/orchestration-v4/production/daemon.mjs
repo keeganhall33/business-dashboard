@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSlotRegistry } from '../slot-scheduler.mjs';
-import { runReadyBatch } from '../runner/task-runner.mjs';
+import { chooseAvailableSlot, createSlotRegistry } from '../slot-scheduler.mjs';
+import { runV4Task } from '../runner/task-runner.mjs';
 import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
 import { blockTasksWithFailedDependencies, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
@@ -32,6 +32,11 @@ const LIFECYCLE_LABELS = Object.freeze([...new Set([...ALL_STATE_LABELS, ...Obje
 const MUTATION_MODE_DIRECTIVE = '**mutation_mode:**';
 const CONTINUITY_EVENT = 'CONTINUITY_ACTION_V1';
 const CONTINUITY_STATE_EVENT = 'CONTINUITY_STATE_V1';
+const ALREADY_PRESENT_EVENT = 'ALREADY_PRESENT_REQUIRES_VERIFICATION';
+const NO_OWNED_MUTATION_REASONS = new Set([
+  'V4_IMPLEMENTATION_NO_OWNED_MUTATION',
+  'V4_IMPLEMENTATION_ZERO_EXIT_NO_MUTATION',
+]);
 export { PRODUCT_LANE_CAPACITY };
 
 export function continuityStewardEnabled(env = process.env) {
@@ -190,6 +195,70 @@ export async function runConcurrentProductionQueues({ runExecutableQueue, runInt
   return Object.freeze({ settled, integrationSettled });
 }
 
+export async function runTerminalAwareExecutableQueue({
+  db,
+  registry = createSlotRegistry(),
+  repoRoot,
+  workspaceRoot,
+  tasks,
+  commandsByTaskId,
+  timeoutMs,
+  stallMs,
+  execute,
+  finalizeSuccess,
+  runTask = runV4Task,
+  onTaskTerminal = () => {},
+  now = () => new Date(),
+}) {
+  const occupied = new Set(db.prepare("SELECT slot_id FROM tasks WHERE slot_id IS NOT NULL AND state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED')").all().map((row) => row.slot_id));
+  const readyStreams = new Set(listRunnableTasks(db).map((task) => task.stream));
+  const jobs = [];
+  for (const task of tasks) {
+    if (task.stream === 'INTEGRATION_RELEASE') continue;
+    const slot = chooseAvailableSlot(registry, { stream: task.stream, occupied, readyStreams });
+    const spec = commandsByTaskId?.[task.task_id];
+    if (!slot || !spec?.command) continue;
+    occupied.add(slot.workerId);
+    const job = Promise.resolve()
+      .then(() => runTask({
+        db,
+        repoRoot,
+        workspaceRoot,
+        taskId: task.task_id,
+        slotId: slot.workerId,
+        command: spec.command,
+        args: spec.args ?? [],
+        timeoutMs,
+        stallMs,
+        execute,
+        finalizeSuccess,
+        buildCorrectionAttempt: spec.buildCorrectionAttempt,
+        maxCorrectionAttempts: spec.maxCorrectionAttempts ?? 3,
+      }))
+      .finally(() => {
+        const terminal = getTask(db, task.task_id);
+        if (!terminal || !TERMINAL_STATES.has(terminal.state)) return;
+        try {
+          onTaskTerminal(Object.freeze({
+            taskId: terminal.task_id,
+            slotId: slot.workerId,
+            state: terminal.state,
+            at: now().toISOString(),
+          }));
+        } catch (error) {
+          recordOrchestrationEvent(db, {
+            taskId: terminal.task_id,
+            type: 'TERMINAL_CALLBACK_FAILED',
+            payload: { reason: String(error?.message || error) },
+            now: now(),
+          });
+        }
+      });
+    jobs.push(job);
+  }
+  return Promise.allSettled(jobs);
+}
+
 export async function syncPendingGithubTasks({
   db,
   repoFullName,
@@ -293,6 +362,71 @@ function ownership(contract) {
   return String(contract?.fileOwnership || '').split(',').map((value) => value.trim()).filter(Boolean);
 }
 
+function terminalExecutionReason(task) {
+  if (task?.terminal_reason) return String(task.terminal_reason);
+  try {
+    const result = JSON.parse(task?.result_json || '{}');
+    return String(result?.execution?.reason || result?.execution?.status || '');
+  } catch {
+    return '';
+  }
+}
+
+function gitPathExistsAtRef(repoRoot, ref, ownedPath, exec = execFileSync) {
+  if (!ownedPath || /[*?\[]/.test(ownedPath)) return false;
+  try {
+    exec('git', ['-C', repoRoot, 'cat-file', '-e', `${ref}:${ownedPath}`], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      maxBuffer: 64 * 1024,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function classifyAlreadyPresentNoMutationTasks({
+  db,
+  repoRoot,
+  mainRef,
+  pathExists = gitPathExistsAtRef,
+  now = new Date(),
+}) {
+  const alreadyPresent = [];
+  const missing = [];
+  const tasks = db.prepare("SELECT * FROM tasks WHERE state IN ('BLOCKED','FAILED','TIMED_OUT') ORDER BY task_id").all();
+  for (const task of tasks) {
+    if (!NO_OWNED_MUTATION_REASONS.has(terminalExecutionReason(task))) continue;
+    const paths = ownership(getTaskContract(task));
+    const present = paths.length > 0 && paths.every((ownedPath) => pathExists(repoRoot, mainRef, ownedPath));
+    if (!present) {
+      missing.push(task.task_id);
+      continue;
+    }
+    alreadyPresent.push(task.task_id);
+    const recorded = db.prepare('SELECT 1 FROM orchestration_events WHERE task_id=? AND type=? LIMIT 1').get(task.task_id, ALREADY_PRESENT_EVENT);
+    if (!recorded) {
+      recordOrchestrationEvent(db, {
+        taskId: task.task_id,
+        type: ALREADY_PRESENT_EVENT,
+        payload: {
+          reason: ALREADY_PRESENT_EVENT,
+          ownedPaths: paths,
+          mainRef,
+          verificationOwner: 'INDEPENDENT',
+          implementationRecoveryAllowed: false,
+        },
+        now,
+      });
+    }
+  }
+  return Object.freeze({
+    alreadyPresent: Object.freeze(alreadyPresent),
+    missing: Object.freeze(missing),
+  });
+}
+
 export function buildContinuitySnapshot({
   db,
   runtime,
@@ -302,6 +436,7 @@ export function buildContinuitySnapshot({
   registry = createSlotRegistry(),
   reservedSlotIds = [],
   pidIsLive = isPidLive,
+  alreadyPresentTaskIds = [],
 }) {
   const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
   const dependencies = db.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies ORDER BY task_id,depends_on_task_id').all();
@@ -315,6 +450,7 @@ export function buildContinuitySnapshot({
     .map((row) => [row.task_id, row.count]));
   const activeBySlot = new Map(tasks.filter((task) => ACTIVE_STATES.has(task.state) && task.slot_id)
     .map((task) => [task.slot_id, task.task_id]));
+  const alreadyPresent = new Set(alreadyPresentTaskIds);
   for (const slotId of reservedSlotIds) {
     if (!activeBySlot.has(slotId)) activeBySlot.set(slotId, 'INTEGRATION_RESERVED');
   }
@@ -346,7 +482,7 @@ export function buildContinuitySnapshot({
         dependencies: dependencyIds.get(task.task_id) || [],
         requiredBase: task.base_sha,
         humanApprovalRequired: contract.humanApprovalRequired === true,
-        retryForbidden: Boolean(contract.retryForbidden),
+        retryForbidden: Boolean(contract.retryForbidden) || alreadyPresent.has(task.task_id),
         successorTaskId: contract.successorTaskId || null,
         childProcessAlive: ACTIVE_STATES.has(task.state) ? pidIsLive(Number(task.child_pid)) : null,
         semanticProgressAt: task.semantic_progress_at || (ACTIVE_STATES.has(task.state) ? task.updated_at : null),
@@ -355,7 +491,7 @@ export function buildContinuitySnapshot({
         maxAttempts: taskAttemptLimit(task),
         correctionCount: correctionCounts.get(task.task_id) || 0,
         maxCorrections: taskAttemptLimit(task),
-        terminalReason: task.terminal_reason,
+        terminalReason: alreadyPresent.has(task.task_id) ? ALREADY_PRESENT_EVENT : task.terminal_reason,
       };
     }),
   });
@@ -573,6 +709,7 @@ export async function runProductionPoll({
   replenish = replenishBacklog,
   syncActive = syncActiveGithubTasks,
   now = () => new Date(),
+  onTaskTerminal = () => {},
 }) {
   if (!path.isAbsolute(repoRoot) || !path.isAbsolute(workspaceRoot) || !path.isAbsolute(configPath)) {
     throw new Error('V4_PRODUCTION_ABSOLUTE_PATHS_REQUIRED');
@@ -599,6 +736,12 @@ export async function runProductionPoll({
   const withdrawnReadyTasks = reconcileWithdrawnReadyTasks(db, snapshots, { now: now() });
   const dependencyBlockedTasks = blockTasksWithFailedDependencies(db, { now: now() });
   const allTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
+  const alreadyPresentNoMutation = classifyAlreadyPresentNoMutationTasks({
+    db,
+    repoRoot,
+    mainRef: runtime.latestHead,
+    now: now(),
+  });
   const dependencies = listTaskDependencies(db);
   const ready = allTasks.filter((task) => task.state === 'READY');
   const runnableTaskIds = new Set(listRunnableTasks(db).map((task) => task.task_id));
@@ -610,6 +753,7 @@ export async function runProductionPoll({
     now: now(),
     semanticProgressWindowMs: stallMs,
     terminalTransition,
+    alreadyPresentTaskIds: alreadyPresentNoMutation.alreadyPresent,
     reservedSlotIds: integrationReady.length ? ['local-e'] : [],
   });
   const continuityDecision = continuityEnabled
@@ -657,15 +801,18 @@ export async function runProductionPoll({
     }
 
     const { settled, integrationSettled } = await runConcurrentProductionQueues({
-      runExecutableQueue: () => runReadyBatch({
+      runExecutableQueue: () => runTerminalAwareExecutableQueue({
         db,
         registry: createSlotRegistry(),
         repoRoot,
         workspaceRoot,
+        tasks: executable,
         commandsByTaskId,
         timeoutMs,
         stallMs,
         finalizeSuccess: ({ task, workspace }) => publishImplementationResult({ task, workspace, repoFullName, gh }),
+        onTaskTerminal,
+        now,
       }),
       runIntegrationQueue: async () => {
         const results = [];
