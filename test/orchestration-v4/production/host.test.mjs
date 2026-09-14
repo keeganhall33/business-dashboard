@@ -93,6 +93,40 @@ test('host keeps bounded intake polling while earlier polls remain unresolved', 
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('terminal callbacks refill released slots before a long-running sibling poll settles', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-terminal-refill-'));
+  const never = new Promise(() => {});
+  const observed = [];
+  let calls = 0;
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      maxCycles: 1,
+      maxConcurrentPolls: 3,
+      shutdownDrainMs: 0,
+      publishContinuity: async () => ({ ok: true }),
+      poll: async ({ terminalTransition, onTaskTerminal }) => {
+        calls += 1;
+        if (calls === 1) {
+          onTaskTerminal({ taskId: 'completed', slotId: 'local-a', state: V4_STATES.COMPLETE, at: '2026-09-14T01:00:00Z' });
+          onTaskTerminal({ taskId: 'blocked', slotId: 'local-b', state: V4_STATES.BLOCKED, at: '2026-09-14T01:00:01Z' });
+          onTaskTerminal({ taskId: 'completed', slotId: 'local-a', state: V4_STATES.COMPLETE, at: '2026-09-14T01:00:02Z' });
+          return never;
+        }
+        observed.push(terminalTransition);
+        return { terminalTransitions: [] };
+      },
+    });
+    assert.equal(calls, 3);
+    assert.deepEqual(observed.map((item) => item.taskId).sort(), ['blocked', 'completed']);
+    assert.equal(result.drained, false);
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.equal(heartbeat.inFlightPolls <= 3, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('host exits distinctly when the bounded poll set is stuck with no active workers', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-stuck-empty-poll-'));
   const never = new Promise(() => {});
