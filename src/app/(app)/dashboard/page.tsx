@@ -1,6 +1,7 @@
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
+import { loadExecutiveHomeV3 } from "@/lib/executive-home/executive-home-v3-loader";
 import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
 import { headers } from "next/headers";
 
@@ -32,7 +33,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie });
-  const executiveHome = buildExecutiveHomeFromDashboardOverviewV1(overview);
+  const executiveHome = await loadExecutiveHomeV3({
+    overview,
+    baseBuilder: buildExecutiveHomeFromDashboardOverviewV1
+  });
 
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
   const sanitizedHome = sanitizeDashboardPayloadForHtml(executiveHome.home);
