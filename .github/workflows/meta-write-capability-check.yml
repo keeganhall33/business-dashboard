@@ -35,12 +35,17 @@ jobs:
             "https://graph.facebook.com/me/permissions")
           echo "$perms" | jq '{granted: [.data[]? | select(.status=="granted") | .permission], declined: [.data[]? | select(.status!="granted") | {permission,status}]}'
 
-          echo "=== AD ACCOUNT ACCESS ==="
-          account=$(curl -fsS --get \
-            --data-urlencode "fields=id,name,account_id,account_status,disable_reason" \
+          echo "=== ACCESSIBLE AD ACCOUNTS ==="
+          accounts=$(curl -fsS --get \
+            --data-urlencode "fields=id,name,account_id,account_status" \
+            --data-urlencode "limit=100" \
             --data-urlencode "access_token=$token" \
-            "https://graph.facebook.com/act_${acct}")
-          echo "$account" | jq '{id,name,account_id,account_status,disable_reason}'
+            "https://graph.facebook.com/me/adaccounts")
+          echo "$accounts" | jq '{accounts: [.data[]? | {id,name,account_id,account_status}]}'
+
+          account=$(echo "$accounts" | jq --arg acct "$acct" -c '.data[]? | select((.account_id|tostring)==$acct or .id==("act_"+$acct))' | head -n1)
+          echo "=== MATCHED AD ACCOUNT ==="
+          echo "${account:-null}" | jq '{id,name,account_id,account_status}'
 
           echo "=== CAMPAIGN ACCESS ==="
           campaigns=$(curl -fsS --get \
@@ -51,7 +56,7 @@ jobs:
           echo "$campaigns" | jq '{campaign_count: (.data | length), sample: (.data[0] // null)}'
 
           has_scope=$(echo "$perms" | jq -r '[.data[]? | select(.permission=="ads_management" and .status=="granted")] | length > 0')
-          account_ok=$(echo "$account" | jq -r '(.account_id // "") != "" and ((.account_status // 0) == 1)')
+          account_ok=$(echo "${account:-null}" | jq -r '(.account_id // "") != "" and ((.account_status // 0) == 1)')
           echo "ADS_MANAGEMENT_SCOPE=$has_scope"
           echo "ACCOUNT_ACTIVE_AND_ACCESSIBLE=$account_ok"
           if [ "$has_scope" = "true" ] && [ "$account_ok" = "true" ]; then
