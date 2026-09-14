@@ -7,7 +7,7 @@ export function ResponsiveExecutiveShell({ data }: { data: ResponsiveShellFixtur
   const nav = [...data.nav.filter((item) => item.priority === "primary"), ...data.nav.filter((item) => item.priority !== "primary")];
 
   return (
-    <main className="min-h-screen bg-[#f7f2ea] text-slate-950">
+    <main className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col md:grid md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="border-b border-slate-200 bg-[#fbf8f1]/95 px-4 py-4 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:px-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Jeeves OS</p>

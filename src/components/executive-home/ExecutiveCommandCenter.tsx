@@ -63,7 +63,7 @@ export function ExecutiveCommandCenter({
   );
 
   useEffect(() => {
-    if (!activeDetailId) return;
+    if (!activeDetailId || typeof document === "undefined") return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setActiveDetailId(null);
     };
@@ -125,7 +125,7 @@ export function ExecutiveCommandCenter({
                 <button
                   type="button"
                   onClick={completeCurrentStep}
-                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={!onAdvanceStrategyStep || !commandCenter.strategy_path.steps.some((step) => step.id === commandCenter.strategy_path.current_step_id && step.state === "IN_PROGRESS")}
                 >
                   Mark current step complete
@@ -208,7 +208,7 @@ export function ExecutiveCommandCenter({
                         <a
                           href="#decision-room-drilldown"
                           onClick={() => onOpenDecisionRoom(card.decision_room_id!)}
-                          className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+                          className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
                         >
                           Review in Decision Room
                         </a>
@@ -301,7 +301,7 @@ export function ExecutiveCommandCenter({
 
       {activeDetail ? (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/20 p-0 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-50 bg-blue-700/20 p-0 backdrop-blur-sm sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-label={`${activeDetail.label} detail`}
@@ -349,7 +349,7 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
 function StepRow({ step, index }: { step: ExecutiveExecutionStepV1; index: number }) {
   return (
     <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[2rem_1fr_auto] sm:items-start">
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">{index + 1}</div>
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-700 text-sm font-semibold text-white">{index + 1}</div>
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h4 className="text-sm font-semibold text-slate-950">{step.label}</h4>
@@ -386,7 +386,7 @@ function Sparkline({ values }: { values: Array<number | null> }) {
 function ProgressBar({ value }: { value: number | null }) {
   return (
     <div className="mt-3 h-2 rounded-full bg-slate-100">
-      <div className="h-2 rounded-full bg-slate-950" style={{ width: value == null ? "0%" : `${Math.max(0, Math.min(100, value))}%` }} />
+      <div className="h-2 rounded-full bg-blue-700" style={{ width: value == null ? "0%" : `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
 }

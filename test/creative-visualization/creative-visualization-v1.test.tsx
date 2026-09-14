@@ -90,6 +90,6 @@ test("light-first visualization panel renders dashboard controls and evidence bo
     assert.match(html, new RegExp(text.replaceAll("/", "\\/")));
   }
   assert.match(html, /4(?:<!-- -->)? concept studies/);
-  assert.match(html, /bg-\[#fffdf8\]/);
+  assert.match(html, /bg-\[#ffffff\]/);
   assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950|text-zinc-100/);
 });

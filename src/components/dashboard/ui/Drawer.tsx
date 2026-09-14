@@ -67,7 +67,7 @@ export function Drawer({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onMouseDown={onClose} />
+      <div className="absolute inset-0 bg-blue-700/30 backdrop-blur-sm" onMouseDown={onClose} />
 
       <div
         ref={panelRef}

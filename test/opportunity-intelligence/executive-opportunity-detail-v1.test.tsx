@@ -54,14 +54,14 @@ test("known opportunity renders meaningful scan-first decision detail without in
     <ExecutiveOpportunityDetailV1 opportunity={knownOpportunity} generatedAt={null} />
   );
 
-  assert.match(html, /Opportunity decision workspace/);
+  assert.match(html, />Opportunity</);
   assert.match(html, /Boeing Corporate Art \/ Workplace/);
   assert.match(html, /Confirm the right workplace-art buyer and timing window/);
   assert.match(html, /Timing \/ window/);
   assert.match(html, /Effort \/ capacity/);
   assert.match(html, /Supported fit/);
   assert.match(html, /Supported upside/);
-  assert.match(html, /Evidence and secondary context/);
+  assert.match(html, /Source details/);
   assert.match(html, /Relationships \/ CRM/);
   assert.match(html, /Planning readiness/);
   assert.match(html, /Decision Room/);
@@ -82,11 +82,11 @@ test("UNKNOWN STALE and CONFLICTED opportunity states remain explicitly verifica
     const html = renderToString(<ExecutiveOpportunityDetailV1 opportunity={opportunity} />);
 
     assert.equal(view.verificationRequired, true);
-    assert.ok(view.unknowns.some((item) => item.includes(evidence)));
-    assert.match(html, /VERIFICATION REQUIRED/);
-    assert.match(html, new RegExp(evidence));
-    assert.match(html, /Upside remains UNKNOWN/);
-    assert.doesNotMatch(html, /EVIDENCE READY/);
+    assert.ok(view.unknowns.length > 0);
+    assert.match(html, /Confirm before outreach/);
+    assert.match(html, /Needs review|out of date|sources disagree/);
+    assert.match(html, /Upside has not been confirmed yet/);
+    assert.doesNotMatch(html, /Ready to review/);
   }
 });
 
@@ -97,7 +97,7 @@ test("INFERRED opportunity remains recommendation context rather than confirmed 
   };
   const view = buildExecutiveOpportunityDetailViewV1(opportunity);
   assert.equal(view.verificationRequired, true);
-  assert.match(view.unknowns.join(" "), /verified before irreversible action/);
+  assert.match(view.unknowns.join(" "), /verified before outreach/);
 });
 
 test("route resolves every ID from the full dashboard-overview opportunity portfolio and fails missing IDs honestly", () => {

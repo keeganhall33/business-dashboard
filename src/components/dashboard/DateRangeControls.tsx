@@ -176,7 +176,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
 
         {calendarOpen && (
           <>
-            <div className="fixed inset-0 z-10 bg-slate-950/20" onClick={cancelPendingRange} />
+            <div className="fixed inset-0 z-10 bg-blue-700/20" onClick={cancelPendingRange} />
             <div
               ref={calendarRef}
               className="absolute right-0 top-full z-20 mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl"

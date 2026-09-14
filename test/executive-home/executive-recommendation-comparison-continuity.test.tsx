@@ -56,7 +56,7 @@ test("executive recommendation comparison continuity remains compact mobile and 
   const renderer = renderOpenedDecisionRoom();
   const html = renderedTree(renderer);
 
-  assert.match(html, /bg-\[#fffdf8\]/);
+  assert.match(html, /bg-\[#ffffff\]/);
   assert.match(html, /grid gap-2 sm:grid-cols-2/);
   assert.match(html, /md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,0\.9fr\)\]/);
   assert.match(html, /flex flex-wrap gap-2/);

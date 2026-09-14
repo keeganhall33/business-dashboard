@@ -190,7 +190,7 @@ export function ExecutiveOpportunityDetailV1({
           <Link href="/data-evidence" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
             Data & Evidence
           </Link>
-          <Link href="/dashboard" className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+          <Link href="/dashboard" className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
             Back to Executive Home
           </Link>
         </nav>

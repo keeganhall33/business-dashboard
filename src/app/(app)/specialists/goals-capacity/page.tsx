@@ -50,7 +50,7 @@ export default function GoalsCapacitySpecialistPage() {
       </section>
 
       <nav className="flex flex-wrap gap-2" aria-label="Goals and capacity navigation">
-        <Link href="/specialists" className="inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+        <Link href="/specialists" className="inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
           Back to Specialists
         </Link>
         <Link href="/data-evidence" className="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">

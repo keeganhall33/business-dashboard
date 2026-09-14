@@ -57,7 +57,7 @@ function CrmNav({ active }: { active: CrmDirectoryModeV1 }) {
           aria-current={active === link.mode ? "page" : undefined}
           className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
             active === link.mode
-              ? "border-slate-950 bg-slate-950 text-white"
+              ? "border-slate-950 bg-blue-700 text-white"
               : "border-slate-300 bg-white text-slate-800 hover:border-slate-500"
           }`}
         >

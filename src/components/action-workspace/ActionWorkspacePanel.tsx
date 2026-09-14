@@ -46,7 +46,7 @@ export function ActionWorkspacePanel({ workspace }: { workspace: ActionWorkspace
               <p className="mt-1 text-xs leading-5 text-slate-600">Fixture-only interaction. No action API, outreach, spend, publishing, pricing, contract, or production mutation runs.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setDemoState("APPROVE_DEMO")} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">Approve</button>
+              <button type="button" onClick={() => setDemoState("APPROVE_DEMO")} className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Approve</button>
               <button type="button" onClick={() => setDemoState("REJECT_DEMO")} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">Reject</button>
               <button type="button" onClick={() => setDemoState("DEFER_DEMO")} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">Defer</button>
             </div>

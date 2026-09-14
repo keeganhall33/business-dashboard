@@ -145,7 +145,7 @@ function SpecialistsWorkspace({ capabilities }: { capabilities: SpecialistCapabi
                 </dl>
 
                 {capability.detail_href ? (
-                  <a href={capability.detail_href} className="mt-5 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+                  <a href={capability.detail_href} className="mt-5 inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
                     Open verified specialist detail
                   </a>
                 ) : (

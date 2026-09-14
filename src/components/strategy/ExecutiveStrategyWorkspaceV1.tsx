@@ -78,7 +78,7 @@ function EmptyState({ children }: { children: string }) {
 
 export function ExecutiveStrategyWorkspaceV1({ model }: { model: ExecutiveStrategyWorkspaceModelV1 }) {
   return (
-    <main className="min-h-screen bg-[#f7f2ea] py-6 text-slate-950">
+    <main className="min-h-screen bg-[#f4f7fb] py-6 text-slate-950">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Strategy workspace</p>

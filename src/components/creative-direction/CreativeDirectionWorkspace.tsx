@@ -45,7 +45,7 @@ export function CreativeDirectionWorkspace({
   if (!data) {
     return (
       <main
-        className="min-h-screen bg-[#f7f2ea] px-4 py-6 text-slate-950 md:px-8"
+        className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 md:px-8"
         aria-label="Creative Direction Intelligence"
       >
         <div className="mx-auto max-w-7xl">
@@ -76,7 +76,7 @@ export function CreativeDirectionWorkspace({
   const rec = data.current_recommendation;
 
   return (
-    <main className="min-h-screen bg-[#f7f2ea] px-4 py-6 text-slate-950 md:px-8">
+    <main className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 md:px-8">
       <div className="mx-auto max-w-7xl">
         <header className="max-w-4xl">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Creative Direction Intelligence</p>
@@ -95,7 +95,7 @@ export function CreativeDirectionWorkspace({
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-5">
               {stages.map((stage) => (
-                <div key={stage} className={`rounded-2xl border p-3 text-sm ${stage === rec.stage ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                <div key={stage} className={`rounded-2xl border p-3 text-sm ${stage === rec.stage ? "border-slate-950 bg-blue-700 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
                   {stage.replace("_", " / ")}
                 </div>
               ))}

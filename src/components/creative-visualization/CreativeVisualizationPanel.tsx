@@ -52,7 +52,7 @@ export function CreativeVisualizationPanel({ comparisonSet }: { comparisonSet: C
           <p className="mt-3 text-sm leading-6 text-slate-800">
             Market references are comparison context only: {comparisonSet.request.evidence_references.join(", ")}.
           </p>
-          <p className="mt-3 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white">
+          <p className="mt-3 rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white">
             {comparisonSet.request.confidence_change_policy.replaceAll("_", " ")}
           </p>
         </article>

@@ -66,7 +66,7 @@ export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceVie
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Owner: {card.owner}</span>
                         {detail.state === "ROUTABLE" ? (
-                          <Link href={detail.href} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+                          <Link href={detail.href} className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
                             Open detail
                           </Link>
                         ) : (

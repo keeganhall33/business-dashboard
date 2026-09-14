@@ -70,7 +70,7 @@ export default function FinancialSpecialistPage() {
       <nav className="flex flex-wrap gap-2" aria-label="Financial specialist navigation">
         <Link
           href="/specialists"
-          className="inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+          className="inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
         >
           Back to Specialists
         </Link>

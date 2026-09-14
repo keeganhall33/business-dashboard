@@ -30,7 +30,7 @@ test("dashboard command center uses a full-width light shell without dark gutter
 
   assert.match(html, /Executive command center/);
   assert.match(html, /max-w-\[1600px\]/);
-  assert.match(html, /bg-\[#f8f4ec\]/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
   assert.match(html, /What changed/);
   assert.match(html, /Strategy and next steps/);
   assert.match(html, /Do now/);
@@ -38,7 +38,7 @@ test("dashboard command center uses a full-width light shell without dark gutter
   assert.match(html, /Top opportunities/);
   assert.match(html, /System at a glance/);
   assert.match(html, /Intelligence engine/);
-  assert.doesNotMatch(html, /bg-black|bg-zinc-950|bg-slate-950|min-h-screen bg-\[#f7f2ea\] py-6/);
+  assert.doesNotMatch(html, /bg-black|bg-zinc-950|bg-slate-950|min-h-screen bg-\[#f4f7fb\] py-6/);
 });
 
 test("command center preserves UNKNOWN instead of converting missing evidence to zero or false", () => {
@@ -137,7 +137,7 @@ test("command center keeps freshness badges light and mobile-compatible", () => 
     />);
 
   assert.match(html, /grid gap-3 lg:grid-cols-3/);
-  assert.match(html, /bg-\[#f8f4ec\]/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
   assert.match(html, /bg-amber-50/);
   assert.match(html, /text-amber-900/);
   assert.doesNotMatch(html, /bg-zinc-950|bg-slate-950|text-zinc-50/);

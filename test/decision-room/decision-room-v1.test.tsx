@@ -89,7 +89,7 @@ test("Decision Room option comparison preserves mobile and light-mode layout wit
   const comparisonHtml = html.slice(comparisonStart, comparisonEnd);
 
   assert.ok(comparisonStart >= 0);
-  assert.match(comparisonHtml, /bg-stone-50/);
+  assert.match(comparisonHtml, /bg-slate-50/);
   assert.match(comparisonHtml, /bg-white/);
   assert.match(comparisonHtml, /sm:grid-cols-2/);
   assert.match(comparisonHtml, /border-dashed/);
@@ -123,7 +123,7 @@ test("Decision Room evidence summary preserves mobile and light-mode density wit
   const evidenceHtml = html.slice(evidenceStart, evidenceEnd);
 
   assert.ok(evidenceStart >= 0);
-  assert.match(evidenceHtml, /bg-stone-50/);
+  assert.match(evidenceHtml, /bg-slate-50/);
   assert.match(evidenceHtml, /bg-white/);
   assert.match(evidenceHtml, /sm:grid-cols-2/);
   assert.match(evidenceHtml, /Source drill-down/);

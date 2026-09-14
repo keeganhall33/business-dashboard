@@ -72,7 +72,7 @@ function OpportunityMobileCard({ item }: { item: ExecutiveOpportunityPortfolioIt
       </div>
       <a
         href={item.detailHref}
-        className="mt-4 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+        className="mt-4 inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
       >
         Open opportunity
       </a>
@@ -126,7 +126,7 @@ export function ExecutiveOpportunityPortfolioV1({
         </section>
 
         {primary ? (
-          <section className="mt-5 rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm md:p-6" aria-label="First canonical opportunity">
+          <section className="mt-5 rounded-3xl border border-slate-200 bg-blue-700 p-5 text-white shadow-sm md:p-6" aria-label="First canonical opportunity">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-300">First in canonical radar order</p>
@@ -188,7 +188,7 @@ export function ExecutiveOpportunityPortfolioV1({
                         <td className="px-4 py-4 text-xs font-semibold text-slate-600">{humanize(item.effortSignal)}</td>
                         <td className="max-w-sm px-4 py-4 leading-6 text-slate-700">{item.nextMove}</td>
                         <td className="px-4 py-4">
-                          <a href={item.detailHref} className="inline-flex whitespace-nowrap rounded-full bg-slate-950 px-3 py-2 text-xs font-semibold text-white">
+                          <a href={item.detailHref} className="inline-flex whitespace-nowrap rounded-full bg-blue-700 px-3 py-2 text-xs font-semibold text-white">
                             Open opportunity
                           </a>
                         </td>

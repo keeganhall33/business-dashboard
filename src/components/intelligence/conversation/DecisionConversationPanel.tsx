@@ -57,7 +57,7 @@ export function DecisionConversationPanel({
                 ASK ABOUT THIS DECISION
               </label>
               <div className="flex items-center gap-2">
-                <button type="button" aria-pressed={viewModel.input.mode === "VOICE_TRANSCRIPT"} title={viewModel.voice.affordance_label} className="h-9 w-9 rounded-full border border-slate-300 bg-slate-950 text-xs font-semibold text-white">
+                <button type="button" aria-pressed={viewModel.input.mode === "VOICE_TRANSCRIPT"} title={viewModel.voice.affordance_label} className="h-9 w-9 rounded-full border border-slate-300 bg-blue-700 text-xs font-semibold text-white">
                   Mic
                 </button>
                 <StatusPill label={viewModel.voice.state_label} tone={viewModel.input.mode === "VOICE_TRANSCRIPT" ? "emerald" : "stone"} />
@@ -71,7 +71,7 @@ export function DecisionConversationPanel({
                 value={viewModel.input.utterance}
                 readOnly
               />
-              <button type="button" className="border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+              <button type="button" className="border border-slate-950 bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
                 Ask
               </button>
             </div>
