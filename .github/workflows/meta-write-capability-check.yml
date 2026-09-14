@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: 1Password/install-cli-action@v1
-      - name: Check existing Meta token scopes and ad account access
+      - name: Confirm existing Meta token can write without changing campaign state
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
@@ -26,43 +26,43 @@ jobs:
           op run --env-file .env.meta -- bash <<'BASH'
           set -euo pipefail
           token="$META_ACCESS_TOKEN"
-          acct="$META_AD_ACCOUNT_ID"
-          acct="${acct#act_}"
+          campaign_id="52628985924674"
+          expected_name='Impossible In Pencil | Prospecting'
 
           echo "=== TOKEN PERMISSIONS ==="
           perms=$(curl -fsS --get \
             --data-urlencode "access_token=$token" \
             "https://graph.facebook.com/me/permissions")
-          echo "$perms" | jq '{granted: [.data[]? | select(.status=="granted") | .permission], declined: [.data[]? | select(.status!="granted") | {permission,status}]}'
-
-          echo "=== ACCESSIBLE AD ACCOUNTS ==="
-          accounts=$(curl -fsS --get \
-            --data-urlencode "fields=id,name,account_id,account_status" \
-            --data-urlencode "limit=100" \
-            --data-urlencode "access_token=$token" \
-            "https://graph.facebook.com/me/adaccounts")
-          echo "$accounts" | jq '{accounts: [.data[]? | {id,name,account_id,account_status}]}'
-
-          account=$(echo "$accounts" | jq --arg acct "$acct" -c '.data[]? | select((.account_id|tostring)==$acct or .id==("act_"+$acct))' | head -n1)
-          echo "=== MATCHED AD ACCOUNT ==="
-          echo "${account:-null}" | jq '{id,name,account_id,account_status}'
-
-          echo "=== CAMPAIGN ACCESS ==="
-          campaigns=$(curl -fsS --get \
-            --data-urlencode "fields=id,name,status,effective_status" \
-            --data-urlencode "limit=1" \
-            --data-urlencode "access_token=$token" \
-            "https://graph.facebook.com/act_${acct}/campaigns")
-          echo "$campaigns" | jq '{campaign_count: (.data | length), sample: (.data[0] // null)}'
-
+          echo "$perms" | jq '{granted: [.data[]? | select(.status=="granted") | .permission]}'
           has_scope=$(echo "$perms" | jq -r '[.data[]? | select(.permission=="ads_management" and .status=="granted")] | length > 0')
-          account_ok=$(echo "${account:-null}" | jq -r '(.account_id // "") != "" and ((.account_status // 0) == 1)')
-          echo "ADS_MANAGEMENT_SCOPE=$has_scope"
-          echo "ACCOUNT_ACTIVE_AND_ACCESSIBLE=$account_ok"
-          if [ "$has_scope" = "true" ] && [ "$account_ok" = "true" ]; then
-            echo "META_WRITE_PREREQS_READY=true"
-          else
-            echo "META_WRITE_PREREQS_READY=false"
-            exit 1
-          fi
+          test "$has_scope" = "true"
+
+          echo "=== CURRENT CAMPAIGN ==="
+          before=$(curl -fsS --get \
+            --data-urlencode "fields=id,name,status,effective_status" \
+            --data-urlencode "access_token=$token" \
+            "https://graph.facebook.com/${campaign_id}")
+          echo "$before" | jq '{id,name,status,effective_status}'
+          current_name=$(echo "$before" | jq -r '.name')
+          test "$current_name" = "$expected_name"
+
+          echo "=== NO-OP WRITE TEST ==="
+          write=$(curl -fsS -X POST \
+            --data-urlencode "name=$current_name" \
+            --data-urlencode "access_token=$token" \
+            "https://graph.facebook.com/${campaign_id}")
+          echo "$write" | jq .
+          success=$(echo "$write" | jq -r '.success // false')
+          test "$success" = "true"
+
+          echo "=== VERIFY UNCHANGED ==="
+          after=$(curl -fsS --get \
+            --data-urlencode "fields=id,name,status,effective_status" \
+            --data-urlencode "access_token=$token" \
+            "https://graph.facebook.com/${campaign_id}")
+          echo "$after" | jq '{id,name,status,effective_status}'
+          test "$(echo "$after" | jq -r '.name')" = "$expected_name"
+          test "$(echo "$after" | jq -r '.status')" = "$(echo "$before" | jq -r '.status')"
+
+          echo "META_WRITE_READY=true"
           BASH
