@@ -76,9 +76,21 @@ test("approved bounded write executes once and supports rollback", async () => {
   assert.deepEqual(h.writes, [{ daily_budget: "1650" }]);
   await h.service.execute(proposal.id, { dryRun: false, confirmLiveWrite: true });
   assert.equal(h.writes.length, 1);
+  h.setLive({ id: "123", status: "ACTIVE", effective_status: "ACTIVE", daily_budget: "1650" });
   const rolledBack = await h.service.rollback(proposal.id, { dryRun: false, confirmLiveWrite: true });
   assert.equal(rolledBack.rollback_state, "SUCCEEDED");
   assert.deepEqual(h.writes[1], { daily_budget: "1500" });
+});
+
+test("rollback fails closed when live state changed after execution", async () => {
+  const h = harness();
+  const proposal = await h.observe();
+  await h.service.approve(proposal.id, "keegan");
+  await h.service.execute(proposal.id, { dryRun: false, confirmLiveWrite: true });
+  h.setLive({ id: "123", status: "ACTIVE", effective_status: "ACTIVE", daily_budget: "1700" });
+  const result = await h.service.rollback(proposal.id, { dryRun: false, confirmLiveWrite: true });
+  assert.equal(result.rollback_state, "STALE");
+  assert.equal(h.writes.length, 1);
 });
 
 test("reject prevents approval and execution", async () => {
