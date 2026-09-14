@@ -22,6 +22,7 @@ const CONTINUITY_ISSUE_NUMBER = 1528;
 const CONTINUITY_REFRESH_MS = 15 * 60_000;
 const CONTINUITY_MARKER_START = '<!-- JEEVES_V4_CONTINUITY_STATUS:START -->';
 const CONTINUITY_MARKER_END = '<!-- JEEVES_V4_CONTINUITY_STATUS:END -->';
+const TERMINAL_EVIDENCE_MARKER = 'JEEVES_V4_TERMINAL_EVIDENCE_V1';
 const SAFE_CODE = /^[A-Z0-9_:-]{1,120}$/;
 const SAFE_SLOT = /^[a-z0-9_-]{1,40}$/;
 const SAFE_ACTIVE_STATE = new Set(['CLAIMED', 'RUNNING', 'VALIDATING', 'PR_OPENED']);
@@ -66,6 +67,84 @@ function safeIso(value) {
 function safeCode(value) {
   const code = String(value ?? '');
   return SAFE_CODE.test(code) ? code : null;
+}
+
+function safeInteger(value, { minimum = 0 } = {}) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= minimum ? number : null;
+}
+
+function terminalResult(task) {
+  try {
+    const parsed = JSON.parse(task?.result_json || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function terminalEvidenceMarker(task) {
+  const identity = String(task?.task_id || task?.issue_number || 'unknown');
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 20);
+  return `<!-- ${TERMINAL_EVIDENCE_MARKER}:${digest} -->`;
+}
+
+export function buildTerminalEvidence(task) {
+  const result = terminalResult(task);
+  const execution = result?.execution && typeof result.execution === 'object' ? result.execution : {};
+  const correction = execution?.correctionPacket && typeof execution.correctionPacket === 'object'
+    ? execution.correctionPacket
+    : {};
+  const numericExecutionCode = safeInteger(execution.code);
+  return Object.freeze({
+    contractVersion: 'TerminalEvidenceV1',
+    issueNumber: safeInteger(task?.issue_number, { minimum: 1 }),
+    state: TERMINAL_LABEL[String(task?.state ?? '')] ? String(task.state) : 'UNKNOWN',
+    attempt: safeInteger(task?.attempt),
+    terminalReason: safeCode(task?.terminal_reason),
+    execution: Object.freeze({
+      status: safeCode(execution.status),
+      code: numericExecutionCode ?? safeCode(execution.code),
+      signal: safeCode(execution.signal),
+      reason: safeCode(execution.reason),
+    }),
+    correction: Object.freeze({
+      reason: safeCode(correction.reason),
+      action: safeCode(correction.action),
+    }),
+    semanticProgressSeq: safeInteger(task?.semantic_progress_seq),
+    semanticProgressAt: safeIso(task?.semantic_progress_at),
+    terminalAt: safeIso(task?.updated_at),
+  });
+}
+
+export function renderTerminalEvidenceComment(task, evidence = buildTerminalEvidence(task)) {
+  return [
+    terminalEvidenceMarker(task),
+    '## Jeeves terminal evidence',
+    '',
+    'Privacy-safe execution classification for governed successor planning:',
+    '',
+    '```json',
+    JSON.stringify(evidence, null, 2),
+    '```',
+  ].join('\n');
+}
+
+function publishTerminalEvidence({ task, repoFullName, options }) {
+  const marker = terminalEvidenceMarker(task);
+  const comments = ghJson(['api', '--paginate', `repos/${repoFullName}/issues/${task.issue_number}/comments`], options);
+  const match = (Array.isArray(comments) ? comments : [])
+    .find((comment) => String(comment?.body ?? '').includes(marker));
+  const body = renderTerminalEvidenceComment(task);
+  const response = Number(match?.id)
+    ? ghJson(['api', `repos/${repoFullName}/issues/comments/${Number(match.id)}`, '--method', 'PATCH', '--field', `body=${body}`], options)
+    : ghJson(['api', `repos/${repoFullName}/issues/${task.issue_number}/comments`, '--method', 'POST', '--field', `body=${body}`], options);
+  if (!Number(response?.id) || !String(response?.body ?? '').includes(marker)) {
+    throw new Error('V4_GITHUB_TERMINAL_EVIDENCE_SYNC_MISMATCH');
+  }
+  return Number(response.id);
 }
 
 export function buildContinuityStatus({ heartbeat = {}, tasks = [] } = {}) {
@@ -193,10 +272,11 @@ export function syncTerminalTaskToGitHub({
     options,
   );
 
-  let current = labelsForIssue(ghJson(
+  let issue = ghJson(
     ['issue','view',String(task.issue_number),'--repo',repoFullName,'--json','labels,state'],
     options,
-  ));
+  );
+  let current = labelsForIssue(issue);
   const removed = [];
   for (const label of ALL_STATE_LABELS) {
     if (label === terminalLabel || !current.has(label)) continue;
@@ -207,10 +287,11 @@ export function syncTerminalTaskToGitHub({
     removed.push(label);
   }
 
-  current = labelsForIssue(ghJson(
+  issue = ghJson(
     ['issue','view',String(task.issue_number),'--repo',repoFullName,'--json','labels,state'],
     options,
-  ));
+  );
+  current = labelsForIssue(issue);
   if (!current.has(terminalLabel)) {
     runGithubCommand(
       ['issue','edit',String(task.issue_number),'--repo',repoFullName,'--add-label',terminalLabel],
@@ -218,13 +299,24 @@ export function syncTerminalTaskToGitHub({
     );
   }
 
-  const verified = labelsForIssue(ghJson(
+  const verifiedIssue = ghJson(
     ['issue','view',String(task.issue_number),'--repo',repoFullName,'--json','labels,state'],
     options,
-  ));
+  );
+  const verified = labelsForIssue(verifiedIssue);
   const forbidden = ALL_STATE_LABELS.filter((label) => label !== terminalLabel && verified.has(label));
   if (!verified.has(terminalLabel) || forbidden.length) {
     throw new Error(`V4_GITHUB_TERMINAL_SYNC_MISMATCH:${terminalLabel}:${forbidden.join(',')}`);
   }
-  return { ok: true, skipped: false, label: terminalLabel, removed, verified: [...verified].sort() };
+  const evidenceCommentId = String(verifiedIssue?.state ?? '').toUpperCase() === 'OPEN'
+    ? publishTerminalEvidence({ task, repoFullName, options })
+    : null;
+  return {
+    ok: true,
+    skipped: false,
+    label: terminalLabel,
+    removed,
+    verified: [...verified].sort(),
+    evidenceCommentId,
+  };
 }
