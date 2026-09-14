@@ -115,6 +115,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   let continuityPublishResult = null;
   const continuityPublisherState = {};
   const terminalTransitions = [];
+  const terminalTaskIds = new Set();
   const inFlightPolls = new Set();
   const pollStartedAtByPromise = new Map();
 
@@ -123,12 +124,28 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
     return Math.min(...pollStartedAtByPromise.values());
   };
 
+  const queueTerminalTransition = (transition) => {
+    if (!transition?.taskId || !transition?.slotId || terminalTaskIds.has(transition.taskId)) return false;
+    terminalTaskIds.add(transition.taskId);
+    terminalTransitions.push(Object.freeze({ ...transition }));
+    if (!stopped && !restartRequested && inFlightPolls.size < maxConcurrentPolls) launchPoll();
+    return true;
+  };
+
   const launchPoll = () => {
     let tracked;
     const startedAt = now();
     const terminalTransition = terminalTransitions.shift() || null;
     tracked = Promise.resolve()
-      .then(() => poll({ db, ...pollArgs, terminalTransition }))
+      .then(() => poll({
+        db,
+        ...pollArgs,
+        terminalTransition,
+        onTaskTerminal: (transition) => {
+          const queued = queueTerminalTransition(transition);
+          if (queued && typeof pollArgs.onTaskTerminal === 'function') pollArgs.onTaskTerminal(transition);
+        },
+      }))
       .then(
         (value) => {
           const candidateAt = Date.parse(value?.continuity?.generatedAt || '') || 0;
@@ -138,7 +155,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
             restartRequested = true;
           }
           lastPollError = null;
-          for (const transition of value?.terminalTransitions || []) terminalTransitions.push(transition);
+          for (const transition of value?.terminalTransitions || []) queueTerminalTransition(transition);
           return { ok: true, value };
         },
         (error) => {

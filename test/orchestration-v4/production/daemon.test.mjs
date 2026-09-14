@@ -8,12 +8,14 @@ import {
   buildContinuityState,
   buildCorrectionAgentAttempt,
   buildTaskExecutionSpec,
+  classifyAlreadyPresentNoMutationTasks,
   cleanupProductionAgentStates,
   continuityStewardEnabled,
   executeContinuityControlActions,
   PRODUCT_LANE_CAPACITY,
   reconcileWithdrawnReadyTasks,
   refreshRuntimeMain,
+  runTerminalAwareExecutableQueue,
   syncActiveTaskToGitHub,
   syncTerminalLifecycleTaskToGitHub,
   syncPendingGithubTasks,
@@ -29,6 +31,7 @@ import {
   getTask,
   insertReadyTask,
   openV4StateStore,
+  releaseSlotForTerminalTask,
   transitionTask,
 } from '../../../scripts/orchestration-v4/state-store/sqlite-store.mjs';
 import { V4_STATES } from '../../../scripts/orchestration-v4/state-machine.mjs';
@@ -394,6 +397,144 @@ test('runtime snapshot drives compatible startup claims and terminal slot refill
     const decision = decideDeliveryContinuity(snapshot);
     assert.equal(decision.actions.some((action) => action.type === 'REFILL_VACATED_SLOT' && action.taskId === 'core-next'), true);
     assert.equal(decision.actions.some((action) => action.type === 'CLAIM_READY_TASK' && action.taskId === 'ux-next'), true);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('individual worker settlement is observable before a long-running sibling finishes', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-terminal-aware-queue-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  let releaseLong;
+  const longGate = new Promise((resolve) => { releaseLong = resolve; });
+  const events = [];
+  const slots = new Set();
+  try {
+    for (const [taskId, issueNumber, stream] of [
+      ['complete-first', 2101, 'CORE_INTELLIGENCE'],
+      ['blocked-second', 2102, 'DISCOVERY_INTELLIGENCE'],
+      ['long-running', 2103, 'INTELLIGENCE_UX'],
+    ]) {
+      insertReadyTask(db, {
+        taskId,
+        issueNumber,
+        stream,
+        baseSha: BASE_SHA,
+        contract: { fileOwnership: `src/${taskId}.mjs`, priority: 'P0', maxAttempts: 1 },
+      });
+    }
+    const tasks = db.prepare("SELECT * FROM tasks WHERE state='READY' ORDER BY task_id").all();
+    const running = runTerminalAwareExecutableQueue({
+      db,
+      repoRoot: root,
+      workspaceRoot: root,
+      tasks,
+      commandsByTaskId: Object.fromEntries(tasks.map((task) => [task.task_id, { command: 'unused' }])),
+      timeoutMs: 60_000,
+      stallMs: 30_000,
+      runTask: async ({ taskId, slotId }) => {
+        assert.equal(slots.has(slotId), false);
+        slots.add(slotId);
+        claimTask(db, { taskId, slotId });
+        transitionTask(db, { taskId, expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
+        if (taskId === 'long-running') await longGate;
+        if (taskId === 'blocked-second') {
+          transitionTask(db, {
+            taskId,
+            expectedState: V4_STATES.RUNNING,
+            toState: V4_STATES.BLOCKED,
+            patch: { terminalReason: 'TEST_BLOCKED' },
+          });
+        } else {
+          transitionTask(db, { taskId, expectedState: V4_STATES.RUNNING, toState: V4_STATES.VALIDATING });
+          transitionTask(db, { taskId, expectedState: V4_STATES.VALIDATING, toState: V4_STATES.COMPLETE });
+        }
+        releaseSlotForTerminalTask(db, taskId);
+      },
+      onTaskTerminal: (event) => events.push(event),
+      now: () => new Date('2026-09-14T01:00:00Z'),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(events.some((event) => event.taskId === 'complete-first' && event.state === V4_STATES.COMPLETE), true);
+    assert.equal(events.some((event) => event.taskId === 'blocked-second' && event.state === V4_STATES.BLOCKED), true);
+    assert.equal(events.some((event) => event.taskId === 'long-running'), false);
+    assert.equal(getTask(db, 'long-running').state, V4_STATES.RUNNING);
+    assert.equal(new Set(events.map((event) => event.slotId)).size, 2);
+
+    releaseLong();
+    const settled = await running;
+    assert.equal(settled.length, 3);
+    assert.equal(events.length, 3);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('already-present no-mutation work is quarantined for verification while missing work remains recoverable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-already-present-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    for (const [taskId, issueNumber, ownedPath] of [
+      ['already-on-main', 2111, 'src/already.ts'],
+      ['still-missing', 2112, 'src/missing.ts'],
+    ]) {
+      insertReadyTask(db, {
+        taskId,
+        issueNumber,
+        stream: 'CORE_INTELLIGENCE',
+        baseSha: BASE_SHA,
+        contract: { fileOwnership: ownedPath, priority: 'P0', maxAttempts: 2 },
+      });
+      claimTask(db, { taskId, slotId: taskId === 'already-on-main' ? 'local-a' : 'local-b' });
+      transitionTask(db, { taskId, expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
+      transitionTask(db, {
+        taskId,
+        expectedState: V4_STATES.RUNNING,
+        toState: V4_STATES.FAILED,
+        patch: { terminalReason: 'V4_IMPLEMENTATION_NO_OWNED_MUTATION' },
+      });
+      releaseSlotForTerminalTask(db, taskId);
+    }
+
+    const classification = classifyAlreadyPresentNoMutationTasks({
+      db,
+      repoRoot: root,
+      mainRef: BASE_SHA,
+      pathExists: (_repoRoot, _mainRef, ownedPath) => ownedPath === 'src/already.ts',
+      now: new Date('2026-09-14T01:05:00Z'),
+    });
+    assert.deepEqual(classification.alreadyPresent, ['already-on-main']);
+    assert.deepEqual(classification.missing, ['still-missing']);
+
+    const snapshot = buildContinuitySnapshot({
+      db,
+      runtime: { head: BASE_SHA, latestHead: BASE_SHA, ancestorHeads: [], clean: true, idle: true, refreshState: 'CURRENT' },
+      now: new Date('2026-09-14T01:05:01Z'),
+      semanticProgressWindowMs: 30 * 60_000,
+      alreadyPresentTaskIds: classification.alreadyPresent,
+    });
+    const present = snapshot.tasks.find((task) => task.taskId === 'already-on-main');
+    assert.equal(present.retryForbidden, true);
+    assert.equal(present.terminalReason, 'ALREADY_PRESENT_REQUIRES_VERIFICATION');
+    const decision = decideDeliveryContinuity(snapshot);
+    assert.equal(decision.actions.some((action) => action.type === 'REPLAN_TERMINAL_TASK' && action.taskId === 'already-on-main'), false);
+    assert.equal(decision.actions.some((action) => action.type === 'REPLAN_TERMINAL_TASK' && action.taskId === 'still-missing'), true);
+
+    const events = db.prepare("SELECT type,payload_json FROM orchestration_events WHERE task_id='already-on-main' AND type='ALREADY_PRESENT_REQUIRES_VERIFICATION'").all();
+    assert.equal(events.length, 1);
+    assert.equal(JSON.parse(events[0].payload_json).verificationOwner, 'INDEPENDENT');
+    classifyAlreadyPresentNoMutationTasks({
+      db,
+      repoRoot: root,
+      mainRef: BASE_SHA,
+      pathExists: () => true,
+      now: new Date('2026-09-14T01:05:02Z'),
+    });
+    const repeated = db.prepare("SELECT COUNT(*) AS count FROM orchestration_events WHERE task_id='already-on-main' AND type='ALREADY_PRESENT_REQUIRES_VERIFICATION'").get();
+    assert.equal(repeated.count, 1);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
