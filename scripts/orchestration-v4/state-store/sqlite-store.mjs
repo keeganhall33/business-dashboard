@@ -294,6 +294,11 @@ const GITHUB_SYNC_TERMINAL_STATES = Object.freeze([
   V4_STATES.FAILED,
   V4_STATES.TIMED_OUT,
 ]);
+const GITHUB_SYNC_MARKER_VERSION = 'TERMINAL_EVIDENCE_V1';
+
+function githubSyncMarkerState(state) {
+  return `${state}:${GITHUB_SYNC_MARKER_VERSION}`;
+}
 
 export function listTasksPendingGithubSync(db, { limit = 1 } = {}) {
   if (!Number.isInteger(limit) || limit <= 0) throw new Error('V4_GITHUB_SYNC_LIMIT_INVALID');
@@ -302,14 +307,17 @@ export function listTasksPendingGithubSync(db, { limit = 1 } = {}) {
     FROM tasks
     LEFT JOIN github_sync_markers AS markers ON markers.task_id = tasks.task_id
     WHERE tasks.state IN ('COMPLETE','BLOCKED','FAILED','TIMED_OUT')
-      AND (markers.task_id IS NULL OR markers.last_state <> tasks.state)
+      AND (markers.task_id IS NULL OR markers.last_state <> tasks.state || ':' || '${GITHUB_SYNC_MARKER_VERSION}')
     ORDER BY tasks.updated_at DESC, tasks.task_id
     LIMIT ?
   `).all(limit);
 }
 
 export function getGithubSyncMarker(db, taskId) {
-  return db.prepare('SELECT task_id,last_state,synced_at FROM github_sync_markers WHERE task_id=?').get(taskId) ?? null;
+  const marker = db.prepare('SELECT task_id,last_state,synced_at FROM github_sync_markers WHERE task_id=?').get(taskId) ?? null;
+  if (!marker) return null;
+  const [lastState, syncVersion = null] = String(marker.last_state).split(':', 2);
+  return { ...marker, last_state: lastState, sync_version: syncVersion };
 }
 
 export function markGithubTaskStateSynced(db, { taskId, state, syncedAt = new Date() }) {
@@ -324,6 +332,6 @@ export function markGithubTaskStateSynced(db, { taskId, state, syncedAt = new Da
     ON CONFLICT(task_id) DO UPDATE SET
       last_state=excluded.last_state,
       synced_at=excluded.synced_at
-  `).run(taskId, state, nowIso(syncedAt));
+  `).run(taskId, githubSyncMarkerState(state), nowIso(syncedAt));
   return getGithubSyncMarker(db, taskId);
 }
