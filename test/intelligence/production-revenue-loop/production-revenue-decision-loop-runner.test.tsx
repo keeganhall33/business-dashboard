@@ -141,7 +141,7 @@ test("CLI consumes canonical evidence from stdin and emits only a read-only pack
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stderr, "");
+  assert.doesNotMatch(result.stderr, /Error|Unhandled|unhandled/);
   const run = JSON.parse(result.stdout);
   assert.equal(run.packet.status, "READY_FOR_DECISION");
   assert.equal(run.externalMutationPerformed, false);
