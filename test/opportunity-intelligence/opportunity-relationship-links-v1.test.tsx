@@ -148,7 +148,7 @@ test("opportunity detail renders compact supported relationship links and withho
   assert.equal(view.relatedRelationships.withheld.length, 1);
   assert.equal(view.verificationRequired, true);
   assert.match(html, /Related relationships/);
-  assert.match(html, /Evidence-supported CRM context/);
+  assert.match(html, /People and companies connected to this opportunity/);
   assert.match(html, /href="\/relationships\/people\/person-michelle"/);
   assert.match(html, /href="\/relationships\/companies\/company-public-school"/);
   assert.match(html, /1(?:<!-- -->)? relationship link(?:<!-- -->)? withheld pending verification/);
@@ -163,7 +163,7 @@ test("relationship section is absent when supplied evidence cannot support a can
 
   assert.doesNotMatch(html, /Related relationships/);
   assert.doesNotMatch(html, /href="\/relationships\/people\/person-michelle"/);
-  assert.match(html, /VERIFICATION REQUIRED/);
+  assert.match(html, /Confirm before outreach/);
 });
 
 test("free-text opportunity title and next move are never used to invent identity or href", () => {

@@ -11,7 +11,7 @@ export function ExecutiveIntelligenceCard({
   onOpenDecisionRoom?: () => void;
 }) {
   return (
-    <article id={card.id} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-300 hover:shadow-md focus-within:border-stone-400">
+    <article id={card.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md focus-within:border-slate-400">
       <div className="flex flex-wrap gap-2">
         <LightBadge label={card.state} tone={stateTone(card.state)} />
         <LightBadge label={card.priority} tone={priorityTone(card.priority)} />
@@ -22,29 +22,29 @@ export function ExecutiveIntelligenceCard({
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_190px]">
         <div>
-          <h3 className="text-lg font-semibold tracking-normal text-stone-950">{card.title}</h3>
-          <p className="mt-2 text-sm leading-6 text-stone-700">{card.summary}</p>
+          <h3 className="text-lg font-semibold tracking-normal text-slate-950">{card.title}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-700">{card.summary}</p>
         </div>
         <div className="grid gap-2">
           <VisualSignalPill label="Priority" value={card.priority.replaceAll("_", " ")} tone={priorityTone(card.priority)} />
           <VisualSignalPill label="Evidence state" value={card.state} tone={stateTone(card.state)} />
         </div>
       </div>
-      <div className="mt-4 grid gap-3 rounded-2xl border border-stone-200 bg-[#fffdf8] p-3 md:grid-cols-2">
+      <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-[#ffffff] p-3 md:grid-cols-2">
         <EvidenceBar label="Confidence" tone={confidenceTone(card.confidence)} emphasis={confidenceEmphasis(card.confidence)} />
         <EvidenceBar label="Urgency" tone={priorityTone(card.priority)} emphasis={priorityEmphasis(card.priority)} />
       </div>
-      <details className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-stone-950">WHY / EVIDENCE / NEXT ACTION</summary>
-        <div className="mt-3 space-y-3 text-sm leading-6 text-stone-700">
-          <p><strong className="text-stone-950">Why:</strong> {card.why}</p>
+      <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-950">WHY / EVIDENCE / NEXT ACTION</summary>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
+          <p><strong className="text-slate-950">Why:</strong> {card.why}</p>
           <div>
-            <strong className="text-stone-950">Evidence:</strong>
+            <strong className="text-slate-950">Evidence:</strong>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               {card.evidence.map((item) => <li key={item}>{item}</li>)}
             </ul>
           </div>
-          <p><strong className="text-stone-950">Next action:</strong> {card.next_action}</p>
+          <p><strong className="text-slate-950">Next action:</strong> {card.next_action}</p>
         </div>
       </details>
       {decisionRoomId && onOpenDecisionRoom ? (
@@ -52,7 +52,7 @@ export function ExecutiveIntelligenceCard({
           <button
             type="button"
             onClick={onOpenDecisionRoom}
-            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-900 shadow-sm"
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm"
             aria-controls={decisionRoomId}
           >
             Open Decision Room
@@ -60,7 +60,7 @@ export function ExecutiveIntelligenceCard({
           <a
             href={`#${decisionRoomId}`}
             onClick={onOpenDecisionRoom}
-            className="text-sm font-semibold text-stone-700 underline decoration-stone-300 underline-offset-4"
+            className="text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4"
             aria-controls={decisionRoomId}
           >
             Jump to grounded drill-down

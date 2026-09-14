@@ -15,11 +15,11 @@ function fmtMoney(cents: number | null | undefined) {
 
 function renderRec(rec: Recommendation) {
   return (
-    <div key={rec.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div key={rec.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-sm font-semibold text-white">{rec.title}</div>
-          <div className="text-xs text-zinc-400">
+          <div className="text-sm font-semibold text-slate-950">{rec.title}</div>
+          <div className="text-xs text-slate-600">
             {rec.category.replace(/_/g, " ")} • {rec.approval_level} • {rec.status}
           </div>
         </div>
@@ -31,12 +31,12 @@ function renderRec(rec: Recommendation) {
         </div>
       </div>
 
-      <div className="mt-3 text-sm text-zinc-300">Action: {rec.recommended_action}</div>
-      <div className="mt-2 text-sm text-zinc-400">Why: {rec.reason}</div>
+      <div className="mt-3 text-sm text-slate-700">Action: {rec.recommended_action}</div>
+      <div className="mt-2 text-sm text-slate-600">Why: {rec.reason}</div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Expected impact</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Expected impact</div>
           <div className="mt-2 space-y-2">
             <DefinitionRow label="Low" value={fmtMoney(rec.estimated_incremental_revenue.low_incremental_revenue_cents)} />
             <DefinitionRow label="Expected" value={fmtMoney(rec.estimated_incremental_revenue.expected_incremental_revenue_cents)} />
@@ -44,8 +44,8 @@ function renderRec(rec: Recommendation) {
             <DefinitionRow label="Horizon" value={rec.estimated_incremental_revenue.horizon} />
           </div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Risk / effort</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Risk / effort</div>
           <div className="mt-2 space-y-2">
             <DefinitionRow label="Risk" value={rec.risk} />
             <DefinitionRow label="Effort" value={rec.estimated_effort.level} />
@@ -58,10 +58,10 @@ function renderRec(rec: Recommendation) {
       {rec.prepared_assets.length ? (
         <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-3">
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Drafts prepared (NOT APPROVED)</div>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-800">
             {rec.prepared_assets.map((a) => (
               <li key={a.id}>
-                {a.label} — <span className="text-xs text-zinc-400">{a.kind}</span>
+                {a.label} — <span className="text-xs text-slate-600">{a.kind}</span>
               </li>
             ))}
           </ul>
@@ -75,7 +75,7 @@ export function RecommendationCenterPanel({ payload }: { payload: Recommendation
   if (!payload) {
     return (
       <VerticalSliceCard title="Recommendation Center" subtitle="Unavailable">
-        <div className="text-sm text-zinc-500">No recommendations available for this range.</div>
+        <div className="text-sm text-slate-500">No recommendations available for this range.</div>
       </VerticalSliceCard>
     );
   }
@@ -92,7 +92,7 @@ export function RecommendationCenterPanel({ payload }: { payload: Recommendation
           <Pill tone="zinc">Formula: {payload.recommendations[0]?.priority_score.formula ?? "(see priority-scoring.ts)"}</Pill>
         </div>
         {payload.guardrailsTriggered.length ? (
-          <div className="mt-3 text-xs text-zinc-500">Guardrails: {payload.guardrailsTriggered.join(" • ")}</div>
+          <div className="mt-3 text-xs text-slate-500">Guardrails: {payload.guardrailsTriggered.join(" • ")}</div>
         ) : null}
       </VerticalSliceCard>
 

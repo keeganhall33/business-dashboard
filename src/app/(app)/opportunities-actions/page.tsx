@@ -53,23 +53,23 @@ async function LiveOpportunitiesActionsPage({ searchParams }: PageProps) {
 function OpportunityPortfolioLoadingV1() {
   return (
     <main
-      className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8"
+      className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8"
       data-visual-mode="light"
       aria-label="Opportunities loading shell"
     >
       <div className="mx-auto max-w-[1600px]">
-        <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Mission Control · Opportunities</p>
+        <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Mission Control · Opportunities</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Opportunities</h1>
-          <p className="mt-2 text-sm leading-6 text-stone-600">Choose the right work before the window closes.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Choose the right work before the window closes.</p>
         </header>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm md:col-span-2 xl:col-span-3">
-            <p className="text-sm font-semibold text-stone-950">Loading canonical opportunity evidence</p>
-            <p className="mt-1 text-sm leading-6 text-stone-600">Current opportunity records are being resolved from the dashboard overview. No planning fixtures are substituted.</p>
-            <details className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <summary className="cursor-pointer text-sm font-semibold text-stone-800">Evidence loading detail</summary>
-              <p className="mt-2 text-sm leading-6 text-stone-600">UNKNOWN, STALE, and CONFLICTED evidence will remain explicit when the live portfolio loads.</p>
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 xl:col-span-3">
+            <p className="text-sm font-semibold text-slate-950">Loading canonical opportunity evidence</p>
+            <p className="mt-1 text-sm leading-6 text-slate-600">Current opportunity records are being resolved from the dashboard overview. No planning fixtures are substituted.</p>
+            <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-800">Evidence loading detail</summary>
+              <p className="mt-2 text-sm leading-6 text-slate-600">UNKNOWN, STALE, and CONFLICTED evidence will remain explicit when the live portfolio loads.</p>
             </details>
           </section>
         </div>

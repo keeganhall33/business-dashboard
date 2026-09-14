@@ -45,22 +45,22 @@ export function ExecutiveEventPortfolioV1({
 
   return (
     <main
-      className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8"
+      className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8"
       data-visual-mode="light"
       data-testid="executive-event-portfolio-v1"
       aria-label="Events and market windows"
     >
       <div className="mx-auto max-w-[1600px]">
-        <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
+        <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Mission Control · Timing
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
                 Events &amp; Market Windows
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 See what is coming, how much runway remains, and which windows deserve preparation before they become urgent.
               </p>
             </div>
@@ -82,19 +82,19 @@ export function ExecutiveEventPortfolioV1({
             {groups.map((group) => (
               <section
                 key={group.window}
-                className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-4 shadow-sm sm:p-5"
+                className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-4 shadow-sm sm:p-5"
                 aria-labelledby={`event-window-${group.window}`}
               >
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Planning window
                     </p>
-                    <h2 id={`event-window-${group.window}`} className="mt-1 text-lg font-semibold text-stone-950">
+                    <h2 id={`event-window-${group.window}`} className="mt-1 text-lg font-semibold text-slate-950">
                       {WINDOW_LABEL[group.window]}
                     </h2>
                   </div>
-                  <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-600">
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
                     {group.items.length}
                   </span>
                 </div>
@@ -109,11 +109,11 @@ export function ExecutiveEventPortfolioV1({
           </div>
         )}
 
-        <section className="mt-5 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm" aria-label="Event evidence policy">
+        <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Event evidence policy">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-stone-950">Evidence-first planning</p>
-              <p className="mt-1 text-xs leading-5 text-stone-600">
+              <p className="text-sm font-semibold text-slate-950">Evidence-first planning</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
                 Dates come from the canonical sports-milestone store. Access remains unknown unless supported, and uncertain evidence never becomes action certainty.
               </p>
             </div>
@@ -133,14 +133,14 @@ export function ExecutiveEventPortfolioV1({
 
 function EventCard({ item }: { item: ExecutiveEventPortfolioItemV1 }) {
   return (
-    <article className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm" data-testid="event-window-card">
+    <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="event-window-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             {item.eventDate ?? "Date unknown"}
           </p>
-          <h3 className="mt-1 text-base font-semibold leading-6 text-stone-950">{item.title}</h3>
-          <p className="mt-1 text-xs leading-5 text-stone-600">
+          <h3 className="mt-1 text-base font-semibold leading-6 text-slate-950">{item.title}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
             {[item.market, item.category].filter(Boolean).join(" · ") || "Context not yet verified"}
           </p>
         </div>
@@ -156,20 +156,20 @@ function EventCard({ item }: { item: ExecutiveEventPortfolioItemV1 }) {
         <Metric label="Partner potential" value={titleCase(item.partnershipPotential)} />
       </div>
 
-      <div className="mt-4 rounded-2xl border border-stone-200 bg-[#fffdf8] p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500">Next move</p>
-        <p className="mt-1 text-sm font-medium leading-5 text-stone-900">{item.nextMove}</p>
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-[#ffffff] p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Next move</p>
+        <p className="mt-1 text-sm font-medium leading-5 text-slate-900">{item.nextMove}</p>
       </div>
 
-      <details className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-        <summary className="cursor-pointer text-xs font-semibold text-stone-800">Evidence &amp; constraints</summary>
-        <div className="mt-3 space-y-3 text-xs leading-5 text-stone-600">
+      <details className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-slate-800">Evidence &amp; constraints</summary>
+        <div className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
           <p>
-            Confidence <strong className="text-stone-800">{titleCase(item.confidence)}</strong> · Historical significance{" "}
-            <strong className="text-stone-800">{titleCase(item.historicalSignificance)}</strong>
+            Confidence <strong className="text-slate-800">{titleCase(item.confidence)}</strong> · Historical significance{" "}
+            <strong className="text-slate-800">{titleCase(item.historicalSignificance)}</strong>
           </p>
           <div>
-            <p className="font-semibold text-stone-800">Evidence</p>
+            <p className="font-semibold text-slate-800">Evidence</p>
             {item.evidenceLabels.length ? (
               <ul className="mt-1 list-disc space-y-1 pl-4">
                 {item.evidenceLabels.map((label, index) => <li key={`${label}-${index}`}>{label}</li>)}
@@ -179,7 +179,7 @@ function EventCard({ item }: { item: ExecutiveEventPortfolioItemV1 }) {
             )}
           </div>
           <div>
-            <p className="font-semibold text-stone-800">Rights / access constraints</p>
+            <p className="font-semibold text-slate-800">Rights / access constraints</p>
             {item.rightsConsiderations.length ? (
               <ul className="mt-1 list-disc space-y-1 pl-4">
                 {item.rightsConsiderations.map((consideration, index) => <li key={`${consideration}-${index}`}>{consideration}</li>)}
@@ -188,7 +188,7 @@ function EventCard({ item }: { item: ExecutiveEventPortfolioItemV1 }) {
               <p className="mt-1">Access and rights are not established by this milestone record.</p>
             )}
           </div>
-          <p className="text-[11px] text-stone-500">Source references: {item.sourceIds.length || "Unknown"}</p>
+          <p className="text-[11px] text-slate-500">Source references: {item.sourceIds.length || "Unknown"}</p>
         </div>
       </details>
     </article>
@@ -197,27 +197,27 @@ function EventCard({ item }: { item: ExecutiveEventPortfolioItemV1 }) {
 
 function Pulse({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-28 rounded-2xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
-      <div className="text-xl font-semibold tabular-nums text-stone-950">{value}</div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">{label}</div>
+    <div className="min-w-28 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <div className="text-xl font-semibold tabular-nums text-slate-950">{value}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</div>
     </div>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">{label}</p>
-      <p className="mt-1 font-semibold text-stone-800">{value}</p>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+      <p className="mt-1 font-semibold text-slate-800">{value}</p>
     </div>
   );
 }
 
 function EmptyState() {
   return (
-    <section className="mt-5 rounded-[2rem] border border-dashed border-stone-300 bg-white p-6 shadow-sm" data-testid="events-empty-state">
-      <p className="text-base font-semibold text-stone-950">No verified event windows are currently available.</p>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+    <section className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-white p-6 shadow-sm" data-testid="events-empty-state">
+      <p className="text-base font-semibold text-slate-950">No verified event windows are currently available.</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
         The canonical milestone store returned no current records. Nothing is substituted from planning fixtures, and missing events are not treated as zero-value opportunities.
       </p>
     </section>

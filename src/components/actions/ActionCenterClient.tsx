@@ -21,7 +21,10 @@ async function postJson(url: string, body: unknown, idempotencyKey?: string) {
     body: JSON.stringify(body)
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const message = typeof json?.error === "string" ? json.error : typeof json?.error?.message === "string" ? json.error.message : `Request failed (${res.status})`;
+    throw new Error(message);
+  }
   return json;
 }
 
@@ -111,27 +114,26 @@ export function ActionCenterClient({ window: measurementWindow, recommendations,
     <div className="space-y-6">
       <VerticalSliceCard
         title="Action Center"
-        subtitle="Durable governed actions. This milestone persists and manages L0–L3, and can mark L4 approved internally only. No external execution."
+        subtitle="Review recommendations, prepare work, and approve changes before anything is carried out."
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="emerald">External side effects: 0</Pill>
-          <Pill tone="amber">Approving only changes internal status</Pill>
-          <Pill tone="zinc">Writes gated by ACTIONS_ENABLE_WRITES (non-production only)</Pill>
+          <Pill tone="emerald">Nothing is sent without approval</Pill>
+          <Pill tone="amber">Approval changes status only</Pill>
         </div>
         {error ? <div className="mt-3 text-sm text-rose-200">{error}</div> : null}
       </VerticalSliceCard>
 
-      <VerticalSliceCard title="Recommended next → create durable action" subtitle="Creates an internal action record with immutable evidence snapshot.">
+      <VerticalSliceCard title="Recommended next" subtitle="Turn a supported recommendation into a trackable action.">
         <div className="space-y-2">
           {topRecs.length ? (
             topRecs.map((rec) => (
-              <div key={rec.id} className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={rec.id} className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-white">{rec.title}</div>
-                  <div className="text-xs text-zinc-400">{rec.category} • {rec.approval_level} • score {rec.priority_score.overallScore}</div>
+                  <div className="text-sm font-semibold text-slate-950">{rec.title}</div>
+                  <div className="text-xs text-slate-500">{rec.category} · Confidence {rec.confidence}</div>
                 </div>
                 <button
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50"
+                  className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
                   disabled={busyId === rec.id}
                   onClick={() => createAction(rec)}
                 >
@@ -172,16 +174,16 @@ function Section(props: {
   const { title, items, busyId, on } = props;
   return (
     <div className="space-y-2">
-      <div className="text-sm font-semibold text-white/90">{title}</div>
+      <div className="text-sm font-semibold text-slate-900">{title}</div>
       {items.length ? (
         items.slice(0, 20).map((a) => (
-          <div key={a.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+          <div key={a.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-white">
+                <div className="text-sm font-semibold text-slate-950">
                   <a className="underline decoration-white/20 hover:decoration-white/60" href={`/act/actions/${a.id}`}>{a.title}</a>
                 </div>
-                <div className="mt-1 text-xs text-zinc-500">
+                <div className="mt-1 text-xs text-slate-500">
                   {a.category} • {a.channel} • confidence {a.confidence} • approval {a.approval_level} • level {a.current_level}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-zinc-500">
@@ -190,29 +192,28 @@ function Section(props: {
                   {a.risk ? <span>risk: {a.risk}</span> : null}
                   {a.expires_at ? <span>expires: {new Date(a.expires_at).toISOString().slice(0, 10)}</span> : null}
                 </div>
-                {a.evidence_snapshot_hash ? <div className="mt-2 text-[11px] text-zinc-500">Evidence hash: {a.evidence_snapshot_hash.slice(0, 12)}…</div> : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Pill tone={a.status === "awaiting_approval" ? "amber" : a.status === "approved" ? "rose" : "zinc"}>{a.status}</Pill>
                 {a.status === "recommended" ? (
-                  <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "prepare")}>
+                  <button className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "prepare")}>
                     Prepare
                   </button>
                 ) : null}
                 {a.status === "draft_prepared" ? (
-                  <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "ready")}>
+                    <button className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "ready")}>
                     Ready
                   </button>
                 ) : null}
                 {a.status === "awaiting_approval" ? (
                   <>
-                    <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "approve")}>
+                    <button className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "approve")}>
                       Approve
                     </button>
-                    <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "reject")}>
+                    <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "reject")}>
                       Reject
                     </button>
-                    <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "snooze")}>
+                    <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" disabled={busyId === a.id} onClick={() => on(a.id, "snooze")}>
                       Snooze
                     </button>
                   </>

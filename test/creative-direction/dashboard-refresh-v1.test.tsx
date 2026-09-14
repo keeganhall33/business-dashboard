@@ -71,7 +71,7 @@ test("Creative Direction workspace renders light-first dashboard-consumable sect
   ]) {
     assert.match(html, new RegExp(text.replace("/", "\\/")));
   }
-  assert.match(html, /bg-\[#f7f2ea\]/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
 });
 
 test("refresh states represent event weekly monthly and quarterly cadence deterministically", () => {

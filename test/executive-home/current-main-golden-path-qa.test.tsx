@@ -95,8 +95,8 @@ test("current-main truth-state acceptance preserves UNKNOWN STALE and CONFLICTED
 test("current-main executive shell remains light-mode-only and mobile usable", () => {
   const html = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} decisionRoom={EXECUTIVE_HOME_DECISION_ROOM_DRILLDOWN_FIXTURE_V1} />);
 
-  assert.match(html, /bg-\[#f8f4ec\]/);
-  assert.match(html, /text-stone-950/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
+  assert.match(html, /text-slate-950/);
   assert.match(html, /flex w-full max-w-full flex-wrap gap-2/);
   assert.match(html, /grid gap-3 md:grid-cols-3 xl:grid-cols-6/);
   assert.match(html, /data-testid="specialist-production-unavailable"/);

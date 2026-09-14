@@ -129,3 +129,23 @@ test("canonical CRM loader composes Mercedes people, company, activity, follow-u
   assert.deepEqual(mercedes?.keyPeople, ["Michelle", "Melody"]);
   assert.deepEqual(mercedes?.activeOpportunities, ["Mercedes-Benz Masters collaboration"]);
 });
+
+test("CRM loader includes people and companies already present in the opportunity pipeline", async () => {
+  const index = await loadCrmDirectoryIndexV1({
+    loadActiveEntities: async () => [],
+    loadRelationshipStates: async () => [],
+    loadActivities: async () => [],
+    loadFollowUps: async () => [],
+    loadOpportunityLinks: async () => [],
+    loadOpportunities: async () => [
+      { id: "opp-pentel", name: "Pentel artist collaboration", organization: "Pentel", status: "research", next_step: "Confirm the creative lead", next_step_due_at: "2026-09-30T00:00:00.000Z", value_estimate: 25000, contact_name: "Brooke Allen", contact_role: "Partnerships", source: "opportunity pipeline" },
+      { id: "opp-arena", name: "Arena Club partnership", organization: "Arena Club", status: "qualified", next_step: "Prepare introduction", next_step_due_at: null, value_estimate: null, contact_name: "Brian Lee", contact_role: null, source: "opportunity pipeline" }
+    ]
+  });
+
+  assert.deepEqual(index.people.map((person) => person.name), ["Brian Lee", "Brooke Allen"]);
+  assert.deepEqual(index.companies.map((company) => company.name), ["Arena Club", "Pentel"]);
+  assert.equal(index.people.find((person) => person.name === "Brooke Allen")?.companyName, "Pentel");
+  assert.equal(index.companies.find((company) => company.name === "Pentel")?.supportedValue, "$25,000");
+  assert.match(index.people[0]?.detailHref ?? "", /pipeline-person/);
+});

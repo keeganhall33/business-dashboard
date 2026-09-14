@@ -36,11 +36,11 @@ export function ActVerticalSlice({ data }: { data: DashboardOverviewResponse }) 
         {actionModel ? (
           <div className="space-y-3">
             {actionModel.action_levels.map((lvl) => (
-              <div key={lvl.level} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div key={lvl.level} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-white">{lvl.level} — {lvl.name.replace(/_/g, " ")}</div>
-                    <div className="mt-1 text-sm text-zinc-300">{lvl.definition}</div>
+                    <div className="text-sm font-semibold text-slate-950">{lvl.level} — {lvl.name.replace(/_/g, " ")}</div>
+                    <div className="mt-1 text-sm text-slate-700">{lvl.definition}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <Pill tone={lvl.approval_required ? "amber" : "zinc"}>approval: {lvl.approval_required ? "required" : "none"}</Pill>
@@ -49,12 +49,12 @@ export function ActVerticalSlice({ data }: { data: DashboardOverviewResponse }) 
                 </div>
               </div>
             ))}
-            <div className="text-xs text-zinc-500">
+            <div className="text-xs text-slate-500">
               Prohibited transitions: {(actionModel.prohibited_transitions ?? []).map((p) => p.join("→")).join(", ") || "—"}
             </div>
           </div>
         ) : (
-          <div className="text-sm text-zinc-500">Action model artifact unavailable in runtime environment.</div>
+          <div className="text-sm text-slate-500">Action model artifact unavailable in runtime environment.</div>
         )}
       </VerticalSliceCard>
 
@@ -62,22 +62,22 @@ export function ActVerticalSlice({ data }: { data: DashboardOverviewResponse }) 
         {approvalModel ? (
           <div className="grid gap-3 md:grid-cols-2">
             {Object.entries(approvalModel.approval_classes).map(([key, val]) => (
-              <div key={key} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div key={key} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-white">{key.replace(/_/g, " ")}</div>
+                  <div className="text-sm font-semibold text-slate-950">{key.replace(/_/g, " ")}</div>
                   <Pill tone="zinc">class</Pill>
                 </div>
-                <div className="mt-2 text-sm text-zinc-300">{val.purpose}</div>
+                <div className="mt-2 text-sm text-slate-700">{val.purpose}</div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-sm text-zinc-500">Approval model artifact unavailable in runtime environment.</div>
+          <div className="text-sm text-slate-500">Approval model artifact unavailable in runtime environment.</div>
         )}
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Demonstration only" subtitle="Prepared-action packaging is shown conceptually; no real platform writes occur.">
-        <div className="space-y-2 text-sm text-zinc-300">
+        <div className="space-y-2 text-sm text-slate-700">
           <DefinitionRow label="Execution" value="Disabled in Milestone 8" />
           <DefinitionRow label="Credentials" value="Read-only for analytics; no execution credentials used" />
           <DefinitionRow label="Audit" value="All future executions must write pre/post audit records" />

@@ -20,8 +20,8 @@ export default async function DataPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-white">Data & Integrations</h1>
-        <p className="text-sm text-zinc-400">Source status, freshness, coverage, and known limitations.</p>
+        <h1 className="text-2xl font-semibold text-slate-950">Data & Integrations</h1>
+        <p className="text-sm text-slate-600">Source status, freshness, coverage, and known limitations.</p>
       </header>
       <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
       <DataIntegrationsVerticalSlice data={sanitized} />

@@ -1,14 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AskJeevesAnswerV1 } from "@/lib/ask-jeeves/answer-engine-v1";
+import { askJeevesActionV1 } from "@/app/(app)/ask-jeeves/actions";
 
 type SpeechRecognitionLike = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> }) => void) | null;
   onerror: (() => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -20,24 +21,30 @@ type SpeechWindow = Window & typeof globalThis & {
   webkitSpeechRecognition?: new () => SpeechRecognitionLike;
 };
 
-export function AskJeevesWorkspaceV1() {
-  const [question, setQuestion] = useState("");
+export function AskJeevesWorkspaceV1({ initialQuestion = "" }: { initialQuestion?: string }) {
+  const [question, setQuestion] = useState(initialQuestion);
   const [answer, setAnswer] = useState<AskJeevesAnswerV1 | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
+  const voiceBase = useRef("");
+  const initialQuestionHandled = useRef(false);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!question.trim() || loading) return;
+  useEffect(() => () => {
+    recognition.current?.stop();
+  }, []);
+
+  async function runQuestion(value: string) {
+    const nextQuestion = value.trim();
+    if (!nextQuestion || loading) return;
     setLoading(true);
     setError(null);
+    setAnswer(null);
     try {
-      const response = await fetch("/api/ask-jeeves", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
-      const payload = await response.json() as AskJeevesAnswerV1 & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Jeeves could not answer that question.");
-      setAnswer(payload);
+      const result = await askJeevesActionV1(nextQuestion);
+      if (!result.ok) throw new Error(result.message);
+      setAnswer(result.answer);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Jeeves could not answer that question.");
     } finally {
@@ -45,9 +52,23 @@ export function AskJeevesWorkspaceV1() {
     }
   }
 
+  useEffect(() => {
+    if (!initialQuestion || initialQuestionHandled.current) return;
+    initialQuestionHandled.current = true;
+    void runQuestion(initialQuestion);
+    // This should run only for the question supplied by the server on first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runQuestion(question);
+  }
+
   function toggleVoice() {
     if (listening) {
       recognition.current?.stop();
+      setListening(false);
       return;
     }
     const speechWindow = window as SpeechWindow;
@@ -58,12 +79,19 @@ export function AskJeevesWorkspaceV1() {
     }
     const instance = new Recognition();
     recognition.current = instance;
-    instance.continuous = false;
-    instance.interimResults = false;
+    voiceBase.current = question.trim();
+    instance.continuous = true;
+    instance.interimResults = true;
     instance.lang = "en-US";
-    instance.onresult = (event) => setQuestion(event.results[0]?.[0]?.transcript ?? "");
+    instance.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
+      setQuestion([voiceBase.current, transcript.trim()].filter(Boolean).join(" "));
+    };
     instance.onerror = () => setError("I could not hear that clearly. Please try again or type your question.");
-    instance.onend = () => setListening(false);
+    instance.onend = () => {
+      setListening(false);
+    };
     setError(null);
     setListening(true);
     instance.start();
@@ -82,7 +110,10 @@ export function AskJeevesWorkspaceV1() {
           <label htmlFor="jeeves-question" className="sr-only">Ask Jeeves a question</label>
           <textarea id="jeeves-question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} maxLength={500} placeholder="What should I focus on next?" className="w-full resize-none rounded-2xl bg-slate-50 px-4 py-4 text-base leading-7 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2" />
           <div className="mt-3 flex items-center justify-between gap-3">
-            <button type="button" onClick={toggleVoice} aria-pressed={listening} className={`rounded-full border px-4 py-2 text-sm font-semibold ${listening ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"}`}>{listening ? "Listening…" : "Speak"}</button>
+            <div>
+              <button type="button" onClick={toggleVoice} aria-pressed={listening} className={`rounded-full border px-4 py-2 text-sm font-semibold ${listening ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"}`}>{listening ? "Stop listening" : "Speak"}</button>
+              {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening now. Press Stop when you are finished.</p> : null}
+            </div>
             <button type="submit" disabled={!question.trim() || loading} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Checking data…" : "Send"}</button>
           </div>
         </form>

@@ -132,7 +132,7 @@ test("Executive Home production-shaped render is mobile-safe and light-first", (
   const { home, decisionRoom } = buildExecutiveHomeFromDashboardOverviewV1(dashboard);
   const html = renderToString(<ExecutiveHomeShell data={home} decisionRoom={decisionRoom} />);
 
-  assert.match(html, /bg-\[#f8f4ec\]/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
   assert.match(html, /grid grid-cols-2 gap-3 lg:grid-cols-4/);
   assert.match(html, /flex w-full max-w-full flex-wrap/);
   assert.match(html, /grid gap-4 lg:grid-cols-2/);

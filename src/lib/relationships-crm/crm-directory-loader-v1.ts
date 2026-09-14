@@ -31,7 +31,18 @@ type RelationshipRowV1 = { contact_entity_id: string; primary_state: string; sta
 type ActivityRowV1 = { contact_entity_id: string; occurred_at: string; summary: string; truth_state: string };
 type FollowUpRowV1 = { contact_entity_id: string; opportunity_id: string | null; due_at: string | null; status: string; truth_state: string; freshness_state: string };
 type OpportunityLinkRowV1 = { opportunity_id: string; entity_id: string; role: string; truth_state: string; freshness_state: string };
-type OpportunityRowV1 = { id: string; name: string; organization: string | null; status: string; next_step: string | null; value_estimate: number | null };
+type OpportunityRowV1 = {
+  id: string;
+  name: string;
+  organization: string | null;
+  status: string;
+  next_step: string | null;
+  next_step_due_at: string | null;
+  value_estimate: number | null;
+  contact_name: string | null;
+  contact_role: string | null;
+  source: string | null;
+};
 
 function isActiveCanonicalEntityRowV1(value: unknown): value is CanonicalEntityRowV1 {
   if (value == null || typeof value !== "object") return false;
@@ -89,7 +100,7 @@ async function queryOpportunityLinksV1(): Promise<readonly unknown[]> {
 
 async function queryOpportunitiesV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient().from("opportunity_pipeline")
-    .select("id,name,organization,status,next_step,value_estimate").limit(5_000);
+    .select("id,name,organization,status,next_step,next_step_due_at,value_estimate,contact_name,contact_role,source").limit(5_000);
   if (error) throw error;
   return data ?? [];
 }
@@ -128,6 +139,48 @@ function money(value: number | null | undefined): string | null {
   return typeof value === "number" && Number.isFinite(value)
     ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value)
     : null;
+}
+
+function normalizedName(value: string | null | undefined): string {
+  return value?.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ?? "";
+}
+
+function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[]): CrmPersonDirectoryRecordV1 {
+  const primary = opportunities[0];
+  const id = `pipeline-person:${normalizedName(name)}`;
+  return {
+    id,
+    name,
+    title: text(primary?.contact_role),
+    companyName: text(primary?.organization),
+    contactChannels: [],
+    relationshipState: humanize(text(primary?.status)) ?? "Opportunity contact",
+    relationshipStrength: "UNKNOWN",
+    lastTouchAt: null,
+    nextFollowUpAt: text(primary?.next_step_due_at),
+    activeOpportunity: text(primary?.name),
+    activeAsk: text(primary?.next_step),
+    evidenceState: "KNOWN",
+    detailHref: crmPersonDetailHrefV1(id)
+  };
+}
+
+function pipelineCompanyRecordV1(name: string, opportunities: OpportunityRowV1[]): CrmCompanyDirectoryRecordV1 {
+  const id = `pipeline-company:${normalizedName(name)}`;
+  const valued = opportunities.find((opportunity) => opportunity.value_estimate != null);
+  return {
+    id,
+    name,
+    category: null,
+    keyPeople: [...new Set(opportunities.map((opportunity) => text(opportunity.contact_name)).filter((value): value is string => Boolean(value)))],
+    relationshipState: opportunities.some((opportunity) => !/closed|lost|archived/i.test(opportunity.status)) ? "Active opportunity" : humanize(text(opportunities[0]?.status)),
+    activeOpportunities: opportunities.map((opportunity) => opportunity.name),
+    lastActivityAt: null,
+    nextMove: opportunities.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
+    supportedValue: money(valued?.value_estimate),
+    evidenceState: "KNOWN",
+    detailHref: crmCompanyDetailHrefV1(id)
+  };
 }
 
 function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
@@ -212,8 +265,7 @@ export async function loadCrmDirectoryIndexV1(
       return organizationLink ? entityNames.get(organizationLink.entity_id) ?? null : linkedOpportunities(personId)[0]?.organization ?? null;
     }
 
-    return buildCrmDirectoryIndexV1({
-      people: activeRows
+    const canonicalPeople = activeRows
         .filter((row) => row.entity_type === "person")
         .map((row) => toPersonRecordV1(row, {
           relationship: relationships.find((item) => item.contact_entity_id === row.entity_id),
@@ -221,8 +273,8 @@ export async function loadCrmDirectoryIndexV1(
           followUp: followUps.find((item) => item.contact_entity_id === row.entity_id),
           opportunity: linkedOpportunities(row.entity_id)[0],
           companyName: linkedCompanyName(row.entity_id)
-        })),
-      companies: activeRows
+        }));
+    const canonicalCompanies = activeRows
         .filter((row) => row.entity_type === "organization")
         .map((row) => {
           const companyLinks = links.filter((link) => link.entity_id === row.entity_id);
@@ -232,7 +284,34 @@ export async function loadCrmDirectoryIndexV1(
           const companyOpportunities = [...opportunityIds].map((id) => opportunitiesById.get(id)).filter((value): value is OpportunityRowV1 => Boolean(value));
           const latestActivityAt = activities.find((activity) => links.some((link) => link.entity_id === activity.contact_entity_id && opportunityIds.has(String(link.opportunity_id))))?.occurred_at ?? null;
           return toCompanyRecordV1(row, { people: [...new Set(people)], opportunities: companyOpportunities, latestActivityAt });
-        })
+        });
+
+    const canonicalPersonNames = new Set(canonicalPeople.map((person) => normalizedName(person.name)));
+    const canonicalCompanyNames = new Set(canonicalCompanies.map((company) => normalizedName(company.name)));
+    const pipelinePeople = new Map<string, { name: string; opportunities: OpportunityRowV1[] }>();
+    const pipelineCompanies = new Map<string, { name: string; opportunities: OpportunityRowV1[] }>();
+
+    for (const opportunity of opportunities) {
+      const personName = text(opportunity.contact_name);
+      const personKey = normalizedName(personName);
+      if (personName && personKey && !canonicalPersonNames.has(personKey)) {
+        const entry = pipelinePeople.get(personKey) ?? { name: personName, opportunities: [] };
+        entry.opportunities.push(opportunity);
+        pipelinePeople.set(personKey, entry);
+      }
+
+      const companyName = text(opportunity.organization);
+      const companyKey = normalizedName(companyName);
+      if (companyName && companyKey && !canonicalCompanyNames.has(companyKey)) {
+        const entry = pipelineCompanies.get(companyKey) ?? { name: companyName, opportunities: [] };
+        entry.opportunities.push(opportunity);
+        pipelineCompanies.set(companyKey, entry);
+      }
+    }
+
+    return buildCrmDirectoryIndexV1({
+      people: [...canonicalPeople, ...[...pipelinePeople.values()].map((entry) => pipelinePersonRecordV1(entry.name, entry.opportunities))],
+      companies: [...canonicalCompanies, ...[...pipelineCompanies.values()].map((entry) => pipelineCompanyRecordV1(entry.name, entry.opportunities))]
     });
   } catch {
     return EMPTY_CRM_DIRECTORY_INDEX_V1;

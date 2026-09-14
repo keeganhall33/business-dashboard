@@ -95,7 +95,7 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
         title="Workflow integrity"
         subtitle="Trust context for this explanation."
       >
-        <div data-testid="workflow-integrity-unavailable" className="text-sm text-zinc-400">
+        <div data-testid="workflow-integrity-unavailable" className="text-sm text-slate-600">
           Workflow integrity unavailable for this explanation. No workflow summary was supplied.
         </div>
       </VerticalSliceCard>
@@ -123,14 +123,14 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
                 Budget: {summary.budget.state}
               </Pill>
             </div>
-            <p className="mt-3 max-w-3xl text-sm text-zinc-200">{trustStatement(summary)}</p>
+            <p className="mt-3 max-w-3xl text-sm text-slate-800">{trustStatement(summary)}</p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left sm:min-w-48 sm:text-right">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Evidence coverage</div>
-            <div className="mt-1 text-xl font-semibold text-white">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left sm:min-w-48 sm:text-right">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Evidence coverage</div>
+            <div className="mt-1 text-xl font-semibold text-slate-950">
               {summary.acceptedNodeCount} / {summary.expectedNodeCount}
             </div>
-            <div className="text-xs text-zinc-400">accepted / expected branches</div>
+            <div className="text-xs text-slate-600">accepted / expected branches</div>
           </div>
         </div>
 
@@ -148,22 +148,22 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
           data-testid="workflow-integrity-limitation"
           className={isHealthy(summary) ? "rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4" : "rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4"}
         >
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
             {isHealthy(summary) ? "Trust result" : "Most important limitation"}
           </div>
-          <div className="mt-1 text-sm text-zinc-200">
+          <div className="mt-1 text-sm text-slate-800">
             {isHealthy(summary) ? "No material workflow-integrity limitation reported." : primaryLimitation(summary)}
           </div>
         </div>
 
-        <details data-testid="workflow-integrity-details" className="group rounded-2xl border border-white/10 bg-black/20">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        <details data-testid="workflow-integrity-details" className="group rounded-2xl border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
             Show bounded workflow detail
           </summary>
-          <div className="space-y-5 border-t border-white/10 p-4">
+          <div className="space-y-5 border-t border-slate-200 p-4">
             <section aria-labelledby="workflow-inputs-heading">
-              <h3 id="workflow-inputs-heading" className="text-sm font-semibold text-white">Evidence inputs</h3>
-              <div className="mt-2 space-y-1 text-xs text-zinc-400">
+              <h3 id="workflow-inputs-heading" className="text-sm font-semibold text-slate-950">Evidence inputs</h3>
+              <div className="mt-2 space-y-1 text-xs text-slate-600">
                 <div>Expected: {sourceList(summary.evidenceCoverage.expectedSources)}</div>
                 <div>Observed: {sourceList(summary.evidenceCoverage.observedSources)}</div>
                 <div>Missing: {sourceList(summary.evidenceCoverage.missingSources)}</div>
@@ -172,8 +172,8 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
             </section>
 
             <section aria-labelledby="workflow-verifier-heading">
-              <h3 id="workflow-verifier-heading" className="text-sm font-semibold text-white">Verification and anchors</h3>
-              <div className="mt-2 space-y-1 text-xs text-zinc-400">
+              <h3 id="workflow-verifier-heading" className="text-sm font-semibold text-slate-950">Verification and anchors</h3>
+              <div className="mt-2 space-y-1 text-xs text-slate-600">
                 <div>Verifier lenses failed: {summary.verifier.failedLenses.length ? summary.verifier.failedLenses.join(", ") : "None"}</div>
                 <div>Rejected canonical references: {summary.anchors.rejectedCanonicalRefs.length}</div>
                 <div>Unique evidence identities: {summary.anchors.uniqueEvidenceIdentityCount}</div>
@@ -181,8 +181,8 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
             </section>
 
             <section aria-labelledby="workflow-waves-heading">
-              <h3 id="workflow-waves-heading" className="text-sm font-semibold text-white">Planned stages</h3>
-              <p className="mt-1 text-xs text-zinc-500">
+              <h3 id="workflow-waves-heading" className="text-sm font-semibold text-slate-950">Planned stages</h3>
+              <p className="mt-1 text-xs text-slate-500">
                 Planned stages show dependency eligibility only. They do not claim observed concurrency.
               </p>
               <div className="mt-3 space-y-3">
@@ -192,8 +192,8 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
                   renderedNodeCount += nodeIds.length;
                   if (!nodeIds.length) return null;
                   return (
-                    <div key={wave.index} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                    <div key={wave.index} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
                         Stage {wave.index + 1}
                       </h4>
                       <ul className="mt-2 space-y-2">
@@ -203,14 +203,14 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
                             return <li key={nodeId} className="text-xs text-rose-200">{nodeId}: result MISSING</li>;
                           }
                           return (
-                            <li key={node.nodeId} className="flex flex-col gap-1 rounded-lg border border-white/5 p-2 sm:flex-row sm:items-center sm:justify-between">
-                              <span className="text-xs font-medium text-zinc-200">{node.nodeId}</span>
+                            <li key={node.nodeId} className="flex flex-col gap-1 rounded-lg border border-slate-100 p-2 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="text-xs font-medium text-slate-800">{node.nodeId}</span>
                               <span className="flex flex-wrap items-center gap-2">
                                 <Pill tone={node.state === "ACCEPTED" ? "emerald" : node.state === "REJECTED" ? "rose" : "amber"}>
                                   {node.state}
                                 </Pill>
                                 <Pill tone={truthTone(node.truthState)}>{node.truthState}</Pill>
-                                <span className="text-xs text-zinc-500">{node.evidenceCount} evidence item(s)</span>
+                                <span className="text-xs text-slate-500">{node.evidenceCount} evidence item(s)</span>
                               </span>
                             </li>
                           );
@@ -221,7 +221,7 @@ export function WorkflowRunIntegrityPanelV1({ summary }: { summary: ExplainWorkf
                 })}
               </div>
               {summary.nodes.length > renderedNodeCount || summary.plannedWaves.length > waves.length ? (
-                <div className="mt-3 text-xs text-zinc-500">
+                <div className="mt-3 text-xs text-slate-500">
                   Additional workflow detail omitted to keep this executive view bounded.
                 </div>
               ) : null}

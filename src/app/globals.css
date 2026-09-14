@@ -1,18 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  /* Tesla-grade: luminous glass + electric accents */
-  --ui-bg: #050712;
-  --ui-bg-2: #070a18;
-  --ui-fg: #f7fbff;
-  --ui-muted: rgba(247, 251, 255, 0.62);
+  --ui-bg: #f4f7fb;
+  --ui-bg-2: #eef3f9;
+  --ui-fg: #0f172a;
+  --ui-muted: #64748b;
 
-  --ui-border: rgba(255, 255, 255, 0.10);
-  --ui-border-2: rgba(255, 255, 255, 0.16);
+  --ui-border: #dbe4ef;
+  --ui-border-2: #bfcee0;
 
-  --ui-surface: rgba(10, 12, 26, 0.72);
-  --ui-surface-2: rgba(10, 12, 26, 0.52);
-  --ui-glass: rgba(255, 255, 255, 0.06);
+  --ui-surface: #ffffff;
+  --ui-surface-2: #f8fafc;
+  --ui-glass: #ffffff;
 
   --ui-accent: #38bdf8; /* electric blue */
   --ui-accent-2: #a78bfa; /* violet */
@@ -20,8 +19,8 @@
   --ui-warning: #fbbf24;
   --ui-danger: #fb7185;
 
-  --ui-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
-  --ui-shadow-glow: 0 0 0 1px rgba(56, 189, 248, 0.20), 0 22px 70px rgba(56, 189, 248, 0.10);
+  --ui-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  --ui-shadow-glow: 0 0 0 1px rgba(37, 99, 235, 0.18), 0 16px 44px rgba(37, 99, 235, 0.10);
 
   /* Spacing / sizing tokens (8pt base) */
   --space-0: 0px;
@@ -86,10 +85,7 @@
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 20% 0%, rgba(56, 189, 248, 0.10), transparent 60%),
-    radial-gradient(900px 520px at 90% 10%, rgba(167, 139, 250, 0.10), transparent 55%),
-    linear-gradient(180deg, var(--ui-bg), var(--ui-bg-2));
+  background: var(--ui-bg);
   color: var(--foreground);
   font-size: var(--font-body);
   line-height: var(--line-height-default);
@@ -106,9 +102,8 @@ body {
   scroll-behavior: smooth;
 }
 
-/* Components: luminous glass surfaces */
 .ui-glass {
-  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+  background: var(--ui-surface);
   border: 1px solid var(--ui-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);

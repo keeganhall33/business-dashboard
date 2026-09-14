@@ -42,7 +42,7 @@ export function FunnelKitCampaignReviewCard({ campaign }: { campaign: FunnelKitC
       </div>
 
       <div className="mt-6 space-y-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Audience (planned)</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Audience (planned)</div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <DefinitionRow label="Include tags" value={campaign.audience.include_tags.length ? campaign.audience.include_tags.join(", ") : "None"} />
           <DefinitionRow label="Exclude tags" value={campaign.audience.exclude_tags.length ? campaign.audience.exclude_tags.join(", ") : "None"} />
@@ -58,8 +58,8 @@ export function FunnelKitCampaignReviewCard({ campaign }: { campaign: FunnelKitC
       </div>
 
       <div className="mt-6 space-y-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Assets (draft/test)</div>
-        <ul className="space-y-1 text-sm text-zinc-300">
+        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Assets (draft/test)</div>
+        <ul className="space-y-1 text-sm text-slate-700">
           {campaign.assets.automations.map((a) => (
             <li key={`auto:${a.name}`}>
               Automation: {a.name} · {a.status}
@@ -75,7 +75,7 @@ export function FunnelKitCampaignReviewCard({ campaign }: { campaign: FunnelKitC
 
       {(campaign.blockers.length > 0 || campaign.unknowns.length > 0) && (
         <div className="mt-6 space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500">Visibility</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Visibility</div>
           {campaign.blockers.length > 0 && (
             <div className="text-sm text-rose-200">
               <div className="font-semibold">Blockers</div>

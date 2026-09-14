@@ -18,24 +18,24 @@ function renderList(items: Opportunity[]) {
   return items.length ? (
     <div className="space-y-2">
       {items.map((o) => (
-        <div key={o.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div key={o.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="text-sm font-semibold text-white">{o.title}</div>
-              <div className="text-xs text-zinc-400">{o.type.replace(/_/g, " ")}</div>
+              <div className="text-sm font-semibold text-slate-950">{o.title}</div>
+              <div className="text-xs text-slate-600">{o.type.replace(/_/g, " ")}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
               <Pill tone={toneForConfidence(o.confidence)}>{o.confidence.replace(/_/g, " ")}</Pill>
               <Pill tone="zinc">Upside: {scoreHint(o)}</Pill>
             </div>
           </div>
-          <div className="mt-2 text-sm text-zinc-300">Action: {o.recommended_action}</div>
-          <div className="mt-2 text-xs text-zinc-500">Rule: {o.detection_rule}</div>
+          <div className="mt-2 text-sm text-slate-700">Action: {o.recommended_action}</div>
+          <div className="mt-2 text-xs text-slate-500">Rule: {o.detection_rule}</div>
         </div>
       ))}
     </div>
   ) : (
-    <div className="text-sm text-zinc-500">None</div>
+    <div className="text-sm text-slate-500">None</div>
   );
 }
 
@@ -43,7 +43,7 @@ export function OpportunityCenterPanel({ payload }: { payload: OpportunitiesResp
   if (!payload) {
     return (
       <VerticalSliceCard title="Opportunity Center" subtitle="Unavailable">
-        <div className="text-sm text-zinc-500">No opportunities available for this range.</div>
+        <div className="text-sm text-slate-500">No opportunities available for this range.</div>
       </VerticalSliceCard>
     );
   }
@@ -78,7 +78,7 @@ export function OpportunityCenterPanel({ payload }: { payload: OpportunitiesResp
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Waiting for data" subtitle="Blocked by insufficient evidence">
-        {waiting.length ? renderList(waiting) : <div className="text-sm text-zinc-500">No blocked items.</div>}
+        {waiting.length ? renderList(waiting) : <div className="text-sm text-slate-500">No blocked items.</div>}
       </VerticalSliceCard>
     </div>
   );

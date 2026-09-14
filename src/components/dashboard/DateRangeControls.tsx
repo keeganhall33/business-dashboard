@@ -125,9 +125,9 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
     <section className="ui-glass rounded-3xl p-4 sm:p-6">
       <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Timeframe</div>
-          <div className="mt-1 text-lg font-semibold text-zinc-100">{formatRangeLabel(startDate, endDate)}</div>
-          <p className="mt-1 text-sm text-zinc-400">Choose any preset or custom dates. Comparison data updates automatically.</p>
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Timeframe</div>
+          <div className="mt-1 text-lg font-semibold text-slate-950">{formatRangeLabel(startDate, endDate)}</div>
+          <p className="mt-1 text-sm text-slate-600">Choose a preset or custom dates. Comparisons update automatically.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -139,8 +139,8 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
               data-testid={`range-preset-${option.value}`}
               className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] transition ${
                 activePreset === option.value
-                  ? "bg-sky-500 text-white shadow-[0_15px_35px_rgba(56,189,248,0.35)]"
-                  : "bg-zinc-900/70 text-zinc-300 hover:bg-zinc-900 hover:text-white"
+                  ? "bg-blue-700 text-white shadow-sm"
+                  : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50"
               }`}
             >
               {option.label}
@@ -153,8 +153,8 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
             data-testid="range-preset-custom"
             className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] transition ${
               activePreset === "custom"
-                ? "bg-sky-500 text-white shadow-[0_15px_35px_rgba(56,189,248,0.35)]"
-                : "bg-zinc-900/70 text-zinc-300 hover:bg-zinc-900 hover:text-white"
+                ? "bg-blue-700 text-white shadow-sm"
+                : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50"
             }`}
           >
             {selectedRange?.from && selectedRange?.to
@@ -167,7 +167,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
               type="button"
               onClick={resetToDefault}
               data-testid="range-custom-reset"
-              className="rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300 hover:bg-black/30"
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 hover:bg-slate-50"
             >
               Reset
             </button>
@@ -176,10 +176,10 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
 
         {calendarOpen && (
           <>
-            <div className="fixed inset-0 z-10 bg-black/40" onClick={cancelPendingRange} />
+            <div className="fixed inset-0 z-10 bg-blue-700/20" onClick={cancelPendingRange} />
             <div
               ref={calendarRef}
-              className="absolute right-0 top-full z-20 mt-3 rounded-2xl border border-zinc-800 bg-zinc-900/95 p-4 shadow-2xl"
+              className="absolute right-0 top-full z-20 mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl"
             >
               <DayPicker
                 mode="range"
@@ -187,7 +187,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
                 onSelect={handleRangeSelect}
                 weekStartsOn={1}
                 numberOfMonths={2}
-                className="text-sm text-zinc-100"
+                className="text-sm text-slate-800"
                 classNames={dayPickerClasses}
                 captionLayout="dropdown"
               />
@@ -196,7 +196,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
                   type="button"
                   onClick={cancelPendingRange}
                   data-testid="range-custom-cancel"
-                  className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300 hover:bg-zinc-800"
+                  className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 hover:bg-slate-50"
                 >
                   Cancel
                 </button>
@@ -205,7 +205,7 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
                   disabled={!pendingRange?.from || !pendingRange?.to}
                   onClick={applyPendingRange}
                   data-testid="range-custom-apply"
-                  className="rounded-full bg-sky-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:bg-zinc-700"
+                  className="rounded-full bg-blue-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   Apply
                 </button>
@@ -219,20 +219,20 @@ export function DateRangeControls({ preset, startDate, endDate }: Props) {
 }
 
 const dayPickerClasses = {
-  caption: "flex justify-center text-sm font-semibold text-zinc-200 mb-2",
-  nav: "flex justify-between mb-2 text-zinc-400",
-  nav_button: "rounded-full bg-zinc-800 px-2 py-1 hover:bg-zinc-700",
+  caption: "flex justify-center text-sm font-semibold text-slate-800 mb-2",
+  nav: "flex justify-between mb-2 text-slate-500",
+  nav_button: "rounded-full bg-slate-100 px-2 py-1 hover:bg-slate-200",
   table: "w-full border-collapse",
-  head_row: "flex justify-between text-xs text-zinc-500",
+  head_row: "flex justify-between text-xs text-slate-500",
   head_cell: "w-10 text-center",
   row: "flex justify-between",
   cell: "w-10 h-10",
-  day: "flex h-10 w-10 items-center justify-center rounded-full text-sm text-zinc-200 hover:bg-zinc-800",
-  day_selected: "bg-sky-500 text-white",
-  day_range_start: "bg-sky-500 text-white",
-  day_range_end: "bg-sky-500 text-white",
-  day_range_middle: "bg-sky-500/30 text-white",
-  day_outside: "text-zinc-600",
+  day: "flex h-10 w-10 items-center justify-center rounded-full text-sm text-slate-700 hover:bg-slate-100",
+  day_selected: "bg-blue-700 text-white",
+  day_range_start: "bg-blue-700 text-white",
+  day_range_end: "bg-blue-700 text-white",
+  day_range_middle: "bg-blue-100 text-blue-900",
+  day_outside: "text-slate-300",
   months: "flex gap-4"
 } as const;
 

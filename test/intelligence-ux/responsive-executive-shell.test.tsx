@@ -10,7 +10,7 @@ import { INTELLIGENCE_UX_SHELL_FIXTURE_V1 } from "@/lib/intelligence-ux/responsi
 const html = renderToString(<ResponsiveExecutiveShell data={INTELLIGENCE_UX_SHELL_FIXTURE_V1} />);
 
 test("responsive executive shell renders light-first premium surface and full IA", () => {
-  assert.match(html, /bg-\[#f7f2ea\]/);
+  assert.match(html, /bg-\[#f4f7fb\]/);
   for (const label of ["Executive Command Center", "Strategy", "Opportunities / Actions", "Specialists", "Relationships", "Financial", "Learning", "Data / Evidence", "Decision Rooms", "Ask Jeeves"]) {
     assert.match(html, new RegExp(label.replace("/", "\\/")));
   }
@@ -27,7 +27,7 @@ test("responsive shell uses visual scan blocks instead of dense text lists", () 
   assert.match(html, /Change scan/);
   assert.match(html, /Step/);
   assert.match(html, /grid-cols-\[auto_minmax\(0,1fr\)\]/);
-  assert.match(html, /h-full w-2 rounded-full bg-stone-300/);
+  assert.match(html, /h-full w-2 rounded-full bg-slate-300/);
 });
 
 test("persistent global and contextual Ask Jeeves controls share canonical classifications", () => {
@@ -62,6 +62,6 @@ test("mobile and desktop layout semantics are intentionally different", () => {
 
 test("shared executive shell controls remain light-mode-only", () => {
   assert.doesNotMatch(html, /bg-stone-950|text-white|dark:|bg-zinc-950|bg-slate-950/);
-  assert.match(html, /border border-stone-300 bg-white/);
+  assert.match(html, /border border-slate-300 bg-white/);
   assert.match(html, /bg-emerald-50/);
 });

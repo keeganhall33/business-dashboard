@@ -31,10 +31,10 @@ function EvidenceBadge({ state }: { state: ExecutiveOpportunityEvidenceStateV1 }
 
 function PulseMetric({ label, value, detail }: { label: string; value: number; detail: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
-      <div className="text-2xl font-semibold tabular-nums text-stone-950">{value}</div>
-      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500">{label}</div>
-      <div className="mt-1 text-xs leading-5 text-stone-600">{detail}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="text-2xl font-semibold tabular-nums text-slate-950">{value}</div>
+      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-600">{detail}</div>
     </div>
   );
 }
@@ -42,21 +42,21 @@ function PulseMetric({ label, value, detail }: { label: string; value: number; d
 function SmallMetric({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-500">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-stone-900">{children}</dd>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+      <dd className="mt-1 text-sm font-medium text-slate-900">{children}</dd>
     </div>
   );
 }
 
 function OpportunityMobileCard({ item }: { item: ExecutiveOpportunityPortfolioItemV1 }) {
   return (
-    <article className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm md:hidden">
+    <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:hidden">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-stone-500">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             {item.organization ?? item.opportunityType}
           </p>
-          <h2 className="mt-1 text-lg font-semibold text-stone-950">{item.title}</h2>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">{item.title}</h2>
         </div>
         <EvidenceBadge state={item.evidenceState} />
       </div>
@@ -66,13 +66,13 @@ function OpportunityMobileCard({ item }: { item: ExecutiveOpportunityPortfolioIt
         <SmallMetric label="Prestige">{display(item.prestigeScore)}</SmallMetric>
         <SmallMetric label="Source probability">{display(item.probabilityScore)}</SmallMetric>
       </dl>
-      <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-500">Next move</p>
-        <p className="mt-1 text-sm leading-6 text-stone-800">{item.nextMove}</p>
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Next move</p>
+        <p className="mt-1 text-sm leading-6 text-slate-800">{item.nextMove}</p>
       </div>
       <a
         href={item.detailHref}
-        className="mt-4 inline-flex rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+        className="mt-4 inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
       >
         Open opportunity
       </a>
@@ -89,29 +89,29 @@ export function ExecutiveOpportunityPortfolioV1({
 
   return (
     <main
-      className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8"
+      className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8"
       data-testid="executive-opportunity-portfolio-v1"
       data-visual-mode="light"
     >
       <div className="mx-auto max-w-[1600px]">
-        <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
+        <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Mission Control · Opportunities
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
                 Opportunities &amp; Actions
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Current opportunity evidence, timing, supported upside, and the next move. Missing evidence stays unknown instead of becoming a fake score.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <a href="/dashboard" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+              <a href="/dashboard" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
                 Executive Home
               </a>
-              <a href="/relationships" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+              <a href="/relationships" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
                 Relationships / CRM
               </a>
             </div>
@@ -126,14 +126,14 @@ export function ExecutiveOpportunityPortfolioV1({
         </section>
 
         {primary ? (
-          <section className="mt-5 rounded-3xl border border-stone-200 bg-stone-950 p-5 text-white shadow-sm md:p-6" aria-label="First canonical opportunity">
+          <section className="mt-5 rounded-3xl border border-slate-200 bg-blue-700 p-5 text-white shadow-sm md:p-6" aria-label="First canonical opportunity">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-stone-300">First in canonical radar order</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-300">First in canonical radar order</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">{primary.title}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-300">{primary.nextMove}</p>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{primary.nextMove}</p>
               </div>
-              <a href={primary.detailHref} className="inline-flex justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-stone-950">
+              <a href={primary.detailHref} className="inline-flex justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950">
                 Open decision detail
               </a>
             </div>
@@ -141,9 +141,9 @@ export function ExecutiveOpportunityPortfolioV1({
         ) : null}
 
         {portfolio.items.length === 0 ? (
-          <section className="mt-5 rounded-3xl border border-dashed border-stone-300 bg-white p-6" aria-label="No verified opportunities">
-            <p className="text-sm font-semibold text-stone-950">No canonical opportunities are available for this range.</p>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-stone-600">
+          <section className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-6" aria-label="No verified opportunities">
+            <p className="text-sm font-semibold text-slate-950">No canonical opportunities are available for this range.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
               This workspace stays empty rather than substituting planning fixtures or fabricated opportunity values.
             </p>
           </section>
@@ -153,10 +153,10 @@ export function ExecutiveOpportunityPortfolioV1({
               {portfolio.items.map((item) => <OpportunityMobileCard key={item.id} item={item} />)}
             </div>
 
-            <div className="hidden overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm md:block">
+            <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm md:block">
               <div className="overflow-x-auto">
                 <table className="min-w-[1240px] w-full border-collapse text-left text-sm">
-                  <thead className="bg-stone-50 text-xs uppercase tracking-[0.08em] text-stone-500">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3 font-semibold">Opportunity</th>
                       <th className="px-4 py-3 font-semibold">Evidence</th>
@@ -169,26 +169,26 @@ export function ExecutiveOpportunityPortfolioV1({
                       <th className="px-4 py-3 font-semibold">Detail</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-stone-100">
+                  <tbody className="divide-y divide-slate-100">
                     {portfolio.items.map((item) => (
                       <tr key={item.id} data-opportunity-id={item.id} className="align-top">
                         <td className="px-4 py-4">
-                          <div className="font-semibold text-stone-950">{item.title}</div>
-                          <div className="mt-1 text-xs text-stone-500">{item.organization ?? item.opportunityType}</div>
-                          <div className="mt-1 text-xs text-stone-500">{item.status}</div>
+                          <div className="font-semibold text-slate-950">{item.title}</div>
+                          <div className="mt-1 text-xs text-slate-500">{item.organization ?? item.opportunityType}</div>
+                          <div className="mt-1 text-xs text-slate-500">{item.status}</div>
                         </td>
                         <td className="px-4 py-4"><EvidenceBadge state={item.evidenceState} /></td>
                         <td className="px-4 py-4 tabular-nums">
                           <div>{display(item.timing)}</div>
-                          <div className="mt-1 text-xs text-stone-500">Verified {display(item.lastVerified)}</div>
+                          <div className="mt-1 text-xs text-slate-500">Verified {display(item.lastVerified)}</div>
                         </td>
                         <td className="px-4 py-4 font-medium">{display(item.supportedValue)}</td>
                         <td className="px-4 py-4">{display(item.prestigeScore)}</td>
                         <td className="px-4 py-4">{display(item.probabilityScore)}</td>
-                        <td className="px-4 py-4 text-xs font-semibold text-stone-600">{humanize(item.effortSignal)}</td>
-                        <td className="max-w-sm px-4 py-4 leading-6 text-stone-700">{item.nextMove}</td>
+                        <td className="px-4 py-4 text-xs font-semibold text-slate-600">{humanize(item.effortSignal)}</td>
+                        <td className="max-w-sm px-4 py-4 leading-6 text-slate-700">{item.nextMove}</td>
                         <td className="px-4 py-4">
-                          <a href={item.detailHref} className="inline-flex whitespace-nowrap rounded-full bg-stone-950 px-3 py-2 text-xs font-semibold text-white">
+                          <a href={item.detailHref} className="inline-flex whitespace-nowrap rounded-full bg-blue-700 px-3 py-2 text-xs font-semibold text-white">
                             Open opportunity
                           </a>
                         </td>
@@ -201,7 +201,7 @@ export function ExecutiveOpportunityPortfolioV1({
           </section>
         )}
 
-        <p className="mt-4 text-xs leading-5 text-stone-500">
+        <p className="mt-4 text-xs leading-5 text-slate-500">
           Source order is preserved by default. Existing value, prestige, and probability fields are displayed only when supplied by the canonical opportunity radar; missing values remain Unknown.
         </p>
       </div>

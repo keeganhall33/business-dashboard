@@ -34,3 +34,25 @@ test("Ask Jeeves is honest about its currently supported reasoning scope", () =>
   assert.match(answer.answer, /currently answer questions about/);
   assert.doesNotMatch(answer.answer, /definitely|guaranteed/i);
 });
+
+test("Ask Jeeves answers top-product questions when line-item telemetry is available", () => {
+  const answer = answerAskJeevesV1("What's my top selling item over the past 4 months?", {
+    ...context,
+    websiteConversion: {
+      range: { startDate: "2026-05-14", endDate: "2026-09-14" },
+      ga4: null,
+      wooCommerce: {
+        grossRevenue: 1500,
+        orders: 10,
+        units: 12,
+        avgOrderValue: 150,
+        topProducts: [
+          { name: "Print B", units: 3, revenue: 300 },
+          { name: "Print A", units: 5, revenue: 700 }
+        ]
+      }
+    }
+  });
+  assert.match(answer.answer, /Print A/);
+  assert.match(answer.answer, /\$700/);
+});

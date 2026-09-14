@@ -14,7 +14,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex flex-col">
             <Link href="/dashboard" className="text-sm font-semibold tracking-wide">Mission Control</Link>
-            <div className="text-[11px] text-stone-500">What changed, what matters, what comes next</div>
+            <div className="text-[11px] text-slate-500">What changed, what matters, what comes next</div>
           </div>
           <nav className="hidden items-center gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">
             {PRIMARY_NAV_ITEMS.map((item) => (
@@ -22,15 +22,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 key={item.href}
                 href={item.href}
                 title={item.summary}
-                className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-800 shadow-sm hover:bg-stone-50"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
               >
                 {item.short_label}
               </Link>
             ))}
             <details className="relative">
-              <summary className="cursor-pointer list-none rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-800 shadow-sm">More</summary>
-              <div className="absolute right-0 top-9 z-50 w-64 space-y-1 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
-                {MORE_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} className="block rounded-xl px-3 py-2 text-sm font-semibold text-stone-800 hover:bg-stone-100">{item.label}</Link>)}
+              <summary className="cursor-pointer list-none rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">More</summary>
+              <div className="absolute right-0 top-9 z-50 w-64 space-y-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                {MORE_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100">{item.label}</Link>)}
               </div>
             </details>
           </nav>
@@ -42,15 +42,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 key={item.href}
                 href={item.href}
                 title={item.summary}
-                className="whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-stone-800 shadow-sm hover:bg-stone-50"
+                className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
               >
                 {item.short_label}
               </Link>
             ))}
             <details className="shrink-0">
-              <summary className="cursor-pointer list-none whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-stone-800 shadow-sm">More</summary>
-              <div className="mt-2 grid gap-1 rounded-2xl border border-stone-200 bg-white p-2 shadow-lg">
-                {MORE_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} className="rounded-xl px-3 py-2 text-xs font-semibold text-stone-800 hover:bg-stone-100">{item.label}</Link>)}
+              <summary className="cursor-pointer list-none whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">More</summary>
+              <div className="mt-2 grid gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                {MORE_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100">{item.label}</Link>)}
               </div>
             </details>
           </div>
@@ -60,7 +60,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
 
       <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-4 text-[11px] text-stone-500 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-4 text-[11px] text-slate-500 sm:px-6 lg:px-8">
           Intelligence is source-limited. Unknown, stale, and conflicted evidence should remain explicit.
         </div>
       </footer>
