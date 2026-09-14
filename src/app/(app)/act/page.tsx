@@ -2,7 +2,6 @@ import { ExecutiveRangeHeader } from "@/components/dashboard/ExecutiveRangeHeade
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { resolveRangeQuery } from "../_lib/resolve-range";
-import { ActVerticalSlice } from "@/components/vertical-slice/ActVerticalSlice";
 import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
@@ -66,14 +65,13 @@ export default async function ActPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-white">Act</h1>
-        <p className="text-sm text-zinc-400">Action prep + approvals (execution disabled for this milestone).</p>
+        <h1 className="text-3xl font-semibold text-slate-950">Actions</h1>
+        <p className="text-sm text-slate-600">What needs attention, what is ready, and what is waiting for your approval.</p>
       </header>
       <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
 
       <ActionCenterClient window={{ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate }} recommendations={recommendations} actions={actions} />
 
-      <ActVerticalSlice data={sanitized} />
     </div>
   );
 }

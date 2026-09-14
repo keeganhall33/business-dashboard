@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ExecutiveCommandCenterKpiV1,
   ExecutiveCommandCenterTruthStateV1,
@@ -62,13 +62,22 @@ export function ExecutiveCommandCenter({
     [commandCenter, activeDetailId, specialistCards]
   );
 
+  useEffect(() => {
+    if (!activeDetailId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveDetailId(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [activeDetailId]);
+
   function completeCurrentStep() {
     if (!onAdvanceStrategyStep) return;
     setCommandCenter((current) => onAdvanceStrategyStep(current, current.strategy_path.current_step_id));
   }
 
   return (
-    <section className="bg-[#f8f4ec] text-stone-950" aria-label="Executive command center">
+    <section className="bg-[#f4f7fb] text-slate-950" aria-label="Executive command center">
       <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {commandCenter.kpis.map((kpi) => (
@@ -76,15 +85,15 @@ export function ExecutiveCommandCenter({
               key={kpi.id}
               type="button"
               onClick={() => setActiveDetailId(kpi.id)}
-              className="min-h-36 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-md"
+              className="min-h-36 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">{kpi.label}</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{kpi.label}</span>
                 <TruthPill state={kpi.truth_state} />
               </div>
-              <div className="mt-3 text-2xl font-semibold tracking-normal text-stone-950">{kpi.value}</div>
+              <div className="mt-3 text-2xl font-semibold tracking-normal text-slate-950">{kpi.value}</div>
               <Sparkline values={kpi.trend} />
-              <p className="mt-2 line-clamp-2 text-sm leading-5 text-stone-600">{kpi.detail}</p>
+              <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">{kpi.detail}</p>
             </button>
           ))}
         </div>
@@ -93,30 +102,30 @@ export function ExecutiveCommandCenter({
           <Panel title="What changed" subtitle="Material shifts only; missing evidence stays explicit.">
             <div className="grid gap-3 sm:grid-cols-2">
               {commandCenter.what_changed.map((item) => (
-                <button key={item.id} type="button" onClick={() => setActiveDetailId(item.id)} className="rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm">
+                <button key={item.id} type="button" onClick={() => setActiveDetailId(item.id)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-base font-semibold text-stone-950">{item.label}</h3>
+                    <h3 className="text-base font-semibold text-slate-950">{item.label}</h3>
                     <TruthPill state={item.truth_state} />
                   </div>
-                  <div className="mt-2 text-3xl font-semibold text-stone-950">{item.value}</div>
+                  <div className="mt-2 text-3xl font-semibold text-slate-950">{item.value}</div>
                   <Sparkline values={item.trend} />
-                  <p className="mt-2 text-sm leading-5 text-stone-600">{item.why_it_matters}</p>
+                  <p className="mt-2 text-sm leading-5 text-slate-600">{item.why_it_matters}</p>
                 </button>
               ))}
             </div>
           </Panel>
 
           <Panel title="Strategy and next steps" subtitle={commandCenter.strategy_path.dependency_note}>
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Current initiative</p>
-                  <h3 className="mt-1 text-xl font-semibold text-stone-950">{commandCenter.strategy_path.title}</h3>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current initiative</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-950">{commandCenter.strategy_path.title}</h3>
                 </div>
                 <button
                   type="button"
                   onClick={completeCurrentStep}
-                  className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-stone-300"
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={!onAdvanceStrategyStep || !commandCenter.strategy_path.steps.some((step) => step.id === commandCenter.strategy_path.current_step_id && step.state === "IN_PROGRESS")}
                 >
                   Mark current step complete
@@ -127,16 +136,16 @@ export function ExecutiveCommandCenter({
                   <StepRow key={step.id} step={step} index={index} />
                 ))}
               </div>
-              <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Completion history</p>
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Completion history</p>
                 {commandCenter.strategy_path.history.length ? (
-                  <ul className="mt-2 space-y-2 text-sm leading-5 text-stone-700">
+                  <ul className="mt-2 space-y-2 text-sm leading-5 text-slate-700">
                     {commandCenter.strategy_path.history.map((entry) => (
                       <li key={`${entry.step_id}-${entry.changed_at}`}>{entry.changed_at}: {entry.actor} moved {entry.step_id} from {entry.from_state} to {entry.to_state}. {entry.provenance}. {entry.note}</li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-sm text-stone-600">No step has been explicitly completed yet.</p>
+                  <p className="mt-2 text-sm text-slate-600">No step has been explicitly completed yet.</p>
                 )}
               </div>
             </div>
@@ -145,16 +154,16 @@ export function ExecutiveCommandCenter({
           <Panel title="Do now" subtitle="Operational work, separated from Keegan approvals.">
             <div className="space-y-3">
               {commandCenter.do_now.map((item) => (
-                <article key={item.id} className="rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm">
+                <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
                   <button type="button" onClick={() => setActiveDetailId(item.id)} className="w-full text-left">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-stone-950">{item.label}</h3>
-                      <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-1 text-[11px] font-semibold text-stone-700">{item.state}</span>
+                      <h3 className="text-sm font-semibold text-slate-950">{item.label}</h3>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700">{item.state}</span>
                     </div>
                     <ProgressBar value={item.progress} />
-                    <p className="mt-2 text-sm leading-5 text-stone-600">{item.detail}</p>
+                    <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
                   </button>
-                  <a href="/action-workspace" className="mt-3 inline-flex rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-800">
+                  <a href="/action-workspace" className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800">
                     Open Action Workspace
                   </a>
                 </article>
@@ -167,9 +176,9 @@ export function ExecutiveCommandCenter({
           {specialistCards.length ? (
             <div className="grid gap-3 lg:grid-cols-3">
               {specialistCards.map((card) => (
-                <article key={card.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+                <article key={card.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-base font-semibold text-stone-950">{card.title}</h3>
+                    <h3 className="text-base font-semibold text-slate-950">{card.title}</h3>
                     <div className="flex flex-wrap justify-end gap-2">
                       <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${specialistTruthStyles[card.truth_state]}`}>{card.truth_state}</span>
                       <button
@@ -193,18 +202,18 @@ export function ExecutiveCommandCenter({
                     <SpecialistDetail label="Gap / risk" value={card.material_gap_or_risk} />
                   </dl>
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                    <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">Source: {card.source}</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Source: {card.source}</span>
                     <div className="flex flex-wrap items-center gap-2">
                       {card.decision_room_id && onOpenDecisionRoom ? (
                         <a
                           href="#decision-room-drilldown"
                           onClick={() => onOpenDecisionRoom(card.decision_room_id!)}
-                          className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+                          className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
                         >
                           Review in Decision Room
                         </a>
                       ) : null}
-                      <a href={card.detail_href} className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+                      <a href={card.detail_href} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
                         Open detail
                       </a>
                     </div>
@@ -215,16 +224,16 @@ export function ExecutiveCommandCenter({
           ) : (
             <div
               data-testid="specialist-production-unavailable"
-              className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 text-sm leading-6 text-stone-700"
+              className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 text-sm leading-6 text-slate-700"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">UNKNOWN</span>
-                <span className="font-semibold text-stone-950">Specialist evidence unavailable</span>
+                <span className="font-semibold text-slate-950">Specialist evidence unavailable</span>
               </div>
               <p className="mt-2">
                 No canonical production specialist snapshot is supplied to Executive Home. Financial, goals/capacity, and relationship fixture conclusions are intentionally withheld rather than presented as current business truth.
               </p>
-              <a href="/specialists" className="mt-3 inline-flex rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-800">
+              <a href="/specialists" className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800">
                 Review specialist coverage
               </a>
             </div>
@@ -234,21 +243,21 @@ export function ExecutiveCommandCenter({
         <div className="mt-5 grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
           <Panel title="Keegan action required" subtitle="Approvals stay separate from awareness.">
             {commandCenter.keegan_actions.map((action) => (
-              <div key={action.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+              <div key={action.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-base font-semibold text-stone-950">{action.label}</h3>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-1 text-[11px] font-semibold text-stone-700">{action.approval_state}</span>
+                  <h3 className="text-base font-semibold text-slate-950">{action.label}</h3>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700">{action.approval_state}</span>
                 </div>
-                <p className="mt-2 text-sm leading-5 text-stone-600">{action.detail}</p>
+                <p className="mt-2 text-sm leading-5 text-slate-600">{action.detail}</p>
               </div>
             ))}
           </Panel>
 
           <Panel title="Top opportunities" subtitle="Comparison without fake precision.">
             {commandCenter.opportunities.map((opportunity) => (
-              <a key={opportunity.id} href={executiveOpportunityDetailHrefV1(opportunity.id)} className="block rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+              <a key={opportunity.id} href={executiveOpportunityDetailHrefV1(opportunity.id)} className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-base font-semibold text-stone-950">{opportunity.title}</h3>
+                  <h3 className="text-base font-semibold text-slate-950">{opportunity.title}</h3>
                   <TruthPill state={opportunity.evidence} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
@@ -257,7 +266,7 @@ export function ExecutiveCommandCenter({
                   <MiniMetric label="Timing" value={opportunity.timing} />
                   <MiniMetric label="Effort" value={opportunity.effort} />
                 </div>
-                <p className="mt-3 text-sm leading-5 text-stone-600">{opportunity.next_move}</p>
+                <p className="mt-3 text-sm leading-5 text-slate-600">{opportunity.next_move}</p>
               </a>
             ))}
           </Panel>
@@ -265,10 +274,10 @@ export function ExecutiveCommandCenter({
           <Panel title="System at a glance" subtitle="Projects, insights, decisions, sources.">
             <div className="grid grid-cols-2 gap-2">
               {commandCenter.system_glance.map((item) => (
-                <button key={item.id} type="button" onClick={() => setActiveDetailId(item.id)} className="rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm">
+                <button key={item.id} type="button" onClick={() => setActiveDetailId(item.id)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm">
                   <TruthPill state={item.truth_state} />
-                  <div className="mt-2 text-xl font-semibold text-stone-950">{item.value}</div>
-                  <div className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{item.label}</div>
+                  <div className="mt-2 text-xl font-semibold text-slate-950">{item.value}</div>
+                  <div className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</div>
                 </button>
               ))}
             </div>
@@ -277,10 +286,10 @@ export function ExecutiveCommandCenter({
           <Panel title="Intelligence engine" subtitle="Lane status without noise.">
             <div className="space-y-2">
               {commandCenter.intelligence_engine.map((lane) => (
-                <div key={lane.id} className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+                <div key={lane.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                   <div>
-                    <div className="text-sm font-semibold text-stone-950">{lane.lane}</div>
-                    <div className="text-xs text-stone-600">{lane.status}</div>
+                    <div className="text-sm font-semibold text-slate-950">{lane.lane}</div>
+                    <div className="text-xs text-slate-600">{lane.status}</div>
                   </div>
                   <TruthPill state={lane.truth_state} />
                 </div>
@@ -291,18 +300,26 @@ export function ExecutiveCommandCenter({
       </div>
 
       {activeDetail ? (
-        <div className="fixed inset-0 z-50 bg-stone-950/20 p-0 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={`${activeDetail.label} detail`}>
-          <div className="ml-auto flex h-full w-full flex-col overflow-auto border-l border-stone-200 bg-[#fffdf8] p-5 shadow-2xl sm:max-w-xl sm:rounded-l-3xl">
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/20 p-0 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${activeDetail.label} detail`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setActiveDetailId(null);
+          }}
+        >
+          <div className="ml-auto flex h-full w-full flex-col overflow-auto border-l border-slate-200 bg-[#ffffff] p-5 shadow-2xl sm:max-w-xl sm:rounded-l-3xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Drill-down</p>
-                <h2 className="mt-1 text-2xl font-semibold text-stone-950">{activeDetail.label}</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Drill-down</p>
+                <h2 className="mt-1 text-2xl font-semibold text-slate-950">{activeDetail.label}</h2>
               </div>
-              <button type="button" onClick={() => setActiveDetailId(null)} className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-800">
+              <button type="button" onClick={() => setActiveDetailId(null)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800">
                 Close
               </button>
             </div>
-            <div className="mt-5 space-y-4 text-sm leading-6 text-stone-700">
+            <div className="mt-5 space-y-4 text-sm leading-6 text-slate-700">
               <DetailRow label="Current state" value={activeDetail.value} />
               <DetailRow label="Source / provenance" value={activeDetail.source} />
               <DetailRow label="Last updated" value={activeDetail.lastUpdated ?? "UNKNOWN"} />
@@ -319,10 +336,10 @@ export function ExecutiveCommandCenter({
 
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm">
+    <section className="rounded-3xl border border-slate-200 bg-[#ffffff] p-4 shadow-sm">
       <div className="mb-3">
-        <h2 className="text-lg font-semibold text-stone-950">{title}</h2>
-        <p className="mt-1 text-sm leading-5 text-stone-600">{subtitle}</p>
+        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+        <p className="mt-1 text-sm leading-5 text-slate-600">{subtitle}</p>
       </div>
       {children}
     </section>
@@ -331,18 +348,18 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
 
 function StepRow({ step, index }: { step: ExecutiveExecutionStepV1; index: number }) {
   return (
-    <div className="grid gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:grid-cols-[2rem_1fr_auto] sm:items-start">
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-950 text-sm font-semibold text-white">{index + 1}</div>
+    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[2rem_1fr_auto] sm:items-start">
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">{index + 1}</div>
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-sm font-semibold text-stone-950">{step.label}</h4>
-          <span className="rounded-full border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700">{step.state}</span>
+          <h4 className="text-sm font-semibold text-slate-950">{step.label}</h4>
+          <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">{step.state}</span>
           {step.requires_verification ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">needs verification</span> : null}
         </div>
-        <p className="mt-1 text-sm leading-5 text-stone-600">{step.why_it_matters}</p>
-        {step.dependency_ids.length ? <p className="mt-1 text-xs text-stone-500">Depends on: {step.dependency_ids.join(", ")}</p> : null}
+        <p className="mt-1 text-sm leading-5 text-slate-600">{step.why_it_matters}</p>
+        {step.dependency_ids.length ? <p className="mt-1 text-xs text-slate-500">Depends on: {step.dependency_ids.join(", ")}</p> : null}
       </div>
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{step.provenance}</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.provenance}</div>
     </div>
   );
 }
@@ -358,7 +375,7 @@ function Sparkline({ values }: { values: Array<number | null> }) {
       {values.map((value, index) => (
         <span
           key={`${value ?? "unknown"}-${index}`}
-          className={`w-full rounded-t ${value == null ? "h-2 bg-stone-200" : "bg-stone-900"}`}
+          className={`w-full rounded-t ${value == null ? "h-2 bg-slate-200" : "bg-slate-900"}`}
           style={{ height: value == null ? 8 : Math.max(10, Math.min(40, Number(value))) }}
         />
       ))}
@@ -368,17 +385,17 @@ function Sparkline({ values }: { values: Array<number | null> }) {
 
 function ProgressBar({ value }: { value: number | null }) {
   return (
-    <div className="mt-3 h-2 rounded-full bg-stone-100">
-      <div className="h-2 rounded-full bg-stone-950" style={{ width: value == null ? "0%" : `${Math.max(0, Math.min(100, value))}%` }} />
+    <div className="mt-3 h-2 rounded-full bg-slate-100">
+      <div className="h-2 rounded-full bg-slate-950" style={{ width: value == null ? "0%" : `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
 }
 
 function MiniMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-stone-200 bg-stone-50 p-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</div>
-      <div className="mt-1 font-semibold text-stone-950">{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="mt-1 font-semibold text-slate-950">{value}</div>
     </div>
   );
 }
@@ -386,17 +403,17 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
 function SpecialistDetail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="mt-1 text-stone-700">{value}</dd>
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dd className="mt-1 text-slate-700">{value}</dd>
     </div>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">{label}</div>
-      <div className="mt-1 text-stone-800">{value}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-slate-800">{value}</div>
     </div>
   );
 }

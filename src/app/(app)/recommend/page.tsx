@@ -87,8 +87,8 @@ export default async function RecommendPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-white">Recommend</h1>
-        <p className="text-sm text-zinc-400">Read-only prioritized next steps. Nothing is executed from here.</p>
+        <h1 className="text-2xl font-semibold text-slate-950">Recommend</h1>
+        <p className="text-sm text-slate-600">Read-only prioritized next steps. Nothing is executed from here.</p>
       </header>
       <ExecutiveRangeHeader range={sanitized.range} insights={sanitized.executiveInsights} dataMode={sanitized.dataMode} />
 

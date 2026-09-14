@@ -63,11 +63,11 @@ export function DataIntegrationsVerticalSlice({ data }: { data: DashboardOvervie
             const health = data.telemetryHealth?.[s.source] ?? null;
             const warningCodes = meta?.warningCodes?.length ? meta.warningCodes.join(", ") : "None";
             return (
-              <div key={s.source} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div key={s.source} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-white">{s.label}</div>
-                    <div className="text-xs text-zinc-400">Source id: {s.source}</div>
+                    <div className="text-sm font-semibold text-slate-950">{s.label}</div>
+                    <div className="text-xs text-slate-600">Source id: {s.source}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <Pill tone={healthTone(health?.status)}>{health?.status ?? "unknown"}</Pill>
@@ -96,10 +96,10 @@ export function DataIntegrationsVerticalSlice({ data }: { data: DashboardOvervie
         {gap ? (
           <div className="space-y-2">
             {gap.integrations.slice(0, 30).map((it) => (
-              <div key={it.integration_id} className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:flex-row sm:items-start sm:justify-between">
+              <div key={it.integration_id} className="flex flex-col gap-1 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-white">{it.source_name}</div>
-                  <div className="text-xs text-zinc-400">{it.business_function} • id: {it.integration_id}</div>
+                  <div className="text-sm font-semibold text-slate-950">{it.source_name}</div>
+                  <div className="text-xs text-slate-600">{it.business_function} • id: {it.integration_id}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Pill tone={statusTone(it.status)}>{it.status.replace(/_/g, " ")}</Pill>
@@ -107,16 +107,16 @@ export function DataIntegrationsVerticalSlice({ data }: { data: DashboardOvervie
               </div>
             ))}
             {gap.integrations.length > 30 ? (
-              <div className="text-xs text-zinc-500">Showing first 30 of {gap.integrations.length} integrations.</div>
+              <div className="text-xs text-slate-500">Showing first 30 of {gap.integrations.length} integrations.</div>
             ) : null}
           </div>
         ) : (
-          <div className="text-sm text-zinc-500">Gap analysis file unavailable in runtime environment.</div>
+          <div className="text-sm text-slate-500">Gap analysis file unavailable in runtime environment.</div>
         )}
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Known limitations (must remain visible)" subtitle="These constraints are intentionally not hidden.">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
           <li>Email platform not identified/connected.</li>
           <li>Meta-to-Woo matchback not implemented.</li>
           <li>UTM + campaign taxonomy not standardized.</li>

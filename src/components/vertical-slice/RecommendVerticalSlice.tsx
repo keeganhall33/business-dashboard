@@ -67,13 +67,13 @@ export function RecommendVerticalSlice({ data }: { data: DashboardOverviewRespon
         {ranked.length ? (
           <div className="space-y-3">
             {ranked.map(({ action, score, effort, risk, impact, conf }) => (
-              <div key={action.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div key={action.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-slate-950">
                       {action.priority} — {action.title}
                     </div>
-                    <div className="text-xs text-zinc-400">Owner: {action.owner ?? "—"} • Due: {action.due ?? "—"}</div>
+                    <div className="text-xs text-slate-600">Owner: {action.owner ?? "—"} • Due: {action.due ?? "—"}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <Pill tone={action.priority === "P1" ? "rose" : action.priority === "P2" ? "amber" : "zinc"}>{`Score ${score.toFixed(2)}`}</Pill>
@@ -82,15 +82,15 @@ export function RecommendVerticalSlice({ data }: { data: DashboardOverviewRespon
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Reason + evidence</div>
-                    <div className="mt-2 text-sm text-zinc-200">{action.impact}</div>
-                    <div className="mt-2 text-sm text-zinc-400">Evidence: {action.evidence}</div>
-                    {action.confidenceDetail ? <div className="mt-2 text-xs text-zinc-500">Confidence detail: {action.confidenceDetail}</div> : null}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Reason + evidence</div>
+                    <div className="mt-2 text-sm text-slate-800">{action.impact}</div>
+                    <div className="mt-2 text-sm text-slate-600">Evidence: {action.evidence}</div>
+                    {action.confidenceDetail ? <div className="mt-2 text-xs text-slate-500">Confidence detail: {action.confidenceDetail}</div> : null}
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Approvals + measurement</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Approvals + measurement</div>
                     <DefinitionRow label="Required approvals" value={(approvalClassesFor(action.id) || []).join(", ")} />
                     <DefinitionRow label="Effort (proxy)" value={effort.toFixed(2)} />
                     <DefinitionRow label="Risk (proxy)" value={risk.toFixed(2)} />
@@ -101,19 +101,19 @@ export function RecommendVerticalSlice({ data }: { data: DashboardOverviewRespon
                   </div>
                 </div>
 
-                <div className="mt-3 text-xs text-zinc-500">
+                <div className="mt-3 text-xs text-slate-500">
                   Missing data that could change this recommendation: email telemetry, matchback attribution, identity resolution, inventory history.
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-sm text-zinc-500">No recommendations generated for this window (insufficient evidence or blocked sources).</div>
+          <div className="text-sm text-slate-500">No recommendations generated for this window (insufficient evidence or blocked sources).</div>
         )}
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Safety" subtitle="No actions are executed. Any future L4 execution requires explicit approval and hash verification.">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
           <li>Recommendations are read-only (L1). Draft preparation may be shown in Act (L2/L3).</li>
           <li>L4 execution remains disabled for this milestone.</li>
           <li>All action payloads must be immutable after approval; edits require a new version + reapproval.</li>

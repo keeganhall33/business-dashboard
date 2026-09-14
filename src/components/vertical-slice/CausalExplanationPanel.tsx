@@ -21,11 +21,11 @@ function toneForConfidence(c: string) {
 function DriverCard({ driver }: { driver: ExplanationDriver }) {
   const impact = driver.impactEstimate?.unit === "cents" ? formatCents(driver.impactEstimate.value) : formatPct(driver.impactEstimate?.value);
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-sm font-semibold text-white">{driver.label}</div>
-          <div className="text-xs text-zinc-400">
+          <div className="text-sm font-semibold text-slate-950">{driver.label}</div>
+          <div className="text-xs text-slate-600">
             {driver.direction} • {driver.magnitude}
           </div>
         </div>
@@ -34,8 +34,8 @@ function DriverCard({ driver }: { driver: ExplanationDriver }) {
         </div>
       </div>
 
-      <div className="mt-3 text-sm text-zinc-300">Impact (proxy): {impact}</div>
-      {driver.confidenceReasons?.length ? <div className="mt-2 text-xs text-zinc-500">{driver.confidenceReasons.join(" • ")}</div> : null}
+      <div className="mt-3 text-sm text-slate-700">Impact (proxy): {impact}</div>
+      {driver.confidenceReasons?.length ? <div className="mt-2 text-xs text-slate-500">{driver.confidenceReasons.join(" • ")}</div> : null}
     </div>
   );
 }
@@ -44,7 +44,7 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
   if (!payload) {
     return (
       <VerticalSliceCard title="Causal explanation engine" subtitle="Read-only: evidence-backed explanations are unavailable for this range.">
-        <div className="text-sm text-zinc-400">Insufficient evidence or missing telemetry.</div>
+        <div className="text-sm text-slate-600">Insufficient evidence or missing telemetry.</div>
       </VerticalSliceCard>
     );
   }
@@ -74,7 +74,7 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
             value={<Pill tone={toneForConfidence(ex.confidence)}>{ex.confidence.replace(/_/g, " ")}</Pill>}
           />
         </div>
-        {ex.confidence_reasons?.length ? <div className="mt-3 text-xs text-zinc-500">{ex.confidence_reasons.join(" • ")}</div> : null}
+        {ex.confidence_reasons?.length ? <div className="mt-3 text-xs text-slate-500">{ex.confidence_reasons.join(" • ")}</div> : null}
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Why it happened" subtitle="Ranked drivers with impact proxies and confidence.">
@@ -89,9 +89,9 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
       <VerticalSliceCard title="Evidence" subtitle="Exact supporting metrics used by the engine.">
         <div className="space-y-2">
           {ex.evidence.slice(0, 12).map((ev) => (
-            <div key={ev.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-              <div className="text-sm font-semibold text-white">{ev.label}</div>
-              <div className="text-xs text-zinc-500">
+            <div key={ev.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+              <div className="text-sm font-semibold text-slate-950">{ev.label}</div>
+              <div className="text-xs text-slate-500">
                 {ev.source} • {ev.kind}
               </div>
             </div>
@@ -102,14 +102,14 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
       <VerticalSliceCard title="What else could explain it" subtitle="Competing hypotheses. We do not stop at the first correlation.">
         <div className="space-y-3">
           {ex.alternative_explanations.map((h) => (
-            <div key={h.hypothesis} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div key={h.hypothesis} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-white">{h.hypothesis}</div>
+                <div className="text-sm font-semibold text-slate-950">{h.hypothesis}</div>
                 <Pill tone={toneForConfidence(h.confidence)}>{h.conclusion}</Pill>
               </div>
-              {h.evidence_for.length ? <div className="mt-2 text-sm text-zinc-300">For: {h.evidence_for.join(" • ")}</div> : null}
+              {h.evidence_for.length ? <div className="mt-2 text-sm text-slate-700">For: {h.evidence_for.join(" • ")}</div> : null}
               {h.evidence_against.length ? (
-                <div className="mt-2 text-sm text-zinc-400">Against: {h.evidence_against.join(" • ")}</div>
+                <div className="mt-2 text-sm text-slate-600">Against: {h.evidence_against.join(" • ")}</div>
               ) : null}
             </div>
           ))}
@@ -119,16 +119,16 @@ export function CausalExplanationPanel({ payload }: { payload: ExplainResponse |
       <VerticalSliceCard title="Missing data + next follow-ups" subtitle="The engine is explicit about what it cannot know.">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Missing</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Missing</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
               {ex.data_missing.map((m) => (
                 <li key={m}>{m}</li>
               ))}
             </ul>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Follow-up</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Follow-up</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
               {ex.recommended_follow_up.map((m) => (
                 <li key={m}>{m}</li>
               ))}

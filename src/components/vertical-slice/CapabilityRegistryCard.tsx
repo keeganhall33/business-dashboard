@@ -18,11 +18,11 @@ export function CapabilityRegistryCard({ entries }: Props) {
         {capabilities.map((capability) => (
           <div
             key={capability.capability_id}
-            className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/[0.02] p-3 sm:flex-row sm:items-start sm:justify-between"
+            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-start sm:justify-between"
           >
             <div className="min-w-0 space-y-1">
-              <div className="text-sm font-semibold text-zinc-100">{capability.label}</div>
-              <div className="text-xs leading-5 text-zinc-400">{capability.description}</div>
+              <div className="text-sm font-semibold text-slate-900">{capability.label}</div>
+              <div className="text-xs leading-5 text-slate-600">{capability.description}</div>
             </div>
             <div className="shrink-0">
               <StatusChip label={capability.chip_label} tone={capability.chip_tone} />

@@ -3,7 +3,7 @@ import type { ApprovalStateV1, ConfidenceV1, FreshnessV1, IntelligencePriorityV1
 type BadgeTone = "stone" | "emerald" | "amber" | "rose" | "sky" | "violet";
 
 const toneClass: Record<BadgeTone, string> = {
-  stone: "border-stone-300 bg-stone-50 text-stone-800",
+  stone: "border-slate-300 bg-slate-50 text-slate-800",
   emerald: "border-emerald-300 bg-emerald-50 text-emerald-800",
   amber: "border-amber-300 bg-amber-50 text-amber-900",
   rose: "border-rose-300 bg-rose-50 text-rose-800",
@@ -27,7 +27,7 @@ export function VisualSignalPill({ label, value, tone = "stone" }: { label: stri
 export function EvidenceBar({ label, tone = "stone", emphasis = "medium" }: { label: string; tone?: BadgeTone; emphasis?: "low" | "medium" | "high" }) {
   const width = emphasis === "high" ? "w-full" : emphasis === "medium" ? "w-2/3" : "w-1/3";
   const fill = {
-    stone: "bg-stone-400",
+    stone: "bg-slate-400",
     emerald: "bg-emerald-500",
     amber: "bg-amber-500",
     rose: "bg-rose-500",
@@ -37,11 +37,11 @@ export function EvidenceBar({ label, tone = "stone", emphasis = "medium" }: { la
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-stone-600">
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
         <span>{label}</span>
         <span>{emphasis.toUpperCase()}</span>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${fill} ${width}`} />
       </div>
     </div>

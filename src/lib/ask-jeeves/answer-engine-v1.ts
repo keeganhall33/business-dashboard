@@ -1,6 +1,7 @@
 import type { ExecutiveHomeFixtureV1 } from "@/lib/executive-home/fixtures";
 import type { ExecutiveOpportunityPortfolioV1 } from "@/lib/opportunity-intelligence/executive-opportunity-portfolio-v1";
 import type { CrmDirectoryIndexV1 } from "@/lib/relationships-crm/crm-directory-index-v1";
+import type { WebsiteConversionSnapshot } from "@/lib/types/dashboard";
 
 export type AskJeevesAnswerV1 = {
   answer: string;
@@ -13,6 +14,7 @@ export type AskJeevesContextV1 = {
   home: ExecutiveHomeFixtureV1;
   opportunities: ExecutiveOpportunityPortfolioV1;
   crm: CrmDirectoryIndexV1;
+  websiteConversion?: WebsiteConversionSnapshot | null;
 };
 
 function includesAny(question: string, terms: string[]) {
@@ -47,6 +49,28 @@ function opportunityAnswer(question: string, context: AskJeevesContextV1): AskJe
   };
 }
 
+function productAnswer(context: AskJeevesContextV1): AskJeevesAnswerV1 {
+  const products = [...(context.websiteConversion?.wooCommerce?.topProducts ?? [])]
+    .sort((left, right) => right.revenue - left.revenue || right.units - left.units);
+  const product = products[0];
+  if (!product) {
+    const revenue = context.home.command_center.business_pulse.find((item) => item.id === "revenue");
+    return {
+      answer: `Product-level sales are not available for ${context.home.hero.range_label}, so I cannot name a top-selling item without guessing.`,
+      facts: revenue ? [`Verified total revenue for the period: ${revenue.value}`, "Product line items are not present in the connected WooCommerce telemetry."] : ["Product line items are not present in the connected WooCommerce telemetry."],
+      links: [{ label: "Check commerce data", href: "/data-evidence" }],
+      sources: revenue ? [revenue.source] : []
+    };
+  }
+  const revenue = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(product.revenue);
+  return {
+    answer: `${product.name} is the top-selling item for ${context.home.hero.range_label}, with ${product.units} unit${product.units === 1 ? "" : "s"} and ${revenue} in revenue.`,
+    facts: products.slice(0, 5).map((item, index) => `${index + 1}. ${item.name}: ${item.units} units, ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(item.revenue)}`),
+    links: [{ label: "View commerce details", href: "/dashboard#commerce" }],
+    sources: ["WooCommerce product telemetry"]
+  };
+}
+
 function relationshipAnswer(question: string, context: AskJeevesContextV1): AskJeevesAnswerV1 {
   const people = context.crm.people.filter((person) => person.name && question.includes(person.name.toLowerCase()));
   const companies = context.crm.companies.filter((company) => company.name && question.includes(company.name.toLowerCase()));
@@ -76,6 +100,7 @@ function unavailable(context: AskJeevesContextV1, answer = "I could not answer t
 export function answerAskJeevesV1(rawQuestion: string, context: AskJeevesContextV1): AskJeevesAnswerV1 {
   const question = rawQuestion.trim().toLowerCase();
   if (!question) return unavailable(context, "Ask a question about your business.");
+  if (includesAny(question, ["top selling", "best selling", "top-selling", "best-selling", "top product", "best product"])) return productAnswer(context);
   if (includesAny(question, ["revenue", "sales", "money made"])) return metricAnswer(context, "revenue");
   if (includesAny(question, ["orders", "purchases sold"])) return metricAnswer(context, "orders");
   if (includesAny(question, ["traffic", "sessions", "visitors", "website"])) return metricAnswer(context, "sessions");
@@ -88,6 +113,10 @@ export function answerAskJeevesV1(rawQuestion: string, context: AskJeevesContext
     return focus ? { answer: focus.title, facts: [focus.summary, `Next: ${focus.next_action}`], links: [{ label: "See why", href: "/dashboard#current-direction" }, { label: "View actions", href: "/opportunities-actions" }], sources: focus.evidence } : unavailable(context);
   }
   if (includesAny(question, ["opportunity", "boeing", "nintendo", "alaska airlines"]) || context.opportunities.items.some((item) => question.includes(item.title.toLowerCase()))) return opportunityAnswer(question, context);
-  if (includesAny(question, ["crm", "relationship", "contact", "mercedes", "michelle", "melody"]) || context.crm.people.some((person) => person.name ? question.includes(person.name.toLowerCase()) : false)) return relationshipAnswer(question, context);
+  if (
+    includesAny(question, ["crm", "relationship", "contact", "mercedes", "michelle", "melody"]) ||
+    context.crm.people.some((person) => person.name ? question.includes(person.name.toLowerCase()) : false) ||
+    context.crm.companies.some((company) => company.name ? question.includes(company.name.toLowerCase()) : false)
+  ) return relationshipAnswer(question, context);
   return unavailable(context, "I can currently answer questions about revenue, orders, traffic, Meta ads, priorities, opportunities, reporting dates, and CRM relationships. Broader reasoning is still being connected.");
 }

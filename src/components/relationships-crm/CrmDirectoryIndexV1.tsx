@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 import {
   supportedCrmCompanyDetailHrefV1,
   supportedCrmPersonDetailHrefV1,
+  filterCrmCompaniesV1,
+  filterCrmPeopleV1,
   type CrmCompanyDirectoryRecordV1,
   type CrmDirectoryEvidenceStateV1,
   type CrmDirectoryIndexV1,
@@ -48,18 +51,18 @@ function CrmNav({ active }: { active: CrmDirectoryModeV1 }) {
   return (
     <nav aria-label="CRM navigation" className="flex flex-wrap gap-2">
       {links.map((link) => (
-        <a
+        <Link
           key={link.mode}
           href={link.href}
           aria-current={active === link.mode ? "page" : undefined}
           className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
             active === link.mode
-              ? "border-stone-950 bg-stone-950 text-white"
-              : "border-stone-300 bg-white text-stone-800 hover:border-stone-500"
+              ? "border-slate-950 bg-slate-950 text-white"
+              : "border-slate-300 bg-white text-slate-800 hover:border-slate-500"
           }`}
         >
           {link.label}
-        </a>
+        </Link>
       ))}
     </nav>
   );
@@ -79,14 +82,14 @@ function DirectoryShell({
   children: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-[#f8f4ec] px-4 py-6 text-stone-950 sm:px-6 lg:px-8" data-testid="crm-directory-index-v1" data-visual-mode="light">
+    <main className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8" data-testid="crm-directory-index-v1" data-visual-mode="light">
       <div className="mx-auto max-w-[1600px]">
-        <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
+        <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{eyebrow}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{eyebrow}</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{title}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">{description}</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{description}</p>
             </div>
             <CrmNav active={active} />
           </div>
@@ -104,9 +107,9 @@ function EmptyDirectory({ kind }: { kind: "people" | "companies" }) {
       : "No verified companies records are available yet.";
 
   return (
-    <section className="rounded-3xl border border-dashed border-stone-300 bg-white p-6" aria-label={`No verified ${kind}`}>
-      <p className="text-sm font-semibold text-stone-950">{heading}</p>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-stone-600">
+    <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-6" aria-label={`No verified ${kind}`}>
+      <p className="text-sm font-semibold text-slate-950">{heading}</p>
+      <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
         This directory stays empty rather than inventing CRM facts. Evidence-backed records can populate it through the canonical relationship data path.
       </p>
     </section>
@@ -114,14 +117,14 @@ function EmptyDirectory({ kind }: { kind: "people" | "companies" }) {
 }
 
 function PersonChannels({ person }: { person: CrmPersonDirectoryRecordV1 }) {
-  if (!person.contactChannels.length) return <span className="text-stone-500">Unknown</span>;
+  if (!person.contactChannels.length) return <span className="text-slate-500">Unknown</span>;
   return (
     <div className="space-y-1">
       {person.contactChannels.map((channel, index) => (
         <div key={`${channel.kind}-${index}`} className="whitespace-nowrap text-xs">
-          <span className="font-semibold text-stone-500">{channel.kind}</span>{" "}
+          <span className="font-semibold text-slate-500">{channel.kind}</span>{" "}
           <span>{display(channel.value)}</span>
-          {channel.evidenceState !== "KNOWN" ? <span className="ml-1 text-stone-500">({channel.evidenceState})</span> : null}
+          {channel.evidenceState !== "KNOWN" ? <span className="ml-1 text-slate-500">({channel.evidenceState})</span> : null}
         </div>
       ))}
     </div>
@@ -131,24 +134,36 @@ function PersonChannels({ person }: { person: CrmPersonDirectoryRecordV1 }) {
 function PersonName({ person }: { person: CrmPersonDirectoryRecordV1 }) {
   const detailHref = supportedCrmPersonDetailHrefV1(person);
   if (!detailHref) {
-    return <span className="font-semibold text-stone-950">{display(person.name)}</span>;
+    return <span className="font-semibold text-slate-950">{display(person.name)}</span>;
   }
   return (
-    <a href={detailHref} className="font-semibold text-stone-950 underline-offset-4 hover:underline">
+    <Link href={detailHref} className="font-semibold text-slate-950 underline-offset-4 hover:underline">
       {display(person.name)}
-    </a>
+    </Link>
   );
 }
 
-function PeopleTable({ people }: { people: readonly CrmPersonDirectoryRecordV1[] }) {
+function DirectorySearch({ query, label }: { query: string; label: string }) {
+  return (
+    <form method="get" className="mb-4 flex max-w-xl gap-2">
+      <label htmlFor="crm-search" className="sr-only">Search {label}</label>
+      <input id="crm-search" name="q" defaultValue={query} placeholder={`Search ${label}, companies, or opportunities`} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+      <button type="submit" className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Search</button>
+    </form>
+  );
+}
+
+function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRecordV1[]; query: string }) {
   if (!people.length) return <EmptyDirectory kind="people" />;
-  const rows = sortCrmPeopleV1(people);
+  const rows = query ? filterCrmPeopleV1(people, { query }) : sortCrmPeopleV1(people);
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm" aria-label="People directory">
+    <>
+    <DirectorySearch query={query} label="people" />
+    {!rows.length ? <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">No people match “{query}”.</p> : <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm" aria-label="People directory">
       <div className="overflow-x-auto">
         <table className="min-w-[1180px] w-full border-collapse text-left text-sm">
-          <thead className="bg-stone-50 text-xs uppercase tracking-[0.08em] text-stone-500">
+          <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
             <tr>
               <th className="px-4 py-3 font-semibold">Person</th>
               <th className="px-4 py-3 font-semibold">Company</th>
@@ -160,24 +175,24 @@ function PeopleTable({ people }: { people: readonly CrmPersonDirectoryRecordV1[]
               <th className="px-4 py-3 font-semibold">Evidence</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-stone-100">
+          <tbody className="divide-y divide-slate-100">
             {rows.map((person) => (
               <tr key={person.id} data-record-id={person.id} className="align-top">
                 <td className="px-4 py-4">
                   <PersonName person={person} />
-                  <div className="mt-1 text-xs text-stone-500">{display(person.title)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{display(person.title)}</div>
                 </td>
                 <td className="px-4 py-4">{display(person.companyName)}</td>
                 <td className="px-4 py-4"><PersonChannels person={person} /></td>
                 <td className="px-4 py-4">
                   <div>{display(person.relationshipState)}</div>
-                  <div className="mt-1 text-xs text-stone-500">Strength {person.relationshipStrength}</div>
+                  <div className="mt-1 text-xs text-slate-500">Strength {person.relationshipStrength}</div>
                 </td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.lastTouchAt)}</td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.nextFollowUpAt)}</td>
                 <td className="px-4 py-4">
                   <div>{display(person.activeOpportunity)}</div>
-                  <div className="mt-1 text-xs text-stone-500">Ask: {display(person.activeAsk)}</div>
+                  <div className="mt-1 text-xs text-slate-500">Ask: {display(person.activeAsk)}</div>
                 </td>
                 <td className="px-4 py-4"><EvidenceBadge state={person.evidenceState} /></td>
               </tr>
@@ -185,36 +200,39 @@ function PeopleTable({ people }: { people: readonly CrmPersonDirectoryRecordV1[]
           </tbody>
         </table>
       </div>
-    </section>
+    </section>}
+    </>
   );
 }
 
 function CompactList({ values }: { values: readonly string[] }) {
-  if (!values.length) return <span className="text-stone-500">Unknown</span>;
+  if (!values.length) return <span className="text-slate-500">Unknown</span>;
   return <span>{values.join(", ")}</span>;
 }
 
 function CompanyName({ company }: { company: CrmCompanyDirectoryRecordV1 }) {
   const detailHref = supportedCrmCompanyDetailHrefV1(company);
   if (!detailHref) {
-    return <span className="font-semibold text-stone-950">{display(company.name)}</span>;
+    return <span className="font-semibold text-slate-950">{display(company.name)}</span>;
   }
   return (
-    <a href={detailHref} className="font-semibold text-stone-950 underline-offset-4 hover:underline">
+    <Link href={detailHref} className="font-semibold text-slate-950 underline-offset-4 hover:underline">
       {display(company.name)}
-    </a>
+    </Link>
   );
 }
 
-function CompaniesTable({ companies }: { companies: readonly CrmCompanyDirectoryRecordV1[] }) {
+function CompaniesTable({ companies, query }: { companies: readonly CrmCompanyDirectoryRecordV1[]; query: string }) {
   if (!companies.length) return <EmptyDirectory kind="companies" />;
-  const rows = sortCrmCompaniesV1(companies);
+  const rows = query ? filterCrmCompaniesV1(companies, { query }) : sortCrmCompaniesV1(companies);
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm" aria-label="Companies directory">
+    <>
+    <DirectorySearch query={query} label="companies" />
+    {!rows.length ? <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">No companies match “{query}”.</p> : <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm" aria-label="Companies directory">
       <div className="overflow-x-auto">
         <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
-          <thead className="bg-stone-50 text-xs uppercase tracking-[0.08em] text-stone-500">
+          <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
             <tr>
               <th className="px-4 py-3 font-semibold">Company</th>
               <th className="px-4 py-3 font-semibold">Category</th>
@@ -227,7 +245,7 @@ function CompaniesTable({ companies }: { companies: readonly CrmCompanyDirectory
               <th className="px-4 py-3 font-semibold">Evidence</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-stone-100">
+          <tbody className="divide-y divide-slate-100">
             {rows.map((company) => (
               <tr key={company.id} data-record-id={company.id} className="align-top">
                 <td className="px-4 py-4"><CompanyName company={company} /></td>
@@ -244,16 +262,19 @@ function CompaniesTable({ companies }: { companies: readonly CrmCompanyDirectory
           </tbody>
         </table>
       </div>
-    </section>
+    </section>}
+    </>
   );
 }
 
 export function CrmDirectoryIndexV1({
   index,
-  mode
+  mode,
+  query = ""
 }: {
   index: CrmDirectoryIndexV1;
   mode: CrmDirectoryModeV1;
+  query?: string;
 }) {
   if (mode === "PEOPLE") {
     return (
@@ -261,9 +282,9 @@ export function CrmDirectoryIndexV1({
         active="PEOPLE"
         eyebrow="Relationships · CRM"
         title="People"
-        description="Evidence-backed contacts, relationship state, touch timing, and current business context. Unknown fields stay unknown."
+        description={`${index.people.length} people connected to current opportunities and relationship records. Missing contact details stay clearly marked.`}
       >
-        <PeopleTable people={index.people} />
+        <PeopleTable people={index.people} query={query} />
       </DirectoryShell>
     );
   }
@@ -274,9 +295,9 @@ export function CrmDirectoryIndexV1({
         active="COMPANIES"
         eyebrow="Relationships · CRM"
         title="Companies"
-        description="Organizations, key people, relationship context, active opportunities, and next moves without invented CRM facts."
+        description={`${index.companies.length} companies connected to current opportunities, people, and next moves.`}
       >
-        <CompaniesTable companies={index.companies} />
+        <CompaniesTable companies={index.companies} query={query} />
       </DirectoryShell>
     );
   }
@@ -286,49 +307,46 @@ export function CrmDirectoryIndexV1({
       active="OVERVIEW"
       eyebrow="Mission Control · CRM"
       title="Relationships"
-      description="A scan-first relationship workspace organized around people and companies. Canonical evidence is the source of truth."
+      description="See the people and companies connected to active business opportunities, what is happening, and what to do next."
     >
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="CRM directories">
-        <a href="/relationships/people" className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-400">
+        <Link href="/relationships/people" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-400">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Directory</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Directory</p>
               <h2 className="mt-1 text-xl font-semibold">People</h2>
             </div>
             <span className="text-3xl font-semibold tabular-nums">{index.people.length}</span>
           </div>
-          <p className="mt-4 text-sm leading-6 text-stone-600">Contacts, channels, relationship state, touchpoints, follow-ups, opportunities, and asks.</p>
-        </a>
-        <a href="/relationships/companies" className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm transition hover:border-stone-400">
+          <p className="mt-4 text-sm leading-6 text-slate-600">Contacts, channels, relationship state, touchpoints, follow-ups, opportunities, and asks.</p>
+        </Link>
+        <Link href="/relationships/companies" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-400">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Directory</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Directory</p>
               <h2 className="mt-1 text-xl font-semibold">Companies</h2>
             </div>
             <span className="text-3xl font-semibold tabular-nums">{index.companies.length}</span>
           </div>
-          <p className="mt-4 text-sm leading-6 text-stone-600">Organizations, key people, active opportunities, last activity, next move, and supported value.</p>
-        </a>
-        <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm" aria-label="Intelligent relationship inbox">
+          <p className="mt-4 text-sm leading-6 text-slate-600">Organizations, key people, active opportunities, last activity, next move, and supported value.</p>
+        </Link>
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Intelligent relationship inbox">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Evidence queue</p>
-              <h2 className="mt-1 text-xl font-semibold">Intelligent relationship inbox</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Needs attention</p>
+              <h2 className="mt-1 text-xl font-semibold">Relationship follow-ups</h2>
             </div>
             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900">
               VERIFY
             </span>
           </div>
-          <p className="mt-4 text-sm leading-6 text-stone-600">
-            Needs-reply, waiting, stale, and conflicted signals remain verification-gated until canonical records are available.
+          <p className="mt-4 text-sm leading-6 text-slate-600">
+            Review replies, overdue follow-ups, and relationships that need fresh information.
           </p>
         </section>
       </section>
-      <p className="mt-4 text-xs leading-5 text-stone-500">
-        Intelligent relationship inbox signals remain part of the canonical relationship evidence path and can populate these directories only after verification.
-      </p>
       {index.people.length === 0 && index.companies.length === 0 ? (
-        <div className="mt-4 rounded-3xl border border-dashed border-stone-300 bg-white p-5 text-sm leading-6 text-stone-600">
+        <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm leading-6 text-slate-600">
           No verified CRM records are currently projected into this directory. Synthetic contacts and companies are intentionally not shown.
         </div>
       ) : null}

@@ -9,14 +9,14 @@ export default function FinancialSpecialistPage() {
 
   return (
     <main className="space-y-5" aria-label="Financial specialist intelligence">
-      <header className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+      <header className="rounded-3xl border border-slate-200 bg-[#ffffff] p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
           Specialist drill-down
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-normal text-stone-950">
+        <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
           Financial intelligence
         </h1>
-        <p className="mt-3 max-w-3xl text-base leading-7 text-stone-700">
+        <p className="mt-3 max-w-3xl text-base leading-7 text-slate-700">
           Read-only economics surface. UNKNOWN direct costs, cash, margin, profitability,
           runway, receivables, and forecasts stay explicit until verified production
           evidence supports them.
@@ -24,17 +24,17 @@ export default function FinancialSpecialistPage() {
       </header>
 
       <section
-        className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"
+        className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
         aria-labelledby="financial-coverage-title"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Production coverage
             </p>
             <h2
               id="financial-coverage-title"
-              className="mt-1 text-xl font-semibold text-stone-950"
+              className="mt-1 text-xl font-semibold text-slate-950"
             >
               Financial intelligence {capability.availability.toLowerCase()}
             </h2>
@@ -53,14 +53,14 @@ export default function FinancialSpecialistPage() {
         </dl>
       </section>
 
-      <section className="rounded-3xl border border-dashed border-stone-300 bg-[#fffdf8] p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+      <section className="rounded-3xl border border-dashed border-slate-300 bg-[#ffffff] p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Decision boundary
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-stone-950">
+        <h2 className="mt-1 text-lg font-semibold text-slate-950">
           Command-center summary unavailable
         </h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-700">
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
           Revenue, cash, costs, margin, profitability, risk, confidence, forecasts, and
           recommendations are not substituted from demo or test fixtures. Open Data
           &amp; Evidence to inspect the verified source boundary before acting.
@@ -70,19 +70,19 @@ export default function FinancialSpecialistPage() {
       <nav className="flex flex-wrap gap-2" aria-label="Financial specialist navigation">
         <Link
           href="/specialists"
-          className="inline-flex rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white"
+          className="inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
         >
           Back to Specialists
         </Link>
         <Link
           href="/data-evidence"
-          className="inline-flex rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800"
+          className="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800"
         >
           Open Data &amp; Evidence
         </Link>
         <Link
           href="/executive-home"
-          className="inline-flex rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800"
+          className="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800"
         >
           Executive Home
         </Link>
@@ -101,11 +101,11 @@ function StatusBadge({ value }: { value: string }) {
 
 function CoverageDetail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-[#fffdf8] p-4">
-      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+    <div className="rounded-2xl border border-slate-200 bg-[#ffffff] p-4">
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </dt>
-      <dd className="mt-2 text-sm leading-6 text-stone-700">{value}</dd>
+      <dd className="mt-2 text-sm leading-6 text-slate-700">{value}</dd>
     </div>
   );
 }

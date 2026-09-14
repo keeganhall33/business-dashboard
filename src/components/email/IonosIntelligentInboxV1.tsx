@@ -18,7 +18,7 @@ const QUEUES: readonly QueueDefinition[] = [
   { key: "staleOpportunities", title: "Stale opportunities", description: "Active opportunity threads losing momentum.", tone: "border-amber-200 bg-amber-50 text-amber-900" },
   { key: "recentReplies", title: "Recent replies", description: "Fresh inbound movement across connected mailboxes.", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" },
   { key: "suggestedCommitments", title: "Suggested commitments", description: "Unverified commitments requiring review.", tone: "border-orange-200 bg-orange-50 text-orange-900" },
-  { key: "suggestedFollowUps", title: "Suggested follow-ups", description: "Preparation suggestions only. Nothing is sent.", tone: "border-stone-300 bg-stone-100 text-stone-800" }
+  { key: "suggestedFollowUps", title: "Suggested follow-ups", description: "Preparation suggestions only. Nothing is sent.", tone: "border-slate-300 bg-slate-100 text-slate-800" }
 ];
 
 const DEFAULT_QUEUE_LIMIT = 2;
@@ -192,46 +192,46 @@ function stateTone(item: IonosIntelligentInboxItemV1): string {
 function InboxItemCard({ item }: { item: IonosIntelligentInboxItemV1 }) {
   const suggestion = item.nextMoveStatus === "SUGGESTED_UNVERIFIED";
   return (
-    <article className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${stateTone(item)}`}>
           {item.truthState} · {item.freshnessState}
         </span>
-        <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
           {item.primaryState.replaceAll("_", " ")}
         </span>
       </div>
 
       <dl className="mt-4 space-y-3 text-sm leading-6">
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">What happened</dt>
-          <dd className="mt-1 font-medium text-stone-950">{item.whatHappened}</dd>
+          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">What happened</dt>
+          <dd className="mt-1 font-medium text-slate-950">{item.whatHappened}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Why it matters</dt>
-          <dd className="mt-1 text-stone-700">{item.whyItMatters}</dd>
+          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Why it matters</dt>
+          <dd className="mt-1 text-slate-700">{item.whyItMatters}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Next safe move</dt>
-          <dd className="mt-1 text-stone-700">{item.nextMove.replaceAll("_", " ")}</dd>
+          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Next safe move</dt>
+          <dd className="mt-1 text-slate-700">{item.nextMove.replaceAll("_", " ")}</dd>
         </div>
       </dl>
 
-      <div className="mt-4 border-t border-stone-100 pt-3">
-        <p className="text-xs font-semibold text-stone-700">
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <p className="text-xs font-semibold text-slate-700">
           {suggestion ? "Suggested only · approval required · nothing sent" : "Read-only relationship context"}
         </p>
-        <p className="mt-1 text-xs leading-5 text-stone-500">
+        <p className="mt-1 text-xs leading-5 text-slate-500">
           Mailboxes: {item.mailboxRoles.map((role) => mailboxLabel[role] ?? role).join(" + ")}
         </p>
-        <p className="mt-1 text-xs leading-5 text-stone-500">
+        <p className="mt-1 text-xs leading-5 text-slate-500">
           Freshness: {item.lastMeaningfulInteractionAt ?? "UNKNOWN"} · Evidence {item.evidenceFingerprint}
         </p>
         {item.blockingConditions.length ? (
           <p className="mt-1 text-xs leading-5 text-amber-800">Blocked: {item.blockingConditions.join(", ")}</p>
         ) : null}
         {item.deepLink ? (
-          <a className="mt-3 inline-flex rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-900" href={item.deepLink}>
+          <a className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900" href={item.deepLink}>
             Open relationship evidence
           </a>
         ) : null}
@@ -245,22 +245,22 @@ function QueueSection({ definition, items }: { definition: QueueDefinition; item
   const overflow = items.slice(DEFAULT_QUEUE_LIMIT);
 
   return (
-    <section aria-label={definition.title} className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm md:p-5">
+    <section aria-label={definition.title} className="rounded-3xl border border-slate-200 bg-[#ffffff] p-4 shadow-sm md:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-stone-950">{definition.title}</h3>
-          <p className="mt-1 text-sm leading-6 text-stone-600">{definition.description}</p>
+          <h3 className="text-lg font-semibold text-slate-950">{definition.title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{definition.description}</p>
         </div>
         <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${definition.tone}`}>{items.length}</span>
       </div>
       <div className="mt-4 grid gap-3">
         {visible.length ? visible.map((item) => <InboxItemCard key={item.id} item={item} />) : (
-          <p className="rounded-2xl border border-dashed border-stone-300 bg-white p-4 text-sm text-stone-600">No verified items in this queue.</p>
+          <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">No verified items in this queue.</p>
         )}
       </div>
       {overflow.length ? (
         <details className="mt-3">
-          <summary className="cursor-pointer rounded-full border border-stone-300 bg-white px-4 py-2 text-center text-sm font-semibold text-stone-800">
+          <summary className="cursor-pointer rounded-full border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-800">
             View {overflow.length} more
           </summary>
           <div className="mt-3 grid gap-3">
@@ -278,25 +278,25 @@ export function IonosIntelligentInboxV1({ inbox }: { inbox: IonosIntelligentInbo
       aria-label="IONOS relationship intelligence"
       data-testid="ionos-intelligent-inbox-v1"
       data-visual-mode="light"
-      className="bg-[#f8f4ec] px-4 py-8 text-stone-950 sm:px-6 lg:px-8"
+      className="bg-[#f4f7fb] px-4 py-8 text-slate-950 sm:px-6 lg:px-8"
     >
       <div className="mx-auto max-w-7xl">
-        <header className="rounded-[2rem] border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Relationships · read-only intelligence</p>
+        <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Relationships · read-only intelligence</p>
           <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div>
               <h2 className="text-2xl font-semibold tracking-tight md:text-4xl">Intelligent relationship inbox</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-700 md:text-base">
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700 md:text-base">
                 One evidence-backed view across IONOS identities. It shows what changed, why it matters, and the next safe move without becoming an email client.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2" aria-label="Relationship attention summary">
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-center"><strong className="block text-xl">{inbox.needsReply.length}</strong><span className="text-xs">Need reply</span></div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-center"><strong className="block text-xl">{inbox.requiresVerification.length}</strong><span className="text-xs">Verify</span></div>
-              <div className="rounded-2xl border border-stone-200 bg-white p-3 text-center"><strong className="block text-xl">{inbox.telemetry.projectionCount}</strong><span className="text-xs">Threads</span></div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center"><strong className="block text-xl">{inbox.telemetry.projectionCount}</strong><span className="text-xs">Threads</span></div>
             </div>
           </div>
-          <p className="mt-4 text-xs leading-5 text-stone-500">Generated {inbox.generatedAt} · UNKNOWN, STALE, and CONFLICTED evidence never becomes verified action.</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Generated {inbox.generatedAt} · UNKNOWN, STALE, and CONFLICTED evidence never becomes verified action.</p>
         </header>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

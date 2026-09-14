@@ -28,10 +28,10 @@ function describeTrend(trend: TrendComparison) {
 }
 
 function renderMetadata(meta: TelemetryMetadata | null | undefined) {
-  if (!meta) return <div className="text-sm text-zinc-500">No metadata available.</div>;
+  if (!meta) return <div className="text-sm text-slate-500">No metadata available.</div>;
   const warnings = meta.warningCodes?.length ? meta.warningCodes.join(", ") : "None";
   return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Pill tone={meta.freshnessStatus === "fresh" ? "emerald" : meta.freshnessStatus === "stale" ? "amber" : "zinc"}>
           Freshness: {meta.freshnessStatus}
@@ -71,7 +71,7 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
         subtitle="Read-only: what changed, likely contributors, and what we can and cannot claim from the current source stack."
       >
         <div className="space-y-3">
-          <div className="text-sm text-zinc-200">
+          <div className="text-sm text-slate-800">
             {brief?.attention ? brief.attention : "No single dominant verified anomaly in this window. Monitoring core KPIs."}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -90,15 +90,15 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
             ))}
           </div>
         ) : (
-          <div className="text-sm text-zinc-500">No verified top changes available for this window.</div>
+          <div className="text-sm text-slate-500">No verified top changes available for this window.</div>
         )}
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Evidence" subtitle="Source freshness, coverage, and warnings for the evidence used in the explanation.">
         <div className="space-y-5">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Limitations you should see</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Limitations you should see</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
               {missing.map((item) => (
                 <li key={item}>{item}</li>
               ))}
@@ -106,7 +106,7 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
           </div>
 
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Telemetry metadata</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Telemetry metadata</div>
             {renderMetadata(data.telemetryMetadata?.woo ?? null)}
             {renderMetadata(data.telemetryMetadata?.meta ?? null)}
             {renderMetadata(data.telemetryMetadata?.ga4 ?? null)}
@@ -115,13 +115,13 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Recommended response (read-only)" subtitle="This page does not execute actions. Recommendations live in the Recommend view.">
-        <div className="text-sm text-zinc-300">
+        <div className="text-sm text-slate-700">
           Use the Recommend tab to see prioritized next steps with required approval classes and measurement plans.
         </div>
       </VerticalSliceCard>
 
       <VerticalSliceCard title="Alternative explanations" subtitle="What could also explain changes, but is currently unprovable with connected data.">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
           <li>Email sends/promos may have driven sales (email telemetry missing).</li>
           <li>Press/celebrity shares may have driven direct traffic spikes (press log not integrated).</li>
           <li>Inventory/availability may have constrained conversion (availability history missing).</li>
@@ -134,11 +134,11 @@ export function ExplainVerticalSlice({ data, explanation }: { data: DashboardOve
 function TrendRow({ trend }: { trend: TrendComparison }) {
   const tone = trend.direction === "down" ? "rose" : trend.direction === "up" ? "emerald" : "zinc";
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-sm font-semibold text-white">{trend.label}</div>
-          <div className="text-xs text-zinc-400">{trend.metric} • source: {trend.source}</div>
+          <div className="text-sm font-semibold text-slate-950">{trend.label}</div>
+          <div className="text-xs text-slate-600">{trend.metric} • source: {trend.source}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <Pill tone={tone}>{describeTrend(trend)}</Pill>
@@ -146,7 +146,7 @@ function TrendRow({ trend }: { trend: TrendComparison }) {
           {trend.caveat ? <Pill tone="zinc">Caveat</Pill> : null}
         </div>
       </div>
-      {trend.caveat ? <div className="mt-2 text-sm text-zinc-300">Evidence caveat: {trend.caveat}</div> : null}
+      {trend.caveat ? <div className="mt-2 text-sm text-slate-700">Evidence caveat: {trend.caveat}</div> : null}
     </div>
   );
 }

@@ -13,19 +13,19 @@ const stateStyles: Record<ExecutiveWorkspaceTruthStateV1, string> = {
 export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceViewModelV1 }) {
   return (
     <div className="space-y-6">
-      <header className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-sm md:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Executive workspace</p>
+      <header className="rounded-3xl border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Executive workspace</p>
         <div className="mt-3 grid gap-5 lg:grid-cols-[1fr_22rem] lg:items-end">
           <div>
-            <h1 className="text-3xl font-semibold tracking-normal text-stone-950 md:text-5xl">{model.headline}</h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-stone-700">{model.description}</p>
-            <p className="mt-4 rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold text-stone-900">{model.primary_question}</p>
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-950 md:text-5xl">{model.headline}</h1>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-slate-700">{model.description}</p>
+            <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900">{model.primary_question}</p>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Owns</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Owns</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {model.workspace.owns.map((item) => (
-                <span key={item} className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">
+                <span key={item} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                   {item}
                 </span>
               ))}
@@ -44,18 +44,18 @@ export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceVie
       <div className="grid gap-5 xl:grid-cols-[1fr_20rem]">
         <div className="space-y-5">
           {model.sections.map((section) => (
-            <section key={section.id} id={section.id} className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm">
+            <section key={section.id} id={section.id} className="rounded-3xl border border-slate-200 bg-[#ffffff] p-4 shadow-sm">
               <div className="mb-4">
-                <h2 className="text-xl font-semibold tracking-normal text-stone-950">{section.title}</h2>
-                <p className="mt-1 text-sm leading-6 text-stone-600">{section.summary}</p>
+                <h2 className="text-xl font-semibold tracking-normal text-slate-950">{section.title}</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{section.summary}</p>
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 {section.cards.map((card) => {
                   const detail = resolveExecutiveWorkspaceDetailHrefV1(card.detail_href);
                   return (
-                    <article key={card.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+                    <article key={card.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
-                        <h3 className="text-base font-semibold text-stone-950">{card.title}</h3>
+                        <h3 className="text-base font-semibold text-slate-950">{card.title}</h3>
                         <StatePill state={card.state} />
                       </div>
                       <dl className="mt-4 space-y-3 text-sm leading-6">
@@ -64,13 +64,13 @@ export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceVie
                         <Detail label="Next" value={card.next} />
                       </dl>
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                        <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-700">Owner: {card.owner}</span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Owner: {card.owner}</span>
                         {detail.state === "ROUTABLE" ? (
-                          <Link href={detail.href} className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-white">
+                          <Link href={detail.href} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
                             Open detail
                           </Link>
                         ) : (
-                          <span className="rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-semibold text-stone-500">
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-500">
                             Detail unavailable
                           </span>
                         )}
@@ -84,14 +84,14 @@ export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceVie
         </div>
 
         <aside className="space-y-5">
-          <section className="rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm">
-            <h2 className="text-lg font-semibold text-stone-950">Feedback standard</h2>
-            <p className="mt-1 text-sm leading-6 text-stone-600">
+          <section className="rounded-3xl border border-slate-200 bg-[#ffffff] p-4 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-950">Feedback standard</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
               Feedback updates canonical state with actor, timestamp, provenance, reason note, and history when the owning backend supports it.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {model.feedback_actions.map((action) => (
-                <span key={action} className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-700">
+                <span key={action} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                   {action}
                 </span>
               ))}
@@ -105,9 +105,9 @@ export function ExecutiveWorkspacePage({ model }: { model: ExecutiveWorkspaceVie
 
 function PolicyChip({ label, value }: { label: string; value: boolean }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-stone-950">{value ? "YES" : "NO"}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value ? "YES" : "NO"}</div>
     </div>
   );
 }
@@ -115,8 +115,8 @@ function PolicyChip({ label, value }: { label: string; value: boolean }) {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="mt-1 text-stone-700">{value}</dd>
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dd className="mt-1 text-slate-700">{value}</dd>
     </div>
   );
 }
