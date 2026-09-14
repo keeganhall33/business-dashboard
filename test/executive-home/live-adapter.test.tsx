@@ -103,6 +103,27 @@ test("live adapter exposes a Decision Room drill-down from production-shaped act
   assert.equal(decisionRoom.evidence_refs.some((ref) => ref.provenance === "DATA_CONFIDENCE"), true);
 });
 
+test("live adapter promotes real commerce and marketing values without inventing missing comparisons", () => {
+  const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
+  dashboard.commerceTelemetry = {
+    range: dashboard.range,
+    woo: { summary: { revenue: 12500, orders: 8, avgOrderValue: 1562.5, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 8 }, timeseries: [{ date: "2026-08-20", revenue: 5000, orders: 3 }, { date: "2026-08-21", revenue: 7500, orders: 5 }] },
+    ga4: { summary: { revenue: 0, sessions: 4200, engagedSessions: 3100, eventCount: 9000, avgEngagementSeconds: 42 }, timeseries: [{ date: "2026-08-20", revenue: 0, sessions: 1900, engagedSessions: 1400 }, { date: "2026-08-21", revenue: 0, sessions: 2300, engagedSessions: 1700 }] }
+  };
+  dashboard.metaAds = { generatedAt: dashboard.timestamp, accountId: "act_test", range: 7, campaigns: [], status: "PARTIAL", summary: { spend: 900, impressions: 10000, clicks: 300, purchases: null, purchaseValue: null, roas: null } };
+
+  const { home } = buildExecutiveHomeFromDashboardOverviewV1(dashboard);
+  const pulse = Object.fromEntries(home.command_center.business_pulse.map((metric) => [metric.id, metric]));
+
+  assert.equal(pulse.revenue.value, "$12,500");
+  assert.equal(pulse.sessions.value, "4,200");
+  assert.equal(pulse.meta.value, "$900 spent");
+  assert.equal(pulse.meta.comparison, "ROAS unavailable");
+  assert.equal(pulse.meta.truth_state, "INFERRED");
+  assert.equal(pulse.revenue.comparison, "No verified comparison");
+  assert.deepEqual(pulse.revenue.trend, [5000, 7500]);
+});
+
 test("Executive Home production-shaped render is mobile-safe and light-first", () => {
   const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
   dashboard.topActions = [
@@ -112,12 +133,12 @@ test("Executive Home production-shaped render is mobile-safe and light-first", (
   const html = renderToString(<ExecutiveHomeShell data={home} decisionRoom={decisionRoom} />);
 
   assert.match(html, /bg-\[#f8f4ec\]/);
-  assert.match(html, /px-4 sm:px-6 lg:px-8/);
+  assert.match(html, /grid grid-cols-2 gap-3 lg:grid-cols-4/);
   assert.match(html, /flex w-full max-w-full flex-wrap/);
   assert.match(html, /grid gap-4 lg:grid-cols-2/);
   assert.match(html, /Executive Home visual scan/);
-  assert.match(html, /Evidence watch/);
-  assert.match(html, /Open Decision Room/);
+  assert.match(html, /The numbers that matter/);
+  assert.match(html, /See why/);
   assert.doesNotMatch(html, /Operator Command/);
   assert.doesNotMatch(html, /Protect premium scarcity while choosing the next move/);
 });

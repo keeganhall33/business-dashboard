@@ -111,7 +111,7 @@ test("visual decision model enforces three-item budgets with approval-first dete
 test("business pulse is derived from canonical counts and preserves uncertainty without invented economics", () => {
   const model = buildExecutiveHomeVisualSummaryV2(fixture);
   const expectedEvidenceStates = [
-    ...fixture.command_center.kpis.map((item) => item.truth_state),
+    ...fixture.command_center.business_pulse.map((item) => item.truth_state),
     ...fixture.command_center.opportunities.map((item) => item.evidence)
   ];
   const expectedWatch = expectedEvidenceStates.filter(
@@ -141,21 +141,23 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
 
   assert.match(html, /aria-label="Executive decision scan"/);
   assert.match(html, /aria-label="Business pulse"/);
-  assert.match(html, />Needs you now</);
-  assert.match(html, />Biggest opportunities</);
+  assert.match(html, /Your business, clearly/);
+  assert.match(html, /The numbers that matter/);
+  assert.match(html, /What happened/);
+  assert.match(html, /What we are doing/);
+  assert.match(html, /What comes next/);
+  assert.match(html, /Result so far/);
+  assert.match(html, /Needs you now/);
+  assert.match(html, />Best opportunities</);
   assert.match(html, />What changed</);
-  assert.match(html, />Evidence pulse</);
-  assert.match(html, />APPROVAL</);
-  assert.match(html, />UNKNOWN</);
-  assert.match(html, />STALE</);
+  assert.match(html, /Revenue trend/);
+  assert.match(html, /Unavailable|Trend unavailable|ROAS/);
   assert.match(html, /role="img"/);
-  assert.match(html, /unknown, stale, or conflicted/);
   assert.doesNotMatch(html, /Fourth item must stay below fold/);
   assert.doesNotMatch(html, /Fourth opportunity stays below fold/);
   assert.doesNotMatch(html, /Fourth change stays below fold/);
   assert.match(html, /grid-cols-2/);
-  assert.match(html, /sm:grid-cols-4/);
-  assert.match(html, /xl:grid-cols/);
+  assert.match(html, /lg:grid-cols-4/);
 });
 
 test("Executive Home removes visible placeholder and section-pill walls while keeping depth reachable", () => {
@@ -169,10 +171,9 @@ test("Executive Home removes visible placeholder and section-pill walls while ke
   assert.doesNotMatch(html, />Error</);
   assert.doesNotMatch(html, /aria-label="Executive Home sections"/);
   assert.match(html, /<details/);
-  assert.match(html, /Operational detail and specialist signals/);
+  assert.match(html, /More business detail/);
   assert.match(html, /Supporting intelligence/);
-  assert.match(html, /Decision Room detail/);
-  assert.match(html, /Choose recommendation above/);
+  assert.doesNotMatch(html, /Decision Room detail/);
   assert.match(html, /Loading executive intelligence with provenance intact/);
   assert.match(html, /No material intelligence changes need attention right now/);
   assert.match(html, /Unable to verify executive intelligence/);

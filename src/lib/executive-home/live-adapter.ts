@@ -9,6 +9,7 @@ import type {
   ApprovalStateV1,
   ConfidenceV1,
   ExecutiveCommandCenterV1,
+  ExecutiveBusinessPulseMetricV1,
   ExecutiveHomeFixtureV1,
   ExecutiveIntelligenceCardV1,
   FreshnessV1,
@@ -318,6 +319,86 @@ function compactTrend(metric: { history?: Array<{ value: number | null }> | null
   return history && history.length > 1 ? history : [null, null, null];
 }
 
+const currency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0
+});
+
+const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+function formatComparison(deltaPercent: number | null | undefined, previous: number | null | undefined) {
+  if (deltaPercent == null || !Number.isFinite(deltaPercent) || previous == null) return "No verified comparison";
+  const percent = Math.round(deltaPercent * 100);
+  return `${percent > 0 ? "+" : ""}${percent}% vs prior period`;
+}
+
+function telemetryTruth(
+  data: DashboardOverviewResponse,
+  source: "woo" | "ga4" | "meta",
+  hasValue: boolean
+): ExecutiveCommandCenterTruthStateV1 {
+  if (!hasValue) return "UNKNOWN";
+  const health = data.telemetryHealth?.[source];
+  const metadata = data.telemetryMetadata?.[source];
+  if (source === "meta" && data.metaAds?.status === "BROKEN") return "CONFLICTED";
+  if (health?.status === "critical") return "CONFLICTED";
+  if (metadata?.freshnessStatus === "stale") return "STALE";
+  if (metadata?.coverageStatus === "partial" || health?.status === "warning" || data.metaAds?.status === "PARTIAL" || data.metaAds?.status === "FALLBACK") return "INFERRED";
+  if (!health && !metadata) return "INFERRED";
+  return "KNOWN";
+}
+
+function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessPulseMetricV1[] {
+  const baseline = data.performanceBaseline?.metrics;
+  const woo = data.commerceTelemetry?.woo;
+  const ga4 = data.commerceTelemetry?.ga4;
+  const meta = data.metaAds?.summary;
+  const revenue = baseline?.revenue.current ?? woo?.summary.revenue ?? null;
+  const orders = baseline?.orders.current ?? woo?.summary.orders ?? null;
+  const sessions = baseline?.sessions.current ?? ga4?.summary.sessions ?? null;
+  const roas = meta?.roas ?? null;
+
+  return [
+    {
+      id: "revenue",
+      label: "Revenue",
+      value: revenue == null ? "Unavailable" : `${baseline?.revenue.currentQualifier === "at_least" ? "At least " : ""}${currency.format(revenue)}`,
+      comparison: formatComparison(baseline?.revenue.deltaPercent, baseline?.revenue.previous),
+      trend: (woo?.timeseries ?? []).slice(-14).map((point) => point.revenue),
+      truth_state: telemetryTruth(data, "woo", revenue != null),
+      source: "WooCommerce"
+    },
+    {
+      id: "orders",
+      label: "Orders",
+      value: orders == null ? "Unavailable" : integer.format(orders),
+      comparison: formatComparison(baseline?.orders.deltaPercent, baseline?.orders.previous),
+      trend: (woo?.timeseries ?? []).slice(-14).map((point) => point.orders),
+      truth_state: telemetryTruth(data, "woo", orders != null),
+      source: "WooCommerce"
+    },
+    {
+      id: "sessions",
+      label: "Site traffic",
+      value: sessions == null ? "Unavailable" : integer.format(sessions),
+      comparison: formatComparison(baseline?.sessions.deltaPercent, baseline?.sessions.previous),
+      trend: (ga4?.timeseries ?? []).slice(-14).map((point) => point.sessions),
+      truth_state: telemetryTruth(data, "ga4", sessions != null),
+      source: "Google Analytics"
+    },
+    {
+      id: "meta",
+      label: "Meta ads",
+      value: roas != null ? `${roas.toFixed(1)}x ROAS` : meta?.spend != null ? `${currency.format(meta.spend)} spent` : "Unavailable",
+      comparison: roas != null && meta?.spend != null ? `${currency.format(meta.spend)} spend` : roas == null && meta?.spend != null ? "ROAS unavailable" : "No verified spend",
+      trend: [],
+      truth_state: telemetryTruth(data, "meta", roas != null || meta?.spend != null),
+      source: "Meta Ads"
+    }
+  ];
+}
+
 function buildCommandCenter(data: DashboardOverviewResponse, actions: ExecutiveActionPlan[], confidence: ConfidenceSummary): ExecutiveCommandCenterV1 {
   const topAction = actions[0];
   const material = buildExecutiveSummary(data);
@@ -331,6 +412,7 @@ function buildCommandCenter(data: DashboardOverviewResponse, actions: ExecutiveA
 
   return {
     generated_at: data.timestamp,
+    business_pulse: buildBusinessPulse(data),
     kpis: [
       {
         id: "material-change",

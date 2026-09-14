@@ -30,6 +30,16 @@ export type ExecutiveCommandCenterOpportunityV1 = {
   detail_href: string;
 };
 
+export type ExecutiveBusinessPulseMetricV1 = {
+  id: "revenue" | "orders" | "sessions" | "meta";
+  label: string;
+  value: string;
+  comparison: string;
+  trend: Array<number | null>;
+  truth_state: ExecutiveCommandCenterTruthStateV1;
+  source: string;
+};
+
 export type ExecutiveExecutionHistoryEntryV1 = {
   step_id: string;
   from_state: ExecutiveActionStepStateV1;
@@ -54,6 +64,7 @@ export type ExecutiveExecutionStepV1 = {
 
 export type ExecutiveCommandCenterV1 = {
   generated_at: string;
+  business_pulse: ExecutiveBusinessPulseMetricV1[];
   kpis: ExecutiveCommandCenterKpiV1[];
   what_changed: Array<{
     id: string;
@@ -123,6 +134,12 @@ export const EXECUTIVE_HOME_FIXTURE_V1: ExecutiveHomeFixtureV1 = {
   },
   command_center: {
     generated_at: "2026-08-17T00:00:00.000Z",
+    business_pulse: [
+      { id: "revenue", label: "Revenue", value: "$24,800", comparison: "+12% vs prior period", trend: [18, 20, 19, 23, 24.8], truth_state: "KNOWN", source: "WooCommerce fixture" },
+      { id: "orders", label: "Orders", value: "18", comparison: "+2 vs prior period", trend: [12, 14, 13, 16, 18], truth_state: "KNOWN", source: "WooCommerce fixture" },
+      { id: "sessions", label: "Site traffic", value: "8,420", comparison: "+8% vs prior period", trend: [6.8, 7.2, 7.1, 7.8, 8.42], truth_state: "KNOWN", source: "GA4 fixture" },
+      { id: "meta", label: "Meta ads", value: "2.4x ROAS", comparison: "$3,100 spend", trend: [], truth_state: "INFERRED", source: "Meta fixture" }
+    ],
     kpis: [
       { id: "material-change", label: "What changed", value: "1 material shift", detail: "Creative direction confidence moved after collector and institutional evidence.", trend: [1, 1, 2, 2, 3], truth_state: "KNOWN", last_updated: "2026-08-17T00:00:00.000Z", source: "Executive Home fixture" },
       { id: "automation-health", label: "Automation health", value: "On track", detail: "No approval-gated automation work is blocked in this fixture.", trend: [72, 78, 82, 84, 86], truth_state: "KNOWN", last_updated: "2026-08-17T00:00:00.000Z", source: "Operations fixture" },

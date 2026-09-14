@@ -31,9 +31,8 @@ test("Executive Home withholds drilldown and strategy mutation without explicit 
   const shellHtml = renderToString(<ExecutiveHomeShell data={EXECUTIVE_HOME_FIXTURE_V1} />);
   const commandCenterHtml = renderToString(<ExecutiveCommandCenter data={EXECUTIVE_HOME_FIXTURE_V1.command_center} />);
 
-  assert.match(shellHtml, /Decision Room evidence is unavailable/);
   assert.match(shellHtml, /Decision evidence UNKNOWN/);
-  assert.match(shellHtml, /UNAVAILABLE/);
+  assert.doesNotMatch(shellHtml, /Decision Room detail/);
   assert.doesNotMatch(shellHtml, /Jump to grounded drill-down|Open Decision Room/);
   assert.match(commandCenterHtml, /Mark current step complete/);
   assert.match(commandCenterHtml, /disabled/);

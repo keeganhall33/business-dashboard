@@ -21,9 +21,8 @@ test("Executive Home visibly links one recommendation to its Decision Room drill
   assert.match(html, /Protect premium scarcity while choosing the next move/);
   assert.match(html, /Open Decision Room/);
   assert.match(html, /href="#decision-private-collector-room"/);
-  assert.match(html, /Grounded drill-down/);
-  assert.match(html, /No Decision Room is open/);
-  assert.match(html, /Choose recommendation above/);
+  assert.match(html, /See why/);
+  assert.doesNotMatch(html, /No Decision Room is open/);
 });
 
 test("Home recommendation opens Decision Room with grounded why evidence unknowns counterargument and next move", () => {

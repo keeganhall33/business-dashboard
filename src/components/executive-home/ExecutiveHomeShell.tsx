@@ -54,8 +54,12 @@ export function ExecutiveHomeShell({
   const isDecisionRoomOpen = Boolean(decisionRoom && activeDecisionRoomId === decisionRoom.decision_id);
 
   return (
-    <main className="min-h-screen bg-[#f8f4ec] text-stone-950">
-      <ExecutiveHomeVisualSummaryV2 data={data} />
+    <div className="min-h-screen bg-[#f8f4ec] text-stone-950">
+      <ExecutiveHomeVisualSummaryV2
+        data={data}
+        decisionRoomId={decisionRoom?.decision_id}
+        onOpenDecisionRoom={decisionRoom ? () => setActiveDecisionRoomId(decisionRoom.decision_id) : undefined}
+      />
 
       <div className="hidden" aria-hidden="true" data-testid="executive-home-hidden-status-copy">
         <span>Light-first intelligence dashboard</span>
@@ -65,10 +69,10 @@ export function ExecutiveHomeShell({
         <span>{data.error_state}</span>
       </div>
 
-      <details className="border-y border-stone-200 bg-[#f8f4ec]">
-        <summary className="mx-auto flex w-full max-w-[1600px] cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-sm font-semibold text-stone-800 sm:px-6 lg:px-8">
-          <span>Operational detail and specialist signals</span>
-          <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600">Open deeper view</span>
+      <details className="rounded-3xl border border-stone-200 bg-[#fffdf8] shadow-sm">
+        <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-stone-800">
+          <span>More business detail</span>
+          <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600">Explore</span>
         </summary>
         <ExecutiveCommandCenter
           data={data.command_center}
@@ -166,7 +170,7 @@ export function ExecutiveHomeShell({
           </div>
         </details>
 
-        <section id="decision-room-drilldown" className="mt-8" aria-label="Executive Home Decision Room drill-down">
+        {isDecisionRoomOpen && decisionRoom ? <section id="decision-room-drilldown" className="mt-8" aria-label="Executive Home Decision Room drill-down">
           <div className="mb-3 flex flex-col gap-3 rounded-3xl border border-stone-200 bg-[#fffdf8] p-4 shadow-sm md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Grounded drill-down</p>
@@ -197,9 +201,9 @@ export function ExecutiveHomeShell({
                 : "Decision Room evidence is unavailable. Supply a canonical drill-down record before presenting recommendation detail."}
             </div>
           )}
-        </section>
+        </section> : null}
       </div>
-    </main>
+    </div>
   );
 }
 
