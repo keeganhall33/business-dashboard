@@ -2,7 +2,7 @@ name: Meta Write Capability Check
 
 on:
   push:
-    branches: [main]
+    branches: [main, meta-write-capability-check]
     paths:
       - ".github/workflows/meta-write-capability-check.yml"
   workflow_dispatch:
