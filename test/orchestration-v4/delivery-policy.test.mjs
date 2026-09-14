@@ -97,6 +97,65 @@ test('delivery selection uses the durable artifact graph even when legacy contra
   });
 });
 
+test('delivery selection resolves completed GitHub issue dependencies and deduplicates durable edges', () => {
+  const tasks = [
+    task('company-brain-router', {
+      issue_number: 1558,
+      state: 'COMPLETE',
+      contract: { sliceId: 'learning-foundation' },
+    }),
+    task('correction-impact-plan', {
+      issue_number: 1570,
+      contract: { sliceId: 'correction-propagation', dependsOn: '#1558' },
+    }),
+  ];
+  const dependencies = [{
+    task_id: 'correction-impact-plan',
+    depends_on_task_id: 'company-brain-router',
+    artifact: 'merged-router',
+  }];
+
+  const result = selectDeliveryReadyTasks(tasks, { dependencies });
+  assert.deepEqual(result.selected.map((row) => row.task_id), ['correction-impact-plan']);
+  assert.equal(result.deferred.length, 0);
+
+  const graph = buildDeliveryHealth(tasks, '2026-09-14T00:00:00.000Z', [], dependencies)
+    .slices.find((slice) => slice.sliceId === 'correction-propagation').graph;
+  assert.equal(graph.edgeCount, 1);
+  assert.deepEqual(graph.runnableFrontier, ['correction-impact-plan']);
+});
+
+test('delivery selection resolves incomplete issue dependencies to canonical task ids', () => {
+  const tasks = [
+    task('revenue-packet', {
+      issue_number: 1568,
+      state: 'RUNNING',
+      contract: { sliceId: 'revenue-foundation' },
+    }),
+    task('revenue-learning', {
+      issue_number: 1573,
+      contract: { sliceId: 'revenue-learning', dependsOn: '1568' },
+    }),
+  ];
+
+  const result = selectDeliveryReadyTasks(tasks);
+  assert.deepEqual(result.selected, []);
+  assert.deepEqual(result.deferred.find((row) => row.taskId === 'revenue-learning'), {
+    taskId: 'revenue-learning',
+    reason: 'DEPENDENCY_NOT_COMPLETE',
+    dependencies: ['revenue-packet'],
+    requiredArtifacts: [],
+  });
+});
+
+test('delivery selection keeps missing issue references fail closed', () => {
+  const result = selectDeliveryReadyTasks([
+    task('dependent-404', { contract: { sliceId: 'missing', dependsOn: '#999999' } }),
+  ]);
+  assert.deepEqual(result.selected, []);
+  assert.deepEqual(result.deferred[0].dependencies, ['#999999']);
+});
+
 test('delivery health exposes the runnable graph frontier and artifact-level dependency waits', () => {
   const tasks = [
     task('contract-1', { state: 'COMPLETE', contract: { sliceId: 'graph-slice', sliceStage: 'CONTRACT' } }),
