@@ -72,7 +72,7 @@ test("keeps verification, UNKNOWN, STALE, and CONFLICTED states visible", () => 
 test("offers only supported person and opportunity destinations", () => {
   const html = renderToStaticMarkup(<CrmFollowUpQueueV1 queue={queue([item()])} />);
   assert.match(html, /href="\/relationships\/people\/contact%3A1"/);
-  assert.match(html, /href="\/opportunities\/opportunity%3A1"/);
+  assert.match(html, /href="\/opportunities-actions\/opportunity\/opportunity%3A1"/);
   assert.doesNotMatch(html, /mailto:|smtp:|send|compose/i);
 });
 
