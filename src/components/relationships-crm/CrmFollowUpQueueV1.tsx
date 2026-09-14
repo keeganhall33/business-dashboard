@@ -66,7 +66,7 @@ function QueueItem({ item }: { item: CanonicalRelationshipFollowUpQueueItemV1 })
           Person record
         </a>
         {item.opportunityIds.map((opportunityId) => (
-          <a key={opportunityId} className="text-stone-800 underline decoration-stone-300 underline-offset-4" href={`/opportunities/${encodeURIComponent(opportunityId)}`}>
+          <a key={opportunityId} className="text-stone-800 underline decoration-stone-300 underline-offset-4" href={`/opportunities-actions/opportunity/${encodeURIComponent(opportunityId)}`}>
             Opportunity {opportunityId}
           </a>
         ))}
