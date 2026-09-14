@@ -176,9 +176,13 @@ export function decideDeliveryContinuity(snapshot) {
     actions.push(action('REPLAN_TERMINAL_TASK', { taskId: task.taskId, reason: task.terminalReason || task.state }));
   }
 
-  const staleRuntimeNeeded = ready.some((task) => !requiredBaseAvailable(task, context.runtime));
+  const runtimeUpdateAvailable = typeof context.runtime.head === 'string'
+    && context.runtime.head.length > 0
+    && typeof context.runtime.latestHead === 'string'
+    && context.runtime.latestHead.length > 0
+    && context.runtime.head !== context.runtime.latestHead;
   const snapshotOwnsExecution = active.length > 0 || context.slots.some((slot) => Boolean(slot.taskId));
-  if (staleRuntimeNeeded && !snapshotOwnsExecution && context.runtime.clean === true && context.runtime.idle === true && context.runtime.head !== context.runtime.latestHead) {
+  if (runtimeUpdateAvailable && !snapshotOwnsExecution && context.runtime.clean === true && context.runtime.idle === true) {
     actions.push(action('REFRESH_CLEAN_IDLE_RUNTIME', { fromHead: context.runtime.head || null, toHead: context.runtime.latestHead || null }));
   }
 

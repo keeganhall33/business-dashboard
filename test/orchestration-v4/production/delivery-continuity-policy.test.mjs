@@ -111,12 +111,13 @@ test('terminal transition refills the vacated compatible slot immediately', () =
   assert.deepEqual(decision.actions[0], { type: 'REFILL_VACATED_SLOT', taskId: 'next', slotId: 'local-a', stream: 'CORE_INTELLIGENCE' });
 });
 
-test('runtime refresh occurs only when clean and idle', () => {
-  const task = ready('new-base', { requiredBase: 'head-b' });
-  const clean = decideDeliveryContinuity(snapshot({ tasks: [task], runtime: { head: 'head-a', latestHead: 'head-b', clean: true, idle: true } }));
-  const dirty = decideDeliveryContinuity(snapshot({ tasks: [task], runtime: { head: 'head-a', latestHead: 'head-b', clean: false, idle: true } }));
+test('runtime refresh occurs whenever canonical main advances and execution is clean and idle', () => {
+  const ordinary = ready('ordinary');
+  const clean = decideDeliveryContinuity(snapshot({ tasks: [ordinary], runtime: { head: 'head-a', latestHead: 'head-b', clean: true, idle: true } }));
+  const dirty = decideDeliveryContinuity(snapshot({ tasks: [ordinary], runtime: { head: 'head-a', latestHead: 'head-b', clean: false, idle: true } }));
   assert.equal(clean.actions[0].type, 'REFRESH_CLEAN_IDLE_RUNTIME');
-  assert.equal(dirty.actions[0].type, 'REPORT_BACKLOG_STARVATION');
+  assert.equal(clean.actions.filter((entry) => entry.type === 'REFRESH_CLEAN_IDLE_RUNTIME').length, 1);
+  assert.equal(dirty.actions[0].type, 'CLAIM_READY_TASK');
 });
 
 test('runtime refresh fails closed when task or slot state contradicts idle runtime', () => {

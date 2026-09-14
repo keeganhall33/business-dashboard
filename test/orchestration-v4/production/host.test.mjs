@@ -37,6 +37,38 @@ test('host loops, writes heartbeat, releases lock, and restarts', async () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('host drains and exits cleanly after refreshing runtime code', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-runtime-restart-'));
+  let calls = 0;
+  const yieldSleep = async () => { await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      poll: async () => {
+        calls += 1;
+        return {
+          continuity: {
+            generatedAt: new Date().toISOString(),
+            executedControlActions: [{ type: 'REFRESH_CLEAN_IDLE_RUNTIME' }],
+          },
+        };
+      },
+      maxCycles: 5,
+      maxConcurrentPolls: 1,
+      intervalMs: 1,
+      sleep: yieldSleep,
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.stopped, true);
+    assert.equal(result.restartRequested, true);
+    assert.equal(result.drained, true);
+    const heartbeat = JSON.parse(fs.readFileSync(path.join(root, 'heartbeat.json'), 'utf8'));
+    assert.equal(heartbeat.restartRequested, true);
+    assert.equal(heartbeat.pollState, 'RESTARTING');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('host keeps bounded intake polling while earlier polls remain unresolved', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-bounded-overlap-'));
   let calls = 0;
