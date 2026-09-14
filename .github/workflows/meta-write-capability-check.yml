@@ -1,0 +1,54 @@
+name: Meta Write Capability Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/meta-write-capability-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 1Password/install-cli-action@v1
+      - name: Check existing Meta token scopes and ad account tasks
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+          cp config/env/meta.op.env .env.meta
+          op run --env-file .env.meta -- bash <<'BASH'
+          set -euo pipefail
+          token="$META_ACCESS_TOKEN"
+          acct="$META_AD_ACCOUNT_ID"
+          acct="${acct#act_}"
+
+          echo "=== TOKEN PERMISSIONS ==="
+          perms=$(curl -fsS --get \
+            --data-urlencode "access_token=$token" \
+            "https://graph.facebook.com/me/permissions")
+          echo "$perms" | jq '{granted: [.data[]? | select(.status=="granted") | .permission], declined: [.data[]? | select(.status!="granted") | {permission,status}]}'
+
+          echo "=== AD ACCOUNT PERMITTED TASKS ==="
+          account=$(curl -fsS --get \
+            --data-urlencode "fields=id,name,account_id,account_status,disable_reason,permitted_tasks" \
+            --data-urlencode "access_token=$token" \
+            "https://graph.facebook.com/act_${acct}")
+          echo "$account" | jq '{id,name,account_id,account_status,disable_reason,permitted_tasks}'
+
+          has_scope=$(echo "$perms" | jq -r '[.data[]? | select(.permission=="ads_management" and .status=="granted")] | length > 0')
+          can_advertise=$(echo "$account" | jq -r '(.permitted_tasks // []) | any(. == "ADVERTISE" or . == "MANAGE")')
+          echo "ADS_MANAGEMENT_SCOPE=$has_scope"
+          echo "ACCOUNT_WRITE_TASK=$can_advertise"
+          if [ "$has_scope" = "true" ] && [ "$can_advertise" = "true" ]; then
+            echo "META_WRITE_READY=true"
+          else
+            echo "META_WRITE_READY=false"
+          fi
+          BASH
