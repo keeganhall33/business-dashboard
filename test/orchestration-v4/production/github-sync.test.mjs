@@ -3,19 +3,22 @@ import test from 'node:test';
 import {
   ALL_STATE_LABELS,
   buildContinuityStatus,
+  buildTerminalEvidence,
   publishContinuityStatusToGitHub,
   renderContinuityStatusComment,
+  renderTerminalEvidenceComment,
   syncTerminalTaskToGitHub,
 } from '../../../scripts/orchestration-v4/production/github-sync.mjs';
 
-function fakeGithub(initialLabels = ['orch:ready']) {
+function fakeGithub(initialLabels = ['orch:ready'], issueState = 'OPEN') {
   const labels = new Set(initialLabels);
+  const comments = [];
   const calls = [];
   const exec = (_command, args, options) => {
     calls.push({ args, options });
     if (args[0] === 'label') return '';
     if (args[0] === 'issue' && args[1] === 'view') {
-      return JSON.stringify({ labels: [...labels].map((name) => ({ name })), state: 'OPEN' });
+      return JSON.stringify({ labels: [...labels].map((name) => ({ name })), state: issueState });
     }
     if (args[0] === 'issue' && args[1] === 'edit') {
       const removeAt = args.indexOf('--remove-label');
@@ -24,9 +27,20 @@ function fakeGithub(initialLabels = ['orch:ready']) {
       if (addAt >= 0) labels.add(args[addAt + 1]);
       return '';
     }
+    if (args[0] === 'api' && args.includes('--paginate')) return JSON.stringify(comments);
+    if (args[0] === 'api') {
+      const bodyArg = args.find((value) => value.startsWith('body='));
+      const body = bodyArg?.slice(5) || '';
+      const id = Number(args.find((value) => value.includes('/issues/comments/'))?.split('/').at(-1)) || 91;
+      const comment = { id, body };
+      const existing = comments.findIndex((entry) => entry.id === id);
+      if (existing >= 0) comments[existing] = comment;
+      else comments.push(comment);
+      return JSON.stringify(comment);
+    }
     throw new Error(`UNEXPECTED_FAKE_GH_CALL:${args.join(' ')}`);
   };
-  return { labels, calls, exec };
+  return { labels, comments, calls, exec };
 }
 
 test('terminal reconciliation leaves exactly one orchestration state label', () => {
@@ -41,6 +55,74 @@ test('terminal reconciliation leaves exactly one orchestration state label', () 
   assert.deepEqual([...fake.labels].filter((label) => ALL_STATE_LABELS.includes(label)), ['orch:failed']);
   assert.equal(fake.labels.has('product'), true);
   assert.equal(fake.calls.every((call) => call.options.timeout === 1234), true);
+  assert.equal(result.evidenceCommentId, 91);
+  assert.equal(fake.comments.length, 1);
+  assert.match(fake.comments[0].body, /TerminalEvidenceV1/);
+});
+
+test('terminal evidence exposes only allow-listed privacy-safe classification', () => {
+  const task = {
+    task_id: 'secret-looking-task@example.com',
+    issue_number: 1540,
+    state: 'BLOCKED',
+    attempt: 1,
+    terminal_reason: 'REPLAN_REQUIRED',
+    semantic_progress_seq: 7,
+    semantic_progress_at: '2026-09-13T22:02:42.713Z',
+    updated_at: '2026-09-13T22:06:00.834Z',
+    workspace_path: '/Users/private/workspace',
+    result_json: JSON.stringify({
+      execution: {
+        status: 'BLOCKED',
+        code: 1,
+        signal: null,
+        reason: 'REPLAN_REQUIRED',
+        stdout: 'customer@example.com',
+        correctionPacket: {
+          reason: 'EXIT_1',
+          action: 'REPLAN',
+          evidence: 'op://vault/private',
+        },
+      },
+      prompt: 'do not publish',
+    }),
+  };
+  assert.deepEqual(buildTerminalEvidence(task), {
+    contractVersion: 'TerminalEvidenceV1',
+    issueNumber: 1540,
+    state: 'BLOCKED',
+    attempt: 1,
+    terminalReason: 'REPLAN_REQUIRED',
+    execution: { status: 'BLOCKED', code: 1, signal: null, reason: 'REPLAN_REQUIRED' },
+    correction: { reason: 'EXIT_1', action: 'REPLAN' },
+    semanticProgressSeq: 7,
+    semanticProgressAt: '2026-09-13T22:02:42.713Z',
+    terminalAt: '2026-09-13T22:06:00.834Z',
+  });
+  const rendered = renderTerminalEvidenceComment(task);
+  assert.match(rendered, /JEEVES_V4_TERMINAL_EVIDENCE_V1/);
+  assert.doesNotMatch(rendered, /secret-looking|private\/workspace|customer@example\.com|op:\/\/|do not publish/);
+});
+
+test('terminal evidence handles malformed result JSON and updates one existing marker comment', () => {
+  const fake = fakeGithub(['orch:blocked']);
+  const task = { task_id: 'terminal-one', issue_number: 1540, state: 'BLOCKED', result_json: '{bad' };
+  const first = syncTerminalTaskToGitHub({ task, repoFullName: 'owner/repo', exec: fake.exec });
+  const second = syncTerminalTaskToGitHub({ task: { ...task, attempt: 2 }, repoFullName: 'owner/repo', exec: fake.exec });
+  assert.equal(first.evidenceCommentId, second.evidenceCommentId);
+  assert.equal(fake.comments.length, 1);
+  assert.equal(JSON.parse(fake.comments[0].body.match(/```json\n([\s\S]*?)\n```/)[1]).attempt, 2);
+});
+
+test('closed terminal issue reconciles labels without publishing evidence', () => {
+  const fake = fakeGithub(['orch:running'], 'CLOSED');
+  const result = syncTerminalTaskToGitHub({
+    task: { task_id: 'closed-task', issue_number: 1594, state: 'COMPLETE' },
+    repoFullName: 'owner/repo',
+    exec: fake.exec,
+  });
+  assert.equal(result.evidenceCommentId, null);
+  assert.equal(fake.comments.length, 0);
 });
 
 test('hung GitHub subprocess is bounded and fails closed', () => {
