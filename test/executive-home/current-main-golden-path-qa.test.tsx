@@ -39,8 +39,8 @@ test("current-main executive golden path renders command center specialist summa
   assert.doesNotMatch(goalsHtml, /Capacity conflicts remain visible/);
   assert.match(homeHtml, /Protect premium scarcity while choosing the next move/);
   assert.match(homeHtml, /Open Decision Room/);
-  assert.match(homeHtml, /Grounded drill-down/);
-  assert.match(homeHtml, /No Decision Room is open/);
+  assert.match(homeHtml, /See why/);
+  assert.doesNotMatch(homeHtml, /No Decision Room is open/);
 });
 
 test("current-main recommendation opens Decision Room with evidence unknowns conflicts and next action intact", () => {

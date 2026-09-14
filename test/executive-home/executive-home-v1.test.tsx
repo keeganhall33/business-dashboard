@@ -43,9 +43,11 @@ test("cards expose WHY EVIDENCE NEXT ACTION through progressive disclosure", () 
 
 test("Executive Home uses visual scan primitives without hiding evidence details", () => {
   assert.match(html, /Executive Home visual scan/);
-  assert.match(html, /Do now/);
-  assert.match(html, /Evidence watch/);
-  assert.match(html, /UNKNOWN \/ STALE \/ CONFLICTED/);
+  assert.match(html, /The numbers that matter/);
+  assert.match(html, /What happened/);
+  assert.match(html, /What we are doing/);
+  assert.match(html, /What comes next/);
+  assert.match(html, /Result so far/);
   assert.match(html, /Priority/);
   assert.match(html, /Evidence state/);
   assert.match(html, /Confidence/);
