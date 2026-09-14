@@ -149,7 +149,7 @@ test("CRM overview exposes first-class People and Companies navigation without a
 });
 
 test("production CRM routes render honest empty states and contain no synthetic contact or company fixture", async () => {
-  const overview = renderToString(<RelationshipsPage />);
+  const overview = renderToString(await RelationshipsPage());
   const people = renderToString(await RelationshipPeoplePage());
   const companies = renderToString(await RelationshipCompaniesPage());
   const combined = `${overview}${people}${companies}`;

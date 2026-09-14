@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { ExecutiveOpportunityDetailV1 } from "@/components/opportunity-intelligence/ExecutiveOpportunityDetailV1";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
-import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
+import type { ExecutiveCommandCenterOpportunityV1 } from "@/lib/executive-home/fixtures";
+import { buildExecutiveOpportunityPortfolioV1 } from "@/lib/opportunity-intelligence/executive-opportunity-portfolio-v1";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -40,14 +41,24 @@ export default async function ExecutiveOpportunityDetailPage({ params, searchPar
     { preset, startDate: start, endDate: end },
     { baseUrl, cookie }
   );
-  const executiveHome = buildExecutiveHomeFromDashboardOverviewV1(overview);
-  const opportunity = executiveHome.home.command_center.opportunities.find(
-    (candidate) => candidate.id === opportunityId
-  );
+  const portfolio = buildExecutiveOpportunityPortfolioV1(overview.opportunityRadar?.topOpportunities ?? []);
+  const item = portfolio.items.find((candidate) => candidate.id === opportunityId);
 
-  if (!opportunity || opportunity.id === "unknown-opportunity") notFound();
+  if (!item) notFound();
+
+  const opportunity: ExecutiveCommandCenterOpportunityV1 = {
+    id: item.id,
+    title: item.title,
+    upside: item.supportedValue ?? "UNKNOWN",
+    fit: item.prestigeScore ? `${item.prestigeScore} prestige fit` : "UNKNOWN",
+    timing: item.timing ?? "UNKNOWN",
+    effort: item.effortSignal === "NEXT_STEP_KNOWN" ? "Next step known" : "UNKNOWN",
+    evidence: item.evidenceState,
+    next_move: item.nextMove,
+    detail_href: item.detailHref
+  };
 
   const sanitizedOpportunity = sanitizeDashboardPayloadForHtml(opportunity);
 
-  return <ExecutiveOpportunityDetailV1 opportunity={sanitizedOpportunity} generatedAt={null} />;
+  return <ExecutiveOpportunityDetailV1 opportunity={sanitizedOpportunity} generatedAt={overview.timestamp} />;
 }

@@ -1,6 +1,8 @@
-import { ExecutiveWorkspacePage } from "@/components/executive-workspace/ExecutiveWorkspacePage";
-import { getExecutiveWorkspaceByHrefV1 } from "@/lib/executive-workspace/ia";
+import { AskJeevesWorkspaceV1 } from "@/components/ask-jeeves/AskJeevesWorkspaceV1";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default function AskJeevesPage() {
-  return <ExecutiveWorkspacePage model={getExecutiveWorkspaceByHrefV1("/ask-jeeves")} />;
+  return <AskJeevesWorkspaceV1 />;
 }

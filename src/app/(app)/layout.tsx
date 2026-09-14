@@ -9,8 +9,8 @@ const MORE_NAV_ITEMS = NAV_ITEMS.filter((item) => !PRIMARY_NAV_IDS.has(item.id))
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-full bg-[#f8f4ec] text-stone-950">
-      <header className="sticky top-0 z-40 border-b border-stone-200 bg-[#fffdf8]/90 backdrop-blur">
+    <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex flex-col">
             <Link href="/dashboard" className="text-sm font-semibold tracking-wide">Mission Control</Link>
@@ -59,7 +59,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
 
-      <footer className="border-t border-stone-200 bg-[#fffdf8]">
+      <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto w-full max-w-[1600px] px-4 py-4 text-[11px] text-stone-500 sm:px-6 lg:px-8">
           Intelligence is source-limited. Unknown, stale, and conflicted evidence should remain explicit.
         </div>
