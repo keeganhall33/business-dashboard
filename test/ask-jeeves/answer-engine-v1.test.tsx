@@ -38,6 +38,7 @@ test("Ask Jeeves is honest about its currently supported reasoning scope", () =>
 test("Ask Jeeves answers top-product questions when line-item telemetry is available", () => {
   const answer = answerAskJeevesV1("What's my top selling item over the past 4 months?", {
     ...context,
+    requestedRange: { startDate: "2026-05-14", endDate: "2026-09-14" },
     websiteConversion: {
       range: { startDate: "2026-05-14", endDate: "2026-09-14" },
       ga4: null,
@@ -55,4 +56,14 @@ test("Ask Jeeves answers top-product questions when line-item telemetry is avail
   });
   assert.match(answer.answer, /Print A/);
   assert.match(answer.answer, /\$700/);
+});
+
+test("Ask Jeeves does not present all-time product snapshots as selected-range results", () => {
+  const answer = answerAskJeevesV1("What's my top selling item over the past four months?", {
+    ...context,
+    requestedRange: { startDate: "2026-05-14", endDate: "2026-09-14" },
+    websiteConversion: { generatedAt: "2026-09-14T00:00:00.000Z", wooCommerce: { topProducts: [{ name: "All-time leader", units: 99, revenue: 9999 }] } }
+  });
+  assert.match(answer.answer, /cannot name a top-selling item without guessing/i);
+  assert.doesNotMatch(answer.answer, /All-time leader/);
 });

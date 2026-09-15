@@ -63,6 +63,7 @@ import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } f
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
 import { buildRevenueEngineMetrics } from "@/lib/dashboard/revenue-engine";
 import { normalizeMetaSnapshotGeneratedAt } from "@/lib/dashboard/meta-snapshot-generatedAt";
+import { rankOpportunitiesForBusinessValueV1 } from "@/lib/opportunity-intelligence/rank-opportunities-v1";
 
 export const runtime = "nodejs";
 
@@ -151,6 +152,7 @@ type OpportunityRow = {
   source?: string | null;
   deliverables?: unknown;
   deliverable_links?: unknown;
+  updated_at?: string | null;
 };
 
 const opportunityIdRegex = /opportunity id:\s*([a-z0-9_-]+)/gi;
@@ -1060,7 +1062,7 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       getScoreboardMetricsForRange(range) as Promise<ScoreboardMetricRow[]>,
       getOpenTasks(50) as Promise<TaskRow[]>,
-      getActiveOpportunities(25) as Promise<OpportunityRow[]>,
+      getActiveOpportunities(500) as Promise<OpportunityRow[]>,
       getLatestAgentDirective(),
       getAgentHealth(),
       getCommerceTelemetry({ startDate: range.startDate, endDate: range.endDate }),
@@ -1759,7 +1761,8 @@ export async function GET(request: Request) {
       supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
     const seenPipelineDeals = new Set<string>();
-    for (const opportunity of normalizedOpportunities) {
+    const rankedOpportunities = rankOpportunitiesForBusinessValueV1(normalizedOpportunities);
+    for (const opportunity of rankedOpportunities) {
       if (["won", "lost", "parked"].includes(opportunity.status)) continue;
       const dedupeKey = `${opportunity.name}|${opportunity.organization ?? ""}`.toLowerCase();
       if (seenPipelineDeals.has(dedupeKey)) continue;
@@ -1786,7 +1789,7 @@ export async function GET(request: Request) {
     const activeCount = normalizedOpportunities.filter((o) => !["won", "lost", "parked"].includes(o.status)).length;
     const readyForOutreachCount = normalizedOpportunities.filter((o) => o.status === "ready_for_outreach").length;
 
-    const sortedOpportunities = normalizedOpportunities.slice().sort((a, b) => (b.prestige_score ?? 0) - (a.prestige_score ?? 0));
+    const sortedOpportunities = rankedOpportunities;
     const seenTopOpportunities = new Set<string>();
     const topOpportunities: {
       id: string;

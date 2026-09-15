@@ -42,6 +42,7 @@ type OpportunityRowV1 = {
   contact_name: string | null;
   contact_role: string | null;
   source: string | null;
+  updated_at: string | null;
 };
 
 function isActiveCanonicalEntityRowV1(value: unknown): value is CanonicalEntityRowV1 {
@@ -100,7 +101,7 @@ async function queryOpportunityLinksV1(): Promise<readonly unknown[]> {
 
 async function queryOpportunitiesV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient().from("opportunity_pipeline")
-    .select("id,name,organization,status,next_step,next_step_due_at,value_estimate,contact_name,contact_role,source").limit(5_000);
+    .select("id,name,organization,status,next_step,next_step_due_at,value_estimate,contact_name,contact_role,source,updated_at").limit(5_000);
   if (error) throw error;
   return data ?? [];
 }
@@ -145,8 +146,22 @@ function normalizedName(value: string | null | undefined): string {
   return value?.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ?? "";
 }
 
+function isEngagedOpportunityV1(opportunity: OpportunityRowV1) {
+  return !/^(research|researching|ready_for_research|archived|lost|won|parked)$/i.test(opportunity.status.trim());
+}
+
+function pipelineEvidenceStateV1(opportunity: OpportunityRowV1): CrmPersonDirectoryRecordV1["evidenceState"] {
+  const updatedAt = text(opportunity.updated_at);
+  const dueAt = text(opportunity.next_step_due_at);
+  const now = Date.now();
+  const isOld = updatedAt ? now - Date.parse(updatedAt) > 21 * 86_400_000 : true;
+  const isOverdue = dueAt ? Date.parse(dueAt) < now : false;
+  return isOld || isOverdue ? "STALE" : /keegan[_ -]?confirmed|user[_ -]?confirmed/i.test(opportunity.source ?? "") ? "KNOWN" : "UNKNOWN";
+}
+
 function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[]): CrmPersonDirectoryRecordV1 {
   const primary = opportunities[0];
+  const evidence = pipelineEvidenceStateV1(primary);
   const id = `pipeline-person:${normalizedName(name)}`;
   return {
     id,
@@ -159,8 +174,8 @@ function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[])
     lastTouchAt: null,
     nextFollowUpAt: text(primary?.next_step_due_at),
     activeOpportunity: text(primary?.name),
-    activeAsk: text(primary?.next_step),
-    evidenceState: "KNOWN",
+    activeAsk: evidence === "STALE" ? "Review and update this record before acting." : text(primary?.next_step),
+    evidenceState: evidence,
     detailHref: crmPersonDetailHrefV1(id)
   };
 }
@@ -176,9 +191,9 @@ function pipelineCompanyRecordV1(name: string, opportunities: OpportunityRowV1[]
     relationshipState: opportunities.some((opportunity) => !/closed|lost|archived/i.test(opportunity.status)) ? "Active opportunity" : humanize(text(opportunities[0]?.status)),
     activeOpportunities: opportunities.map((opportunity) => opportunity.name),
     lastActivityAt: null,
-    nextMove: opportunities.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
+    nextMove: opportunities.some((opportunity) => pipelineEvidenceStateV1(opportunity) === "STALE") ? "Review and update stale relationship records." : opportunities.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
     supportedValue: money(valued?.value_estimate),
-    evidenceState: "KNOWN",
+    evidenceState: opportunities.some((opportunity) => pipelineEvidenceStateV1(opportunity) === "STALE") ? "STALE" : opportunities.every((opportunity) => pipelineEvidenceStateV1(opportunity) === "KNOWN") ? "KNOWN" : "UNKNOWN",
     detailHref: crmCompanyDetailHrefV1(id)
   };
 }
@@ -249,7 +264,7 @@ export async function loadCrmDirectoryIndexV1(
     const activities = rows<ActivityRowV1>(activityValues);
     const followUps = rows<FollowUpRowV1>(followUpValues);
     const links = rows<OpportunityLinkRowV1>(linkValues);
-    const opportunities = rows<OpportunityRowV1>(opportunityValues);
+    const opportunities = rows<OpportunityRowV1>(opportunityValues).filter(isEngagedOpportunityV1);
     const entityNames = new Map(activeRows.map((row) => [row.entity_id, row.canonical_name]));
     const opportunitiesById = new Map(opportunities.map((row) => [String(row.id), row]));
 
@@ -310,8 +325,8 @@ export async function loadCrmDirectoryIndexV1(
     }
 
     return buildCrmDirectoryIndexV1({
-      people: [...canonicalPeople, ...[...pipelinePeople.values()].map((entry) => pipelinePersonRecordV1(entry.name, entry.opportunities))],
-      companies: [...canonicalCompanies, ...[...pipelineCompanies.values()].map((entry) => pipelineCompanyRecordV1(entry.name, entry.opportunities))]
+      people: [...canonicalPeople.filter((person) => Boolean(person.relationshipState || person.lastTouchAt || person.nextFollowUpAt || person.activeOpportunity)), ...[...pipelinePeople.values()].map((entry) => pipelinePersonRecordV1(entry.name, entry.opportunities))],
+      companies: [...canonicalCompanies.filter((company) => Boolean(company.keyPeople.length || company.activeOpportunities.length || company.lastActivityAt)), ...[...pipelineCompanies.values()].map((entry) => pipelineCompanyRecordV1(entry.name, entry.opportunities))]
     });
   } catch {
     return EMPTY_CRM_DIRECTORY_INDEX_V1;

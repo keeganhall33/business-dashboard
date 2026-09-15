@@ -54,11 +54,11 @@ export function buildExecutiveHomeVisualSummaryV2(data: ExecutiveHomeFixtureV1):
 
   return {
     businessPulse: data.command_center.business_pulse.slice(0, 4),
-    primaryFocus: data.cards.find((card) => card.section === "WHAT_MATTERS_NOW") ?? doNow[0] ?? null,
-    result: data.cards.find((card) => card.section === "LEARNING_SINCE_LAST_REVIEW") ?? null,
-    needsYouNow: [...approvalRequired, ...doNow].slice(0, 3),
+    primaryFocus: data.cards.find((card) => card.section === "WHAT_MATTERS_NOW" && !/automation cadence|scheduler telemetry|data connection/i.test(`${card.title} ${card.summary} ${card.next_action}`)) ?? doNow.find((card) => !/automation cadence|scheduler telemetry|data connection/i.test(`${card.title} ${card.summary} ${card.next_action}`)) ?? null,
+    result: data.cards.find((card) => card.section === "LEARNING_SINCE_LAST_REVIEW" && !/no verified|no measured|unavailable/i.test(`${card.title} ${card.summary}`)) ?? null,
+    needsYouNow: [...approvalRequired, ...doNow].filter((card) => !/approval items require|review approval queue|automation cadence|scheduler telemetry/i.test(`${card.title} ${card.summary} ${card.next_action}`)).slice(0, 3),
     biggestOpportunities: data.command_center.opportunities.slice(0, 3),
-    whatChanged: data.command_center.what_changed.slice(0, 3),
+    whatChanged: data.command_center.what_changed.filter((item) => item.truth_state === "KNOWN" && !/material movement may|industry pulse/i.test(`${item.label} ${item.why_it_matters}`)).slice(0, 3),
     pulse: {
       approvalRequired: approvalRequired.length,
       activeWork: data.command_center.do_now.filter((item) => item.state !== "COMPLETED").length,
@@ -94,6 +94,9 @@ export function ExecutiveHomeVisualSummaryV2({
             <button type="submit" className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Ask Jeeves</button>
           </form>
           <p className="mt-2 text-xs text-slate-500">Type or speak a question and get an answer from your connected business data.</p>
+          <nav aria-label="Reporting range" className="mt-4 flex flex-wrap justify-center gap-2">
+            {[{ label: "7 days", value: "7d" }, { label: "30 days", value: "30d" }, { label: "90 days", value: "90d" }, { label: "Year to date", value: "ytd" }].map((range) => <a key={range.value} href={`/dashboard?range=${range.value}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700">{range.label}</a>)}
+          </nav>
         </div>
       </div>
 
@@ -107,8 +110,8 @@ export function ExecutiveHomeVisualSummaryV2({
         </div>
       </section>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.75fr)]">
-        <section id="current-direction" className="rounded-3xl bg-[#0b1f33] p-5 text-white shadow-sm sm:p-7" aria-label="Current direction">
+      {model.primaryFocus || model.result ? <div className={`mt-5 grid gap-4 ${model.primaryFocus && model.result ? "lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.75fr)]" : ""}`}>
+        {model.primaryFocus ? <section id="current-direction" className="rounded-3xl border border-blue-200 bg-blue-950 p-5 text-white shadow-sm sm:p-7" aria-label="Current direction">
           <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">What matters now</p>{model.primaryFocus ? <PlainState state={model.primaryFocus.state} /> : null}</div>
           <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-tight tracking-[-0.025em] sm:text-3xl">{model.primaryFocus?.title ?? "No verified priority is ready"}</h2>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">{model.primaryFocus?.summary ?? "The system needs stronger evidence before recommending a move."}</p>
@@ -121,30 +124,30 @@ export function ExecutiveHomeVisualSummaryV2({
             {decisionRoomId && onOpenDecisionRoom ? <button type="button" onClick={onOpenDecisionRoom} className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-slate-100">See why</button> : null}
             <a href="/opportunities-actions" className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10">View actions</a>
           </div>
-        </section>
+        </section> : null}
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Result and learning">
+        {model.result ? <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Result and learning">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Result so far</p>
           <h2 className="mt-3 text-lg font-semibold text-slate-950">{model.result?.title ?? "No measured result yet"}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">{model.result?.summary ?? "Results will appear after an action has a verified outcome."}</p>
           <div className="mt-5 rounded-2xl bg-slate-100 p-4"><p className="text-xs font-semibold text-slate-500">What this changes</p><p className="mt-1 text-sm leading-6 text-slate-800">{model.result?.next_action ?? "Keep the next recommendation unchanged until evidence arrives."}</p></div>
           <a href="/learning" className="mt-4 inline-flex text-sm font-semibold text-slate-800 underline-offset-4 hover:underline">Open learning loop</a>
-        </section>
-      </div>
+        </section> : null}
+      </div> : null}
 
       {model.needsYouNow.length ? <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Needs you now">
         <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Needs you now</p><h2 className="mt-1 text-lg font-semibold text-slate-950">Decisions and urgent moves</h2></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{model.needsYouNow.length}</span></div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">{model.needsYouNow.map((card) => <article key={card.id} className="rounded-2xl border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-950">{card.title}</p><p className="mt-2 text-xs leading-5 text-slate-600">{card.next_action}</p></article>)}</div>
       </section> : null}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <DecisionPanel title="Best opportunities" href="/opportunities-actions">
+      {model.biggestOpportunities.length || model.whatChanged.length ? <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {model.biggestOpportunities.length ? <DecisionPanel title="Best opportunities" href="/opportunities-actions">
           {model.biggestOpportunities.length ? model.biggestOpportunities.map((opportunity) => <a key={opportunity.id} href={opportunity.detail_href} className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-400"><div><p className="text-sm font-semibold text-slate-950">{opportunity.title}</p><p className="mt-1 text-xs leading-5 text-slate-600">{opportunity.next_move}</p></div><TruthChip state={opportunity.evidence} /></a>) : <CompactEmpty>No supported opportunity is ready.</CompactEmpty>}
-        </DecisionPanel>
-        <DecisionPanel title="What changed" href="/learning">
+        </DecisionPanel> : null}
+        {model.whatChanged.length ? <DecisionPanel title="What changed" href="/data-evidence">
           {model.whatChanged.length ? model.whatChanged.map((item) => <article key={item.id} className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4"><div><p className="text-sm font-semibold text-slate-950">{item.label}</p><p className="mt-1 text-xs leading-5 text-slate-600">{item.why_it_matters}</p></div><TruthChip state={item.truth_state} /></article>) : <CompactEmpty>No material change is currently verified.</CompactEmpty>}
-        </DecisionPanel>
-      </div>
+        </DecisionPanel> : null}
+      </div> : null}
     </section>
   );
 }

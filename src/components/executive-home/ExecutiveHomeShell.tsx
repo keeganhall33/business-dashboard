@@ -69,7 +69,7 @@ export function ExecutiveHomeShell({
         <span>{data.error_state}</span>
       </div>
 
-      <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <details className="hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-slate-800">
           <span>More business detail</span>
           <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-600">Explore</span>
@@ -81,7 +81,7 @@ export function ExecutiveHomeShell({
       </details>
 
       <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
-        <details className="mt-5 rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <details className="hidden mt-5 rounded-3xl border border-slate-200 bg-white shadow-sm">
           <summary className="cursor-pointer list-none p-4 sm:p-5">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>

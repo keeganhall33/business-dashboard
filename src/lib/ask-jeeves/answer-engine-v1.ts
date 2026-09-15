@@ -15,6 +15,7 @@ export type AskJeevesContextV1 = {
   opportunities: ExecutiveOpportunityPortfolioV1;
   crm: CrmDirectoryIndexV1;
   websiteConversion?: WebsiteConversionSnapshot | null;
+  requestedRange?: { startDate: string; endDate: string } | null;
 };
 
 function includesAny(question: string, terms: string[]) {
@@ -50,14 +51,17 @@ function opportunityAnswer(question: string, context: AskJeevesContextV1): AskJe
 }
 
 function productAnswer(context: AskJeevesContextV1): AskJeevesAnswerV1 {
-  const products = [...(context.websiteConversion?.wooCommerce?.topProducts ?? [])]
+  const snapshotRange = context.websiteConversion?.range;
+  const requestedRange = context.requestedRange;
+  const rangeMatches = Boolean(snapshotRange && requestedRange && snapshotRange.startDate === requestedRange.startDate && snapshotRange.endDate === requestedRange.endDate);
+  const products = [...(rangeMatches ? context.websiteConversion?.wooCommerce?.topProducts ?? [] : [])]
     .sort((left, right) => right.revenue - left.revenue || right.units - left.units);
   const product = products[0];
   if (!product) {
     const revenue = context.home.command_center.business_pulse.find((item) => item.id === "revenue");
     return {
       answer: `Product-level sales are not available for ${context.home.hero.range_label}, so I cannot name a top-selling item without guessing.`,
-      facts: revenue ? [`Verified total revenue for the period: ${revenue.value}`, "Product line items are not present in the connected WooCommerce telemetry."] : ["Product line items are not present in the connected WooCommerce telemetry."],
+      facts: revenue ? [`Reported total revenue for the period: ${revenue.value}`, "Range-matched product line items are not present in the connected WooCommerce telemetry."] : ["Range-matched product line items are not present in the connected WooCommerce telemetry."],
       links: [{ label: "Check commerce data", href: "/data-evidence" }],
       sources: revenue ? [revenue.source] : []
     };
