@@ -1,6 +1,7 @@
 import { DateRangeControls } from "./DateRangeControls";
 import type { ExecutiveInsightsPayload, RangePreset } from "@/lib/types/dashboard";
-import { formatRangeLabel, getPreviousRange } from "@/lib/date/range";
+import { formatRangeLabel } from "@/lib/date/range";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 
 export function ExecutiveRangeHeader({
   range,
@@ -15,7 +16,7 @@ export function ExecutiveRangeHeader({
   degraded?: boolean;
   showControls?: boolean;
 }) {
-  const comparisonRange = getPreviousRange(range);
+  const comparisonRange = computeComparisonDateRange(range) ?? range;
   const rangeLabel = formatRangeLabel(range, { includeYear: true });
   const comparisonLabel = formatRangeLabel(comparisonRange, { includeYear: true });
   const includesPartialDay = insights?.brief?.pacificWindow?.includesPartialDay ?? false;

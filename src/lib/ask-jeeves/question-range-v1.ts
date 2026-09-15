@@ -13,13 +13,17 @@ const NUMBER_WORDS: Record<string, number> = {
   seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12
 };
 
-export function resolveAskQuestionRangeV1(question: string, now = new Date()): AskQuestionRangeV1 {
+export function resolveAskQuestionRangeV1(
+  question: string,
+  now = new Date(),
+  fallback: AskQuestionRangeV1 = { preset: "30d" }
+): AskQuestionRangeV1 {
   const normalized = question.trim().toLowerCase();
   const match = normalized.match(/(?:past|last)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(day|days|week|weeks|month|months|year|years)\b/);
-  if (!match) return { preset: "30d" };
+  if (!match) return fallback;
 
   const amount = NUMBER_WORDS[match[1]] ?? Number(match[1]);
-  if (!Number.isFinite(amount) || amount < 1) return { preset: "30d" };
+  if (!Number.isFinite(amount) || amount < 1) return fallback;
 
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const start = new Date(end);

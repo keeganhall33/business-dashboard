@@ -1,7 +1,7 @@
 import { ok, serverError, badRequest } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { resolveRange } from "@/lib/date/resolve-range";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry, getDashboardSnapshots } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
         : null;
     const comparisonRange =
       comparisonOverride ??
-      computePreviousInclusiveDateRange({ startDate: range.startDate, endDate: range.endDate });
+      computeComparisonDateRange(range);
 
     if (!comparisonRange) {
       return badRequest("Comparison range invalid");

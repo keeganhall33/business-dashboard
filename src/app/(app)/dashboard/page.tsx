@@ -42,5 +42,5 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const sanitizedHome = sanitizeDashboardPayloadForHtml(executiveHome.home);
   const sanitizedDecisionRoom = sanitizeDashboardPayloadForHtml(executiveHome.decisionRoom);
 
-  return <ExecutiveHomeShell data={sanitizedHome} decisionRoom={sanitizedDecisionRoom} />;
+  return <ExecutiveHomeShell data={sanitizedHome} decisionRoom={sanitizedDecisionRoom} reportingRange={overview.range} />;
 }

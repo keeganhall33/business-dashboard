@@ -3,7 +3,7 @@ import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { resolveRangeQuery } from "../_lib/resolve-range";
 import { RecommendVerticalSlice } from "@/components/vertical-slice/RecommendVerticalSlice";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import { detectOpportunities } from "@/lib/intelligence/opportunity-detection";
@@ -27,7 +27,7 @@ export default async function RecommendPage({ searchParams }: PageProps) {
   const sanitized = sanitizeDashboardPayloadForHtml(overview);
 
   // Build evidence-backed opportunities + recommendations server-side (read-only).
-  const comparison = computePreviousInclusiveDateRange({ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate });
+  const comparison = computeComparisonDateRange(sanitized.range);
   const missingSources = ["email", "matchback"]; // explicit until connected
 
   let opportunitiesPayload: OpportunitiesResponse | null = null;

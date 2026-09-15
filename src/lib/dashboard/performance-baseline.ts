@@ -20,16 +20,10 @@ export function buildPerformanceBaselineSnapshot(params: {
   const previous = params.previousTelemetry;
   if (!current) return null;
 
-  const previousRange =
-    params.range.preset === "year_to_date"
-      ? computePriorYearDateRange({ startDate: params.range.startDate, endDate: params.range.endDate })
-      : computePreviousInclusiveDateRange(params.range);
+  const previousRange = computeComparisonDateRange(params.range);
   if (!previousRange) return null;
 
-  // YTD comparisons must use the prior-year equivalent window. If we do not have
-  // a compatible prior-year telemetry input, suppress comparisons rather than
-  // comparing against an arbitrary equal-length prior window.
-  const previousComparable = params.range.preset === "year_to_date" ? null : previous;
+  const previousComparable = previous;
 
   const wooCompletenessCurrent = normalizeCompleteness(current.woo?.summary?.completeness);
   const wooCompletenessPrevious = normalizeCompleteness(previousComparable?.woo?.summary?.completeness);
@@ -151,6 +145,16 @@ export function computePreviousInclusiveDateRange(range: { startDate: string; en
     startDate: formatUtcDate(prevStart),
     endDate: formatUtcDate(prevEnd)
   };
+}
+
+export function computeComparisonDateRange(range: {
+  preset: RangePreset;
+  startDate: string;
+  endDate: string;
+}): { startDate: string; endDate: string } | null {
+  return range.preset === "year_to_date"
+    ? computePriorYearDateRange(range)
+    : computePreviousInclusiveDateRange(range);
 }
 
 function computePriorYearDateRange(range: { startDate: string; endDate: string }): { startDate: string; endDate: string } | null {

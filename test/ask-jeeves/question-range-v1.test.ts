@@ -14,6 +14,11 @@ test("Ask Jeeves uses the standard dashboard period when no range is requested",
   assert.deepEqual(resolveAskQuestionRangeV1("How is revenue doing?"), { preset: "30d" });
 });
 
+test("Ask Jeeves keeps the selected dashboard range when the question does not specify one", () => {
+  const selected = { preset: "custom", startDate: "2026-07-01", endDate: "2026-09-15" };
+  assert.deepEqual(resolveAskQuestionRangeV1("How is revenue doing?", new Date("2026-09-15T12:00:00Z"), selected), selected);
+});
+
 test("Ask Jeeves resolves written number ranges from speech transcription", () => {
   assert.deepEqual(resolveAskQuestionRangeV1("Show me the last four months", new Date("2026-09-14T12:00:00Z")), { startDate: "2026-05-14", endDate: "2026-09-14" });
 });

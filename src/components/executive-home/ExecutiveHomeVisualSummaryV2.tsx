@@ -5,6 +5,10 @@ import type {
   ExecutiveHomeFixtureV1,
   ExecutiveIntelligenceCardV1
 } from "@/lib/executive-home/fixtures";
+import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
+import { DateRangeControls } from "@/components/dashboard/DateRangeControls";
+import { formatRangeLabel } from "@/lib/date/range";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 
 const TRUTH_TONE: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -71,15 +75,18 @@ export function buildExecutiveHomeVisualSummaryV2(data: ExecutiveHomeFixtureV1):
 
 export function ExecutiveHomeVisualSummaryV2({
   data,
+  reportingRange,
   decisionRoomId,
   onOpenDecisionRoom
 }: {
   data: ExecutiveHomeFixtureV1;
+  reportingRange?: DashboardOverviewResponse["range"];
   decisionRoomId?: string;
   onOpenDecisionRoom?: () => void;
 }) {
   const model = buildExecutiveHomeVisualSummaryV2(data);
   const primaryChange = model.whatChanged[0] ?? null;
+  const comparisonRange = reportingRange ? computeComparisonDateRange(reportingRange) : null;
 
   return (
     <section aria-label="Executive decision scan" data-testid="executive-home-visual-summary-v2" className="pb-6 pt-4 sm:pt-7">
@@ -91,18 +98,19 @@ export function ExecutiveHomeVisualSummaryV2({
           <form action="/ask-jeeves" method="get" className="mx-auto mt-6 flex max-w-2xl items-center gap-3 rounded-2xl border border-slate-300 bg-slate-50 p-2 pl-5 text-left shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
             <label htmlFor="home-ask-question" className="sr-only">Ask a question about your business</label>
             <input id="home-ask-question" name="q" required maxLength={500} className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500" placeholder="Ask about revenue, traffic, opportunities, or what to do next" />
+            {reportingRange ? <input type="hidden" name="range" value={reportingRange.preset} /> : null}
+            {reportingRange?.preset === "custom" ? <input type="hidden" name="start" value={reportingRange.startDate} /> : null}
+            {reportingRange?.preset === "custom" ? <input type="hidden" name="end" value={reportingRange.endDate} /> : null}
             <button type="submit" className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Ask Jeeves</button>
           </form>
           <p className="mt-2 text-xs text-slate-500">Type or speak a question and get an answer from your connected business data.</p>
-          <nav aria-label="Reporting range" className="mt-4 flex flex-wrap justify-center gap-2">
-            {[{ label: "7 days", value: "7d" }, { label: "30 days", value: "30d" }, { label: "90 days", value: "90d" }, { label: "Year to date", value: "ytd" }].map((range) => <a key={range.value} href={`/dashboard?range=${range.value}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700">{range.label}</a>)}
-          </nav>
+          {reportingRange ? <div className="mt-5 text-left"><DateRangeControls preset={reportingRange.preset} startDate={reportingRange.startDate} endDate={reportingRange.endDate} /></div> : null}
         </div>
       </div>
 
       <section className="mt-5" aria-label="Business pulse">
         <div className="mb-3 flex items-end justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Business pulse</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">The numbers that matter</h2><p className="mt-1 text-sm text-slate-500">{data.hero.range_label}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Business pulse</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">The numbers that matter</h2><p className="mt-1 text-sm text-slate-500">{data.hero.range_label}{comparisonRange ? ` compared with ${formatRangeLabel(comparisonRange, { includeYear: true })}` : ""}</p></div>
           <a href="/data-evidence" className="text-xs font-semibold text-blue-700 underline-offset-4 hover:underline">Check sources</a>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -153,7 +161,7 @@ export function ExecutiveHomeVisualSummaryV2({
 }
 
 function BusinessPulseCard({ metric }: { metric: ExecutiveBusinessPulseMetricV1 }) {
-  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-slate-600">{metric.label}</p><TruthLabel state={metric.truth_state} /></div><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{metric.value}</p><p className="mt-1 truncate text-xs text-slate-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
+  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-slate-600">{metric.label}</p><TruthLabel state={metric.truth_state} /></div><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{metric.value}</p><p className="mt-1 min-h-8 text-xs leading-4 text-slate-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
 }
 
 function MiniTrend({ values, label }: { values: Array<number | null>; label: string }) {

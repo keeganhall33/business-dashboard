@@ -59,7 +59,7 @@ import { buildChangeInsightsSnapshot } from "@/lib/dashboard/change-insights";
 import { resolveRange } from "@/lib/date/resolve-range";
 import { deriveWooSummaryFromRecentOrders } from "@/lib/dashboard/woo-fallback";
 import { selectPreviousSnapshot } from "@/lib/dashboard/snapshot-selection";
-import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { buildPerformanceBaselineSnapshot, computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { normalizeWebsiteSnapshot } from "@/lib/dashboard/normalize-website-snapshot";
 import { buildRevenueEngineMetrics } from "@/lib/dashboard/revenue-engine";
 import { normalizeMetaSnapshotGeneratedAt } from "@/lib/dashboard/meta-snapshot-generatedAt";
@@ -1023,7 +1023,8 @@ export async function GET(request: Request) {
     const endParam = url.searchParams.get("end");
     const range = resolveRange(rangeParam, startParam, endParam);
 
-    const previousRangeForBaseline = computePreviousInclusiveDateRange({
+    const previousRangeForBaseline = computeComparisonDateRange({
+      preset: range.preset,
       startDate: range.startDate,
       endDate: range.endDate
     });
