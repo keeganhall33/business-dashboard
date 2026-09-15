@@ -8,7 +8,7 @@ type SpeechRecognitionLike = {
   interimResults: boolean;
   lang: string;
   onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -29,12 +29,54 @@ export function HomeAskFormV1({
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const startingQuestion = useRef("");
+  const latestQuestion = useRef("");
+  const keepListening = useRef(false);
 
-  useEffect(() => () => recognition.current?.stop(), []);
+  useEffect(() => () => {
+    keepListening.current = false;
+    recognition.current?.stop();
+  }, []);
+
+  function beginVoiceSession(Recognition: new () => SpeechRecognitionLike, baseQuestion: string) {
+    const instance = new Recognition();
+    recognition.current = instance;
+    startingQuestion.current = baseQuestion.trim();
+    instance.continuous = true;
+    instance.interimResults = true;
+    instance.lang = "en-US";
+    instance.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
+      }
+      const nextQuestion = [startingQuestion.current, transcript.trim()].filter(Boolean).join(" ");
+      latestQuestion.current = nextQuestion;
+      setQuestion(nextQuestion);
+    };
+    instance.onerror = (event) => {
+      if (event.error === "no-speech" && keepListening.current) return;
+      keepListening.current = false;
+      setVoiceError("I could not hear that clearly. Try again or type your question.");
+      setListening(false);
+    };
+    instance.onend = () => {
+      if (!keepListening.current) {
+        setListening(false);
+        return;
+      }
+      window.setTimeout(() => {
+        if (!keepListening.current) return;
+        beginVoiceSession(Recognition, latestQuestion.current);
+      }, 150);
+    };
+    instance.start();
+  }
 
   function toggleVoice() {
     if (listening) {
+      keepListening.current = false;
       recognition.current?.stop();
+      setListening(false);
       return;
     }
 
@@ -45,34 +87,21 @@ export function HomeAskFormV1({
       return;
     }
 
-    const instance = new Recognition();
-    recognition.current = instance;
-    startingQuestion.current = question.trim();
-    instance.continuous = false;
-    instance.interimResults = true;
-    instance.lang = "en-US";
-    instance.onresult = (event) => {
-      let transcript = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
-      }
-      setQuestion([startingQuestion.current, transcript.trim()].filter(Boolean).join(" "));
-    };
-    instance.onerror = () => {
-      setVoiceError("I could not hear that clearly. Try again or type your question.");
-      setListening(false);
-    };
-    instance.onend = () => setListening(false);
+    latestQuestion.current = question.trim();
+    keepListening.current = true;
     setVoiceError(null);
     setListening(true);
-    instance.start();
+    beginVoiceSession(Recognition, latestQuestion.current);
   }
 
   return (
     <div className="mx-auto mt-6 max-w-2xl text-left">
       <form action="/ask-jeeves" method="get" className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 p-2 pl-4 shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 sm:flex-nowrap">
         <label htmlFor="home-ask-question" className="sr-only">Ask a question about your business</label>
-        <input id="home-ask-question" name="q" required maxLength={500} value={question} onChange={(event) => setQuestion(event.target.value)} className="min-w-0 basis-full bg-transparent py-2 text-sm text-slate-900 outline-none placeholder:text-slate-500 sm:flex-1 sm:basis-auto sm:py-0" placeholder="Ask about revenue, traffic, opportunities, or what to do next" />
+        <input id="home-ask-question" name="q" required maxLength={500} value={question} onChange={(event) => {
+          latestQuestion.current = event.target.value;
+          setQuestion(event.target.value);
+        }} className="min-w-0 basis-full bg-transparent py-2 text-sm text-slate-900 outline-none placeholder:text-slate-500 sm:flex-1 sm:basis-auto sm:py-0" placeholder="Ask anything about your business, strategy, or the wider market" />
         {reportingRange ? <input type="hidden" name="range" value={reportingRange.preset} /> : null}
         {reportingRange?.preset === "custom" ? <input type="hidden" name="start" value={reportingRange.startDate} /> : null}
         {reportingRange?.preset === "custom" ? <input type="hidden" name="end" value={reportingRange.endDate} /> : null}
@@ -81,7 +110,7 @@ export function HomeAskFormV1({
         </button>
         <button type="submit" className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Ask Jeeves</button>
       </form>
-      {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening. Pause when finished or press Stop.</p> : null}
+      {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening continuously. Press Stop when you are finished.</p> : null}
       {voiceError ? <p role="alert" className="mt-2 text-xs text-red-700">{voiceError}</p> : null}
     </div>
   );
