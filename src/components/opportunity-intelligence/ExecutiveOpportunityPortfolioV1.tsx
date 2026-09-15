@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 import type {
   ExecutiveOpportunityEvidenceStateV1,
   ExecutiveOpportunityPortfolioItemV1,
@@ -13,18 +11,15 @@ const EVIDENCE_STYLE: Record<ExecutiveOpportunityEvidenceStateV1, string> = {
   CONFLICTED: "border-rose-200 bg-rose-50 text-rose-900"
 };
 
-function display(value: string | null): string {
-  return value ?? "Unknown";
-}
-
 function humanize(value: string): string {
   return value.replaceAll("_", " ");
 }
 
 function EvidenceBadge({ state }: { state: ExecutiveOpportunityEvidenceStateV1 }) {
+  const label = state === "STALE" ? "Needs review" : state === "INFERRED" ? "Estimated" : state === "UNKNOWN" ? "Missing data" : "Conflicting data";
   return (
-    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${EVIDENCE_STYLE[state]}`}>
-      {state}
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${EVIDENCE_STYLE[state]}`}>
+      {label}
     </span>
   );
 }
@@ -39,42 +34,32 @@ function PulseMetric({ label, value, detail }: { label: string; value: number; d
   );
 }
 
-function SmallMetric({ label, children }: { label: string; children: ReactNode }) {
+function OpportunityCard({ item }: { item: ExecutiveOpportunityPortfolioItemV1 }) {
   return (
-    <div>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-slate-900">{children}</dd>
-    </div>
-  );
-}
-
-function OpportunityMobileCard({ item }: { item: ExecutiveOpportunityPortfolioItemV1 }) {
-  return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:hidden">
+    <article className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-200 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
             {item.organization ?? item.opportunityType}
           </p>
           <h2 className="mt-1 text-lg font-semibold text-slate-950">{item.title}</h2>
+          <p className="mt-1 text-sm capitalize text-slate-600">{humanize(item.status)}</p>
         </div>
         <EvidenceBadge state={item.evidenceState} />
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-3">
-        <SmallMetric label="Timing">{display(item.timing)}</SmallMetric>
-        <SmallMetric label="Supported value">{display(item.supportedValue)}</SmallMetric>
-        <SmallMetric label="Prestige">{display(item.prestigeScore)}</SmallMetric>
-        <SmallMetric label="Source probability">{display(item.probabilityScore)}</SmallMetric>
-      </dl>
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Next move</p>
-        <p className="mt-1 text-sm leading-6 text-slate-800">{item.nextMove}</p>
+      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        {item.timing ? <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">Due {item.timing}</span> : null}
+        {item.supportedValue ? <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800">{item.supportedValue}</span> : null}
+      </div>
+      <div className="mt-4 flex-1 rounded-2xl bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Next move</p>
+        <p className="mt-2 text-sm leading-6 text-slate-800">{item.nextMove}</p>
       </div>
       <a
         href={item.detailHref}
-        className="mt-4 inline-flex rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
+        className="mt-4 inline-flex w-fit rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
       >
-        Open opportunity
+        View opportunity
       </a>
     </article>
   );
@@ -85,7 +70,7 @@ export function ExecutiveOpportunityPortfolioV1({
 }: {
   portfolio: ExecutiveOpportunityPortfolioV1;
 }) {
-  const primary = portfolio.items[0] ?? null;
+  const primary = portfolio.items.find((item) => item.evidenceState === "STALE" || item.evidenceState === "CONFLICTED") ?? portfolio.items[0] ?? null;
 
   return (
     <main
@@ -104,7 +89,7 @@ export function ExecutiveOpportunityPortfolioV1({
                 Opportunities &amp; Actions
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Current opportunity evidence, timing, supported upside, and the next move. Missing evidence stays unknown instead of becoming a fake score.
+                The relationships and projects most likely to matter next, with a clear next move for each.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -119,22 +104,22 @@ export function ExecutiveOpportunityPortfolioV1({
         </header>
 
         <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Opportunity portfolio summary">
-          <PulseMetric label="Opportunities" value={portfolio.summary.total} detail="Canonical radar records" />
-          <PulseMetric label="Evidence watch" value={portfolio.summary.verificationWatch} detail="Unknown, stale, or conflicted" />
-          <PulseMetric label="Timed" value={portfolio.summary.withTiming} detail="Next-step date is supported" />
-          <PulseMetric label="Value supported" value={portfolio.summary.withSupportedValue} detail="Source includes a value estimate" />
+          <PulseMetric label="Active" value={portfolio.summary.total} detail="Current opportunities" />
+          <PulseMetric label="Needs review" value={portfolio.summary.verificationWatch} detail="Stale or incomplete information" />
+          <PulseMetric label="Scheduled" value={portfolio.summary.withTiming} detail="Have a next-step date" />
+          <PulseMetric label="Value known" value={portfolio.summary.withSupportedValue} detail="Have a supported estimate" />
         </section>
 
         {primary ? (
-          <section className="mt-5 rounded-3xl border border-slate-200 bg-blue-700 p-5 text-white shadow-sm md:p-6" aria-label="First canonical opportunity">
+          <section className={`mt-5 rounded-3xl border p-5 shadow-sm md:p-6 ${primary.evidenceState === "STALE" || primary.evidenceState === "CONFLICTED" ? "border-orange-200 bg-orange-50 text-slate-950" : "border-blue-800 bg-blue-950 text-white"}`} aria-label="Priority opportunity">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-300">First in canonical radar order</p>
+                <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${primary.evidenceState === "STALE" || primary.evidenceState === "CONFLICTED" ? "text-orange-800" : "text-blue-200"}`}>{primary.evidenceState === "STALE" || primary.evidenceState === "CONFLICTED" ? "Review now" : "Top opportunity"}</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">{primary.title}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{primary.nextMove}</p>
+                <p className={`mt-2 max-w-3xl text-sm leading-6 ${primary.evidenceState === "STALE" || primary.evidenceState === "CONFLICTED" ? "text-slate-700" : "text-blue-100"}`}>{primary.nextMove}</p>
               </div>
               <a href={primary.detailHref} className="inline-flex justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950">
-                Open decision detail
+                Review opportunity
               </a>
             </div>
           </section>
@@ -149,61 +134,11 @@ export function ExecutiveOpportunityPortfolioV1({
           </section>
         ) : (
           <section className="mt-5" aria-label="Opportunity portfolio">
-            <div className="space-y-3 md:hidden">
-              {portfolio.items.map((item) => <OpportunityMobileCard key={item.id} item={item} />)}
-            </div>
-
-            <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm md:block">
-              <div className="overflow-x-auto">
-                <table className="min-w-[1240px] w-full border-collapse text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Opportunity</th>
-                      <th className="px-4 py-3 font-semibold">Evidence</th>
-                      <th className="px-4 py-3 font-semibold">Timing</th>
-                      <th className="px-4 py-3 font-semibold">Supported value</th>
-                      <th className="px-4 py-3 font-semibold">Prestige</th>
-                      <th className="px-4 py-3 font-semibold">Source probability</th>
-                      <th className="px-4 py-3 font-semibold">Effort signal</th>
-                      <th className="px-4 py-3 font-semibold">Next move</th>
-                      <th className="px-4 py-3 font-semibold">Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {portfolio.items.map((item) => (
-                      <tr key={item.id} data-opportunity-id={item.id} className="align-top">
-                        <td className="px-4 py-4">
-                          <div className="font-semibold text-slate-950">{item.title}</div>
-                          <div className="mt-1 text-xs text-slate-500">{item.organization ?? item.opportunityType}</div>
-                          <div className="mt-1 text-xs text-slate-500">{item.status}</div>
-                        </td>
-                        <td className="px-4 py-4"><EvidenceBadge state={item.evidenceState} /></td>
-                        <td className="px-4 py-4 tabular-nums">
-                          <div>{display(item.timing)}</div>
-                          <div className="mt-1 text-xs text-slate-500">Verified {display(item.lastVerified)}</div>
-                        </td>
-                        <td className="px-4 py-4 font-medium">{display(item.supportedValue)}</td>
-                        <td className="px-4 py-4">{display(item.prestigeScore)}</td>
-                        <td className="px-4 py-4">{display(item.probabilityScore)}</td>
-                        <td className="px-4 py-4 text-xs font-semibold text-slate-600">{humanize(item.effortSignal)}</td>
-                        <td className="max-w-sm px-4 py-4 leading-6 text-slate-700">{item.nextMove}</td>
-                        <td className="px-4 py-4">
-                          <a href={item.detailHref} className="inline-flex whitespace-nowrap rounded-full bg-blue-700 px-3 py-2 text-xs font-semibold text-white">
-                            Open opportunity
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {portfolio.items.map((item) => <OpportunityCard key={item.id} item={item} />)}
             </div>
           </section>
         )}
-
-        <p className="mt-4 text-xs leading-5 text-slate-500">
-          Source order is preserved by default. Existing value, prestige, and probability fields are displayed only when supplied by the canonical opportunity radar; missing values remain Unknown.
-        </p>
       </div>
     </main>
   );

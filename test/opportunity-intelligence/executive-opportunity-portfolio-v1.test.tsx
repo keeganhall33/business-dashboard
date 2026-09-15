@@ -106,6 +106,11 @@ test("explicit source status preserves inferred unknown stale and conflicted evi
   ]);
 });
 
+test("overdue opportunity guidance is marked stale instead of inferred", () => {
+  const model = buildExecutiveOpportunityPortfolioV1([{ ...opportunities[0]!, id: "overdue", nextStepDueAt: "2020-01-01T00:00:00.000Z" }]);
+  assert.equal(model.items[0]?.evidenceState, "STALE");
+});
+
 test("missing economics and next-step evidence remain unknown instead of becoming zero or fake certainty", () => {
   const model = buildExecutiveOpportunityPortfolioV1(opportunities);
   const unknown = model.items.find((item) => item.id === "unknown-access");
@@ -151,19 +156,18 @@ test("portfolio renders a scan-first responsive workspace with real detail route
   const html = renderToString(<ExecutiveOpportunityPortfolioV1 portfolio={model} />);
 
   assert.match(html, /Opportunities &amp; Actions/);
-  assert.match(html, /First in canonical radar order/);
+  assert.match(html, /Top opportunity|Review now/);
   assert.match(html, /Boeing Corporate Art \/ Workplace/);
-  assert.match(html, /Evidence watch/);
-  assert.match(html, /Supported value/);
-  assert.match(html, /Source probability/);
-  assert.match(html, /INFERRED/);
-  assert.match(html, /STALE/);
-  assert.match(html, /CONFLICTED/);
-  assert.match(html, /UNKNOWN/);
+  assert.match(html, /Needs review/);
+  assert.match(html, /Value known/);
+  assert.match(html, /Estimated/);
+  assert.match(html, /Needs review/);
+  assert.match(html, /Conflicting data/);
+  assert.match(html, /Missing data/);
   assert.match(html, /href="\/opportunities-actions\/opportunity\/boeing-workplace"/);
-  assert.match(html, /md:hidden/);
-  assert.match(html, /md:block/);
-  assert.match(html, /<table/);
+  assert.match(html, /lg:grid-cols-2/);
+  assert.doesNotMatch(html, /<table/);
+  assert.doesNotMatch(html, /Source probability|Effort signal|Prestige/);
   assert.doesNotMatch(html, /Send|Compose|form action=/i);
   assert.doesNotMatch(html, /Early museum exhibition|Athlete and brand campaign|Generic sketch-card request/);
 });

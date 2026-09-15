@@ -1758,6 +1758,7 @@ export async function GET(request: Request) {
       ownerAgent: string;
       nextStep: string | null;
       nextStepDueAt: string | null;
+      lastVerifiedAt: string | null;
       supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
     const seenPipelineDeals = new Set<string>();
@@ -1781,6 +1782,7 @@ export async function GET(request: Request) {
         ownerAgent: opportunity.owner_agent,
         nextStep: opportunity.next_step,
         nextStepDueAt: opportunity.next_step_due_at,
+        lastVerifiedAt: opportunity.updated_at ?? null,
         supportingDocs: pipelineDocs ? pipelineDocs.slice(0, 4) : null
       });
       if (pipelineDeals.length >= 6) break;
@@ -1803,6 +1805,7 @@ export async function GET(request: Request) {
       ownerAgent: string;
       nextStep: string | null;
       nextStepDueAt: string | null;
+      lastVerifiedAt: string | null;
       supportingDocs: Array<{ label: string; url: string }> | null;
     }[] = [];
 
@@ -1826,6 +1829,7 @@ export async function GET(request: Request) {
         ownerAgent: opportunity.owner_agent,
         nextStep: opportunity.next_step,
         nextStepDueAt: opportunity.next_step_due_at,
+        lastVerifiedAt: opportunity.updated_at ?? null,
         supportingDocs: docsFromOpportunity ?? (fallbackDocs ? fallbackDocs.slice(0, 4) : null)
       });
 
