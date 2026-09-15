@@ -39,46 +39,21 @@ const ACTIVE_ROWS = [
   }
 ] as const;
 
-test("canonical CRM loader separates active people and companies with deterministic ordering", async () => {
+test("canonical CRM loader hides identity-only records that provide no relationship value", async () => {
   const index = await loadCrmDirectoryIndexV1({
     loadActiveEntities: async () => [...ACTIVE_ROWS]
   });
 
-  assert.deepEqual(index.people.map((row) => row.id), ["person:alpha", "person:zulu"]);
-  assert.deepEqual(index.companies.map((row) => row.id), ["org:alpha"]);
-  assert.equal(index.people[0]?.detailHref, "/relationships/people/person%3Aalpha");
-  assert.equal(index.companies[0]?.detailHref, "/relationships/companies/org%3Aalpha");
+  assert.deepEqual(index.people, []);
+  assert.deepEqual(index.companies, []);
   assert.doesNotMatch(JSON.stringify(index), /Retired Person|Invalid Company/);
 });
 
-test("canonical identity is known while unsupported CRM fields remain unknown or empty", async () => {
+test("unsupported identity-only CRM rows stay out of the executive directory", async () => {
   const index = await loadCrmDirectoryIndexV1({
     loadActiveEntities: async () => [ACTIVE_ROWS[2], ACTIVE_ROWS[1]]
   });
-  const person = index.people[0];
-  const company = index.companies[0];
-
-  assert.equal(person?.name, "Alpha Person");
-  assert.equal(person?.evidenceState, "KNOWN");
-  assert.equal(person?.relationshipStrength, "UNKNOWN");
-  assert.deepEqual(person?.contactChannels, []);
-  assert.equal(person?.title, null);
-  assert.equal(person?.companyName, null);
-  assert.equal(person?.relationshipState, null);
-  assert.equal(person?.activeOpportunity, null);
-  assert.equal(person?.activeAsk, null);
-  assert.equal(person?.lastTouchAt, null);
-  assert.equal(person?.nextFollowUpAt, null);
-
-  assert.equal(company?.name, "Alpha Company");
-  assert.equal(company?.evidenceState, "KNOWN");
-  assert.deepEqual(company?.keyPeople, []);
-  assert.deepEqual(company?.activeOpportunities, []);
-  assert.equal(company?.category, null);
-  assert.equal(company?.relationshipState, null);
-  assert.equal(company?.lastActivityAt, null);
-  assert.equal(company?.nextMove, null);
-  assert.equal(company?.supportedValue, null);
+  assert.deepEqual(index, { people: [], companies: [] });
 });
 
 test("canonical CRM loader preserves honest empty state for empty and unavailable stores", async () => {
@@ -138,8 +113,8 @@ test("CRM loader includes people and companies already present in the opportunit
     loadFollowUps: async () => [],
     loadOpportunityLinks: async () => [],
     loadOpportunities: async () => [
-      { id: "opp-pentel", name: "Pentel artist collaboration", organization: "Pentel", status: "research", next_step: "Confirm the creative lead", next_step_due_at: "2026-09-30T00:00:00.000Z", value_estimate: 25000, contact_name: "Brooke Allen", contact_role: "Partnerships", source: "opportunity pipeline" },
-      { id: "opp-arena", name: "Arena Club partnership", organization: "Arena Club", status: "qualified", next_step: "Prepare introduction", next_step_due_at: null, value_estimate: null, contact_name: "Brian Lee", contact_role: null, source: "opportunity pipeline" }
+      { id: "opp-pentel", name: "Pentel artist collaboration", organization: "Pentel", status: "in_conversation", next_step: "Confirm the creative lead", next_step_due_at: "2026-09-30T00:00:00.000Z", value_estimate: 25000, contact_name: "Brooke Allen", contact_role: "Partnerships", source: "KEEGAN_CONFIRMED", updated_at: "2026-09-14T00:00:00.000Z" },
+      { id: "opp-arena", name: "Arena Club partnership", organization: "Arena Club", status: "qualified", next_step: "Prepare introduction", next_step_due_at: null, value_estimate: null, contact_name: "Brian Lee", contact_role: null, source: "opportunity pipeline", updated_at: "2026-09-14T00:00:00.000Z" }
     ]
   });
 
@@ -148,4 +123,17 @@ test("CRM loader includes people and companies already present in the opportunit
   assert.equal(index.people.find((person) => person.name === "Brooke Allen")?.companyName, "Pentel");
   assert.equal(index.companies.find((company) => company.name === "Pentel")?.supportedValue, "$25,000");
   assert.match(index.people[0]?.detailHref ?? "", /pipeline-person/);
+});
+
+test("CRM excludes research-only prospects and marks overdue pipeline guidance stale", async () => {
+  const index = await loadCrmDirectoryIndexV1({
+    loadActiveEntities: async () => [], loadRelationshipStates: async () => [], loadActivities: async () => [], loadFollowUps: async () => [], loadOpportunityLinks: async () => [],
+    loadOpportunities: async () => [
+      { id: "research", name: "Speculative lead", organization: "Large Brand", status: "researching", contact_name: "Research Contact", updated_at: "2026-09-14T00:00:00.000Z" },
+      { id: "active", name: "Active deal", organization: "Real Client", status: "in_conversation", contact_name: "Client Contact", next_step: "Follow up yesterday", next_step_due_at: "2020-01-01T00:00:00.000Z", updated_at: "2026-09-14T00:00:00.000Z" }
+    ]
+  });
+  assert.deepEqual(index.people.map((person) => person.name), ["Client Contact"]);
+  assert.equal(index.people[0]?.evidenceState, "STALE");
+  assert.match(index.people[0]?.activeAsk ?? "", /Review and update/);
 });

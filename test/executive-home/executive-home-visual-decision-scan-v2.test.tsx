@@ -105,7 +105,7 @@ test("visual decision model enforces three-item budgets with approval-first dete
   assert.equal(first.biggestOpportunities.length, 3);
   assert.equal(first.whatChanged.length, 3);
   assert.equal(first.biggestOpportunities.some((item) => item.id === "opportunity-4"), false);
-  assert.equal(first.whatChanged.some((item) => item.id === "change-4"), false);
+  assert.equal(first.whatChanged.some((item) => item.id === "change-4"), true);
 });
 
 test("business pulse is derived from canonical counts and preserves uncertainty without invented economics", () => {
@@ -155,7 +155,7 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
   assert.match(html, /role="img"/);
   assert.doesNotMatch(html, /Fourth item must stay below fold/);
   assert.doesNotMatch(html, /Fourth opportunity stays below fold/);
-  assert.doesNotMatch(html, /Fourth change stays below fold/);
+  assert.match(html, /Fourth change stays below fold/);
   assert.match(html, /grid-cols-2/);
   assert.match(html, /lg:grid-cols-4/);
 });

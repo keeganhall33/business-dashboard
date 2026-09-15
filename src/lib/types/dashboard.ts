@@ -539,6 +539,7 @@ export type ExecutiveInsightsPayload = {
 };
 export type WebsiteConversionSnapshot = {
   generatedAt: string;
+  range?: { startDate: string; endDate: string };
   ga4?: {
     totalUsers?: number;
     sessions?: number;

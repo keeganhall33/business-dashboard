@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     ]);
     const home = buildExecutiveHomeFromDashboardOverviewV1(overview).home;
     const opportunities = buildExecutiveOpportunityPortfolioV1(overview.opportunityRadar?.topOpportunities ?? []);
-    const context = { home, opportunities, crm, websiteConversion: overview.websiteConversion ?? null };
+    const context = { home, opportunities, crm, websiteConversion: overview.websiteConversion ?? null, requestedRange: overview.range };
     const grounded = answerAskJeevesV1(question, context);
     return ok({ ok: true, ...await enhanceAskJeevesAnswerV1(question, context, grounded) });
   } catch (error) {

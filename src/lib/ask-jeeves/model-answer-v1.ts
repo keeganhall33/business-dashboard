@@ -13,7 +13,9 @@ function compactContext(context: AskJeevesContextV1) {
       source: metric.source,
       state: metric.truth_state
     })),
-    products: context.websiteConversion?.wooCommerce?.topProducts?.slice(0, 15) ?? [],
+    products: context.websiteConversion?.range?.startDate === context.requestedRange?.startDate && context.websiteConversion?.range?.endDate === context.requestedRange?.endDate
+      ? context.websiteConversion?.wooCommerce?.topProducts?.slice(0, 15) ?? []
+      : [],
     opportunities: context.opportunities.items.slice(0, 30).map((item) => ({
       name: item.title,
       organization: item.organization,

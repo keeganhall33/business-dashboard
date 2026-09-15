@@ -25,7 +25,8 @@ export async function askJeevesActionV1(rawQuestion: string): Promise<AskJeevesA
       home: buildExecutiveHomeFromDashboardOverviewV1(overview).home,
       opportunities: buildExecutiveOpportunityPortfolioV1(overview.opportunityRadar?.topOpportunities ?? []),
       crm,
-      websiteConversion: overview.websiteConversion ?? null
+      websiteConversion: overview.websiteConversion ?? null,
+      requestedRange: overview.range
     };
     const grounded = answerAskJeevesV1(question, context);
     return { ok: true, answer: await enhanceAskJeevesAnswerV1(question, context, grounded) };
