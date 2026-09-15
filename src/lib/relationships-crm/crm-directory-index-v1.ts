@@ -13,6 +13,8 @@ export type CrmPersonDirectoryRecordV1 = {
   name: string | null;
   title: string | null;
   companyName: string | null;
+  companyId?: string | null;
+  companyHref?: string | null;
   contactChannels: readonly CrmContactChannelV1[];
   relationshipState: string | null;
   relationshipStrength: CrmRelationshipStrengthV1;
@@ -21,6 +23,7 @@ export type CrmPersonDirectoryRecordV1 = {
   activeOpportunity: string | null;
   activeAsk: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;
+  notesMd?: string | null;
   detailHref?: string | null;
 };
 
@@ -29,12 +32,19 @@ export type CrmCompanyDirectoryRecordV1 = {
   name: string | null;
   category: string | null;
   keyPeople: readonly string[];
+  keyPeopleLinks?: readonly { id: string; label: string; href: string }[];
   relationshipState: string | null;
   activeOpportunities: readonly string[];
+  activeOpportunityLinks?: readonly { id: string; label: string; href: string }[];
   lastActivityAt: string | null;
   nextMove: string | null;
   supportedValue: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;
+  primaryEmail?: string | null;
+  phone?: string | null;
+  websiteUrl?: string | null;
+  notesMd?: string | null;
+  relatedCompanies?: readonly { id: string; label: string; href: string; relationship: string }[];
   detailHref?: string | null;
 };
 

@@ -9,6 +9,8 @@ export type CrmPersonDetailV1 = {
   name: string | null;
   title: string | null;
   companyName: string | null;
+  companyId: string | null;
+  companyHref: string | null;
   contactChannels: CrmPersonDirectoryRecordV1["contactChannels"];
   relationshipState: string | null;
   relationshipStrength: CrmPersonDirectoryRecordV1["relationshipStrength"];
@@ -17,6 +19,7 @@ export type CrmPersonDetailV1 = {
   activeOpportunity: string | null;
   activeAsk: string | null;
   evidenceState: CrmPersonDirectoryRecordV1["evidenceState"];
+  notesMd: string | null;
   verificationRequired: boolean;
   recommendedNextMove: string;
 };
@@ -64,6 +67,8 @@ export function buildCrmPersonDetailV1(person: CrmPersonDirectoryRecordV1): CrmP
     name: nonEmpty(person.name),
     title: nonEmpty(person.title),
     companyName: nonEmpty(person.companyName),
+    companyId: nonEmpty(person.companyId ?? null),
+    companyHref: nonEmpty(person.companyHref ?? null),
     contactChannels: person.contactChannels.map((channel) => ({
       kind: channel.kind,
       value: nonEmpty(channel.value),
@@ -76,6 +81,7 @@ export function buildCrmPersonDetailV1(person: CrmPersonDirectoryRecordV1): CrmP
     activeOpportunity: nonEmpty(person.activeOpportunity),
     activeAsk: nonEmpty(person.activeAsk),
     evidenceState: person.evidenceState,
+    notesMd: nonEmpty(person.notesMd ?? null),
     verificationRequired: person.evidenceState !== "KNOWN",
     recommendedNextMove: safeNextMove(person)
   };

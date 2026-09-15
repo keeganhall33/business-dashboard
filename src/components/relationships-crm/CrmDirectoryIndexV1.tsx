@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
+import { CrmRecordEditorV1 } from "@/components/relationships-crm/CrmRecordEditorV1";
+
 import {
   supportedCrmCompanyDetailHrefV1,
   supportedCrmPersonDetailHrefV1,
@@ -183,7 +185,7 @@ function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRec
                   <PersonName person={person} />
                   <div className="mt-1 text-xs text-slate-500">{display(person.title)}</div>
                 </td>
-                <td className="px-4 py-4">{display(person.companyName)}</td>
+                <td className="px-4 py-4">{person.companyHref ? <Link href={person.companyHref} className="font-medium text-blue-700 underline-offset-4 hover:underline">{display(person.companyName)}</Link> : display(person.companyName)}</td>
                 <td className="px-4 py-4"><PersonChannels person={person} /></td>
                 <td className="px-4 py-4">
                   <div>{display(person.relationshipState)}</div>
@@ -209,6 +211,11 @@ function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRec
 function CompactList({ values }: { values: readonly string[] }) {
   if (!values.length) return <span className="text-slate-500">Not recorded</span>;
   return <span>{values.join(", ")}</span>;
+}
+
+function LinkedList({ values }: { values: readonly { id: string; label: string; href: string }[] }) {
+  if (!values.length) return <span className="text-slate-500">Not recorded</span>;
+  return <span>{values.map((value, index) => <span key={value.id}>{index ? ", " : ""}<Link href={value.href} className="text-blue-700 underline-offset-4 hover:underline">{value.label}</Link></span>)}</span>;
 }
 
 function CompanyName({ company }: { company: CrmCompanyDirectoryRecordV1 }) {
@@ -251,9 +258,9 @@ function CompaniesTable({ companies, query }: { companies: readonly CrmCompanyDi
               <tr key={company.id} data-record-id={company.id} className="align-top">
                 <td className="px-4 py-4"><CompanyName company={company} /></td>
                 <td className="px-4 py-4">{display(company.category)}</td>
-                <td className="px-4 py-4"><CompactList values={company.keyPeople} /></td>
+                <td className="px-4 py-4">{company.keyPeopleLinks?.length ? <LinkedList values={company.keyPeopleLinks} /> : <CompactList values={company.keyPeople} />}</td>
                 <td className="px-4 py-4">{display(company.relationshipState)}</td>
-                <td className="px-4 py-4"><CompactList values={company.activeOpportunities} /></td>
+                <td className="px-4 py-4">{company.activeOpportunityLinks?.length ? <LinkedList values={company.activeOpportunityLinks} /> : <CompactList values={company.activeOpportunities} />}</td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(company.lastActivityAt)}</td>
                 <td className="px-4 py-4">{display(company.nextMove)}</td>
                 <td className="px-4 py-4">{display(company.supportedValue)}</td>
@@ -285,6 +292,10 @@ export function CrmDirectoryIndexV1({
         title="People"
         description={`${index.people.length} people connected to current opportunities and relationship records. Missing contact details stay clearly marked.`}
       >
+        <details className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <summary className="cursor-pointer text-sm font-semibold text-blue-700">Add person</summary>
+          <div className="mt-4"><CrmRecordEditorV1 mode="create" values={{ entityType: "person" }} companies={index.companies.map((company) => ({ id: company.id, name: company.name ?? "Unnamed company" }))} /></div>
+        </details>
         <PeopleTable people={index.people} query={query} />
       </DirectoryShell>
     );
@@ -298,6 +309,10 @@ export function CrmDirectoryIndexV1({
         title="Companies"
         description={`${index.companies.length} companies connected to current opportunities, people, and next moves.`}
       >
+        <details className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <summary className="cursor-pointer text-sm font-semibold text-blue-700">Add company</summary>
+          <div className="mt-4"><CrmRecordEditorV1 mode="create" values={{ entityType: "organization" }} /></div>
+        </details>
         <CompaniesTable companies={index.companies} query={query} />
       </DirectoryShell>
     );

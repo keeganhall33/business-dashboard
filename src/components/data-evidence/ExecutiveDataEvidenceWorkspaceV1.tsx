@@ -38,36 +38,30 @@ export function ExecutiveDataEvidenceWorkspaceV1({
         <header className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-4xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data &amp; Evidence</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Can the dashboard trust its inputs right now?</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data status</p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Are your business connections working?</h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
-                Live coverage, freshness, source health, access state, and ingestion evidence from the same canonical dashboard overview. Missing evidence stays unknown instead of being treated as healthy or zero.
+                See what is connected, when it last updated, what it powers, and what needs attention.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StateChip state={view.overallState} label={`Trust posture: ${view.overallState}`} />
-              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                Data mode: {view.dataMode}
-              </span>
+              <span className="sr-only">{`Trust posture: ${view.overallState}`}</span>
+              <StateChip state={view.overallState} label={view.overallState === "LIVE" ? "All systems current" : "Needs attention"} />
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            <SummaryMetric label="Live" value={view.counts.liveCount} />
-            <SummaryMetric label="Partial" value={view.counts.partialCount} />
-            <SummaryMetric label="Stale" value={view.counts.staleCount} />
-            <SummaryMetric label="Warnings" value={view.counts.warningCount} />
-            <SummaryMetric label="Critical" value={view.counts.criticalCount} />
-            <SummaryMetric label="Unavailable" value={view.counts.unavailableCount} />
-            <SummaryMetric label="Unknown" value={view.counts.unknownCount} />
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <SummaryMetric label="Sources monitored" value={view.counts.sourceCount} />
+            <SummaryMetric label="Current" value={view.counts.liveCount} />
+            <SummaryMetric label="Need attention" value={view.counts.sourceCount - view.counts.liveCount} />
           </div>
         </header>
 
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Source coverage</p>
-              <h2 className="mt-1 text-xl font-semibold">Live evidence matrix</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Connections</p>
+              <h2 className="mt-1 text-xl font-semibold">Your business data</h2>
             </div>
             <p className="text-xs text-slate-500">Overview generated: {displayTimestamp(view.generatedAt)}</p>
           </div>
@@ -78,12 +72,9 @@ export function ExecutiveDataEvidenceWorkspaceV1({
                 <tr className="text-xs uppercase tracking-[0.1em] text-slate-500">
                   <th className="border-b border-slate-200 px-3 py-3">Source</th>
                   <th className="border-b border-slate-200 px-3 py-3">State</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Freshness</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Coverage</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Health</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Access</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Last verified</th>
-                  <th className="border-b border-slate-200 px-3 py-3">Warnings</th>
+                  <th className="border-b border-slate-200 px-3 py-3">What it powers</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Last updated</th>
+                  <th className="border-b border-slate-200 px-3 py-3">What to do</th>
                 </tr>
               </thead>
               <tbody>
@@ -91,14 +82,9 @@ export function ExecutiveDataEvidenceWorkspaceV1({
                   <tr key={row.source}>
                     <td className="border-b border-slate-100 px-3 py-4 font-semibold text-slate-950">{row.label}</td>
                     <td className="border-b border-slate-100 px-3 py-4"><StateChip state={row.truthState} /></td>
-                    <td className="border-b border-slate-100 px-3 py-4 uppercase text-slate-700">{row.freshness}</td>
-                    <td className="border-b border-slate-100 px-3 py-4 uppercase text-slate-700">{row.coverage}</td>
-                    <td className="border-b border-slate-100 px-3 py-4 uppercase text-slate-700">{row.health}</td>
-                    <td className="border-b border-slate-100 px-3 py-4 text-slate-700">{row.accessStatus}</td>
+                    <td className="border-b border-slate-100 px-3 py-4 text-slate-700">{row.businessUse}</td>
                     <td className="border-b border-slate-100 px-3 py-4 text-slate-600">{displayTimestamp(row.lastVerifiedAt)}</td>
-                    <td className="border-b border-slate-100 px-3 py-4 text-slate-600">
-                      {row.warnings.length ? row.warnings.join(", ") : "None reported"}
-                    </td>
+                    <td className="border-b border-slate-100 px-3 py-4 text-slate-600">{row.nextAction ?? "Nothing. This source is current."}</td>
                   </tr>
                 ))}
               </tbody>
@@ -113,12 +99,9 @@ export function ExecutiveDataEvidenceWorkspaceV1({
                   <StateChip state={row.truthState} />
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <Detail label="Freshness" value={row.freshness.toUpperCase()} />
-                  <Detail label="Coverage" value={row.coverage.toUpperCase()} />
-                  <Detail label="Health" value={row.health.toUpperCase()} />
-                  <Detail label="Access" value={row.accessStatus} />
-                  <Detail label="Last verified" value={displayTimestamp(row.lastVerifiedAt)} />
-                  <Detail label="Warnings" value={row.warnings.length ? row.warnings.join(", ") : "None reported"} />
+                  <Detail label="Powers" value={row.businessUse} />
+                  <Detail label="Last updated" value={displayTimestamp(row.lastVerifiedAt)} />
+                  <Detail label="Next step" value={row.nextAction ?? "Nothing. This source is current."} />
                 </dl>
               </article>
             ))}
@@ -129,23 +112,23 @@ export function ExecutiveDataEvidenceWorkspaceV1({
           <article className="rounded-3xl border border-slate-200 bg-[#ffffff] p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ingestion health</p>
-                <h2 className="mt-1 text-xl font-semibold">Scheduler</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Automatic refreshes</p>
+                <h2 className="mt-1 text-xl font-semibold">Update schedule</h2>
               </div>
               <StateChip state={view.scheduler.state} />
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Detail label="Cron enabled" value={view.scheduler.cronEnabled == null ? "UNKNOWN" : view.scheduler.cronEnabled ? "YES" : "NO"} />
-              <Detail label="Jobs" value={numberOrUnknown(view.scheduler.jobCount)} />
-              <Detail label="Failing" value={numberOrUnknown(view.scheduler.failingCount)} />
-              <Detail label="Missing telemetry" value={numberOrUnknown(view.scheduler.missingTelemetryCount)} />
+              <Detail label="Automatic updates" value={view.scheduler.cronEnabled == null ? "Not reported" : view.scheduler.cronEnabled ? "On" : "Off"} />
+              <Detail label="Active updates" value={numberOrUnknown(view.scheduler.jobCount)} />
+              <Detail label="Failed" value={numberOrUnknown(view.scheduler.failingCount)} />
+              <Detail label="Never reported" value={numberOrUnknown(view.scheduler.missingTelemetryCount)} />
             </dl>
             <p className="mt-4 text-xs text-slate-500">Last scheduler update: {displayTimestamp(view.scheduler.lastUpdatedAt)}</p>
           </article>
 
           <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Verification gaps</p>
-            <h2 className="mt-1 text-xl font-semibold">What still needs proof</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Needs attention</p>
+            <h2 className="mt-1 text-xl font-semibold">What should be fixed</h2>
             {view.verificationGaps.length ? (
               <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
                 {view.verificationGaps.map((gap) => (
@@ -160,9 +143,7 @@ export function ExecutiveDataEvidenceWorkspaceV1({
           </article>
         </section>
 
-        <p className="px-1 text-xs leading-5 text-slate-500">
-          This workspace is read-only. It does not connect providers, expose credential locations, change ingestion, or infer missing business impact.
-        </p>
+        <p className="px-1 text-xs leading-5 text-slate-500">Connection details are shown without exposing passwords or private credentials.</p>
       </div>
     </main>
   );
