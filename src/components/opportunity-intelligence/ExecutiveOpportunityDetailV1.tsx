@@ -31,10 +31,10 @@ export function buildExecutiveOpportunityDetailViewV1(
 ): ExecutiveOpportunityDetailViewV1 {
   const unknowns: string[] = [];
   const fields: Array<[string, string]> = [
-    ["Upside", opportunity.upside],
-    ["Fit", opportunity.fit],
-    ["Timing", opportunity.timing],
-    ["Effort / capacity", opportunity.effort]
+    ["Revenue potential", opportunity.upside],
+    ["Business fit", opportunity.fit],
+    ["Target date", opportunity.timing],
+    ["Next step status", opportunity.effort]
   ];
 
   for (const [label, value] of fields) {
@@ -50,7 +50,7 @@ export function buildExecutiveOpportunityDetailViewV1(
   } else if (opportunity.evidence === "CONFLICTED") {
     unknowns.push("The available sources disagree and need to be reconciled.");
   } else if (opportunity.evidence === "INFERRED") {
-    unknowns.push("This opportunity was inferred from available evidence and should be verified before outreach.");
+    unknowns.push("Some details came from indirect signals. Confirm the contact and next step before outreach.");
   }
 
   const relatedRelationships = projectOpportunityRelationshipLinksV1({
@@ -88,46 +88,36 @@ export function ExecutiveOpportunityDetailV1({
             <div className="max-w-4xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Opportunity</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{opportunity.title}</h1>
-              <p className="mt-3 max-w-3xl text-base leading-7 text-slate-700">
-                {opportunity.next_move}
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${EVIDENCE_TONE[opportunity.evidence]}`}>
-                {opportunity.evidence === "KNOWN" ? "Verified" : opportunity.evidence === "INFERRED" ? "Estimated" : "Needs review"}
+                {opportunity.evidence === "KNOWN" ? "Verified" : opportunity.evidence === "INFERRED" ? "Needs confirmation" : "Needs review"}
               </span>
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${view.verificationRequired ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-                {view.verificationRequired ? "Confirm before outreach" : "Ready to review"}
+                {view.verificationRequired ? "Needs your input" : "Current"}
               </span>
             </div>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <DecisionMetric label="Timing / window" value={opportunity.timing} />
-            <DecisionMetric label="Effort / capacity" value={opportunity.effort} />
-            <DecisionMetric label="Supported fit" value={opportunity.fit} />
-            <DecisionMetric label="Supported upside" value={opportunity.upside} />
+            <DecisionMetric label="Target date" value={opportunity.timing} />
+            <DecisionMetric label="Next step status" value={opportunity.effort} />
+            <DecisionMetric label="Business fit" value={opportunity.fit} />
+            <DecisionMetric label="Revenue potential" value={opportunity.upside} />
           </div>
         </header>
 
-        <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <section>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Recommended next move</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Next move</p>
             <h2 className="mt-2 text-2xl font-semibold text-slate-950">{opportunity.next_move}</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">Use this as the working next step. Confirm any missing relationship or buyer information before contacting anyone.</p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-[#ffffff] p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">What still needs confirmation</p>
             {view.unknowns.length ? (
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+              <ul className="mt-4 list-disc space-y-1 pl-5 text-sm leading-6 text-amber-900">
                 {view.unknowns.map((unknown) => (
-                  <li key={unknown} className="rounded-2xl border border-slate-200 bg-white p-3">{unknown}</li>
+                  <li key={unknown}>{unknown}</li>
                 ))}
               </ul>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-slate-700">The available information is ready for review.</p>
-            )}
+            ) : null}
           </div>
         </section>
 
@@ -163,16 +153,11 @@ export function ExecutiveOpportunityDetailV1({
         ) : null}
 
         <details className="rounded-3xl border border-slate-200 bg-[#ffffff] shadow-sm">
-          <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-900">Source details</summary>
+          <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-900">When this was last updated</summary>
           <div className="border-t border-slate-200 p-5">
             <dl className="grid gap-3 md:grid-cols-2">
-              <Detail label="Confidence" value={opportunity.evidence === "KNOWN" ? "Verified" : opportunity.evidence === "INFERRED" ? "Estimated" : "Needs review"} />
-              <Detail label="Timing" value={opportunity.timing} />
-              <Detail label="Effort / capacity" value={opportunity.effort} />
-              <Detail label="Fit" value={opportunity.fit} />
-              <Detail label="Upside" value={opportunity.upside} />
               <Detail label="Last refreshed" value={formatTimestamp(generatedAt)} />
-              <Detail label="Source" value="Opportunity pipeline" />
+              <Detail label="Record status" value={opportunity.evidence === "KNOWN" ? "Verified from connected records" : "Needs confirmation from you or a connected source"} />
             </dl>
           </div>
         </details>

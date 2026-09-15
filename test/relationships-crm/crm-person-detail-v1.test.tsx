@@ -88,9 +88,9 @@ test("unknown and conflicted person facts stay unknown and verification-gated", 
   assert.equal(person.relationshipState, null);
   assert.equal(person.verificationRequired, true);
   assert.equal(person.recommendedNextMove, "Verify current relationship evidence before acting.");
-  assert.match(html, /Unknown/);
-  assert.match(html, /CONFLICTED/);
-  assert.match(html, /Verification is required/);
+  assert.match(html, /Not recorded/);
+  assert.match(html, /Conflicting data/);
+  assert.match(html, /missing current contact or activity information/);
   assert.doesNotMatch(html, /\$0|0%|relationship score/i);
 });
 
@@ -106,8 +106,7 @@ test("person record workspace is scan-first, read-only, responsive, and progress
   assert.match(html, /Next follow-up/);
   assert.match(html, /Current business context/);
   assert.match(html, /Recommended next move/);
-  assert.match(html, /Activity and touchpoint depth/);
-  assert.match(html, /Evidence and provenance/);
+  assert.match(html, /Record coverage/);
   assert.match(html, /sm:px-6/);
   assert.match(html, /lg:grid-cols/);
   assert.doesNotMatch(html, /Send|Compose|form action=|mailto:/i);
@@ -133,6 +132,16 @@ test("resolver returns exact supplied record and fails honestly for unsupported 
   assert.equal(person.id, "brian-lee");
   assert.equal(resolveCrmPersonDetailV1(index, "missing-person"), null);
   assert.equal(resolveCrmPersonDetailV1(index, ""), null);
+});
+
+test("resolver accepts the encoded IDs emitted by production directory links", () => {
+  const encodedIndex = buildCrmDirectoryIndexV1({
+    people: [{ ...knownPerson, id: "pipeline-person:brian-lee" }],
+    companies: []
+  });
+  const person = resolveCrmPersonDetailV1(encodedIndex, "pipeline-person%3Abrian-lee");
+  assert.ok(person);
+  assert.equal(person.id, "pipeline-person:brian-lee");
 });
 
 test("production dynamic route loads the canonical directory and remains fail-closed", () => {

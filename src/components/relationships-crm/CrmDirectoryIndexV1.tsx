@@ -24,19 +24,20 @@ const EVIDENCE_TONE: Record<CrmDirectoryEvidenceStateV1, string> = {
 };
 
 function display(value: string | null): string {
-  return value?.trim() || "Unknown";
+  return value?.trim() || "Not recorded";
 }
 
 function displayDate(value: string | null): string {
-  if (!value) return "Unknown";
+  if (!value) return "Not recorded";
   const time = Date.parse(value);
-  return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : "Unknown";
+  return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : "Not recorded";
 }
 
 function EvidenceBadge({ state }: { state: CrmDirectoryEvidenceStateV1 }) {
+  const label = state === "KNOWN" ? "Connected" : state === "STALE" ? "Needs update" : state === "CONFLICTED" ? "Conflicting data" : "Incomplete";
   return (
     <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${EVIDENCE_TONE[state]}`}>
-      {state}
+      {label}
     </span>
   );
 }
@@ -117,7 +118,7 @@ function EmptyDirectory({ kind }: { kind: "people" | "companies" }) {
 }
 
 function PersonChannels({ person }: { person: CrmPersonDirectoryRecordV1 }) {
-  if (!person.contactChannels.length) return <span className="text-slate-500">Unknown</span>;
+  if (!person.contactChannels.length) return <span className="text-slate-500">No email or phone on file</span>;
   return (
     <div className="space-y-1">
       {person.contactChannels.map((channel, index) => (
@@ -186,7 +187,7 @@ function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRec
                 <td className="px-4 py-4"><PersonChannels person={person} /></td>
                 <td className="px-4 py-4">
                   <div>{display(person.relationshipState)}</div>
-                  <div className="mt-1 text-xs text-slate-500">Strength {person.relationshipStrength}</div>
+                  {person.relationshipStrength !== "UNKNOWN" ? <div className="mt-1 text-xs text-slate-500">Relationship strength: {person.relationshipStrength.toLowerCase()}</div> : null}
                 </td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.lastTouchAt)}</td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.nextFollowUpAt)}</td>
@@ -206,7 +207,7 @@ function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRec
 }
 
 function CompactList({ values }: { values: readonly string[] }) {
-  if (!values.length) return <span className="text-slate-500">Unknown</span>;
+  if (!values.length) return <span className="text-slate-500">Not recorded</span>;
   return <span>{values.join(", ")}</span>;
 }
 

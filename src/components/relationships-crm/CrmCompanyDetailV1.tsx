@@ -9,11 +9,12 @@ const EVIDENCE_STYLE: Record<CrmDirectoryEvidenceStateV1, string> = {
 };
 
 function display(value: string | null): string {
-  return value ?? "Unknown";
+  return value ?? "Not recorded";
 }
 
 function EvidenceBadge({ state }: { state: CrmDirectoryEvidenceStateV1 }) {
-  return <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${EVIDENCE_STYLE[state]}`}>{state}</span>;
+  const label = state === "KNOWN" ? "Connected" : state === "STALE" ? "Needs update" : state === "CONFLICTED" ? "Conflicting data" : "Incomplete";
+  return <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${EVIDENCE_STYLE[state]}`}>{label}</span>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -24,7 +25,7 @@ function ListBlock({ label, values }: { label: string; values: readonly string[]
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold">{label}</h2>
-      {values.length ? <ul className="mt-3 space-y-2">{values.map((value) => <li key={value} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950">{value}</li>)}</ul> : <p className="mt-3 text-sm leading-6 text-slate-600">Unknown</p>}
+      {values.length ? <ul className="mt-3 space-y-2">{values.map((value) => <li key={value} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950">{value}</li>)}</ul> : <p className="mt-3 text-sm leading-6 text-slate-600">Not recorded</p>}
     </section>
   );
 }
@@ -54,7 +55,7 @@ export function CrmCompanyDetailV1({ company }: { company: CrmCompanyDetailV1 })
         <section className={`mt-5 rounded-3xl border p-5 shadow-sm ${company.verificationRequired ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`} aria-label="Recommended next move">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">Recommended next move</p>
           <p className="mt-2 text-base font-semibold leading-7 text-slate-950">{company.recommendedNextMove}</p>
-          {company.verificationRequired ? <p className="mt-2 text-sm text-slate-700">Verification is required before treating this company record as action-ready.</p> : null}
+          {company.verificationRequired ? <p className="mt-2 text-sm text-slate-700">This record needs a current contact, activity, or next-step update.</p> : null}
         </section>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
@@ -62,10 +63,7 @@ export function CrmCompanyDetailV1({ company }: { company: CrmCompanyDetailV1 })
           <ListBlock label="Key people" values={company.keyPeople} />
         </div>
 
-        <section className="mt-5 grid gap-4 lg:grid-cols-2" aria-label="Company evidence depth">
-          <details className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><summary className="cursor-pointer text-sm font-semibold text-slate-950">Current company context</summary><dl className="mt-3 grid gap-3 sm:grid-cols-2"><Metric label="Supplied next move" value={display(company.nextMove)} /><Metric label="Supported value" value={display(company.supportedValue)} /></dl></details>
-          <details className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><summary className="cursor-pointer text-sm font-semibold text-slate-950">Evidence and provenance</summary><div className="mt-3 flex items-center gap-2"><EvidenceBadge state={company.evidenceState} /><span className="text-sm text-slate-700">{company.verificationRequired ? "Verification is required before action." : "Current directory evidence is marked KNOWN."}</span></div><p className="mt-3 text-sm leading-6 text-slate-600">The current directory contract does not expose source IDs, private correspondence, commitments, or inferred economics. This workspace does not invent them.</p></details>
-        </section>
+        <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Record coverage"><h2 className="text-sm font-semibold text-slate-950">Record coverage</h2><p className="mt-2 text-sm leading-6 text-slate-600">{company.verificationRequired ? "This company is missing current relationship details. Connected email and manual updates should fill those gaps." : "This company is connected to current relationship data."}</p></section>
       </div>
     </main>
   );
