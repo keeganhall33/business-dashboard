@@ -106,6 +106,11 @@ test("explicit source status preserves inferred unknown stale and conflicted evi
   ]);
 });
 
+test("overdue opportunity guidance is marked stale instead of inferred", () => {
+  const model = buildExecutiveOpportunityPortfolioV1([{ ...opportunities[0]!, id: "overdue", nextStepDueAt: "2020-01-01T00:00:00.000Z" }]);
+  assert.equal(model.items[0]?.evidenceState, "STALE");
+});
+
 test("missing economics and next-step evidence remain unknown instead of becoming zero or fake certainty", () => {
   const model = buildExecutiveOpportunityPortfolioV1(opportunities);
   const unknown = model.items.find((item) => item.id === "unknown-access");

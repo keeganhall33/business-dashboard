@@ -88,6 +88,11 @@ function evidenceStateFromOpportunity(opportunity: Opportunity): ExecutiveOpport
   if (sourceState.includes("CONFLICT")) return "CONFLICTED";
   if (sourceState.includes("STALE")) return "STALE";
   if (sourceState.includes("UNKNOWN") || sourceState.includes("UNVERIFIED")) return "UNKNOWN";
+  const today = new Date().toISOString().slice(0, 10);
+  const dueAt = dateOnly(opportunity.nextStepDueAt);
+  const verifiedAt = dateOnly(opportunity.lastVerifiedAt);
+  if (dueAt && dueAt < today) return "STALE";
+  if (verifiedAt && Date.now() - Date.parse(verifiedAt) > 21 * 86_400_000) return "STALE";
   return "INFERRED";
 }
 
