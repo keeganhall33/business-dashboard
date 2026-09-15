@@ -124,6 +124,19 @@ test("live adapter promotes real commerce and marketing values without inventing
   assert.deepEqual(pulse.revenue.trend, [5000, 7500]);
 });
 
+test("business pulse hides a Meta snapshot that does not match the selected range", () => {
+  const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
+  dashboard.range = { preset: "90d", startDate: "2026-05-24", endDate: "2026-08-21" };
+  dashboard.metaAds = { generatedAt: dashboard.timestamp, accountId: "act_test", range: 30, campaigns: [], status: "LIVE", summary: { spend: 900, impressions: 10000, clicks: 300, purchases: 2, purchaseValue: 1800, roas: 2 } };
+
+  const { home } = buildExecutiveHomeFromDashboardOverviewV1(dashboard);
+  const meta = home.command_center.business_pulse.find((metric) => metric.id === "meta");
+
+  assert.equal(meta?.value, "Unavailable");
+  assert.equal(meta?.truth_state, "UNKNOWN");
+  assert.equal(meta?.comparison, "Only a 30-day Meta snapshot is available");
+});
+
 test("Executive Home production-shaped render is mobile-safe and light-first", () => {
   const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
   dashboard.topActions = [

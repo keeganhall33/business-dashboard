@@ -5,7 +5,7 @@ import { buildExecutiveActionSynthesisV1 } from "@/lib/core-intelligence/executi
 import { buildStrategyEvidenceReviewQueueV1 } from "@/lib/core-intelligence/strategy-evidence-review/adapter";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import { buildRecommendationsFromExplanation } from "@/lib/intelligence/recommendation-engine";
 import type { RecommendationsResponse } from "@/lib/intelligence/recommendation-contract";
@@ -26,7 +26,7 @@ export default async function StrategyPage({ searchParams }: PageProps) {
   const { preset, start, end } = await resolveRangeQuery(searchParams);
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
   const sanitized = sanitizeDashboardPayloadForHtml(overview);
-  const comparison = computePreviousInclusiveDateRange({ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate });
+  const comparison = computeComparisonDateRange(sanitized.range);
 
   let recommendations: RecommendationsResponse | null = null;
   let contradictionAssessment: RecommendationContradictionAssessmentV1 | null = null;

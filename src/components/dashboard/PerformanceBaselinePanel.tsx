@@ -1,4 +1,4 @@
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import type { PerformanceBaselineMetric, PerformanceBaselineSnapshot, RangePreset } from "@/lib/types/dashboard";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -12,7 +12,7 @@ export function PerformanceBaselinePanel({
   snapshot?: PerformanceBaselineSnapshot | null;
   range: { preset: RangePreset; startDate: string; endDate: string };
 }) {
-  const previousRange = computePreviousInclusiveDateRange({ startDate: range.startDate, endDate: range.endDate });
+  const previousRange = computeComparisonDateRange(range);
 
   if (!snapshot) {
     return (
@@ -37,7 +37,11 @@ export function PerformanceBaselinePanel({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">Performance baseline</div>
-          <p className="mt-1 text-sm text-zinc-400">Current window versus the immediately preceding window of equal length.</p>
+          <p className="mt-1 text-sm text-zinc-400">
+            {range.preset === "year_to_date"
+              ? "Current year to date versus the same period last year."
+              : "Current window versus the immediately preceding window of equal length."}
+          </p>
         </div>
         <div className="text-xs text-zinc-500">
           {formatShortRange(snapshot.range.startDate, snapshot.range.endDate)}

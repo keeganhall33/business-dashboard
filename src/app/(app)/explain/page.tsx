@@ -3,7 +3,7 @@ import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { resolveRangeQuery } from "../_lib/resolve-range";
 import { ExplainVerticalSlice } from "@/components/vertical-slice/ExplainVerticalSlice";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry, getDashboardSnapshots } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import type { ExplainResponse } from "@/lib/intelligence/explanation-contract";
@@ -22,7 +22,7 @@ export default async function ExplainPage({ searchParams }: PageProps) {
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
   const sanitized = sanitizeDashboardPayloadForHtml(overview);
 
-  const comparison = computePreviousInclusiveDateRange({ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate });
+  const comparison = computeComparisonDateRange(sanitized.range);
   let explanation: ExplainResponse | null = null;
   if (comparison) {
     try {

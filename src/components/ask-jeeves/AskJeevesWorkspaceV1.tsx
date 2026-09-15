@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AskJeevesAnswerV1 } from "@/lib/ask-jeeves/answer-engine-v1";
 import { askJeevesActionV1 } from "@/app/(app)/ask-jeeves/actions";
+import { DateRangeControls } from "@/components/dashboard/DateRangeControls";
+import type { RangePreset } from "@/lib/types/dashboard";
 
 type SpeechRecognitionLike = {
   continuous: boolean;
@@ -21,7 +23,19 @@ type SpeechWindow = Window & typeof globalThis & {
   webkitSpeechRecognition?: new () => SpeechRecognitionLike;
 };
 
-export function AskJeevesWorkspaceV1({ initialQuestion = "" }: { initialQuestion?: string }) {
+const DEFAULT_REPORTING_RANGE = {
+  preset: "30d" as const,
+  startDate: "",
+  endDate: ""
+};
+
+export function AskJeevesWorkspaceV1({
+  initialQuestion = "",
+  reportingRange = DEFAULT_REPORTING_RANGE
+}: {
+  initialQuestion?: string;
+  reportingRange?: { preset: RangePreset; startDate: string; endDate: string };
+}) {
   const [question, setQuestion] = useState(initialQuestion);
   const [answer, setAnswer] = useState<AskJeevesAnswerV1 | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +56,7 @@ export function AskJeevesWorkspaceV1({ initialQuestion = "" }: { initialQuestion
     setError(null);
     setAnswer(null);
     try {
-      const result = await askJeevesActionV1(nextQuestion);
+      const result = await askJeevesActionV1(nextQuestion, reportingRange);
       if (!result.ok) throw new Error(result.message);
       setAnswer(result.answer);
     } catch (cause) {
@@ -105,6 +119,10 @@ export function AskJeevesWorkspaceV1({ initialQuestion = "" }: { initialQuestion
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-5xl">What do you want to know?</h1>
           <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-600">Ask about revenue, traffic, advertising, priorities, opportunities, or relationships.</p>
         </header>
+
+        <div className="mt-6">
+          <DateRangeControls preset={reportingRange.preset} startDate={reportingRange.startDate} endDate={reportingRange.endDate} />
+        </div>
 
         <form onSubmit={submit} className="mt-8 rounded-3xl border border-slate-200 bg-white p-3 shadow-lg shadow-slate-200/60">
           <label htmlFor="jeeves-question" className="sr-only">Ask Jeeves a question</label>

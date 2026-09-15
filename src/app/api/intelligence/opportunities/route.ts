@@ -1,7 +1,7 @@
 import { ok, serverError } from "@/lib/api/responses";
 import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { resolveRange } from "@/lib/date/resolve-range";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import { detectOpportunities } from "@/lib/intelligence/opportunity-detection";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const metric = (url.searchParams.get("metric") ?? "revenue").toLowerCase();
     const range = resolveRange(url.searchParams.get("range"), url.searchParams.get("start"), url.searchParams.get("end"));
-    const comparisonRange = computePreviousInclusiveDateRange({ startDate: range.startDate, endDate: range.endDate });
+    const comparisonRange = computeComparisonDateRange(range);
 
     const missingSources = ["email", "matchback"]; // explicit known missing until connected.
 

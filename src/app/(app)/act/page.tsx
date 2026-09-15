@@ -2,7 +2,7 @@ import { ExecutiveRangeHeader } from "@/components/dashboard/ExecutiveRangeHeade
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { resolveRangeQuery } from "../_lib/resolve-range";
-import { computePreviousInclusiveDateRange } from "@/lib/dashboard/performance-baseline";
+import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
 import { getCommerceTelemetry } from "@/lib/supabase/queries";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import { buildRecommendationsFromExplanation } from "@/lib/intelligence/recommendation-engine";
@@ -24,7 +24,7 @@ export default async function ActPage({ searchParams }: PageProps) {
   const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
   const sanitized = sanitizeDashboardPayloadForHtml(overview);
 
-  const comparison = computePreviousInclusiveDateRange({ startDate: sanitized.range.startDate, endDate: sanitized.range.endDate });
+  const comparison = computeComparisonDateRange(sanitized.range);
   const missingSources = ["email", "matchback"]; // explicit until connected
   let recommendations: Recommendation[] = [];
   if (comparison) {

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPerformanceBaselineSnapshot, computePreviousInclusiveDateRange } from "../src/lib/dashboard/performance-baseline";
+import {
+  buildPerformanceBaselineSnapshot,
+  computeComparisonDateRange,
+  computePreviousInclusiveDateRange
+} from "../src/lib/dashboard/performance-baseline";
 import type { CommerceTelemetry } from "../src/lib/types/dashboard";
 
 test("previous inclusive date range matches equal-length window", () => {
@@ -38,6 +42,41 @@ test("January 1–7 compares with December 25–31", () => {
     startDate: "2025-12-25",
     endDate: "2025-12-31"
   });
+});
+
+test("year to date compares with the equivalent prior-year period", () => {
+  assert.deepEqual(
+    computeComparisonDateRange({ preset: "year_to_date", startDate: "2026-01-01", endDate: "2026-09-15" }),
+    { startDate: "2025-01-01", endDate: "2025-09-15" }
+  );
+});
+
+test("year to date uses prior-year telemetry for comparisons", () => {
+  const current = {
+    range: { preset: "year_to_date", startDate: "2026-01-01", endDate: "2026-09-15" },
+    woo: {
+      summary: { revenue: 12000, orders: 12, avgOrderValue: 1000, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 12, completeness: "complete" },
+      timeseries: []
+    }
+  } as CommerceTelemetry;
+  const previous = {
+    range: { preset: "custom", startDate: "2025-01-01", endDate: "2025-09-15" },
+    woo: {
+      summary: { revenue: 10000, orders: 10, avgOrderValue: 1000, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 10, completeness: "complete" },
+      timeseries: []
+    }
+  } as CommerceTelemetry;
+
+  const baseline = buildPerformanceBaselineSnapshot({
+    range: current.range,
+    currentTelemetry: current,
+    previousTelemetry: previous
+  });
+
+  assert.ok(baseline);
+  assert.deepEqual(baseline.previousRange, { startDate: "2025-01-01", endDate: "2025-09-15" });
+  assert.equal(baseline.metrics.revenue.previous, 10000);
+  assert.equal(baseline.metrics.revenue.deltaPercent, 0.2);
 });
 
 test("malformed and impossible dates return null", () => {

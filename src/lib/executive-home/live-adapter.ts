@@ -2,6 +2,7 @@ import { buildDataConfidenceModel, mapStateToConfidenceLabel, type ConfidenceEnt
 import { buildDashboardTruthState, type DashboardTruthState, type DomainTruth } from "@/lib/dashboard/truth-state";
 import { buildExecutiveActions, type ExecutiveActionPlan } from "@/lib/dashboard/executive-layout";
 import { buildExecutiveSummary, getMaterialMovements } from "@/lib/dashboard/executive-summary";
+import { countRangeDays } from "@/lib/date/range";
 import type { DecisionRoomEvidenceRefV1 } from "@/lib/decision-room/contracts";
 import type { AskJeevesControlV1 } from "@/lib/intelligence-ux/responsive-shell-fixtures";
 import type { DurableAction } from "@/lib/actions/action-contract";
@@ -330,10 +331,15 @@ const currency = new Intl.NumberFormat("en-US", {
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
-function formatComparison(deltaPercent: number | null | undefined, previous: number | null | undefined) {
-  if (deltaPercent == null || !Number.isFinite(deltaPercent) || previous == null) return "No verified comparison";
+function formatComparison(
+  deltaPercent: number | null | undefined,
+  previous: number | null | undefined,
+  formatPrevious: (value: number) => string
+) {
+  if (previous == null || !Number.isFinite(previous)) return "No verified comparison";
+  if (deltaPercent == null || !Number.isFinite(deltaPercent)) return `Previous period: ${formatPrevious(previous)}`;
   const percent = Math.round(deltaPercent * 100);
-  return `${percent > 0 ? "+" : ""}${percent}% vs prior period`;
+  return `${percent > 0 ? "+" : ""}${percent}% vs previous (${formatPrevious(previous)})`;
 }
 
 function telemetryTruth(
@@ -356,7 +362,9 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
   const baseline = data.performanceBaseline?.metrics;
   const woo = data.commerceTelemetry?.woo;
   const ga4 = data.commerceTelemetry?.ga4;
-  const meta = data.metaAds?.summary;
+  const selectedDays = countRangeDays(data.range);
+  const metaRangeMatches = Boolean(data.metaAds && selectedDays > 0 && data.metaAds.range === selectedDays);
+  const meta = metaRangeMatches ? data.metaAds?.summary : null;
   const revenue = baseline?.revenue.current ?? woo?.summary.revenue ?? null;
   const orders = baseline?.orders.current ?? woo?.summary.orders ?? null;
   const sessions = baseline?.sessions.current ?? ga4?.summary.sessions ?? null;
@@ -367,7 +375,7 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
       id: "revenue",
       label: "Revenue",
       value: revenue == null ? "Unavailable" : `${baseline?.revenue.currentQualifier === "at_least" ? "At least " : ""}${currency.format(revenue)}`,
-      comparison: formatComparison(baseline?.revenue.deltaPercent, baseline?.revenue.previous),
+      comparison: formatComparison(baseline?.revenue.deltaPercent, baseline?.revenue.previous, (value) => currency.format(value)),
       trend: (woo?.timeseries ?? []).slice(-14).map((point) => point.revenue),
       truth_state: telemetryTruth(data, "woo", revenue != null),
       source: "WooCommerce"
@@ -376,7 +384,7 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
       id: "orders",
       label: "Orders",
       value: orders == null ? "Unavailable" : integer.format(orders),
-      comparison: formatComparison(baseline?.orders.deltaPercent, baseline?.orders.previous),
+      comparison: formatComparison(baseline?.orders.deltaPercent, baseline?.orders.previous, (value) => integer.format(value)),
       trend: (woo?.timeseries ?? []).slice(-14).map((point) => point.orders),
       truth_state: telemetryTruth(data, "woo", orders != null),
       source: "WooCommerce"
@@ -385,7 +393,7 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
       id: "sessions",
       label: "Site traffic",
       value: sessions == null ? "Unavailable" : integer.format(sessions),
-      comparison: formatComparison(baseline?.sessions.deltaPercent, baseline?.sessions.previous),
+      comparison: formatComparison(baseline?.sessions.deltaPercent, baseline?.sessions.previous, (value) => integer.format(value)),
       trend: (ga4?.timeseries ?? []).slice(-14).map((point) => point.sessions),
       truth_state: telemetryTruth(data, "ga4", sessions != null),
       source: "Google Analytics"
@@ -394,7 +402,13 @@ function buildBusinessPulse(data: DashboardOverviewResponse): ExecutiveBusinessP
       id: "meta",
       label: "Meta ads",
       value: roas != null ? `${roas.toFixed(1)}x ROAS` : meta?.spend != null ? `${currency.format(meta.spend)} spent` : "Unavailable",
-      comparison: roas != null && meta?.spend != null ? `${currency.format(meta.spend)} spend` : roas == null && meta?.spend != null ? "ROAS unavailable" : "No verified spend",
+      comparison: !metaRangeMatches && data.metaAds
+        ? `Only a ${data.metaAds.range}-day Meta snapshot is available`
+        : roas != null && meta?.spend != null
+          ? `${currency.format(meta.spend)} spend`
+          : roas == null && meta?.spend != null
+            ? "ROAS unavailable"
+            : "No verified spend",
       trend: [],
       truth_state: telemetryTruth(data, "meta", roas != null || meta?.spend != null),
       source: "Meta Ads"

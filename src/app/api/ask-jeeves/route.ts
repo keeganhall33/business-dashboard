@@ -18,7 +18,17 @@ export async function POST(request: Request) {
     const body = await request.json() as { question?: unknown; range?: unknown };
     const question = typeof body.question === "string" ? body.question.trim() : "";
     if (!question || question.length > 500) return badRequest("Question must contain 1 to 500 characters.");
-    const requestedRange = typeof body.range === "string" ? { preset: body.range } : resolveAskQuestionRangeV1(question);
+    const selectedRange =
+      typeof body.range === "string"
+        ? { preset: body.range }
+        : body.range && typeof body.range === "object"
+          ? {
+              preset: typeof (body.range as Record<string, unknown>).preset === "string" ? String((body.range as Record<string, unknown>).preset) : undefined,
+              startDate: typeof (body.range as Record<string, unknown>).startDate === "string" ? String((body.range as Record<string, unknown>).startDate) : undefined,
+              endDate: typeof (body.range as Record<string, unknown>).endDate === "string" ? String((body.range as Record<string, unknown>).endDate) : undefined
+            }
+          : undefined;
+    const requestedRange = resolveAskQuestionRangeV1(question, new Date(), selectedRange);
     const url = new URL(request.url);
     const [overview, crm] = await Promise.all([
       getDashboardOverview(requestedRange, { baseUrl: url.origin, cookie: request.headers.get("cookie") }),

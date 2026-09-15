@@ -5,6 +5,7 @@ import { DecisionRoom } from "@/components/intelligence-ux/DecisionRoom";
 import { toDecisionRoomViewModelV1 } from "@/lib/decision-room/shell-adapter";
 import type { ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1, ExecutiveIntelligenceCardV1 } from "@/lib/executive-home/fixtures";
+import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { ExecutiveCommandCenter } from "./ExecutiveCommandCenter";
 import { ExecutiveHomeVisualSummaryV2 } from "./ExecutiveHomeVisualSummaryV2";
@@ -44,10 +45,12 @@ export function toggleExecutiveHomeSection(
 
 export function ExecutiveHomeShell({
   data,
-  decisionRoom
+  decisionRoom,
+  reportingRange
 }: {
   data: ExecutiveHomeFixtureV1;
   decisionRoom?: ExecutiveHomeDecisionRoomDrilldownV1;
+  reportingRange?: DashboardOverviewResponse["range"];
 }) {
   const [activeDecisionRoomId, setActiveDecisionRoomId] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<ExecutiveIntelligenceCardV1["section"]>>(() => new Set());
@@ -57,6 +60,7 @@ export function ExecutiveHomeShell({
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <ExecutiveHomeVisualSummaryV2
         data={data}
+        reportingRange={reportingRange}
         decisionRoomId={decisionRoom?.decision_id}
         onOpenDecisionRoom={decisionRoom ? () => setActiveDecisionRoomId(decisionRoom.decision_id) : undefined}
       />
