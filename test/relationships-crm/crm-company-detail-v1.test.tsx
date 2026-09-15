@@ -82,9 +82,9 @@ test("uncertain company facts remain unavailable and cannot become action certai
   assert.equal(company.verificationRequired, true);
   assert.equal(company.recommendedNextMove, "Verify current company evidence before acting.");
   assert.notEqual(company.recommendedNextMove, uncertainCompany.nextMove);
-  assert.match(html, /Unknown/);
-  assert.match(html, /CONFLICTED/);
-  assert.match(html, /Verification is required/);
+  assert.match(html, /Not recorded/);
+  assert.match(html, /Conflicting data/);
+  assert.match(html, /missing current relationship details/);
   assert.doesNotMatch(html, /\$0|0%|relationship score/i);
 });
 
@@ -98,7 +98,7 @@ test("company workspace is scan-first, read-only, responsive, and progressively 
   assert.match(html, /Active opportunities/);
   assert.match(html, /Key people/);
   assert.match(html, /Recommended next move/);
-  assert.match(html, /Evidence and provenance/);
+  assert.match(html, /Record coverage/);
   assert.match(html, /sm:px-6/);
   assert.match(html, /lg:grid-cols/);
   assert.doesNotMatch(html, /Send|Compose|form action=|mailto:/i);
@@ -124,6 +124,16 @@ test("resolver returns exact supplied company and fails honestly for unsupported
   assert.equal(company.id, "arena-club");
   assert.equal(resolveCrmCompanyDetailV1(index, "missing-company"), null);
   assert.equal(resolveCrmCompanyDetailV1(index, ""), null);
+});
+
+test("resolver accepts the encoded IDs emitted by production directory links", () => {
+  const encodedIndex = buildCrmDirectoryIndexV1({
+    people: [],
+    companies: [{ ...knownCompany, id: "pipeline-company:arena-club" }]
+  });
+  const company = resolveCrmCompanyDetailV1(encodedIndex, "pipeline-company%3Aarena-club");
+  assert.ok(company);
+  assert.equal(company.id, "pipeline-company:arena-club");
 });
 
 test("production dynamic route loads the canonical directory and remains fail-closed", () => {

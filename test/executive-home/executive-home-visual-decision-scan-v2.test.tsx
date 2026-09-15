@@ -142,6 +142,8 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
   assert.match(html, /aria-label="Executive decision scan"/);
   assert.match(html, /aria-label="Business pulse"/);
   assert.match(html, /Your business, clearly/);
+  assert.match(html, /Start voice input/);
+  assert.match(html, />Speak</);
   assert.match(html, /The numbers that matter/);
   assert.match(html, /What happened/);
   assert.match(html, /What we are doing/);
@@ -158,6 +160,7 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
   assert.match(html, /Fourth change stays below fold/);
   assert.match(html, /grid-cols-2/);
   assert.match(html, /lg:grid-cols-4/);
+  assert.doesNotMatch(html, />Estimated</);
 });
 
 test("Executive Home removes visible placeholder and section-pill walls while keeping depth reachable", () => {

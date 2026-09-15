@@ -94,7 +94,7 @@ export function AskJeevesWorkspaceV1({
     const instance = new Recognition();
     recognition.current = instance;
     voiceBase.current = question.trim();
-    instance.continuous = true;
+    instance.continuous = false;
     instance.interimResults = true;
     instance.lang = "en-US";
     instance.onresult = (event) => {
@@ -130,7 +130,7 @@ export function AskJeevesWorkspaceV1({
           <div className="mt-3 flex items-center justify-between gap-3">
             <div>
               <button type="button" onClick={toggleVoice} aria-pressed={listening} className={`rounded-full border px-4 py-2 text-sm font-semibold ${listening ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"}`}>{listening ? "Stop listening" : "Speak"}</button>
-              {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening now. Press Stop when you are finished.</p> : null}
+              {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening. Pause when finished or press Stop.</p> : null}
             </div>
             <button type="submit" disabled={!question.trim() || loading} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Checking data…" : "Send"}</button>
           </div>

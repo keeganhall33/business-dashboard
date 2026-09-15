@@ -57,11 +57,11 @@ test("known opportunity renders meaningful scan-first decision detail without in
   assert.match(html, />Opportunity</);
   assert.match(html, /Boeing Corporate Art \/ Workplace/);
   assert.match(html, /Confirm the right workplace-art buyer and timing window/);
-  assert.match(html, /Timing \/ window/);
-  assert.match(html, /Effort \/ capacity/);
-  assert.match(html, /Supported fit/);
-  assert.match(html, /Supported upside/);
-  assert.match(html, /Source details/);
+  assert.match(html, /Target date/);
+  assert.match(html, /Next step status/);
+  assert.match(html, /Business fit/);
+  assert.match(html, /Revenue potential/);
+  assert.match(html, /When this was last updated/);
   assert.match(html, /Relationships \/ CRM/);
   assert.match(html, /Planning readiness/);
   assert.match(html, /Decision Room/);
@@ -83,10 +83,10 @@ test("UNKNOWN STALE and CONFLICTED opportunity states remain explicitly verifica
 
     assert.equal(view.verificationRequired, true);
     assert.ok(view.unknowns.length > 0);
-    assert.match(html, /Confirm before outreach/);
+    assert.match(html, /Needs your input/);
     assert.match(html, /Needs review|out of date|sources disagree/);
-    assert.match(html, /Upside has not been confirmed yet/);
-    assert.doesNotMatch(html, /Ready to review/);
+    assert.match(html, /Revenue potential has not been confirmed yet/);
+    assert.doesNotMatch(html, />Current</);
   }
 });
 
@@ -97,7 +97,7 @@ test("INFERRED opportunity remains recommendation context rather than confirmed 
   };
   const view = buildExecutiveOpportunityDetailViewV1(opportunity);
   assert.equal(view.verificationRequired, true);
-  assert.match(view.unknowns.join(" "), /verified before outreach/);
+  assert.match(view.unknowns.join(" "), /Confirm the contact and next step/);
 });
 
 test("route resolves every ID from the full dashboard-overview opportunity portfolio and fails missing IDs honestly", () => {

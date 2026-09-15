@@ -163,7 +163,7 @@ test("relationship section is absent when supplied evidence cannot support a can
 
   assert.doesNotMatch(html, /Related relationships/);
   assert.doesNotMatch(html, /href="\/relationships\/people\/person-michelle"/);
-  assert.match(html, /Confirm before outreach/);
+  assert.match(html, /Needs your input/);
 });
 
 test("free-text opportunity title and next move are never used to invent identity or href", () => {

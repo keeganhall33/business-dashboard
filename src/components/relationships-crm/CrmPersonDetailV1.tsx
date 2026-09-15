@@ -9,13 +9,14 @@ const EVIDENCE_STYLE: Record<CrmDirectoryEvidenceStateV1, string> = {
 };
 
 function display(value: string | null): string {
-  return value ?? "Unknown";
+  return value ?? "Not recorded";
 }
 
 function EvidenceBadge({ state }: { state: CrmDirectoryEvidenceStateV1 }) {
+  const label = state === "KNOWN" ? "Connected" : state === "STALE" ? "Needs update" : state === "CONFLICTED" ? "Conflicting data" : "Incomplete";
   return (
     <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${EVIDENCE_STYLE[state]}`}>
-      {state}
+      {label}
     </span>
   );
 }
@@ -45,9 +46,7 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
                 <EvidenceBadge state={person.evidenceState} />
               </div>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{display(person.name)}</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {display(person.title)} · {display(person.companyName)}
-              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{[person.title, person.companyName].filter(Boolean).join(" · ") || "Role and company not recorded"}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <a href="/relationships/people" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
@@ -62,7 +61,7 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
 
         <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Relationship snapshot">
           <Metric label="Relationship" value={display(person.relationshipState)} />
-          <Metric label="Strength" value={person.relationshipStrength} />
+          <Metric label="Relationship quality" value={person.relationshipStrength === "UNKNOWN" ? "Not assessed" : person.relationshipStrength.toLowerCase()} />
           <Metric label="Last touch" value={display(person.lastTouchAt)} />
           <Metric label="Next follow-up" value={display(person.nextFollowUpAt)} />
         </section>
@@ -71,7 +70,6 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Contact channels">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Contact</h2>
-              <span className="text-xs font-semibold text-slate-500">READ ONLY</span>
             </div>
             {person.contactChannels.length ? (
               <dl className="mt-4 space-y-3">
@@ -88,7 +86,7 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
                 ))}
               </dl>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-slate-600">No verified contact channel is supplied for this record.</p>
+              <p className="mt-4 text-sm leading-6 text-slate-600">No email or phone is currently connected to this record.</p>
             )}
           </section>
 
@@ -111,25 +109,9 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
           </section>
         </div>
 
-        <section className="mt-5 grid gap-4 lg:grid-cols-2" aria-label="Relationship depth">
-          <details className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-950">Activity and touchpoint depth</summary>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              The current directory contract supplies last-touch and next-follow-up timing only. No additional activity events are invented here; a canonical timeline can populate this section in a later evidence-backed slice.
-            </p>
-          </details>
-          <details className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-950">Evidence and provenance</summary>
-            <div className="mt-3 flex items-center gap-2">
-              <EvidenceBadge state={person.evidenceState} />
-              <span className="text-sm text-slate-700">
-                {person.verificationRequired ? "Verification is required before treating this record as action-ready." : "Current directory evidence is marked KNOWN."}
-              </span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              Low-level provenance references are not exposed by the current directory contract. This view does not manufacture source IDs, notes, commitments, or correspondence history.
-            </p>
-          </details>
+        <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Record coverage">
+          <h2 className="text-sm font-semibold text-slate-950">Record coverage</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{person.verificationRequired ? "This record is missing current contact or activity information. Email and manual updates should fill those gaps." : "This record is connected to current relationship data."}</p>
         </section>
       </div>
     </main>

@@ -9,6 +9,7 @@ import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import { DateRangeControls } from "@/components/dashboard/DateRangeControls";
 import { formatRangeLabel } from "@/lib/date/range";
 import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
+import { HomeAskFormV1 } from "@/components/ask-jeeves/HomeAskFormV1";
 
 const TRUTH_TONE: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -95,14 +96,7 @@ export function ExecutiveHomeVisualSummaryV2({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Mission Control</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-5xl">Your business, clearly.</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">See what changed, what matters now, and what the system is measuring next.</p>
-          <form action="/ask-jeeves" method="get" className="mx-auto mt-6 flex max-w-2xl items-center gap-3 rounded-2xl border border-slate-300 bg-slate-50 p-2 pl-5 text-left shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
-            <label htmlFor="home-ask-question" className="sr-only">Ask a question about your business</label>
-            <input id="home-ask-question" name="q" required maxLength={500} className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500" placeholder="Ask about revenue, traffic, opportunities, or what to do next" />
-            {reportingRange ? <input type="hidden" name="range" value={reportingRange.preset} /> : null}
-            {reportingRange?.preset === "custom" ? <input type="hidden" name="start" value={reportingRange.startDate} /> : null}
-            {reportingRange?.preset === "custom" ? <input type="hidden" name="end" value={reportingRange.endDate} /> : null}
-            <button type="submit" className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Ask Jeeves</button>
-          </form>
+          <HomeAskFormV1 reportingRange={reportingRange} />
           <p className="mt-2 text-xs text-slate-500">Type or speak a question and get an answer from your connected business data.</p>
           {reportingRange ? <div className="mt-5 text-left"><DateRangeControls preset={reportingRange.preset} startDate={reportingRange.startDate} endDate={reportingRange.endDate} /></div> : null}
         </div>
@@ -182,7 +176,7 @@ function DecisionPanel({ title, href, children }: { title: string; href: string;
 }
 
 function TruthLabel({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
-  const label = state === "KNOWN" ? "Live" : state === "INFERRED" ? "Estimated" : state === "STALE" ? "Stale" : state === "CONFLICTED" ? "Check data" : "Unavailable";
+  const label = state === "KNOWN" ? "Verified" : state === "INFERRED" ? "Partial data" : state === "STALE" ? "Needs refresh" : state === "CONFLICTED" ? "Check data" : "Unavailable";
   return <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${TRUTH_TONE[state]}`}>{label}</span>;
 }
 
@@ -192,7 +186,7 @@ function PlainState({ state }: { state: ExecutiveIntelligenceCardV1["state"] }) 
 }
 
 function TruthChip({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
-  const label = state === "KNOWN" ? "Verified" : state === "INFERRED" ? "Estimated" : state.charAt(0) + state.slice(1).toLowerCase();
+  const label = state === "KNOWN" ? "Verified" : state === "INFERRED" ? "Needs confirmation" : state === "STALE" ? "Needs refresh" : state === "CONFLICTED" ? "Check data" : "Unavailable";
   return <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${TRUTH_TONE[state]}`}>{label}</span>;
 }
 

@@ -115,9 +115,9 @@ test("People directory renders contact and touchpoint fields while preserving un
   assert.match(html, /Opportunity \/ ask/);
   assert.match(html, /Alpha Person/);
   assert.match(html, /alpha@example\.test/);
-  assert.match(html, /UNKNOWN/);
-  assert.match(html, /CONFLICTED/);
-  assert.match(html, />Unknown</);
+  assert.match(html, /Incomplete/);
+  assert.match(html, /Conflicting data/);
+  assert.match(html, /Not recorded/);
   assert.match(html, /overflow-x-auto/);
   assert.doesNotMatch(html, /href="\/relationships\/people\/[^"]+/);
 });
@@ -130,8 +130,8 @@ test("Companies directory renders organization context without manufacturing num
   assert.match(html, /Active opportunities/);
   assert.match(html, /Supported value/);
   assert.match(html, /Qualitative upside supported; direct value unknown/);
-  assert.match(html, /STALE/);
-  assert.match(html, />Unknown</);
+  assert.match(html, /Needs update/);
+  assert.match(html, /Not recorded/);
   assert.doesNotMatch(html, /\$0(?:\.00)?/);
   assert.doesNotMatch(html, /href="\/relationships\/companies\/[^"]+/);
 });

@@ -84,6 +84,12 @@ export function resolveCrmCompanyDetailV1(
     throw new Error("index must be an object");
   }
   if (typeof companyId !== "string" || !companyId.trim()) return null;
-  const company = index.companies.find((candidate) => candidate.id === companyId.trim());
+  let resolvedId = companyId.trim();
+  try {
+    resolvedId = decodeURIComponent(resolvedId);
+  } catch {
+    return null;
+  }
+  const company = index.companies.find((candidate) => candidate.id === resolvedId);
   return company ? buildCrmCompanyDetailV1(company) : null;
 }

@@ -89,6 +89,12 @@ export function resolveCrmPersonDetailV1(
     throw new Error("index must be an object");
   }
   if (typeof personId !== "string" || !personId.trim()) return null;
-  const person = index.people.find((candidate) => candidate.id === personId.trim());
+  let resolvedId = personId.trim();
+  try {
+    resolvedId = decodeURIComponent(resolvedId);
+  } catch {
+    return null;
+  }
+  const person = index.people.find((candidate) => candidate.id === resolvedId);
   return person ? buildCrmPersonDetailV1(person) : null;
 }
