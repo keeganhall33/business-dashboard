@@ -113,15 +113,41 @@ async function queryOpportunitiesV1(): Promise<readonly unknown[]> {
 async function queryEntityProfilesV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient().from("crm_entity_profiles_v1")
     .select("entity_id,title,category,primary_email,phone,linkedin_url,website_url,notes_md").limit(10_000);
-  if (error) throw error;
+  if (error) {
+    console.warn("[crm-directory] optional profile metadata unavailable", {
+      code: error.code ?? null,
+      message: error.message
+    });
+    return [];
+  }
   return data ?? [];
 }
 
 async function queryEntityLinksV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient().from("crm_entity_links_v1")
     .select("subject_entity_id,relationship_type,object_entity_id,role_title,is_primary").limit(10_000);
-  if (error) throw error;
+  if (error) {
+    console.warn("[crm-directory] optional entity links unavailable", {
+      code: error.code ?? null,
+      message: error.message
+    });
+    return [];
+  }
   return data ?? [];
+}
+
+async function loadOptionalCrmMetadataV1(
+  label: "profiles" | "entity links",
+  loader: () => Promise<readonly unknown[] | null>
+): Promise<readonly unknown[]> {
+  try {
+    return (await loader()) ?? [];
+  } catch (error) {
+    console.warn(`[crm-directory] optional ${label} loader failed`, {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return [];
+  }
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -302,8 +328,8 @@ export async function loadCrmDirectoryIndexV1(
       (dependencies.loadFollowUps ?? (injected ? empty : queryFollowUpsV1))(),
       (dependencies.loadOpportunityLinks ?? (injected ? empty : queryOpportunityLinksV1))(),
       (dependencies.loadOpportunities ?? (injected ? empty : queryOpportunitiesV1))(),
-      (dependencies.loadProfiles ?? (injected ? empty : queryEntityProfilesV1))(),
-      (dependencies.loadEntityLinks ?? (injected ? empty : queryEntityLinksV1))()
+      loadOptionalCrmMetadataV1("profiles", dependencies.loadProfiles ?? (injected ? empty : queryEntityProfilesV1)),
+      loadOptionalCrmMetadataV1("entity links", dependencies.loadEntityLinks ?? (injected ? empty : queryEntityLinksV1))
     ]);
     const activeRows = (entityValues ?? []).filter(isActiveCanonicalEntityRowV1);
     const relationships = rows<RelationshipRowV1>(relationshipValues);

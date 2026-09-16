@@ -125,6 +125,37 @@ test("CRM loader includes people and companies already present in the opportunit
   assert.match(index.people[0]?.detailHref ?? "", /pipeline-person/);
 });
 
+test("optional editable CRM stores cannot blank existing pipeline records", async () => {
+  const unavailable = async () => {
+    throw new Error("relation does not exist");
+  };
+  const index = await loadCrmDirectoryIndexV1({
+    loadActiveEntities: async () => [],
+    loadRelationshipStates: async () => [],
+    loadActivities: async () => [],
+    loadFollowUps: async () => [],
+    loadOpportunityLinks: async () => [],
+    loadOpportunities: async () => [
+      {
+        id: "opp-arena",
+        name: "Arena Club partnership",
+        organization: "Arena Club",
+        status: "in_conversation",
+        next_step: "Confirm the next creative",
+        contact_name: "Brian Lee",
+        source: "KEEGAN_CONFIRMED",
+        updated_at: "2026-09-15T00:00:00.000Z"
+      }
+    ],
+    loadProfiles: unavailable,
+    loadEntityLinks: unavailable
+  });
+
+  assert.deepEqual(index.people.map((person) => person.name), ["Brian Lee"]);
+  assert.deepEqual(index.companies.map((company) => company.name), ["Arena Club"]);
+  assert.equal(index.people[0]?.companyName, "Arena Club");
+});
+
 test("CRM excludes research-only prospects and marks overdue pipeline guidance stale", async () => {
   const index = await loadCrmDirectoryIndexV1({
     loadActiveEntities: async () => [], loadRelationshipStates: async () => [], loadActivities: async () => [], loadFollowUps: async () => [], loadOpportunityLinks: async () => [],
