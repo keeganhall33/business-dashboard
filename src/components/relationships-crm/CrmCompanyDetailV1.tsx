@@ -56,9 +56,9 @@ export function CrmCompanyDetailV1({ company }: { company: CrmCompanyDetailV1 })
 
         <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Company relationship snapshot">
           <Metric label="Relationship" value={display(company.relationshipState)} />
+          <Metric label="Relationship quality" value={company.relationshipStrength === "UNKNOWN" ? "Not assessed" : String(company.relationshipStrength).toLowerCase()} />
           <Metric label="Last activity" value={display(company.lastActivityAt)} />
-          <Metric label="Supported value" value={display(company.supportedValue)} />
-          <Metric label="Evidence" value={company.evidenceState} />
+          <Metric label="Next follow-up" value={display(company.nextFollowUpAt)} />
         </section>
 
         <section className={`mt-5 rounded-3xl border p-5 shadow-sm ${company.verificationRequired ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`} aria-label="Recommended next move">
@@ -75,8 +75,8 @@ export function CrmCompanyDetailV1({ company }: { company: CrmCompanyDetailV1 })
         {company.relatedCompanies.length ? <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-semibold">Related companies</h2><ul className="mt-3 flex flex-wrap gap-2">{company.relatedCompanies.map((related) => <li key={`${related.id}-${related.relationship}`}><Link href={related.href} className="inline-flex rounded-full border border-slate-300 px-3 py-2 text-sm text-blue-700 hover:border-blue-400">{related.label} · {related.relationship}</Link></li>)}</ul></section> : null}
 
         <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Record coverage"><h2 className="text-sm font-semibold text-slate-950">Record coverage</h2><p className="mt-2 text-sm leading-6 text-slate-600">{company.verificationRequired ? "This company is missing current relationship details. Connected email and manual updates should fill those gaps." : "This company is connected to current relationship data."}</p></section>
-        <section className="mt-5" aria-label="Edit company"><CrmRecordEditorV1 values={{ id: company.id, entityType: "organization", name: company.name, category: company.category, email: company.primaryEmail, phone: company.phone, websiteUrl: company.websiteUrl, notes: company.notesMd }} /></section>
-        <details className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><summary className="cursor-pointer text-sm font-semibold text-blue-700">Add person to {company.name ?? "this company"}</summary><div className="mt-4"><CrmRecordEditorV1 mode="create" values={{ entityType: "person", companyId: company.id }} companies={[{ id: company.id, name: company.name ?? "This company" }]} /></div></details>
+        <section className="mt-5" aria-label="Edit company"><CrmRecordEditorV1 values={{ id: company.id, entityType: "organization", name: company.name, category: company.category, email: company.primaryEmail, phone: company.phone, websiteUrl: company.websiteUrl, notes: company.notesMd, relationshipState: company.relationshipState, relationshipQuality: company.relationshipStrength, lastTouchAt: company.lastActivityAt, nextFollowUpAt: company.nextFollowUpAt, nextMove: company.nextMove, supportedValue: company.supportedValue }} /></section>
+        <details className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><summary className="cursor-pointer text-sm font-semibold text-blue-700">Add person to {company.name ?? "this company"}</summary><div className="mt-4"><CrmRecordEditorV1 mode="create" values={{ entityType: "person", companyName: company.name }} companies={[{ id: company.id, name: company.name ?? "This company" }]} /></div></details>
       </div>
     </main>
   );

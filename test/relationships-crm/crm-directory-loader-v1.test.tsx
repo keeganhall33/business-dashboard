@@ -156,6 +156,56 @@ test("optional editable CRM stores cannot blank existing pipeline records", asyn
   assert.equal(index.people[0]?.companyName, "Arena Club");
 });
 
+test("editable CRM profiles override derived business fields and preserve free-form company links", async () => {
+  const index = await loadCrmDirectoryIndexV1({
+    loadActiveEntities: async () => [
+      { entity_id: "person:andi-anchell", entity_type: "person", canonical_name: "Andi Anchell", resolution_status: "active" },
+      { entity_id: "organization:public-school", entity_type: "organization", canonical_name: "Public School", resolution_status: "active" }
+    ],
+    loadProfiles: async () => [
+      {
+        entity_id: "person:andi-anchell",
+        title: "Partner",
+        primary_email: "andi@example.com",
+        relationship_state: "In conversation",
+        relationship_quality: "HIGH",
+        last_touch_at: "2026-09-10T00:00:00.000Z",
+        next_follow_up_at: "2026-09-20T00:00:00.000Z",
+        next_move: "Confirm the next meeting"
+      },
+      {
+        entity_id: "organization:public-school",
+        category: "Creative agency",
+        relationship_state: "Active partner",
+        relationship_quality: "MEDIUM",
+        last_touch_at: "2026-09-11T00:00:00.000Z",
+        next_follow_up_at: "2026-09-21T00:00:00.000Z",
+        next_move: "Share the revised concept",
+        supported_value: 50000
+      }
+    ],
+    loadEntityLinks: async () => [{
+      subject_entity_id: "person:andi-anchell",
+      relationship_type: "WORKS_AT",
+      object_entity_id: "organization:public-school",
+      role_title: "Partner",
+      is_primary: true
+    }]
+  });
+
+  assert.equal(index.people[0]?.companyName, "Public School");
+  assert.match(index.people[0]?.companyHref ?? "", /organization%3Apublic-school/);
+  assert.equal(index.people[0]?.relationshipState, "In conversation");
+  assert.equal(index.people[0]?.relationshipStrength, "HIGH");
+  assert.equal(index.people[0]?.lastTouchAt, "2026-09-10T00:00:00.000Z");
+  assert.equal(index.people[0]?.nextFollowUpAt, "2026-09-20T00:00:00.000Z");
+  assert.equal(index.people[0]?.activeAsk, "Confirm the next meeting");
+  assert.equal(index.companies[0]?.relationshipState, "Active partner");
+  assert.equal(index.companies[0]?.relationshipStrength, "MEDIUM");
+  assert.equal(index.companies[0]?.nextFollowUpAt, "2026-09-21T00:00:00.000Z");
+  assert.equal(index.companies[0]?.supportedValue, "$50,000");
+});
+
 test("CRM excludes research-only prospects and marks overdue pipeline guidance stale", async () => {
   const index = await loadCrmDirectoryIndexV1({
     loadActiveEntities: async () => [], loadRelationshipStates: async () => [], loadActivities: async () => [], loadFollowUps: async () => [], loadOpportunityLinks: async () => [],

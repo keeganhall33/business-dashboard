@@ -33,7 +33,7 @@ type RelationshipRowV1 = { contact_entity_id: string; primary_state: string; sta
 type ActivityRowV1 = { contact_entity_id: string; occurred_at: string; summary: string; truth_state: string };
 type FollowUpRowV1 = { contact_entity_id: string; opportunity_id: string | null; due_at: string | null; status: string; truth_state: string; freshness_state: string };
 type OpportunityLinkRowV1 = { opportunity_id: string; entity_id: string; role: string; truth_state: string; freshness_state: string };
-type EntityProfileRowV1 = { entity_id: string; title: string | null; category: string | null; primary_email: string | null; phone: string | null; linkedin_url: string | null; website_url: string | null; notes_md: string | null };
+type EntityProfileRowV1 = { entity_id: string; title: string | null; category: string | null; primary_email: string | null; phone: string | null; linkedin_url: string | null; website_url: string | null; notes_md: string | null; relationship_state: string | null; relationship_quality: string | null; last_touch_at: string | null; next_follow_up_at: string | null; next_move: string | null; supported_value: number | null };
 type EntityLinkRowV1 = { subject_entity_id: string; relationship_type: string; object_entity_id: string; role_title: string | null; is_primary: boolean };
 type OpportunityRowV1 = {
   id: string;
@@ -112,7 +112,7 @@ async function queryOpportunitiesV1(): Promise<readonly unknown[]> {
 
 async function queryEntityProfilesV1(): Promise<readonly unknown[]> {
   const { data, error } = await getSupabaseServerClient().from("crm_entity_profiles_v1")
-    .select("entity_id,title,category,primary_email,phone,linkedin_url,website_url,notes_md").limit(10_000);
+    .select("entity_id,title,category,primary_email,phone,linkedin_url,website_url,notes_md,relationship_state,relationship_quality,last_touch_at,next_follow_up_at,next_move,supported_value").limit(10_000);
   if (error) {
     console.warn("[crm-directory] optional profile metadata unavailable", {
       code: error.code ?? null,
@@ -180,6 +180,10 @@ function relationshipStrength(states: readonly string[] | null | undefined): Crm
   return "UNKNOWN";
 }
 
+function profileRelationshipStrength(value: string | null | undefined): CrmPersonDirectoryRecordV1["relationshipStrength"] | null {
+  return value === "HIGH" || value === "MEDIUM" || value === "LOW" ? value : null;
+}
+
 function money(value: number | null | undefined): string | null {
   return typeof value === "number" && Number.isFinite(value)
     ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value)
@@ -220,6 +224,7 @@ function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[])
     lastTouchAt: null,
     nextFollowUpAt: text(primary?.next_step_due_at),
     activeOpportunity: text(primary?.name),
+    activeOpportunityHref: primary?.id ? `/opportunities-actions/opportunity/${encodeURIComponent(primary.id)}` : null,
     activeAsk: evidence === "STALE" ? "Review and update this record before acting." : text(primary?.next_step),
     evidenceState: evidence,
     notesMd: null,
@@ -278,12 +283,13 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
       context?.profile?.phone ? { kind: "PHONE" as const, value: context.profile.phone, evidenceState: "KNOWN" as const } : null,
       context?.profile?.linkedin_url ? { kind: "LINKEDIN" as const, value: context.profile.linkedin_url, evidenceState: "KNOWN" as const } : null
     ].filter((channel): channel is NonNullable<typeof channel> => Boolean(channel)),
-    relationshipState: humanize(text(relationship?.primary_state)) ?? (linked ? "Linked to active opportunity" : null),
-    relationshipStrength: relationshipStrength(relationship?.states),
-    lastTouchAt: text(context?.activity?.occurred_at) ?? text(relationship?.last_meaningful_interaction_json?.effectiveTimestamp),
-    nextFollowUpAt: text(context?.followUp?.due_at),
+    relationshipState: text(context?.profile?.relationship_state) ?? humanize(text(relationship?.primary_state)) ?? (linked ? "Linked to active opportunity" : null),
+    relationshipStrength: profileRelationshipStrength(context?.profile?.relationship_quality) ?? relationshipStrength(relationship?.states),
+    lastTouchAt: text(context?.profile?.last_touch_at) ?? text(context?.activity?.occurred_at) ?? text(relationship?.last_meaningful_interaction_json?.effectiveTimestamp),
+    nextFollowUpAt: text(context?.profile?.next_follow_up_at) ?? text(context?.followUp?.due_at),
     activeOpportunity: text(context?.opportunity?.name),
-    activeAsk: humanize(nextMove),
+    activeOpportunityHref: context?.opportunity?.id ? `/opportunities-actions/opportunity/${encodeURIComponent(context.opportunity.id)}` : null,
+    activeAsk: text(context?.profile?.next_move) ?? humanize(nextMove),
     evidenceState: relationship ? evidenceState(text(relationship.truth_state), text(relationship.freshness_state)) : linked ? "KNOWN" : "KNOWN",
     notesMd: text(context?.profile?.notes_md),
     detailHref: crmPersonDetailHrefV1(id)
@@ -299,12 +305,14 @@ function toCompanyRecordV1(row: CanonicalEntityRowV1, context?: { people?: Array
     category: text(context?.profile?.category),
     keyPeople: context?.people?.map((person) => person.name) ?? [],
     keyPeopleLinks: context?.people?.map((person) => ({ id: person.id, label: person.name, href: crmPersonDetailHrefV1(person.id) })) ?? [],
-    relationshipState: context?.opportunities?.length ? "Active opportunity" : null,
+    relationshipState: text(context?.profile?.relationship_state) ?? (context?.opportunities?.length ? "Active opportunity" : null),
+    relationshipStrength: profileRelationshipStrength(context?.profile?.relationship_quality) ?? "UNKNOWN",
     activeOpportunities: context?.opportunities?.map((opportunity) => opportunity.name) ?? [],
     activeOpportunityLinks: context?.opportunities?.map((opportunity) => ({ id: opportunity.id, label: opportunity.name, href: `/opportunities-actions/opportunity/${encodeURIComponent(opportunity.id)}` })) ?? [],
-    lastActivityAt: context?.latestActivityAt ?? null,
-    nextMove: context?.opportunities?.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
-    supportedValue: money(context?.opportunities?.find((opportunity) => opportunity.value_estimate != null)?.value_estimate),
+    lastActivityAt: text(context?.profile?.last_touch_at) ?? context?.latestActivityAt ?? null,
+    nextFollowUpAt: text(context?.profile?.next_follow_up_at),
+    nextMove: text(context?.profile?.next_move) ?? context?.opportunities?.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
+    supportedValue: money(context?.profile?.supported_value ?? context?.opportunities?.find((opportunity) => opportunity.value_estimate != null)?.value_estimate),
     evidenceState: "KNOWN",
     primaryEmail: text(context?.profile?.primary_email),
     phone: text(context?.profile?.phone),

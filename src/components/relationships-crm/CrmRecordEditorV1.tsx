@@ -20,7 +20,13 @@ export type CrmRecordEditorValuesV1 = {
   linkedinUrl?: string | null;
   websiteUrl?: string | null;
   notes?: string | null;
-  companyId?: string | null;
+  companyName?: string | null;
+  relationshipState?: string | null;
+  relationshipQuality?: "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN" | null;
+  lastTouchAt?: string | null;
+  nextFollowUpAt?: string | null;
+  nextMove?: string | null;
+  supportedValue?: string | null;
 };
 
 const inputClass = "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
@@ -61,7 +67,13 @@ export function CrmRecordEditorV1({
         linkedinUrl: String(formData.get("linkedinUrl") ?? ""),
         websiteUrl: String(formData.get("websiteUrl") ?? ""),
         notes: String(formData.get("notes") ?? ""),
-        companyId: String(formData.get("companyId") ?? "")
+        companyName: String(formData.get("companyName") ?? ""),
+        relationshipState: String(formData.get("relationshipState") ?? ""),
+        relationshipQuality: String(formData.get("relationshipQuality") ?? "") as "" | "LOW" | "MEDIUM" | "HIGH",
+        lastTouchAt: String(formData.get("lastTouchAt") ?? ""),
+        nextFollowUpAt: String(formData.get("nextFollowUpAt") ?? ""),
+        nextMove: String(formData.get("nextMove") ?? ""),
+        supportedValue: formData.get("supportedValue") ? Number(formData.get("supportedValue")) : null
       });
       if (!result.ok) return setMessage(result.message);
       setMessage("Saved");
@@ -100,15 +112,30 @@ export function CrmRecordEditorV1({
         {isPerson ? (
           <>
             <label className="text-xs font-semibold text-slate-700">Company
-              <select name="companyId" className={inputClass} defaultValue={values.companyId ?? ""}>
-                <option value="">No company selected</option>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
+              <input className={inputClass} list="crm-company-choices" name="companyName" defaultValue={values.companyName ?? ""} placeholder="Choose or type any company" />
+              <datalist id="crm-company-choices">
+                {companies.map((company) => <option key={company.id} value={company.name} />)}
+              </datalist>
             </label>
             <Field label="LinkedIn" name="linkedinUrl" type="url" defaultValue={values.linkedinUrl} />
           </>
         ) : <Field label="Website" name="websiteUrl" type="url" defaultValue={values.websiteUrl} />}
+        <Field label="Relationship" name="relationshipState" defaultValue={values.relationshipState} placeholder="In conversation, waiting, warm lead..." />
+        <label className="text-xs font-semibold text-slate-700">Relationship quality
+          <select name="relationshipQuality" className={inputClass} defaultValue={values.relationshipQuality === "UNKNOWN" ? "" : values.relationshipQuality ?? ""}>
+            <option value="">Not assessed</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+        </label>
+        <Field label={isPerson ? "Last touch" : "Last activity"} name="lastTouchAt" type="date" defaultValue={values.lastTouchAt} />
+        <Field label="Next follow-up" name="nextFollowUpAt" type="date" defaultValue={values.nextFollowUpAt} />
+        {!isPerson ? <Field label="Estimated value" name="supportedValue" type="number" defaultValue={values.supportedValue?.replace(/[^0-9.]/g, "")} placeholder="0" /> : null}
       </div>
+      <label className="mt-3 block text-xs font-semibold text-slate-700">Next move / active ask
+        <textarea name="nextMove" defaultValue={values.nextMove ?? ""} rows={3} className={inputClass} placeholder="What should happen next?" />
+      </label>
       <label className="mt-3 block text-xs font-semibold text-slate-700">Notes
         <textarea name="notes" defaultValue={values.notes ?? ""} rows={5} className={inputClass} placeholder="Add context, recent updates, and anything Jeeves should know." />
       </label>

@@ -98,7 +98,7 @@ export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDeta
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Active opportunity</p>
-                <p className="mt-1 text-sm font-semibold text-slate-950">{display(person.activeOpportunity)}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{person.activeOpportunityHref && person.activeOpportunity ? <Link href={person.activeOpportunityHref} className="text-blue-700 hover:underline">{person.activeOpportunity}</Link> : display(person.activeOpportunity)}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Active ask</p>
@@ -118,7 +118,7 @@ export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDeta
         </section>
         <section className="mt-5" aria-label="Edit person">
           <CrmRecordEditorV1
-            values={{ id: person.id, entityType: "person", name: person.name, title: person.title, email, phone, linkedinUrl, notes: person.notesMd, companyId: person.companyId }}
+            values={{ id: person.id, entityType: "person", name: person.name, title: person.title, email, phone, linkedinUrl, notes: person.notesMd, companyName: person.companyName, relationshipState: person.relationshipState, relationshipQuality: person.relationshipStrength, lastTouchAt: person.lastTouchAt, nextFollowUpAt: person.nextFollowUpAt, nextMove: person.activeAsk }}
             companies={companies}
           />
         </section>
