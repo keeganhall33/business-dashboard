@@ -139,7 +139,7 @@ test("app shell uses the supplied signature logo instead of a Mission Control la
   assert.match(source, /keegan-hall-signature\.png/);
   assert.match(source, /alt="Keegan Hall"/);
   assert.doesNotMatch(source, />Mission Control</);
-  assert.ok(logo.byteLength > 0);
+  assert.equal(logo.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
 });
 
 test("people directory links only records that supply the implemented canonical person destination", () => {
