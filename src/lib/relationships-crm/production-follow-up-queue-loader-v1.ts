@@ -43,10 +43,17 @@ type FollowUpRowV1 = {
   observed_at: string;
 };
 
+type ManualProfileFollowUpRowV1 = {
+  entity_id: string;
+  next_follow_up_at: string;
+  updated_at: string;
+};
+
 export type ProductionFollowUpQueueSourceV1 = {
   loadRelationshipStates: () => Promise<readonly unknown[] | null>;
   loadFollowUps: () => Promise<readonly unknown[] | null>;
   loadActivePersonIds: () => Promise<readonly unknown[] | null>;
+  loadManualProfileFollowUps?: () => Promise<readonly unknown[] | null>;
 };
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -129,6 +136,60 @@ function followUp(row: FollowUpRowV1): CanonicalFollowUpEvidenceV1 {
   };
 }
 
+function manualProfileFollowUpRow(value: unknown): ManualProfileFollowUpRowV1 | null {
+  const row = object(value);
+  const entityId = text(row?.entity_id);
+  const dueAt = text(row?.next_follow_up_at);
+  const updatedAt = text(row?.updated_at);
+  if (!entityId || !dueAt || !updatedAt || !Number.isFinite(Date.parse(dueAt)) || !Number.isFinite(Date.parse(updatedAt))) return null;
+  return { entity_id: entityId, next_follow_up_at: dueAt, updated_at: updatedAt };
+}
+
+function manualProfileProjection(row: ManualProfileFollowUpRowV1): RelationshipStateProjectionV1 {
+  const evidenceRef = `dashboard:crm-profile:${row.entity_id}`;
+  return {
+    projectionId: `dashboard-follow-up:${row.entity_id}`,
+    threadId: `dashboard-follow-up:${row.entity_id}`,
+    contactId: row.entity_id,
+    opportunityIds: [],
+    mailboxRoles: [],
+    primaryState: "NO_ACTION",
+    states: ["NO_ACTION"],
+    lastMeaningfulInteraction: null,
+    truthState: "KNOWN",
+    freshnessState: "CURRENT",
+    activeAskIds: [],
+    commitmentSuggestionIds: [],
+    evidenceRefs: [evidenceRef],
+    evidenceFingerprint: evidenceRef,
+    decisionEligible: true,
+    nextBestMove: {
+      move: "PREPARE_FOLLOW_UP",
+      status: "SUGGESTED_UNVERIFIED",
+      evidenceRefs: [evidenceRef],
+      blockingConditions: [],
+      whatWouldChange: []
+    },
+    supersedesProjectionId: null,
+    priorState: null
+  };
+}
+
+function manualProfileFollowUp(row: ManualProfileFollowUpRowV1): CanonicalFollowUpEvidenceV1 {
+  return {
+    followUpId: `dashboard-follow-up:${row.entity_id}`,
+    contactId: row.entity_id,
+    threadId: `dashboard-follow-up:${row.entity_id}`,
+    opportunityId: null,
+    dueAt: row.next_follow_up_at,
+    status: "OPEN",
+    truthState: "KNOWN",
+    freshnessState: "CURRENT",
+    evidenceRefs: [`dashboard:crm-profile:${row.entity_id}`],
+    observedAt: row.updated_at
+  };
+}
+
 function defaultSource(): ProductionFollowUpQueueSourceV1 {
   const client = getSupabaseServerClient();
   return {
@@ -152,6 +213,17 @@ function defaultSource(): ProductionFollowUpQueueSourceV1 {
         .order("entity_id").limit(MAX_RELATIONSHIPS);
       if (error) throw error;
       return data;
+    },
+    async loadManualProfileFollowUps() {
+      const { data, error } = await client.from("crm_entity_profiles_v1")
+        .select("entity_id,next_follow_up_at,updated_at")
+        .not("next_follow_up_at", "is", null)
+        .order("entity_id").limit(MAX_RELATIONSHIPS);
+      if (error) {
+        console.warn("[crm-follow-up] Optional profile reminders are unavailable", error.message);
+        return [];
+      }
+      return data;
     }
   };
 }
@@ -162,23 +234,41 @@ export async function loadProductionFollowUpQueueV1(input: {
 } = {}): Promise<CanonicalRelationshipFollowUpQueueResultV1 | null> {
   try {
     const source = input.source ?? defaultSource();
-    const [rawStates, rawFollowUps, rawPeople] = await Promise.all([
-      source.loadRelationshipStates(), source.loadFollowUps(), source.loadActivePersonIds()
+    const [rawStates, rawFollowUps, rawPeople, rawManualProfileFollowUps] = await Promise.all([
+      source.loadRelationshipStates(),
+      source.loadFollowUps(),
+      source.loadActivePersonIds(),
+      source.loadManualProfileFollowUps?.() ?? Promise.resolve([])
     ]);
-    if (!Array.isArray(rawStates) || !Array.isArray(rawFollowUps) || !Array.isArray(rawPeople)
+    if (!Array.isArray(rawStates) || !Array.isArray(rawFollowUps) || !Array.isArray(rawPeople) || !Array.isArray(rawManualProfileFollowUps)
         || rawStates.length > MAX_RELATIONSHIPS || rawFollowUps.length > MAX_FOLLOW_UPS
-        || rawPeople.length > MAX_RELATIONSHIPS) return null;
+        || rawPeople.length > MAX_RELATIONSHIPS || rawManualProfileFollowUps.length > MAX_RELATIONSHIPS) return null;
     const states = rawStates.map(relationshipRow);
     const followUps = rawFollowUps.map(followUpRow);
     const personIds = rawPeople.map((value) => text(object(value)?.entity_id));
-    if (states.some((value) => value == null) || followUps.some((value) => value == null)
+    const manualProfileFollowUps = rawManualProfileFollowUps.map(manualProfileFollowUpRow);
+    if (states.some((value) => value == null) || followUps.some((value) => value == null) || manualProfileFollowUps.some((value) => value == null)
         || personIds.some((value) => value == null)) return null;
+    const activePersonIds = new Set(personIds as string[]);
+    const contactsWithCanonicalFollowUps = new Set((followUps as FollowUpRowV1[])
+      .filter((item) => item.status === "OPEN")
+      .map((item) => item.contact_entity_id));
+    const manualRows = (manualProfileFollowUps as ManualProfileFollowUpRowV1[])
+      .filter((row) => activePersonIds.has(row.entity_id) && !contactsWithCanonicalFollowUps.has(row.entity_id));
+    const projections = [
+      ...(states as RelationshipStateRowV1[]).map(projection),
+      ...manualRows.map(manualProfileProjection)
+    ];
+    const canonicalFollowUps = [
+      ...(followUps as FollowUpRowV1[]).map(followUp),
+      ...manualRows.map(manualProfileFollowUp)
+    ];
     const identities: CanonicalIdentityEvidenceV1[] = [...new Set(personIds as string[])]
       .sort((a, b) => a.localeCompare(b))
       .map((contactId) => ({ contactId, state: "RESOLVED", evidenceRefs: [`entity:${contactId}`] }));
     return projectCanonicalRelationshipFollowUpQueueV1({
-      projections: (states as RelationshipStateRowV1[]).map(projection),
-      followUps: (followUps as FollowUpRowV1[]).map(followUp),
+      projections,
+      followUps: canonicalFollowUps,
       identities,
       now: input.now ?? new Date()
     });

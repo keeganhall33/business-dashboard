@@ -32,6 +32,7 @@ const knownPerson: CrmPersonDirectoryRecordV1 = {
   lastTouchAt: "2026-09-04T18:00:00.000Z",
   nextFollowUpAt: "2026-09-11T18:00:00.000Z",
   activeOpportunity: "The Chase original art cards",
+  activeOpportunityHref: "/opportunities-actions/opportunity/arena-club",
   activeAsk: "Confirm approved athlete source photography",
   evidenceState: "KNOWN",
   detailHref: "/relationships/people/brian-lee"
@@ -76,7 +77,7 @@ test("verified person projects business context without inventing new fields", (
   assert.equal(person.activeAsk, "Confirm approved athlete source photography");
   assert.equal(person.evidenceState, "KNOWN");
   assert.equal(person.verificationRequired, false);
-  assert.match(person.recommendedNextMove, /Review the active ask/);
+  assert.equal(person.recommendedNextMove, "Confirm approved athlete source photography");
 });
 
 test("unknown and conflicted person facts stay unknown and verification-gated", () => {
@@ -87,10 +88,10 @@ test("unknown and conflicted person facts stay unknown and verification-gated", 
   assert.equal(person.companyName, null);
   assert.equal(person.relationshipState, null);
   assert.equal(person.verificationRequired, true);
-  assert.equal(person.recommendedNextMove, "Verify current relationship evidence before acting.");
+  assert.equal(person.recommendedNextMove, null);
   assert.match(html, /Not recorded/);
   assert.match(html, /Conflicting data/);
-  assert.match(html, /missing current contact or activity information/);
+  assert.doesNotMatch(html, /Recommended next move/);
   assert.doesNotMatch(html, /\$0|0%|relationship score/i);
 });
 
@@ -102,14 +103,43 @@ test("person record workspace is scan-first, read-only, responsive, and progress
   assert.match(html, /Brian Lee/);
   assert.match(html, /Arena Club/);
   assert.match(html, /Relationship snapshot/);
-  assert.match(html, /Last touch/);
+  assert.match(html, /Relationship status/);
+  assert.match(html, /Relationship strength/);
+  assert.match(html, /Last contact/);
   assert.match(html, /Next follow-up/);
   assert.match(html, /Current business context/);
   assert.match(html, /Recommended next move/);
-  assert.match(html, /Record coverage/);
+  assert.match(html, /Waiting on \/ current ask/);
+  assert.match(html, /Edit contact details and follow-up/);
+  assert.doesNotMatch(html, /Record coverage/);
   assert.match(html, /sm:px-6/);
   assert.match(html, /lg:grid-cols/);
   assert.doesNotMatch(html, /Send|Compose|form action=|mailto:/i);
+});
+
+test("linked opportunity remains actionable without duplicating it as relationship status", () => {
+  const person = buildCrmPersonDetailV1({
+    ...knownPerson,
+    relationshipState: null,
+    activeAsk: null,
+    nextFollowUpAt: null
+  });
+  const html = renderToString(<CrmPersonDetailV1 person={person} />);
+
+  assert.equal(person.recommendedNextMove, null);
+  assert.match(html, /href="\/opportunities-actions\/opportunity\/arena-club"/);
+  assert.doesNotMatch(html, /Linked to active opportunity/);
+  assert.doesNotMatch(html, /Review the linked opportunity/);
+});
+
+test("app shell uses the supplied signature logo instead of a Mission Control label", () => {
+  const source = readFileSync("src/app/(app)/layout.tsx", "utf8");
+  const logo = readFileSync("public/keegan-hall-signature.png");
+
+  assert.match(source, /keegan-hall-signature\.png/);
+  assert.match(source, /alt="Keegan Hall"/);
+  assert.doesNotMatch(source, />Mission Control</);
+  assert.ok(logo.byteLength > 0);
 });
 
 test("people directory links only records that supply the implemented canonical person destination", () => {
