@@ -16,11 +16,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link href="/dashboard" aria-label="Keegan Hall dashboard" className="shrink-0">
             <Image
-              src="/keegan-hall-signature.png"
+              src="/keegan-hall-signature-v3.png"
               alt="Keegan Hall"
               width={148}
               height={47}
               priority
+              unoptimized
               className="h-8 w-auto sm:h-9"
             />
           </Link>
