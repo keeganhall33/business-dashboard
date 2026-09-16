@@ -51,21 +51,39 @@ test("canonical Home opportunity cards navigate to the real dedicated route", ()
 
 test("known opportunity renders meaningful scan-first decision detail without invented economics", () => {
   const html = renderToString(
-    <ExecutiveOpportunityDetailV1 opportunity={knownOpportunity} generatedAt={null} />
+    <ExecutiveOpportunityDetailV1
+      opportunity={knownOpportunity}
+      generatedAt={null}
+      editableOpportunity={{
+        id: knownOpportunity.id,
+        name: knownOpportunity.title,
+        organization: "Boeing",
+        status: "in_conversation",
+        contactName: "Alex Example",
+        contactRole: "Art buyer",
+        nextStep: knownOpportunity.next_move,
+        nextStepDueAt: "2026-10-01",
+        valueEstimate: null,
+        notes: "Useful background that should be readable outside the editor."
+      }}
+    />
   );
 
   assert.match(html, />Opportunity</);
   assert.match(html, /Boeing Corporate Art \/ Workplace/);
   assert.match(html, /Confirm the right workplace-art buyer and timing window/);
-  assert.match(html, /Target date/);
-  assert.match(html, /Next step status/);
-  assert.match(html, /Business fit/);
+  assert.match(html, /Status/);
+  assert.match(html, /In Conversation/);
+  assert.match(html, /Next follow-up/);
+  assert.match(html, /Primary contact/);
   assert.match(html, /Revenue potential/);
+  assert.match(html, /Background and notes/);
+  assert.match(html, /Useful background/);
+  assert.match(html, /Edit opportunity/);
   assert.match(html, /When this was last updated/);
   assert.match(html, /Relationships \/ CRM/);
-  assert.match(html, /Planning readiness/);
-  assert.match(html, /Decision Room/);
-  assert.match(html, /Data &amp; Evidence/);
+  assert.match(html, /All opportunities/);
+  assert.doesNotMatch(html, /Next step status|Business fit|Decision Room|Data &amp; Evidence/);
   assert.match(html, /grid-cols-2|lg:grid-cols/);
   assert.doesNotMatch(html, /\$0(?:\.00)?|revenue estimate|guaranteed value/i);
 });

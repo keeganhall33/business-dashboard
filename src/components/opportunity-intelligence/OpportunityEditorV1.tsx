@@ -54,14 +54,17 @@ export function OpportunityEditorV1({ opportunity }: { opportunity: EditableOppo
   }
 
   return (
-    <form action={save} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Edit opportunity</h2><p className="mt-1 text-xs text-slate-500">Update the business record without leaving the dashboard.</p></div>{message ? <p role="status" className={message === "Saved" ? "text-sm font-semibold text-emerald-700" : "text-sm font-semibold text-rose-700"}>{message}</p> : null}</div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {([ ["Opportunity", "name", opportunity.name, "text"], ["Company", "organization", opportunity.organization, "text"], ["Status", "status", opportunity.status, "text"], ["Contact", "contactName", opportunity.contactName, "text"], ["Contact role", "contactRole", opportunity.contactRole, "text"], ["Target date", "nextStepDueAt", opportunity.nextStepDueAt?.slice(0, 10) ?? null, "date"], ["Revenue potential", "valueEstimate", opportunity.valueEstimate?.toString() ?? null, "number"] ] as const).map(([label, name, value, type]) => <label key={name} className="text-xs font-semibold text-slate-700">{label}<input name={name} type={type} min={type === "number" ? "0" : undefined} defaultValue={value ?? ""} className={inputClass} /></label>)}
-      </div>
-      <label className="mt-3 block text-xs font-semibold text-slate-700">Next move<textarea name="nextStep" defaultValue={opportunity.nextStep ?? ""} rows={3} className={inputClass} /></label>
-      <label className="mt-3 block text-xs font-semibold text-slate-700">Notes<textarea name="notes" defaultValue={opportunity.notes ?? ""} rows={5} className={inputClass} /></label>
-      <div className="mt-4 flex flex-wrap gap-2"><button disabled={pending} className="rounded-full bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{pending ? "Saving..." : "Save changes"}</button><button disabled={pending} type="button" onClick={archive} className="rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-700">Remove from active pipeline</button></div>
-    </form>
+    <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-900">Edit opportunity</summary>
+      <form action={save} className="border-t border-slate-200 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Update the business record without leaving the dashboard.</p>{message ? <p role="status" className={message === "Saved" ? "text-sm font-semibold text-emerald-700" : "text-sm font-semibold text-rose-700"}>{message}</p> : null}</div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {([ ["Opportunity", "name", opportunity.name, "text"], ["Company", "organization", opportunity.organization, "text"], ["Status", "status", opportunity.status, "text"], ["Contact", "contactName", opportunity.contactName, "text"], ["Contact role", "contactRole", opportunity.contactRole, "text"], ["Next follow-up", "nextStepDueAt", opportunity.nextStepDueAt?.slice(0, 10) ?? null, "date"], ["Revenue potential", "valueEstimate", opportunity.valueEstimate?.toString() ?? null, "number"] ] as const).map(([label, name, value, type]) => <label key={name} className="text-xs font-semibold text-slate-700">{label}<input name={name} type={type} min={type === "number" ? "0" : undefined} defaultValue={value ?? ""} className={inputClass} /></label>)}
+        </div>
+        <label className="mt-3 block text-xs font-semibold text-slate-700">Next move<textarea name="nextStep" defaultValue={opportunity.nextStep ?? ""} rows={3} className={inputClass} /></label>
+        <label className="mt-3 block text-xs font-semibold text-slate-700">Notes<textarea name="notes" defaultValue={opportunity.notes ?? ""} rows={5} className={inputClass} /></label>
+        <div className="mt-4 flex flex-wrap gap-2"><button disabled={pending} className="rounded-full bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{pending ? "Saving..." : "Save changes"}</button><button disabled={pending} type="button" onClick={archive} className="rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-700">Remove from active pipeline</button></div>
+      </form>
+    </details>
   );
 }
