@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ReactNode, Suspense } from "react";
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { RangeAwareLink } from "@/components/navigation/RangeAwareLink";
@@ -13,10 +14,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex flex-col">
-            <Link href="/dashboard" className="text-sm font-semibold tracking-wide">Mission Control</Link>
-            <div className="text-[11px] text-slate-500">What changed, what matters, what comes next</div>
-          </div>
+          <Link href="/dashboard" aria-label="Keegan Hall dashboard" className="shrink-0">
+            <Image
+              src="/keegan-hall-signature.png"
+              alt="Keegan Hall"
+              width={148}
+              height={47}
+              priority
+              className="h-8 w-auto sm:h-9"
+            />
+          </Link>
           <nav className="hidden items-center gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">
             {PRIMARY_NAV_ITEMS.map((item) => (
               <Suspense key={item.href} fallback={<Link href={item.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">{item.short_label}</Link>}>

@@ -31,11 +31,12 @@ export type CrmRecordEditorValuesV1 = {
 
 const inputClass = "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
-function Field({ label, name, defaultValue, type = "text", placeholder }: { label: string; name: string; defaultValue?: string | null; type?: string; placeholder?: string }) {
+function Field({ label, name, defaultValue, type = "text", placeholder, help }: { label: string; name: string; defaultValue?: string | null; type?: string; placeholder?: string; help?: string }) {
   return (
     <label className="text-xs font-semibold text-slate-700">
       {label}
       <input className={inputClass} name={name} type={type} defaultValue={defaultValue ?? ""} placeholder={placeholder} />
+      {help ? <span className="mt-1 block font-normal leading-5 text-slate-500">{help}</span> : null}
     </label>
   );
 }
@@ -120,21 +121,22 @@ export function CrmRecordEditorV1({
             <Field label="LinkedIn" name="linkedinUrl" type="url" defaultValue={values.linkedinUrl} />
           </>
         ) : <Field label="Website" name="websiteUrl" type="url" defaultValue={values.websiteUrl} />}
-        <Field label="Relationship" name="relationshipState" defaultValue={values.relationshipState} placeholder="In conversation, waiting, warm lead..." />
-        <label className="text-xs font-semibold text-slate-700">Relationship quality
+        <Field label="Relationship status" name="relationshipState" defaultValue={values.relationshipState} placeholder="In conversation, waiting on reply, dormant..." help="Describe where the relationship stands now. The linked opportunity is shown separately." />
+        <label className="text-xs font-semibold text-slate-700">Relationship strength
           <select name="relationshipQuality" className={inputClass} defaultValue={values.relationshipQuality === "UNKNOWN" ? "" : values.relationshipQuality ?? ""}>
-            <option value="">Not assessed</option>
-            <option value="HIGH">High</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="LOW">Low</option>
+            <option value="">Not recorded</option>
+            <option value="HIGH">Strong: trusted, direct relationship</option>
+            <option value="MEDIUM">Developing: active, limited history</option>
+            <option value="LOW">Limited: little or no direct relationship</option>
           </select>
+          <span className="mt-1 block font-normal leading-5 text-slate-500">This is your assessment, not an automated score.</span>
         </label>
-        <Field label={isPerson ? "Last touch" : "Last activity"} name="lastTouchAt" type="date" defaultValue={values.lastTouchAt} />
-        <Field label="Next follow-up" name="nextFollowUpAt" type="date" defaultValue={values.nextFollowUpAt} />
+        <Field label={isPerson ? "Last contact" : "Last activity"} name="lastTouchAt" type="date" defaultValue={values.lastTouchAt} help="Date of the most recent meaningful email, call, or meeting." />
+        <Field label="Next follow-up reminder" name="nextFollowUpAt" type="date" defaultValue={values.nextFollowUpAt} help="Appears in the follow-up queue seven days before this date and remains visible if overdue." />
         {!isPerson ? <Field label="Estimated value" name="supportedValue" type="number" defaultValue={values.supportedValue?.replace(/[^0-9.]/g, "")} placeholder="0" /> : null}
       </div>
-      <label className="mt-3 block text-xs font-semibold text-slate-700">Next move / active ask
-        <textarea name="nextMove" defaultValue={values.nextMove ?? ""} rows={3} className={inputClass} placeholder="What should happen next?" />
+      <label className="mt-3 block text-xs font-semibold text-slate-700">Next action / waiting on
+        <textarea name="nextMove" defaultValue={values.nextMove ?? ""} rows={3} className={inputClass} placeholder="Example: Waiting for Michelle to confirm the meeting date" />
       </label>
       <label className="mt-3 block text-xs font-semibold text-slate-700">Notes
         <textarea name="notes" defaultValue={values.notes ?? ""} rows={5} className={inputClass} placeholder="Add context, recent updates, and anything Jeeves should know." />

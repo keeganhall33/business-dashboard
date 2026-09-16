@@ -21,16 +21,30 @@ function EvidenceBadge({ state }: { state: CrmDirectoryEvidenceStateV1 }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
       <dd className="mt-1 text-sm font-semibold text-slate-950">{value}</dd>
+      {helper ? <p className="mt-1 text-xs leading-5 text-slate-500">{helper}</p> : null}
     </div>
   );
 }
 
-export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDetailV1; companies: readonly { id: string; name: string }[] }) {
+function relationshipStrength(value: CrmPersonDetailV1["relationshipStrength"]): string {
+  if (value === "HIGH") return "Strong";
+  if (value === "MEDIUM") return "Developing";
+  if (value === "LOW") return "Limited";
+  return "Not recorded";
+}
+
+function displayDate(value: string | null): string {
+  if (!value) return "Not recorded";
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+export function CrmPersonDetailV1({ person, companies = [] }: { person: CrmPersonDetailV1; companies?: readonly { id: string; name: string }[] }) {
   const email = person.contactChannels.find((channel) => channel.kind === "EMAIL")?.value ?? null;
   const phone = person.contactChannels.find((channel) => channel.kind === "PHONE")?.value ?? null;
   const linkedinUrl = person.contactChannels.find((channel) => channel.kind === "LINKEDIN")?.value ?? null;
@@ -63,10 +77,10 @@ export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDeta
         </header>
 
         <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Relationship snapshot">
-          <Metric label="Relationship" value={display(person.relationshipState)} />
-          <Metric label="Relationship quality" value={person.relationshipStrength === "UNKNOWN" ? "Not assessed" : person.relationshipStrength.toLowerCase()} />
-          <Metric label="Last touch" value={display(person.lastTouchAt)} />
-          <Metric label="Next follow-up" value={display(person.nextFollowUpAt)} />
+          <Metric label="Relationship status" value={display(person.relationshipState)} helper="Your current status, such as in conversation or waiting on a reply." />
+          <Metric label="Relationship strength" value={relationshipStrength(person.relationshipStrength)} helper="Your assessment of the direct relationship, not an automated score." />
+          <Metric label="Last contact" value={displayDate(person.lastTouchAt)} helper="Update after a meaningful email, call, or meeting." />
+          <Metric label="Next follow-up" value={displayDate(person.nextFollowUpAt)} helper="Appears in the follow-up queue when it is due." />
         </section>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
@@ -100,28 +114,32 @@ export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDeta
                 <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Active opportunity</p>
                 <p className="mt-1 text-sm font-semibold text-slate-950">{person.activeOpportunityHref && person.activeOpportunity ? <Link href={person.activeOpportunityHref} className="text-blue-700 hover:underline">{person.activeOpportunity}</Link> : display(person.activeOpportunity)}</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Active ask</p>
-                <p className="mt-1 text-sm font-semibold text-slate-950">{display(person.activeAsk)}</p>
-              </div>
+              {person.activeAsk ? <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Waiting on / current ask</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{person.activeAsk}</p>
+              </div> : null}
             </div>
-            <div className={`mt-4 rounded-2xl border p-4 ${person.verificationRequired ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+            {person.recommendedNextMove ? <div className={`mt-4 rounded-2xl border p-4 ${person.verificationRequired ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Recommended next move</p>
               <p className="mt-1 text-sm font-semibold leading-6 text-slate-950">{person.recommendedNextMove}</p>
-            </div>
+            </div> : null}
           </section>
         </div>
 
-        <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Record coverage">
-          <h2 className="text-sm font-semibold text-slate-950">Record coverage</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{person.verificationRequired ? "This record is missing current contact or activity information. Email and manual updates should fill those gaps." : "This record is connected to current relationship data."}</p>
-        </section>
-        <section className="mt-5" aria-label="Edit person">
-          <CrmRecordEditorV1
-            values={{ id: person.id, entityType: "person", name: person.name, title: person.title, email, phone, linkedinUrl, notes: person.notesMd, companyName: person.companyName, relationshipState: person.relationshipState, relationshipQuality: person.relationshipStrength, lastTouchAt: person.lastTouchAt, nextFollowUpAt: person.nextFollowUpAt, nextMove: person.activeAsk }}
-            companies={companies}
-          />
-        </section>
+        {person.notesMd ? <details className="mt-5 rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-950">Background and notes</summary>
+          <div className="whitespace-pre-wrap border-t border-slate-200 p-5 text-sm leading-6 text-slate-700">{person.notesMd}</div>
+        </details> : null}
+
+        <details className="mt-5 rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-950">Edit contact details and follow-up</summary>
+          <section className="border-t border-slate-200 p-3" aria-label="Edit person">
+            <CrmRecordEditorV1
+              values={{ id: person.id, entityType: "person", name: person.name, title: person.title, email, phone, linkedinUrl, notes: person.notesMd, companyName: person.companyName, relationshipState: person.relationshipState, relationshipQuality: person.relationshipStrength, lastTouchAt: person.lastTouchAt, nextFollowUpAt: person.nextFollowUpAt, nextMove: person.activeAsk }}
+              companies={companies}
+            />
+          </section>
+        </details>
       </div>
     </main>
   );

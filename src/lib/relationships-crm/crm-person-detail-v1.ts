@@ -22,7 +22,7 @@ export type CrmPersonDetailV1 = {
   evidenceState: CrmPersonDirectoryRecordV1["evidenceState"];
   notesMd: string | null;
   verificationRequired: boolean;
-  recommendedNextMove: string;
+  recommendedNextMove: string | null;
 };
 
 function nonEmpty(value: string | null): string | null {
@@ -35,20 +35,17 @@ function dateOnly(value: string | null): string | null {
   return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : null;
 }
 
-function safeNextMove(person: CrmPersonDirectoryRecordV1): string {
-  if (person.evidenceState !== "KNOWN") {
-    return "Verify current relationship evidence before acting.";
-  }
+function safeNextMove(person: CrmPersonDirectoryRecordV1): string | null {
   if (nonEmpty(person.activeAsk)) {
-    return "Review the active ask and relationship context before the next touch.";
+    return nonEmpty(person.activeAsk);
   }
-  if (dateOnly(person.nextFollowUpAt)) {
-    return "Review the verified follow-up window before the next touch.";
+  const followUpDate = dateOnly(person.nextFollowUpAt);
+  if (followUpDate) {
+    const date = new Date(`${followUpDate}T00:00:00.000Z`);
+    const label = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
+    return `Follow up on ${label}.`;
   }
-  if (nonEmpty(person.activeOpportunity)) {
-    return "Review the linked opportunity before choosing the next relationship move.";
-  }
-  return "No supported next relationship move is available.";
+  return null;
 }
 
 export function buildCrmPersonDetailV1(person: CrmPersonDirectoryRecordV1): CrmPersonDetailV1 {

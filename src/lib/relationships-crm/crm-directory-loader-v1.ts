@@ -283,7 +283,7 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
       context?.profile?.phone ? { kind: "PHONE" as const, value: context.profile.phone, evidenceState: "KNOWN" as const } : null,
       context?.profile?.linkedin_url ? { kind: "LINKEDIN" as const, value: context.profile.linkedin_url, evidenceState: "KNOWN" as const } : null
     ].filter((channel): channel is NonNullable<typeof channel> => Boolean(channel)),
-    relationshipState: text(context?.profile?.relationship_state) ?? humanize(text(relationship?.primary_state)) ?? (linked ? "Linked to active opportunity" : null),
+    relationshipState: text(context?.profile?.relationship_state) ?? humanize(text(relationship?.primary_state)),
     relationshipStrength: profileRelationshipStrength(context?.profile?.relationship_quality) ?? relationshipStrength(relationship?.states),
     lastTouchAt: text(context?.profile?.last_touch_at) ?? text(context?.activity?.occurred_at) ?? text(relationship?.last_meaningful_interaction_json?.effectiveTimestamp),
     nextFollowUpAt: text(context?.profile?.next_follow_up_at) ?? text(context?.followUp?.due_at),

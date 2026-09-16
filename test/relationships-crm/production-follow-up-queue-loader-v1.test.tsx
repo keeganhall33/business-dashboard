@@ -88,6 +88,30 @@ test("preserves stale conflicted and unknown truth as verification-required", as
   assert.equal(result.items[0]?.suggestedMove, "VERIFY_EVIDENCE");
 });
 
+test("manual CRM follow-up dates enter the canonical queue when they become due", async () => {
+  const result = await loadProductionFollowUpQueueV1({
+    source: source({
+      loadRelationshipStates: async () => [],
+      loadFollowUps: async () => [],
+      loadManualProfileFollowUps: async () => [{
+        entity_id: "person:andi-anchell",
+        next_follow_up_at: "2026-09-18T00:00:00.000Z",
+        updated_at: "2026-09-16T12:00:00.000Z"
+      }],
+      loadActivePersonIds: async () => [{ entity_id: "person:andi-anchell" }]
+    }),
+    now: "2026-09-16T16:00:00.000Z"
+  });
+
+  assert.ok(result);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0]?.contactId, "person:andi-anchell");
+  assert.equal(result.items[0]?.dueAt, "2026-09-18T00:00:00.000Z");
+  assert.deepEqual(result.items[0]?.queueClasses, ["FOLLOW_UP_THIS_WEEK"]);
+  assert.equal(result.items[0]?.suggestedMove, "PREPARE_FOLLOW_UP");
+  assert.equal(result.items[0]?.requiresReview, false);
+});
+
 test("fails closed on unavailable malformed or oversized sources", async () => {
   assert.equal(await loadProductionFollowUpQueueV1({
     source: source({ loadRelationshipStates: async () => { throw new Error("unavailable"); } })
