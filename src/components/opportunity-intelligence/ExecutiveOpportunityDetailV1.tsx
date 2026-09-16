@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { OpportunityEditorV1, type EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
+
 import type {
   ExecutiveCommandCenterOpportunityV1,
   ExecutiveCommandCenterTruthStateV1
@@ -72,11 +74,13 @@ export function buildExecutiveOpportunityDetailViewV1(
 export function ExecutiveOpportunityDetailV1({
   opportunity,
   generatedAt,
-  relationshipEvidence = null
+  relationshipEvidence = null,
+  editableOpportunity
 }: {
   opportunity: ExecutiveCommandCenterOpportunityV1;
   generatedAt?: string | null;
   relationshipEvidence?: readonly OpportunityRelationshipEvidenceV1[] | null;
+  editableOpportunity?: EditableOpportunityV1 | null;
 }) {
   const view = buildExecutiveOpportunityDetailViewV1(opportunity, relationshipEvidence);
 
@@ -161,6 +165,8 @@ export function ExecutiveOpportunityDetailV1({
             </dl>
           </div>
         </details>
+
+        {editableOpportunity ? <OpportunityEditorV1 opportunity={editableOpportunity} /> : null}
 
         <nav aria-label="Opportunity workspace destinations" className="flex flex-wrap gap-2">
           <Link href="/relationships" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">

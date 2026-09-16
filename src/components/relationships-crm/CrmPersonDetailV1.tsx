@@ -30,7 +30,10 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
+export function CrmPersonDetailV1({ person, companies }: { person: CrmPersonDetailV1; companies: readonly { id: string; name: string }[] }) {
+  const email = person.contactChannels.find((channel) => channel.kind === "EMAIL")?.value ?? null;
+  const phone = person.contactChannels.find((channel) => channel.kind === "PHONE")?.value ?? null;
+  const linkedinUrl = person.contactChannels.find((channel) => channel.kind === "LINKEDIN")?.value ?? null;
   return (
     <main
       className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8"
@@ -46,15 +49,15 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
                 <EvidenceBadge state={person.evidenceState} />
               </div>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{display(person.name)}</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{[person.title, person.companyName].filter(Boolean).join(" · ") || "Role and company not recorded"}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{person.title ?? "Role not recorded"}{person.companyName ? <> · {person.companyHref ? <Link href={person.companyHref} className="text-blue-700 underline-offset-4 hover:underline">{person.companyName}</Link> : person.companyName}</> : null}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <a href="/relationships/people" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
+              <Link href="/relationships/people" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
                 Back to People
-              </a>
-              <a href="/relationships" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
+              </Link>
+              <Link href="/relationships" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
                 CRM Home
-              </a>
+              </Link>
             </div>
           </div>
         </header>
@@ -113,7 +116,16 @@ export function CrmPersonDetailV1({ person }: { person: CrmPersonDetailV1 }) {
           <h2 className="text-sm font-semibold text-slate-950">Record coverage</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">{person.verificationRequired ? "This record is missing current contact or activity information. Email and manual updates should fill those gaps." : "This record is connected to current relationship data."}</p>
         </section>
+        <section className="mt-5" aria-label="Edit person">
+          <CrmRecordEditorV1
+            values={{ id: person.id, entityType: "person", name: person.name, title: person.title, email, phone, linkedinUrl, notes: person.notesMd, companyId: person.companyId }}
+            companies={companies}
+          />
+        </section>
       </div>
     </main>
   );
 }
+import Link from "next/link";
+
+import { CrmRecordEditorV1 } from "@/components/relationships-crm/CrmRecordEditorV1";

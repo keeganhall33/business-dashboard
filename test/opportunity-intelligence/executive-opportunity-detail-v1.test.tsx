@@ -100,15 +100,12 @@ test("INFERRED opportunity remains recommendation context rather than confirmed 
   assert.match(view.unknowns.join(" "), /Confirm the contact and next step/);
 });
 
-test("route resolves every ID from the full dashboard-overview opportunity portfolio and fails missing IDs honestly", () => {
+test("route loads the exact editable opportunity without waiting on the full dashboard overview", () => {
   const source = fs.readFileSync(ROUTE_PATH, "utf8");
 
-  assert.match(source, /getDashboardOverview/);
-  assert.match(source, /buildExecutiveOpportunityPortfolioV1/);
-  assert.match(source, /portfolio\.items\.find/);
-  assert.match(source, /candidate\.id === opportunityId/);
-  assert.match(source, /if \(!item\) notFound\(\)/);
-  assert.match(source, /hdrs\.get\("cookie"\)/);
-  assert.match(source, /force-no-store/);
-  assert.doesNotMatch(source, /EXECUTIVE_HOME_FIXTURE_V1|valueEstimate\s*=|Math\.random/);
+  assert.match(source, /getOpportunityById\(id\.trim\(\)\)/);
+  assert.match(source, /editableOpportunity=\{editable\}/);
+  assert.match(source, /catch \{\s*notFound\(\)/);
+  assert.match(source, /force-dynamic/);
+  assert.doesNotMatch(source, /getDashboardOverview|buildExecutiveOpportunityPortfolioV1|EXECUTIVE_HOME_FIXTURE_V1|Math\.random/);
 });

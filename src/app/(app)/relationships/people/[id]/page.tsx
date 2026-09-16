@@ -15,5 +15,5 @@ export default async function RelationshipPersonDetailPage({ params }: PageProps
 
   if (!person) notFound();
 
-  return <CrmPersonDetailV1 person={person} />;
+  return <CrmPersonDetailV1 person={person} companies={index.companies.map((company) => ({ id: company.id, name: company.name ?? "Unnamed company" }))} />;
 }

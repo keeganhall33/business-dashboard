@@ -9,12 +9,19 @@ export type CrmCompanyDetailV1 = {
   name: string | null;
   category: string | null;
   keyPeople: readonly string[];
+  keyPeopleLinks: readonly { id: string; label: string; href: string }[];
   relationshipState: string | null;
   activeOpportunities: readonly string[];
+  activeOpportunityLinks: readonly { id: string; label: string; href: string }[];
   lastActivityAt: string | null;
   nextMove: string | null;
   supportedValue: string | null;
   evidenceState: CrmCompanyDirectoryRecordV1["evidenceState"];
+  primaryEmail: string | null;
+  phone: string | null;
+  websiteUrl: string | null;
+  notesMd: string | null;
+  relatedCompanies: readonly { id: string; label: string; href: string; relationship: string }[];
   verificationRequired: boolean;
   recommendedNextMove: string;
 };
@@ -65,12 +72,19 @@ export function buildCrmCompanyDetailV1(company: CrmCompanyDirectoryRecordV1): C
     name: nonEmpty(company.name),
     category: nonEmpty(company.category),
     keyPeople: cleanList(company.keyPeople),
+    keyPeopleLinks: company.keyPeopleLinks ?? [],
     relationshipState: nonEmpty(company.relationshipState),
     activeOpportunities: cleanList(company.activeOpportunities),
+    activeOpportunityLinks: company.activeOpportunityLinks ?? [],
     lastActivityAt: dateOnly(company.lastActivityAt),
     nextMove: nonEmpty(company.nextMove),
     supportedValue: nonEmpty(company.supportedValue),
     evidenceState: company.evidenceState,
+    primaryEmail: nonEmpty(company.primaryEmail ?? null),
+    phone: nonEmpty(company.phone ?? null),
+    websiteUrl: nonEmpty(company.websiteUrl ?? null),
+    notesMd: nonEmpty(company.notesMd ?? null),
+    relatedCompanies: company.relatedCompanies ?? [],
     verificationRequired: company.evidenceState !== "KNOWN",
     recommendedNextMove: safeNextMove(company)
   };

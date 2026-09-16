@@ -12,7 +12,7 @@ type SpeechRecognitionLike = {
   interimResults: boolean;
   lang: string;
   onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> }) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -43,9 +43,12 @@ export function AskJeevesWorkspaceV1({
   const [listening, setListening] = useState(false);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const voiceBase = useRef("");
+  const latestQuestion = useRef(initialQuestion);
+  const keepListening = useRef(false);
   const initialQuestionHandled = useRef(false);
 
   useEffect(() => () => {
+    keepListening.current = false;
     recognition.current?.stop();
   }, []);
 
@@ -79,8 +82,42 @@ export function AskJeevesWorkspaceV1({
     await runQuestion(question);
   }
 
+  function beginVoiceSession(Recognition: new () => SpeechRecognitionLike, baseQuestion: string) {
+    const instance = new Recognition();
+    recognition.current = instance;
+    voiceBase.current = baseQuestion.trim();
+    instance.continuous = true;
+    instance.interimResults = true;
+    instance.lang = "en-US";
+    instance.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
+      const nextQuestion = [voiceBase.current, transcript.trim()].filter(Boolean).join(" ");
+      latestQuestion.current = nextQuestion;
+      setQuestion(nextQuestion);
+    };
+    instance.onerror = (event) => {
+      if (event.error === "no-speech" && keepListening.current) return;
+      keepListening.current = false;
+      setError("I could not hear that clearly. Please try again or type your question.");
+      setListening(false);
+    };
+    instance.onend = () => {
+      if (!keepListening.current) {
+        setListening(false);
+        return;
+      }
+      window.setTimeout(() => {
+        if (!keepListening.current) return;
+        beginVoiceSession(Recognition, latestQuestion.current);
+      }, 150);
+    };
+    instance.start();
+  }
+
   function toggleVoice() {
     if (listening) {
+      keepListening.current = false;
       recognition.current?.stop();
       setListening(false);
       return;
@@ -91,24 +128,11 @@ export function AskJeevesWorkspaceV1({
       setError("Voice input is not supported in this browser. You can still type your question.");
       return;
     }
-    const instance = new Recognition();
-    recognition.current = instance;
-    voiceBase.current = question.trim();
-    instance.continuous = false;
-    instance.interimResults = true;
-    instance.lang = "en-US";
-    instance.onresult = (event) => {
-      let transcript = "";
-      for (let index = 0; index < event.results.length; index += 1) transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
-      setQuestion([voiceBase.current, transcript.trim()].filter(Boolean).join(" "));
-    };
-    instance.onerror = () => setError("I could not hear that clearly. Please try again or type your question.");
-    instance.onend = () => {
-      setListening(false);
-    };
+    latestQuestion.current = question.trim();
+    keepListening.current = true;
     setError(null);
     setListening(true);
-    instance.start();
+    beginVoiceSession(Recognition, latestQuestion.current);
   }
 
   return (
@@ -117,7 +141,7 @@ export function AskJeevesWorkspaceV1({
         <header className="text-center">
           <p className="text-sm font-semibold text-blue-700">Ask Jeeves</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-5xl">What do you want to know?</h1>
-          <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-600">Ask about revenue, traffic, advertising, priorities, opportunities, or relationships.</p>
+          <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-600">Ask anything. Jeeves can use your business data, reason through strategy, or research the wider market.</p>
         </header>
 
         <div className="mt-6">
@@ -126,20 +150,23 @@ export function AskJeevesWorkspaceV1({
 
         <form onSubmit={submit} className="mt-8 rounded-3xl border border-slate-200 bg-white p-3 shadow-lg shadow-slate-200/60">
           <label htmlFor="jeeves-question" className="sr-only">Ask Jeeves a question</label>
-          <textarea id="jeeves-question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} maxLength={500} placeholder="What should I focus on next?" className="w-full resize-none rounded-2xl bg-slate-50 px-4 py-4 text-base leading-7 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2" />
+          <textarea id="jeeves-question" value={question} onChange={(event) => {
+            latestQuestion.current = event.target.value;
+            setQuestion(event.target.value);
+          }} rows={3} maxLength={500} placeholder="What should I focus on next?" className="w-full resize-none rounded-2xl bg-slate-50 px-4 py-4 text-base leading-7 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2" />
           <div className="mt-3 flex items-center justify-between gap-3">
             <div>
               <button type="button" onClick={toggleVoice} aria-pressed={listening} className={`rounded-full border px-4 py-2 text-sm font-semibold ${listening ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"}`}>{listening ? "Stop listening" : "Speak"}</button>
-              {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening. Pause when finished or press Stop.</p> : null}
+              {listening ? <p role="status" className="mt-2 text-xs text-slate-500">Listening continuously. Press Stop when you are finished.</p> : null}
             </div>
-            <button type="submit" disabled={!question.trim() || loading} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Checking data…" : "Send"}</button>
+            <button type="submit" disabled={!question.trim() || loading} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Thinking…" : "Send"}</button>
           </div>
         </form>
 
         {error ? <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
         {answer ? <section aria-live="polite" className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-semibold text-blue-700">Answer</p>
-          <h2 className="mt-2 text-2xl font-semibold leading-9 text-slate-950">{answer.answer}</h2>
+          <p className="mt-3 whitespace-pre-wrap text-base leading-7 text-slate-900">{answer.answer}</p>
           {answer.facts.length ? <ul className="mt-5 space-y-2 text-base leading-7 text-slate-700">{answer.facts.map((fact) => <li key={fact} className="rounded-2xl bg-slate-50 px-4 py-3">{fact}</li>)}</ul> : null}
           {answer.links.length ? <div className="mt-5 flex flex-wrap gap-2">{answer.links.map((link) => <a key={`${link.href}:${link.label}`} href={link.href} className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100">{link.label}</a>)}</div> : null}
           {answer.sources.length ? <p className="mt-5 text-xs leading-5 text-slate-500">Sources: {answer.sources.join(" · ")}</p> : null}

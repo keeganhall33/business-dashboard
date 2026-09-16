@@ -27,6 +27,8 @@ export type DataEvidenceSourceRowV1 = {
   generatedAt: string | null;
   warnings: readonly string[];
   truthState: DataEvidenceTruthStateV1;
+  businessUse: string;
+  nextAction: string | null;
 };
 
 export type DataEvidenceSchedulerV1 = {
@@ -221,7 +223,14 @@ export function buildExecutiveDataEvidenceViewV1(
       lastVerifiedAt: access?.lastVerified ?? null,
       generatedAt: metadata?.generatedAt ?? null,
       warnings: warningCodes(metadata, health),
-      truthState: sourceTruthState(metadata, health, access)
+      truthState: sourceTruthState(metadata, health, access),
+      businessUse: {
+        woo: "Revenue, orders, and products",
+        ga4: "Website traffic and behavior",
+        funnelkit: "Checkout conversion",
+        meta: "Advertising spend and return"
+      }[source],
+      nextAction: null
     };
   });
 
@@ -260,7 +269,14 @@ export function buildUnavailableDataEvidenceViewV1(): ExecutiveDataEvidenceViewV
     lastVerifiedAt: null,
     generatedAt: null,
     warnings: [],
-    truthState: "UNKNOWN"
+    truthState: "UNKNOWN",
+    businessUse: {
+      woo: "Revenue, orders, and products",
+      ga4: "Website traffic and behavior",
+      funnelkit: "Checkout conversion",
+      meta: "Advertising spend and return"
+    }[source],
+    nextAction: "Refresh this source connection."
   }));
   return {
     overallState: "UNAVAILABLE",

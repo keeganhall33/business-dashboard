@@ -25,12 +25,16 @@ export type CrmDirectoryLoaderDependenciesV1 = {
   loadFollowUps?: () => Promise<readonly unknown[] | null>;
   loadOpportunityLinks?: () => Promise<readonly unknown[] | null>;
   loadOpportunities?: () => Promise<readonly unknown[] | null>;
+  loadProfiles?: () => Promise<readonly unknown[] | null>;
+  loadEntityLinks?: () => Promise<readonly unknown[] | null>;
 };
 
 type RelationshipRowV1 = { contact_entity_id: string; primary_state: string; states: string[]; truth_state: string; freshness_state: string; last_meaningful_interaction_json: Record<string, unknown> | null; next_best_move_json: Record<string, unknown>; generated_at: string };
 type ActivityRowV1 = { contact_entity_id: string; occurred_at: string; summary: string; truth_state: string };
 type FollowUpRowV1 = { contact_entity_id: string; opportunity_id: string | null; due_at: string | null; status: string; truth_state: string; freshness_state: string };
 type OpportunityLinkRowV1 = { opportunity_id: string; entity_id: string; role: string; truth_state: string; freshness_state: string };
+type EntityProfileRowV1 = { entity_id: string; title: string | null; category: string | null; primary_email: string | null; phone: string | null; linkedin_url: string | null; website_url: string | null; notes_md: string | null };
+type EntityLinkRowV1 = { subject_entity_id: string; relationship_type: string; object_entity_id: string; role_title: string | null; is_primary: boolean };
 type OpportunityRowV1 = {
   id: string;
   name: string;
@@ -106,6 +110,20 @@ async function queryOpportunitiesV1(): Promise<readonly unknown[]> {
   return data ?? [];
 }
 
+async function queryEntityProfilesV1(): Promise<readonly unknown[]> {
+  const { data, error } = await getSupabaseServerClient().from("crm_entity_profiles_v1")
+    .select("entity_id,title,category,primary_email,phone,linkedin_url,website_url,notes_md").limit(10_000);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function queryEntityLinksV1(): Promise<readonly unknown[]> {
+  const { data, error } = await getSupabaseServerClient().from("crm_entity_links_v1")
+    .select("subject_entity_id,relationship_type,object_entity_id,role_title,is_primary").limit(10_000);
+  if (error) throw error;
+  return data ?? [];
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -168,6 +186,8 @@ function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[])
     name,
     title: text(primary?.contact_role),
     companyName: text(primary?.organization),
+    companyId: null,
+    companyHref: null,
     contactChannels: [],
     relationshipState: humanize(text(primary?.status)) ?? "Opportunity contact",
     relationshipStrength: "UNKNOWN",
@@ -176,6 +196,7 @@ function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[])
     activeOpportunity: text(primary?.name),
     activeAsk: evidence === "STALE" ? "Review and update this record before acting." : text(primary?.next_step),
     evidenceState: evidence,
+    notesMd: null,
     detailHref: crmPersonDetailHrefV1(id)
   };
 }
@@ -188,12 +209,19 @@ function pipelineCompanyRecordV1(name: string, opportunities: OpportunityRowV1[]
     name,
     category: null,
     keyPeople: [...new Set(opportunities.map((opportunity) => text(opportunity.contact_name)).filter((value): value is string => Boolean(value)))],
+    keyPeopleLinks: [],
     relationshipState: opportunities.some((opportunity) => !/closed|lost|archived/i.test(opportunity.status)) ? "Active opportunity" : humanize(text(opportunities[0]?.status)),
     activeOpportunities: opportunities.map((opportunity) => opportunity.name),
+    activeOpportunityLinks: opportunities.map((opportunity) => ({ id: opportunity.id, label: opportunity.name, href: `/opportunities-actions/opportunity/${encodeURIComponent(opportunity.id)}` })),
     lastActivityAt: null,
     nextMove: opportunities.some((opportunity) => pipelineEvidenceStateV1(opportunity) === "STALE") ? "Review and update stale relationship records." : opportunities.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
     supportedValue: money(valued?.value_estimate),
     evidenceState: opportunities.some((opportunity) => pipelineEvidenceStateV1(opportunity) === "STALE") ? "STALE" : opportunities.every((opportunity) => pipelineEvidenceStateV1(opportunity) === "KNOWN") ? "KNOWN" : "UNKNOWN",
+    primaryEmail: null,
+    phone: null,
+    websiteUrl: null,
+    notesMd: null,
+    relatedCompanies: [],
     detailHref: crmCompanyDetailHrefV1(id)
   };
 }
@@ -204,6 +232,8 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
   followUp?: FollowUpRowV1;
   opportunity?: OpportunityRowV1;
   companyName?: string | null;
+  companyId?: string | null;
+  profile?: EntityProfileRowV1;
 }): CrmPersonDirectoryRecordV1 {
   const id = row.entity_id.trim();
   const relationship = context?.relationship;
@@ -213,9 +243,15 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
   return {
     id,
     name: row.canonical_name.trim(),
-    title: null,
+    title: text(context?.profile?.title),
     companyName: context?.companyName ?? null,
-    contactChannels: [],
+    companyId: context?.companyId ?? null,
+    companyHref: context?.companyId ? crmCompanyDetailHrefV1(context.companyId) : null,
+    contactChannels: [
+      context?.profile?.primary_email ? { kind: "EMAIL" as const, value: context.profile.primary_email, evidenceState: "KNOWN" as const } : null,
+      context?.profile?.phone ? { kind: "PHONE" as const, value: context.profile.phone, evidenceState: "KNOWN" as const } : null,
+      context?.profile?.linkedin_url ? { kind: "LINKEDIN" as const, value: context.profile.linkedin_url, evidenceState: "KNOWN" as const } : null
+    ].filter((channel): channel is NonNullable<typeof channel> => Boolean(channel)),
     relationshipState: humanize(text(relationship?.primary_state)) ?? (linked ? "Linked to active opportunity" : null),
     relationshipStrength: relationshipStrength(relationship?.states),
     lastTouchAt: text(context?.activity?.occurred_at) ?? text(relationship?.last_meaningful_interaction_json?.effectiveTimestamp),
@@ -223,24 +259,32 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
     activeOpportunity: text(context?.opportunity?.name),
     activeAsk: humanize(nextMove),
     evidenceState: relationship ? evidenceState(text(relationship.truth_state), text(relationship.freshness_state)) : linked ? "KNOWN" : "KNOWN",
+    notesMd: text(context?.profile?.notes_md),
     detailHref: crmPersonDetailHrefV1(id)
   };
 }
 
-function toCompanyRecordV1(row: CanonicalEntityRowV1, context?: { people?: string[]; opportunities?: OpportunityRowV1[]; latestActivityAt?: string | null }): CrmCompanyDirectoryRecordV1 {
+function toCompanyRecordV1(row: CanonicalEntityRowV1, context?: { people?: Array<{ id: string; name: string }>; opportunities?: OpportunityRowV1[]; latestActivityAt?: string | null; profile?: EntityProfileRowV1; relatedCompanies?: Array<{ id: string; label: string; relationship: string }> }): CrmCompanyDirectoryRecordV1 {
   const id = row.entity_id.trim();
 
   return {
     id,
     name: row.canonical_name.trim(),
-    category: null,
-    keyPeople: context?.people ?? [],
+    category: text(context?.profile?.category),
+    keyPeople: context?.people?.map((person) => person.name) ?? [],
+    keyPeopleLinks: context?.people?.map((person) => ({ id: person.id, label: person.name, href: crmPersonDetailHrefV1(person.id) })) ?? [],
     relationshipState: context?.opportunities?.length ? "Active opportunity" : null,
     activeOpportunities: context?.opportunities?.map((opportunity) => opportunity.name) ?? [],
+    activeOpportunityLinks: context?.opportunities?.map((opportunity) => ({ id: opportunity.id, label: opportunity.name, href: `/opportunities-actions/opportunity/${encodeURIComponent(opportunity.id)}` })) ?? [],
     lastActivityAt: context?.latestActivityAt ?? null,
     nextMove: context?.opportunities?.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
     supportedValue: money(context?.opportunities?.find((opportunity) => opportunity.value_estimate != null)?.value_estimate),
     evidenceState: "KNOWN",
+    primaryEmail: text(context?.profile?.primary_email),
+    phone: text(context?.profile?.phone),
+    websiteUrl: text(context?.profile?.website_url),
+    notesMd: text(context?.profile?.notes_md),
+    relatedCompanies: context?.relatedCompanies?.map((company) => ({ ...company, href: crmCompanyDetailHrefV1(company.id) })) ?? [],
     detailHref: crmCompanyDetailHrefV1(id)
   };
 }
@@ -251,13 +295,15 @@ export async function loadCrmDirectoryIndexV1(
   try {
     const injected = Boolean(dependencies.loadActiveEntities);
     const empty = async () => [] as readonly unknown[];
-    const [entityValues, relationshipValues, activityValues, followUpValues, linkValues, opportunityValues] = await Promise.all([
+    const [entityValues, relationshipValues, activityValues, followUpValues, linkValues, opportunityValues, profileValues, entityLinkValues] = await Promise.all([
       (dependencies.loadActiveEntities ?? queryActiveCanonicalEntitiesV1)(),
       (dependencies.loadRelationshipStates ?? (injected ? empty : queryRelationshipStatesV1))(),
       (dependencies.loadActivities ?? (injected ? empty : queryActivitiesV1))(),
       (dependencies.loadFollowUps ?? (injected ? empty : queryFollowUpsV1))(),
       (dependencies.loadOpportunityLinks ?? (injected ? empty : queryOpportunityLinksV1))(),
-      (dependencies.loadOpportunities ?? (injected ? empty : queryOpportunitiesV1))()
+      (dependencies.loadOpportunities ?? (injected ? empty : queryOpportunitiesV1))(),
+      (dependencies.loadProfiles ?? (injected ? empty : queryEntityProfilesV1))(),
+      (dependencies.loadEntityLinks ?? (injected ? empty : queryEntityLinksV1))()
     ]);
     const activeRows = (entityValues ?? []).filter(isActiveCanonicalEntityRowV1);
     const relationships = rows<RelationshipRowV1>(relationshipValues);
@@ -265,6 +311,8 @@ export async function loadCrmDirectoryIndexV1(
     const followUps = rows<FollowUpRowV1>(followUpValues);
     const links = rows<OpportunityLinkRowV1>(linkValues);
     const opportunities = rows<OpportunityRowV1>(opportunityValues).filter(isEngagedOpportunityV1);
+    const profiles = rows<EntityProfileRowV1>(profileValues);
+    const entityLinks = rows<EntityLinkRowV1>(entityLinkValues);
     const entityNames = new Map(activeRows.map((row) => [row.entity_id, row.canonical_name]));
     const opportunitiesById = new Map(opportunities.map((row) => [String(row.id), row]));
 
@@ -272,33 +320,53 @@ export async function loadCrmDirectoryIndexV1(
       return links.filter((link) => link.entity_id === entityId).map((link) => opportunitiesById.get(String(link.opportunity_id))).filter((value): value is OpportunityRowV1 => Boolean(value));
     }
 
-    function linkedCompanyName(personId: string): string | null {
+    function linkedCompany(personId: string): { id: string; name: string } | null {
+      const direct = entityLinks.find((link) => link.subject_entity_id === personId && link.relationship_type === "WORKS_AT" && link.is_primary)
+        ?? entityLinks.find((link) => link.subject_entity_id === personId && link.relationship_type === "WORKS_AT");
+      if (direct) {
+        const name = entityNames.get(direct.object_entity_id);
+        if (name) return { id: direct.object_entity_id, name };
+      }
       const personOpportunityIds = new Set(links.filter((link) => link.entity_id === personId).map((link) => String(link.opportunity_id)));
       const organizationLink = links
         .filter((link) => personOpportunityIds.has(String(link.opportunity_id)) && link.entity_id !== personId && entityNames.has(link.entity_id))
         .sort((left, right) => ({ BRAND: 0, ORGANIZATION: 1, AGENCY: 2 }[left.role] ?? 3) - ({ BRAND: 0, ORGANIZATION: 1, AGENCY: 2 }[right.role] ?? 3))[0];
-      return organizationLink ? entityNames.get(organizationLink.entity_id) ?? null : linkedOpportunities(personId)[0]?.organization ?? null;
+      if (organizationLink) return { id: organizationLink.entity_id, name: entityNames.get(organizationLink.entity_id) ?? "Company" };
+      return linkedOpportunities(personId)[0]?.organization ? { id: "", name: linkedOpportunities(personId)[0].organization! } : null;
     }
 
     const canonicalPeople = activeRows
-        .filter((row) => row.entity_type === "person")
-        .map((row) => toPersonRecordV1(row, {
+      .filter((row) => row.entity_type === "person")
+      .map((row) => {
+        const company = linkedCompany(row.entity_id);
+        return toPersonRecordV1(row, {
           relationship: relationships.find((item) => item.contact_entity_id === row.entity_id),
           activity: activities.find((item) => item.contact_entity_id === row.entity_id),
           followUp: followUps.find((item) => item.contact_entity_id === row.entity_id),
           opportunity: linkedOpportunities(row.entity_id)[0],
-          companyName: linkedCompanyName(row.entity_id)
-        }));
+          companyName: company?.name ?? null,
+          companyId: company?.id || null,
+          profile: profiles.find((profile) => profile.entity_id === row.entity_id)
+        });
+      });
     const canonicalCompanies = activeRows
         .filter((row) => row.entity_type === "organization")
         .map((row) => {
           const companyLinks = links.filter((link) => link.entity_id === row.entity_id);
           const opportunityIds = new Set(companyLinks.map((link) => String(link.opportunity_id)));
-          const people = links.filter((link) => opportunityIds.has(String(link.opportunity_id)) && link.entity_id.startsWith("person:"))
-            .map((link) => entityNames.get(link.entity_id)).filter((name): name is string => Boolean(name));
+          const directPeople = entityLinks.filter((link) => link.object_entity_id === row.entity_id && link.relationship_type === "WORKS_AT")
+            .map((link) => ({ id: link.subject_entity_id, name: entityNames.get(link.subject_entity_id) ?? "" })).filter((person) => Boolean(person.name));
+          const opportunityPeople = links.filter((link) => opportunityIds.has(String(link.opportunity_id)) && link.entity_id.startsWith("person:"))
+            .map((link) => ({ id: link.entity_id, name: entityNames.get(link.entity_id) ?? "" })).filter((person) => Boolean(person.name));
+          const people = [...new Map([...directPeople, ...opportunityPeople].map((person) => [person.id, person])).values()];
           const companyOpportunities = [...opportunityIds].map((id) => opportunitiesById.get(id)).filter((value): value is OpportunityRowV1 => Boolean(value));
           const latestActivityAt = activities.find((activity) => links.some((link) => link.entity_id === activity.contact_entity_id && opportunityIds.has(String(link.opportunity_id))))?.occurred_at ?? null;
-          return toCompanyRecordV1(row, { people: [...new Set(people)], opportunities: companyOpportunities, latestActivityAt });
+          const relatedCompanies = entityLinks.filter((link) => link.subject_entity_id === row.entity_id || link.object_entity_id === row.entity_id)
+            .map((link) => {
+              const relatedId = link.subject_entity_id === row.entity_id ? link.object_entity_id : link.subject_entity_id;
+              return { id: relatedId, label: entityNames.get(relatedId) ?? "", relationship: humanize(link.relationship_type) ?? link.relationship_type };
+            }).filter((company) => Boolean(company.label) && company.id.startsWith("organization:"));
+          return toCompanyRecordV1(row, { people, opportunities: companyOpportunities, latestActivityAt, profile: profiles.find((profile) => profile.entity_id === row.entity_id), relatedCompanies });
         });
 
     const canonicalPersonNames = new Set(canonicalPeople.map((person) => normalizedName(person.name)));
@@ -325,8 +393,14 @@ export async function loadCrmDirectoryIndexV1(
     }
 
     return buildCrmDirectoryIndexV1({
-      people: [...canonicalPeople.filter((person) => Boolean(person.relationshipState || person.lastTouchAt || person.nextFollowUpAt || person.activeOpportunity)), ...[...pipelinePeople.values()].map((entry) => pipelinePersonRecordV1(entry.name, entry.opportunities))],
-      companies: [...canonicalCompanies.filter((company) => Boolean(company.keyPeople.length || company.activeOpportunities.length || company.lastActivityAt)), ...[...pipelineCompanies.values()].map((entry) => pipelineCompanyRecordV1(entry.name, entry.opportunities))]
+      people: [
+        ...canonicalPeople.filter((person) => profiles.some((profile) => profile.entity_id === person.id) || Boolean(person.relationshipState || person.lastTouchAt || person.nextFollowUpAt || person.activeOpportunity)),
+        ...[...pipelinePeople.values()].map((entry) => pipelinePersonRecordV1(entry.name, entry.opportunities))
+      ],
+      companies: [
+        ...canonicalCompanies.filter((company) => profiles.some((profile) => profile.entity_id === company.id) || Boolean(company.keyPeople.length || company.activeOpportunities.length || company.lastActivityAt)),
+        ...[...pipelineCompanies.values()].map((entry) => pipelineCompanyRecordV1(entry.name, entry.opportunities))
+      ]
     });
   } catch {
     return EMPTY_CRM_DIRECTORY_INDEX_V1;

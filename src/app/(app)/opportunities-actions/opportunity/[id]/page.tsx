@@ -1,64 +1,63 @@
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ExecutiveOpportunityDetailV1 } from "@/components/opportunity-intelligence/ExecutiveOpportunityDetailV1";
-import { getDashboardOverview } from "@/lib/api/dashboard";
-import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
-import type { ExecutiveCommandCenterOpportunityV1 } from "@/lib/executive-home/fixtures";
-import { buildExecutiveOpportunityPortfolioV1 } from "@/lib/opportunity-intelligence/executive-opportunity-portfolio-v1";
+import type { EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
+import type { ExecutiveCommandCenterOpportunityV1, ExecutiveCommandCenterTruthStateV1 } from "@/lib/executive-home/fixtures";
+import { getOpportunityById } from "@/lib/supabase/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
-type PageProps = {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
+type PageProps = { params: Promise<{ id: string }> };
 
-export default async function ExecutiveOpportunityDetailPage({ params, searchParams }: PageProps) {
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function number(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export default async function ExecutiveOpportunityDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const opportunityId = id?.trim();
-  if (!opportunityId) notFound();
+  if (!id?.trim()) notFound();
 
-  const hdrs = await headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "https";
-  const cookie = hdrs.get("cookie");
-  const baseUrl = (() => {
-    if (!host) return "";
-    if (!/^[A-Za-z0-9.:-]+$/.test(host)) return "";
-    if (proto !== "http" && proto !== "https") return "";
-    return `${proto}://${host}`;
-  })();
+  let row: Record<string, unknown>;
+  try {
+    row = await getOpportunityById(id.trim()) as Record<string, unknown>;
+  } catch {
+    notFound();
+  }
 
-  const resolvedParams = (await searchParams) ?? {};
-  const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
-  const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
-  const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
-
-  const overview = await getDashboardOverview(
-    { preset, startDate: start, endDate: end },
-    { baseUrl, cookie }
-  );
-  const portfolio = buildExecutiveOpportunityPortfolioV1(overview.opportunityRadar?.topOpportunities ?? []);
-  const item = portfolio.items.find((candidate) => candidate.id === opportunityId);
-
-  if (!item) notFound();
-
+  const name = text(row.name) ?? "Untitled opportunity";
+  const source = text(row.source);
+  const evidence: ExecutiveCommandCenterTruthStateV1 = /keegan[_ -]?confirmed|user[_ -]?confirmed|dashboard[_ -]?manual/i.test(source ?? "") ? "KNOWN" : "INFERRED";
+  const valueEstimate = number(row.value_estimate);
+  const prestigeScore = number(row.prestige_score);
+  const nextStep = text(row.next_step);
+  const editable: EditableOpportunityV1 = {
+    id: String(row.id),
+    name,
+    organization: text(row.organization),
+    status: text(row.status) ?? "active",
+    contactName: text(row.contact_name),
+    contactRole: text(row.contact_role),
+    nextStep,
+    nextStepDueAt: text(row.next_step_due_at),
+    valueEstimate,
+    notes: text(row.notes_md)
+  };
   const opportunity: ExecutiveCommandCenterOpportunityV1 = {
-    id: item.id,
-    title: item.title,
-    upside: item.supportedValue ?? "UNKNOWN",
-    fit: item.prestigeScore ? `${item.prestigeScore} prestige fit` : "UNKNOWN",
-    timing: item.timing ?? "UNKNOWN",
-    effort: item.effortSignal === "NEXT_STEP_KNOWN" ? "Next step known" : "UNKNOWN",
-    evidence: item.evidenceState,
-    next_move: item.nextMove,
-    detail_href: item.detailHref
+    id: editable.id,
+    title: name,
+    upside: valueEstimate == null ? "UNKNOWN" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(valueEstimate),
+    fit: prestigeScore == null ? "UNKNOWN" : `${prestigeScore} / 100`,
+    timing: editable.nextStepDueAt?.slice(0, 10) ?? "UNKNOWN",
+    effort: nextStep ? "Next move recorded" : "UNKNOWN",
+    evidence,
+    next_move: nextStep ?? "Add the next move for this opportunity.",
+    detail_href: `/opportunities-actions/opportunity/${encodeURIComponent(editable.id)}`
   };
 
-  const sanitizedOpportunity = sanitizeDashboardPayloadForHtml(opportunity);
-
-  return <ExecutiveOpportunityDetailV1 opportunity={sanitizedOpportunity} generatedAt={overview.timestamp} />;
+  return <ExecutiveOpportunityDetailV1 opportunity={opportunity} generatedAt={text(row.updated_at)} editableOpportunity={editable} />;
 }
