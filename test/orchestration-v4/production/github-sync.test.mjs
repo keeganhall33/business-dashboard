@@ -95,6 +95,7 @@ test('terminal evidence exposes only allow-listed privacy-safe classification', 
     terminalReason: 'REPLAN_REQUIRED',
     execution: { status: 'BLOCKED', code: 1, signal: null, reason: 'REPLAN_REQUIRED' },
     correction: { reason: 'EXIT_1', action: 'REPLAN' },
+    delivery: { state: null, blocker: null, mergeAttempts: null, mergeSha: null, deploymentId: null },
     semanticProgressSeq: 7,
     semanticProgressAt: '2026-09-13T22:02:42.713Z',
     terminalAt: '2026-09-13T22:06:00.834Z',
@@ -102,6 +103,38 @@ test('terminal evidence exposes only allow-listed privacy-safe classification', 
   const rendered = renderTerminalEvidenceComment(task);
   assert.match(rendered, /JEEVES_V4_TERMINAL_EVIDENCE_V1/);
   assert.doesNotMatch(rendered, /secret-looking|private\/workspace|customer@example\.com|op:\/\/|do not publish/);
+});
+
+test('terminal evidence publishes safe deployed continuity once and updates idempotently', () => {
+  const fake = fakeGithub(['orch:running']);
+  const task = {
+    task_id: 'delivery-terminal',
+    issue_number: 1652,
+    state: 'COMPLETE',
+    result_json: JSON.stringify({
+      finalization: {
+        delivery: {
+          state: 'DEPLOYED',
+          mergeAttempts: 1,
+          mergeSha: 'a'.repeat(40),
+          deployment: { deploymentId: 812, environmentUrl: 'https://must-not-publish.example' },
+        },
+      },
+    }),
+  };
+  const first = syncTerminalTaskToGitHub({ task, repoFullName: 'owner/repo', exec: fake.exec });
+  const second = syncTerminalTaskToGitHub({ task, repoFullName: 'owner/repo', exec: fake.exec });
+  assert.equal(first.evidenceCommentId, second.evidenceCommentId);
+  assert.equal(fake.comments.length, 1);
+  const evidence = JSON.parse(fake.comments[0].body.match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.deepEqual(evidence.delivery, {
+    state: 'DEPLOYED',
+    blocker: null,
+    mergeAttempts: 1,
+    mergeSha: 'a'.repeat(40),
+    deploymentId: 812,
+  });
+  assert.doesNotMatch(fake.comments[0].body, /must-not-publish/);
 });
 
 test('terminal evidence handles malformed result JSON and updates one existing marker comment', () => {

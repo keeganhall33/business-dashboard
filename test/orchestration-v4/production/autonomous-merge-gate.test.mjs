@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AUTONOMOUS_MERGE_BLOCK_REASONS,
+  DELIVERY_CONTINUITY_STATES,
   evaluateAutonomousMergeGate,
+  runPrToDeployContinuity,
 } from '../../../scripts/orchestration-v4/production/autonomous-merge-gate.mjs';
 
 function healthy(overrides = {}) {
@@ -86,4 +88,80 @@ test('directory ownership covers descendants but not sibling paths', () => {
   }));
   assert.equal(result.allowed, false);
   assert.deepEqual(result.unownedChangedPaths, ['src/other.mjs']);
+});
+
+test('delivery continuity follows exact-head CI and review before merge and tolerates deployment lag', async () => {
+  const observations = [
+    healthy({ ci: { status: 'pending' }, review: {} }),
+    healthy({ review: { independent: false } }),
+    healthy(),
+  ];
+  const states = [];
+  let deploymentCalls = 0;
+  const result = await runPrToDeployContinuity({
+    expectedHeadSha: 'abc123',
+    gateInput: healthy(),
+    observePr: async () => observations.shift() || healthy(),
+    mergePr: async ({ expectedHeadSha }) => {
+      assert.equal(expectedHeadSha, 'abc123');
+      return { mergeSha: 'd'.repeat(40) };
+    },
+    observeDeployment: async () => (++deploymentCalls === 1 ? { state: 'DEPLOY_PENDING' } : { state: 'DEPLOYED', deploymentId: 7 }),
+    pollMs: 1,
+    sleep: async () => {},
+    onState: (state) => states.push(state.state),
+  });
+  assert.equal(result.state, DELIVERY_CONTINUITY_STATES.DEPLOYED);
+  assert.deepEqual(states, ['CI_PENDING', 'REVIEW_PENDING', 'MERGE_READY', 'MERGING', 'DEPLOY_PENDING', 'DEPLOYED']);
+});
+
+test('moved PR head fails closed even if an older head was approved', async () => {
+  const result = await runPrToDeployContinuity({
+    expectedHeadSha: 'abc123',
+    gateInput: healthy(),
+    observePr: async () => healthy({
+      pr: { ...healthy().pr, headSha: 'moved' },
+      review: { independent: true, decision: 'APPROVE', reviewedHeadSha: 'abc123', unresolvedThreads: 0 },
+    }),
+    mergePr: async () => { throw new Error('MUST_NOT_MERGE'); },
+    observeDeployment: async () => ({ state: 'DEPLOY_PENDING' }),
+  });
+  assert.equal(result.state, DELIVERY_CONTINUITY_STATES.BLOCKED);
+  assert.equal(result.blocker, 'HEAD_MOVED');
+});
+
+test('retryable merge failure retries once while permanent failure is bounded', async () => {
+  let attempts = 0;
+  const result = await runPrToDeployContinuity({
+    expectedHeadSha: 'abc123',
+    gateInput: healthy(),
+    observePr: async () => healthy(),
+    mergePr: async () => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error('busy'), { code: 'MERGE_QUEUE_BUSY' });
+      return { mergeSha: 'e'.repeat(40) };
+    },
+    observeDeployment: async () => ({ state: 'DEPLOYED', deploymentId: 8 }),
+    pollMs: 1,
+    sleep: async () => {},
+  });
+  assert.equal(result.state, DELIVERY_CONTINUITY_STATES.DEPLOYED);
+  assert.equal(result.mergeAttempts, 2);
+});
+
+test('bounded production propagation reports deployment timeout', async () => {
+  let clock = 0;
+  const result = await runPrToDeployContinuity({
+    expectedHeadSha: 'abc123',
+    gateInput: healthy(),
+    observePr: async () => healthy(),
+    mergePr: async () => ({ mergeSha: 'f'.repeat(40) }),
+    observeDeployment: async () => ({ state: 'DEPLOY_PENDING' }),
+    timeoutMs: 2,
+    pollMs: 1,
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; },
+  });
+  assert.equal(result.state, DELIVERY_CONTINUITY_STATES.BLOCKED);
+  assert.equal(result.blocker, 'DEPLOY_TIMEOUT');
 });

@@ -58,18 +58,34 @@ jobs:
         run: git diff --check
 
   production-smoke:
-    name: Smoke check Vercel production
+    name: Prove Vercel production propagation
     needs: validate
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && vars.DASHBOARD_PRODUCTION_URL != '' }}
     env:
       SMOKE_BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL }}
+      EXPECTED_RELEASE_SHA: ${{ github.sha }}
+    timeout-minutes: 20
     steps:
       - name: Checkout exact validated commit
         uses: actions/checkout@v4
-      - name: Smoke check configured production URL
+      - name: Wait for configured production URL
         shell: bash
-        run: ./scripts/smoke-check.sh
+        run: |
+          for attempt in $(seq 1 30); do
+            if SMOKE_CURL_RETRIES=1 ./scripts/smoke-check.sh; then
+              {
+                echo "## Vercel production proof"
+                echo "- State: DEPLOYED"
+                echo "- Expected release: $EXPECTED_RELEASE_SHA"
+                echo "- Attempts: $attempt"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "Vercel production propagation timed out for $EXPECTED_RELEASE_SHA" >&2
+          exit 1
 
 # Deployment policy:
 # - Vercel Git integration is the only production deployment path.

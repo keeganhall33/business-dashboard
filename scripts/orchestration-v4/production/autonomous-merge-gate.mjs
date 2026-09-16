@@ -20,6 +20,119 @@ export const AUTONOMOUS_MERGE_BLOCK_REASONS = Object.freeze({
   UNRESOLVED_REVIEW_THREADS: 'UNRESOLVED_REVIEW_THREADS',
 });
 
+export const DELIVERY_CONTINUITY_STATES = Object.freeze({
+  IMPLEMENTING: 'IMPLEMENTING',
+  PR_OPEN: 'PR_OPEN',
+  CI_PENDING: 'CI_PENDING',
+  CI_FAILED: 'CI_FAILED',
+  REVIEW_PENDING: 'REVIEW_PENDING',
+  MERGE_READY: 'MERGE_READY',
+  MERGING: 'MERGING',
+  DEPLOY_PENDING: 'DEPLOY_PENDING',
+  DEPLOYED: 'DEPLOYED',
+  BLOCKED: 'BLOCKED',
+});
+
+const RETRYABLE_MERGE_FAILURES = new Set(['MERGE_TEMPORARILY_UNAVAILABLE', 'MERGE_QUEUE_BUSY', 'RATE_LIMITED']);
+
+function continuityResult(state, extra = {}) {
+  return Object.freeze({ contractVersion: 'PrToDeployContinuityV1', state, ...extra });
+}
+
+export function classifyPrDeliveryObservation(observation = {}) {
+  if (!observation.pr) return continuityResult(DELIVERY_CONTINUITY_STATES.IMPLEMENTING);
+  if (observation.pr.state === 'merged') return continuityResult(DELIVERY_CONTINUITY_STATES.DEPLOY_PENDING, { mergeSha: observation.pr.mergeSha || null });
+  if (observation.pr.state !== 'open' || observation.pr.draft || observation.pr.mergeable === false) {
+    return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, { blocker: 'PR_NOT_SAFELY_OPEN' });
+  }
+  if (observation.pr.headSha !== observation.expectedHeadSha) {
+    return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, { blocker: 'HEAD_MOVED' });
+  }
+  if (observation.ci?.status !== 'completed') return continuityResult(DELIVERY_CONTINUITY_STATES.CI_PENDING);
+  if (observation.ci?.conclusion !== 'success') return continuityResult(DELIVERY_CONTINUITY_STATES.CI_FAILED, { blocker: 'CI_FAILED' });
+  if (observation.review?.independent !== true
+    || observation.review?.decision !== 'APPROVE'
+    || observation.review?.reviewedHeadSha !== observation.expectedHeadSha
+    || Number(observation.review?.unresolvedThreads || 0) > 0) {
+    return continuityResult(DELIVERY_CONTINUITY_STATES.REVIEW_PENDING);
+  }
+  return continuityResult(DELIVERY_CONTINUITY_STATES.MERGE_READY);
+}
+
+export async function runPrToDeployContinuity({
+  expectedHeadSha,
+  gateInput,
+  observePr,
+  mergePr,
+  observeDeployment,
+  timeoutMs = 60 * 60_000,
+  pollMs = 20_000,
+  maxMergeAttempts = 2,
+  now = () => Date.now(),
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  onState = () => {},
+} = {}) {
+  if (!expectedHeadSha || typeof observePr !== 'function' || typeof mergePr !== 'function' || typeof observeDeployment !== 'function') {
+    throw new Error('V4_DELIVERY_CONTINUITY_CONFIG_INVALID');
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2 * 60 * 60_000
+    || !Number.isInteger(pollMs) || pollMs <= 0 || pollMs > timeoutMs
+    || !Number.isInteger(maxMergeAttempts) || maxMergeAttempts < 1 || maxMergeAttempts > 2) {
+    throw new Error('V4_DELIVERY_CONTINUITY_BOUNDS_INVALID');
+  }
+  const startedAt = now();
+  let mergeAttempts = 0;
+  let mergeSha = null;
+  let lastState = DELIVERY_CONTINUITY_STATES.PR_OPEN;
+
+  while (now() - startedAt <= timeoutMs) {
+    if (!mergeSha) {
+      const observation = await observePr();
+      const classified = classifyPrDeliveryObservation({ ...observation, expectedHeadSha });
+      lastState = classified.state;
+      onState(classified);
+      if (classified.state === DELIVERY_CONTINUITY_STATES.BLOCKED || classified.state === DELIVERY_CONTINUITY_STATES.CI_FAILED) return classified;
+      if (classified.state === DELIVERY_CONTINUITY_STATES.DEPLOY_PENDING) {
+        mergeSha = classified.mergeSha;
+      } else if (classified.state === DELIVERY_CONTINUITY_STATES.MERGE_READY) {
+        const gate = evaluateAutonomousMergeGate({ ...gateInput, ...observation, expectedHeadSha });
+        if (!gate.allowed) return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, { blocker: gate.reasons[0] || 'MERGE_GATE_BLOCKED', gate });
+        mergeAttempts += 1;
+        try {
+          const merged = await mergePr({ expectedHeadSha, attempt: mergeAttempts });
+          mergeSha = merged?.mergeSha || null;
+          if (!mergeSha) throw Object.assign(new Error('MERGE_RESULT_MISSING'), { code: 'MERGE_RESULT_MISSING' });
+          lastState = DELIVERY_CONTINUITY_STATES.MERGING;
+          onState(continuityResult(lastState, { mergeSha, mergeAttempts }));
+        } catch (error) {
+          const code = String(error?.code || error?.message || 'MERGE_FAILED');
+          if (!RETRYABLE_MERGE_FAILURES.has(code) || mergeAttempts >= maxMergeAttempts) {
+            return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, { blocker: code, mergeAttempts });
+          }
+        }
+      }
+    }
+
+    if (mergeSha) {
+      const deployment = await observeDeployment({ mergeSha });
+      if (deployment?.state === 'DEPLOYED') {
+        const complete = continuityResult(DELIVERY_CONTINUITY_STATES.DEPLOYED, { mergeSha, deployment, mergeAttempts });
+        onState(complete);
+        return complete;
+      }
+      if (deployment?.state === 'DEPLOY_FAILED') return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, { blocker: 'DEPLOY_FAILED', mergeSha, deployment, mergeAttempts });
+      lastState = DELIVERY_CONTINUITY_STATES.DEPLOY_PENDING;
+      onState(continuityResult(lastState, { mergeSha, deployment, mergeAttempts }));
+    }
+    await sleep(pollMs);
+  }
+  return continuityResult(DELIVERY_CONTINUITY_STATES.BLOCKED, {
+    blocker: mergeSha ? 'DEPLOY_TIMEOUT' : `${lastState}_TIMEOUT`,
+    mergeSha,
+    mergeAttempts,
+  });
+}
+
 function normalizeRelative(value) {
   const raw = String(value ?? '').trim().replaceAll('\\', '/');
   if (!raw || raw.startsWith('/')) return null;
