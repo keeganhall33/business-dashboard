@@ -21,6 +21,7 @@ export type CrmPersonDirectoryRecordV1 = {
   lastTouchAt: string | null;
   nextFollowUpAt: string | null;
   activeOpportunity: string | null;
+  activeOpportunityHref?: string | null;
   activeAsk: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;
   notesMd?: string | null;
@@ -34,9 +35,11 @@ export type CrmCompanyDirectoryRecordV1 = {
   keyPeople: readonly string[];
   keyPeopleLinks?: readonly { id: string; label: string; href: string }[];
   relationshipState: string | null;
+  relationshipStrength?: CrmRelationshipStrengthV1;
   activeOpportunities: readonly string[];
   activeOpportunityLinks?: readonly { id: string; label: string; href: string }[];
   lastActivityAt: string | null;
+  nextFollowUpAt?: string | null;
   nextMove: string | null;
   supportedValue: string | null;
   evidenceState: CrmDirectoryEvidenceStateV1;

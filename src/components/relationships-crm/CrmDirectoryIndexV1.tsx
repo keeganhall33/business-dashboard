@@ -194,7 +194,7 @@ function PeopleTable({ people, query }: { people: readonly CrmPersonDirectoryRec
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.lastTouchAt)}</td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(person.nextFollowUpAt)}</td>
                 <td className="px-4 py-4">
-                  <div>{display(person.activeOpportunity)}</div>
+                  <div>{person.activeOpportunityHref && person.activeOpportunity ? <Link href={person.activeOpportunityHref} className="text-blue-700 underline-offset-4 hover:underline">{person.activeOpportunity}</Link> : display(person.activeOpportunity)}</div>
                   <div className="mt-1 text-xs text-slate-500">Ask: {display(person.activeAsk)}</div>
                 </td>
                 <td className="px-4 py-4"><EvidenceBadge state={person.evidenceState} /></td>
@@ -248,6 +248,7 @@ function CompaniesTable({ companies, query }: { companies: readonly CrmCompanyDi
               <th className="px-4 py-3 font-semibold">Relationship</th>
               <th className="px-4 py-3 font-semibold">Active opportunities</th>
               <th className="px-4 py-3 font-semibold">Last activity</th>
+              <th className="px-4 py-3 font-semibold">Next follow-up</th>
               <th className="px-4 py-3 font-semibold">Next move</th>
               <th className="px-4 py-3 font-semibold">Supported value</th>
               <th className="px-4 py-3 font-semibold">Evidence</th>
@@ -259,9 +260,10 @@ function CompaniesTable({ companies, query }: { companies: readonly CrmCompanyDi
                 <td className="px-4 py-4"><CompanyName company={company} /></td>
                 <td className="px-4 py-4">{display(company.category)}</td>
                 <td className="px-4 py-4">{company.keyPeopleLinks?.length ? <LinkedList values={company.keyPeopleLinks} /> : <CompactList values={company.keyPeople} />}</td>
-                <td className="px-4 py-4">{display(company.relationshipState)}</td>
+                <td className="px-4 py-4"><div>{display(company.relationshipState)}</div>{company.relationshipStrength && company.relationshipStrength !== "UNKNOWN" ? <div className="mt-1 text-xs text-slate-500">Quality: {company.relationshipStrength.toLowerCase()}</div> : null}</td>
                 <td className="px-4 py-4">{company.activeOpportunityLinks?.length ? <LinkedList values={company.activeOpportunityLinks} /> : <CompactList values={company.activeOpportunities} />}</td>
                 <td className="px-4 py-4 tabular-nums">{displayDate(company.lastActivityAt)}</td>
+                <td className="px-4 py-4 tabular-nums">{displayDate(company.nextFollowUpAt ?? null)}</td>
                 <td className="px-4 py-4">{display(company.nextMove)}</td>
                 <td className="px-4 py-4">{display(company.supportedValue)}</td>
                 <td className="px-4 py-4"><EvidenceBadge state={company.evidenceState} /></td>

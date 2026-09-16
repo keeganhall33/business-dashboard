@@ -18,7 +18,13 @@ const crmEntityInputSchema = z.object({
   linkedinUrl: optionalText(500),
   websiteUrl: optionalText(500),
   notes: optionalText(10_000),
-  companyId: optionalText(240)
+  companyName: optionalText(240),
+  relationshipState: optionalText(200),
+  relationshipQuality: z.enum(["", "LOW", "MEDIUM", "HIGH"]).nullable().optional(),
+  lastTouchAt: optionalText(40),
+  nextFollowUpAt: optionalText(40),
+  nextMove: optionalText(2_000),
+  supportedValue: z.union([z.number().nonnegative(), z.null()]).optional()
 });
 
 export type CrmEntityMutationInputV1 = z.input<typeof crmEntityInputSchema>;
@@ -35,6 +41,35 @@ function slug(value: string) {
 
 function canonicalId(type: "person" | "organization", name: string) {
   return `${type}:${slug(name)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+async function resolveCompanyIdV1(companyName: string | null): Promise<string | null> {
+  if (!companyName) return null;
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.from("entities_v1")
+    .select("entity_id,canonical_name")
+    .eq("entity_type", "organization")
+    .eq("resolution_status", "active")
+    .limit(5_000);
+  if (error) throw error;
+  const normalizedName = companyName.toLocaleLowerCase("en-US");
+  const existingCompany = data?.find((company) => company.canonical_name.trim().toLocaleLowerCase("en-US") === normalizedName);
+  if (existingCompany?.entity_id) return String(existingCompany.entity_id);
+
+  const id = canonicalId("organization", companyName);
+  const { error: createError } = await supabase.from("entities_v1").insert({
+    entity_id: id,
+    entity_type: "organization",
+    canonical_name: companyName,
+    resolution_status: "active"
+  });
+  if (createError) throw createError;
+  const { error: profileError } = await supabase.from("crm_entity_profiles_v1").upsert({
+    entity_id: id,
+    source: "DASHBOARD_MANUAL"
+  }, { onConflict: "entity_id" });
+  if (profileError) throw profileError;
+  return id;
 }
 
 function isCanonicalId(id: string | null | undefined) {
@@ -76,12 +111,18 @@ export async function saveCrmEntityActionV1(input: CrmEntityMutationInputV1): Pr
       linkedin_url: value(parsed.data.linkedinUrl),
       website_url: value(parsed.data.websiteUrl),
       notes_md: value(parsed.data.notes),
+      relationship_state: value(parsed.data.relationshipState),
+      relationship_quality: value(parsed.data.relationshipQuality),
+      last_touch_at: value(parsed.data.lastTouchAt),
+      next_follow_up_at: value(parsed.data.nextFollowUpAt),
+      next_move: value(parsed.data.nextMove),
+      supported_value: parsed.data.supportedValue ?? null,
       source: "DASHBOARD_MANUAL"
     }, { onConflict: "entity_id" });
     if (profileError) throw profileError;
 
     if (parsed.data.entityType === "person") {
-      const companyId = value(parsed.data.companyId);
+      const companyId = await resolveCompanyIdV1(value(parsed.data.companyName));
       const { error: clearError } = await supabase.from("crm_entity_links_v1")
         .delete().eq("subject_entity_id", id).eq("relationship_type", "WORKS_AT").eq("is_primary", true);
       if (clearError) throw clearError;

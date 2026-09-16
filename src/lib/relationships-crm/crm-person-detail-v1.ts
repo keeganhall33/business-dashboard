@@ -17,6 +17,7 @@ export type CrmPersonDetailV1 = {
   lastTouchAt: string | null;
   nextFollowUpAt: string | null;
   activeOpportunity: string | null;
+  activeOpportunityHref: string | null;
   activeAsk: string | null;
   evidenceState: CrmPersonDirectoryRecordV1["evidenceState"];
   notesMd: string | null;
@@ -79,6 +80,7 @@ export function buildCrmPersonDetailV1(person: CrmPersonDirectoryRecordV1): CrmP
     lastTouchAt: dateOnly(person.lastTouchAt),
     nextFollowUpAt: dateOnly(person.nextFollowUpAt),
     activeOpportunity: nonEmpty(person.activeOpportunity),
+    activeOpportunityHref: nonEmpty(person.activeOpportunityHref ?? null),
     activeAsk: nonEmpty(person.activeAsk),
     evidenceState: person.evidenceState,
     notesMd: nonEmpty(person.notesMd ?? null),

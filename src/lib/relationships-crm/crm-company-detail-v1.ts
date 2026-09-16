@@ -11,9 +11,11 @@ export type CrmCompanyDetailV1 = {
   keyPeople: readonly string[];
   keyPeopleLinks: readonly { id: string; label: string; href: string }[];
   relationshipState: string | null;
+  relationshipStrength: CrmCompanyDirectoryRecordV1["relationshipStrength"];
   activeOpportunities: readonly string[];
   activeOpportunityLinks: readonly { id: string; label: string; href: string }[];
   lastActivityAt: string | null;
+  nextFollowUpAt: string | null;
   nextMove: string | null;
   supportedValue: string | null;
   evidenceState: CrmCompanyDirectoryRecordV1["evidenceState"];
@@ -74,9 +76,11 @@ export function buildCrmCompanyDetailV1(company: CrmCompanyDirectoryRecordV1): C
     keyPeople: cleanList(company.keyPeople),
     keyPeopleLinks: company.keyPeopleLinks ?? [],
     relationshipState: nonEmpty(company.relationshipState),
+    relationshipStrength: company.relationshipStrength ?? "UNKNOWN",
     activeOpportunities: cleanList(company.activeOpportunities),
     activeOpportunityLinks: company.activeOpportunityLinks ?? [],
     lastActivityAt: dateOnly(company.lastActivityAt),
+    nextFollowUpAt: dateOnly(company.nextFollowUpAt ?? null),
     nextMove: nonEmpty(company.nextMove),
     supportedValue: nonEmpty(company.supportedValue),
     evidenceState: company.evidenceState,
