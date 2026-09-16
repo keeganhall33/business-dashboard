@@ -97,6 +97,9 @@ export function buildTerminalEvidence(task) {
     ? execution.correctionPacket
     : {};
   const numericExecutionCode = safeInteger(execution.code);
+  const delivery = result?.delivery && typeof result.delivery === 'object'
+    ? result.delivery
+    : result?.finalization?.delivery && typeof result.finalization.delivery === 'object' ? result.finalization.delivery : {};
   return Object.freeze({
     contractVersion: 'TerminalEvidenceV1',
     issueNumber: safeInteger(task?.issue_number, { minimum: 1 }),
@@ -112,6 +115,13 @@ export function buildTerminalEvidence(task) {
     correction: Object.freeze({
       reason: safeCode(correction.reason),
       action: safeCode(correction.action),
+    }),
+    delivery: Object.freeze({
+      state: safeCode(delivery.state),
+      blocker: safeCode(delivery.blocker),
+      mergeAttempts: safeInteger(delivery.mergeAttempts),
+      mergeSha: /^[a-f0-9]{40}$/.test(String(delivery.mergeSha || '')) ? delivery.mergeSha : null,
+      deploymentId: safeInteger(delivery?.deployment?.deploymentId, { minimum: 1 }),
     }),
     semanticProgressSeq: safeInteger(task?.semantic_progress_seq),
     semanticProgressAt: safeIso(task?.semantic_progress_at),
