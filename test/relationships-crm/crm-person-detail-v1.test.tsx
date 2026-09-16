@@ -134,10 +134,11 @@ test("linked opportunity remains actionable without duplicating it as relationsh
 
 test("app shell uses the supplied signature logo instead of a Mission Control label", () => {
   const source = readFileSync("src/app/(app)/layout.tsx", "utf8");
-  const logo = readFileSync("public/keegan-hall-signature.png");
+  const logo = readFileSync("public/keegan-hall-signature-v3.png");
 
-  assert.match(source, /keegan-hall-signature\.png/);
+  assert.match(source, /keegan-hall-signature-v3\.png/);
   assert.match(source, /alt="Keegan Hall"/);
+  assert.match(source, /unoptimized/);
   assert.doesNotMatch(source, />Mission Control</);
   assert.equal(logo.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
 });
