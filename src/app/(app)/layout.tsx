@@ -18,11 +18,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Image
               src="/keegan-hall-signature-v3.png"
               alt="Keegan Hall"
-              width={148}
-              height={47}
+              width={176}
+              height={56}
               priority
               unoptimized
-              className="h-8 w-auto sm:h-9"
+              className="h-10 w-auto sm:h-11"
             />
           </Link>
           <nav className="hidden items-center gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import React from "react";
@@ -161,6 +162,19 @@ test("top scan renders decision-first visual hierarchy with accessible compact e
   assert.match(html, /grid-cols-2/);
   assert.match(html, /lg:grid-cols-4/);
   assert.doesNotMatch(html, />Estimated</);
+});
+
+test("timeframe controls live with Business Pulse instead of Ask Jeeves", () => {
+  const source = readFileSync("src/components/executive-home/ExecutiveHomeVisualSummaryV2.tsx", "utf8");
+  const askIndex = source.indexOf("<HomeAskFormV1");
+  const pulseIndex = source.indexOf('aria-label="Business pulse"');
+  const rangeIndex = source.indexOf("<DateRangeControls");
+  const metricsIndex = source.indexOf("model.businessPulse.map");
+
+  assert.ok(askIndex >= 0);
+  assert.ok(pulseIndex > askIndex);
+  assert.ok(rangeIndex > pulseIndex);
+  assert.ok(metricsIndex > rangeIndex);
 });
 
 test("Executive Home removes visible placeholder and section-pill walls while keeping depth reachable", () => {
