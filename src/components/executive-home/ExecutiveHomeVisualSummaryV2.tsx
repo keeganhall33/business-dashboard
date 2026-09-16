@@ -98,7 +98,6 @@ export function ExecutiveHomeVisualSummaryV2({
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">See what changed, what matters now, and what the system is measuring next.</p>
           <HomeAskFormV1 reportingRange={reportingRange} />
           <p className="mt-2 text-xs text-slate-500">Type or speak a question and get an answer from your connected business data.</p>
-          {reportingRange ? <div className="mt-5 text-left"><DateRangeControls preset={reportingRange.preset} startDate={reportingRange.startDate} endDate={reportingRange.endDate} /></div> : null}
         </div>
       </div>
 
@@ -107,6 +106,7 @@ export function ExecutiveHomeVisualSummaryV2({
           <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Business pulse</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">The numbers that matter</h2><p className="mt-1 text-sm text-slate-500">{data.hero.range_label}{comparisonRange ? ` compared with ${formatRangeLabel(comparisonRange, { includeYear: true })}` : ""}</p></div>
           <a href="/data-evidence" className="text-xs font-semibold text-blue-700 underline-offset-4 hover:underline">Check sources</a>
         </div>
+        {reportingRange ? <div className="mb-3"><DateRangeControls preset={reportingRange.preset} startDate={reportingRange.startDate} endDate={reportingRange.endDate} /></div> : null}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {model.businessPulse.map((metric) => <BusinessPulseCard key={metric.id} metric={metric} />)}
         </div>
