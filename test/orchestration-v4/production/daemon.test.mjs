@@ -13,6 +13,7 @@ import {
   continuityStewardEnabled,
   executeContinuityControlActions,
   PRODUCT_LANE_CAPACITY,
+  reconcileGithubCompletedDependencies,
   reconcileWithdrawnReadyTasks,
   refreshRuntimeMain,
   runTerminalAwareExecutableQueue,
@@ -230,6 +231,54 @@ test('patch-format correction receives a distinct shell-only configuration', () 
   assert.equal(next.args[3], '/correction/state');
   assert.match(next.args[1], /MUTATION_MODE: SHELL_ONLY/);
   assert.equal(retained.length, 1);
+});
+
+test('a one-attempt task gets exactly one shell-only patch-format correction', () => {
+  const task = {
+    task_id: 'one-attempt',
+    issue_number: 1712,
+    contract_json: JSON.stringify({
+      taskId: 'one-attempt', issueNumber: 1712, title: 'One attempt',
+      body: 'owned task', fileOwnership: 'src/owned.ts',
+      taskMutability: 'IMPLEMENTATION_MUTATION_REQUIRED', maxAttempts: 1,
+    }),
+  };
+  const spec = buildTaskExecutionSpec({
+    task, agentTimeoutMs: 1_000, openclaw: '/openclaw',
+    createState: () => ({ configPath: '/config', stateDir: '/state' }),
+  });
+  assert.equal(spec.maxCorrectionAttempts, 2);
+  assert.throws(() => buildCorrectionAgentAttempt({
+    packet: { ...correctionPacket('EXIT_2'), maxAttempts: 2 },
+    command: 'node', args: ['entry', 'prompt', '/config', '/state'],
+  }), /V4_SINGLE_ATTEMPT_CORRECTION_NOT_ELIGIBLE/);
+});
+
+test('GitHub-complete dependencies absent from SQLite are reconciled read-only', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-external-dependency-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const issue = {
+    number: 1712,
+    title: 'Recovery',
+    labels: [{ name: 'orch:ready' }],
+    body: [
+      '**task_id:** recovery-1712',
+      '**stream:** AGENT_ORCHESTRATION',
+      '**human_approval_required:** false',
+      '**task_mutability:** IMPLEMENTATION_MUTATION_REQUIRED',
+      '**file_ownership:** scripts/owned.mjs',
+      '**dependencies_json:** [{"task_id":"completed-upstream","artifact":"merged-pr"}]',
+    ].join('\n'),
+  };
+  try {
+    const [reconciled] = reconcileGithubCompletedDependencies({ db, issues: [issue], completedTaskIds: ['completed-upstream'] });
+    assert.match(reconciled.body, /\*\*dependencies_json:\*\* \[\]/);
+    assert.match(reconciled.body, /GITHUB_ORCH_COMPLETE/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks').get().count, 0);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('production cleanup removes both primary and correction ephemeral states', () => {
