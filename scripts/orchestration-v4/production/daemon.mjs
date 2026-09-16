@@ -6,7 +6,7 @@ import { chooseAvailableSlot, createSlotRegistry } from '../slot-scheduler.mjs';
 import { runV4Task } from '../runner/task-runner.mjs';
 import { signalGroup } from '../runner/bounded-process.mjs';
 import { AGENT_MUTATION_MODES, cleanupEphemeralAgentState, createEphemeralAgentState, validateAgentMutationMode } from '../runner/agent-executor.mjs';
-import { blockTasksWithFailedDependencies, getTask, getTaskContract, listRunnableTasks, listTaskDependencies, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
+import { blockTasksWithFailedDependencies, getTask, getTaskContract, listRunnableTasks, listTasksPendingGithubSync, markGithubTaskStateSynced, recordOrchestrationEvent, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { importReadyIssues, listReadyIssues, refreshCanonicalMain } from './github-intake.mjs';
 import { replenishBacklog } from './backlog-replenisher.mjs';
 import { publishImplementationResult } from './publisher.mjs';
@@ -16,6 +16,8 @@ import { ALL_STATE_LABELS, syncTerminalTaskToGitHub } from './github-sync.mjs';
 import { CORRECTION_MUTATION_MODES, correctionMutationMode, correctionPrompt } from '../policy/correction-loop.mjs';
 import { deliveryMetadata, PRODUCT_LANE_CAPACITY, selectDeliveryReadyTasks } from '../delivery-policy.mjs';
 import { decideDeliveryContinuity } from './delivery-continuity-policy.mjs';
+import { validateTaskContract } from './task-contract.mjs';
+import { verifyTaskProcessIdentity } from './poll-watchdog.mjs';
 
 const ENTRYPOINT = fileURLToPath(new URL('../runner/agent-task-entrypoint.mjs', import.meta.url));
 const INTEGRATION_PROPOSAL_ENTRYPOINT = fileURLToPath(new URL('../runner/integration-resolution-entrypoint.mjs', import.meta.url));
@@ -63,6 +65,11 @@ export function taskAttemptLimit(task) {
   return Number.isInteger(value) && value >= 1 ? value : 3;
 }
 
+export function correctionAttemptLimit(task) {
+  const attempts = taskAttemptLimit(task);
+  return attempts === 1 ? 2 : attempts;
+}
+
 export function buildTaskExecutionSpec({
   task,
   agentTimeoutMs,
@@ -88,11 +95,14 @@ export function buildTaskExecutionSpec({
       args,
       retainState,
     }),
-    maxCorrectionAttempts: taskAttemptLimit(task),
+    maxCorrectionAttempts: correctionAttemptLimit(task),
   };
 }
 
 export function buildCorrectionAgentAttempt({ packet, command, args, createState = createEphemeralAgentState, retainState = () => {} }) {
+  if (packet.maxAttempts === 2 && packet.attempt === 1 && packet.reason !== 'APPLY_PATCH_FORMAT_ERROR') {
+    throw new Error('V4_SINGLE_ATTEMPT_CORRECTION_NOT_ELIGIBLE');
+  }
   const prompt = `${args[1]}\n\n${correctionPrompt(packet)}`;
   if (correctionMutationMode(packet) !== CORRECTION_MUTATION_MODES.SHELL_ONLY) {
     return { command, args: [args[0], prompt, ...args.slice(2)] };
@@ -103,6 +113,48 @@ export function buildCorrectionAgentAttempt({ packet, command, args, createState
     command,
     args: [args[0], prompt, state.configPath, state.stateDir, ...args.slice(4)],
   };
+}
+
+export function reconcileGithubCompletedDependencies({ db, issues, completedTaskIds = [] }) {
+  const completed = new Set(completedTaskIds.map(String));
+  const reconciled = [];
+  for (const issue of issues) {
+    const parsed = validateTaskContract(issue);
+    if (!parsed.ok || !parsed.task.dependencies.length) {
+      reconciled.push(issue);
+      continue;
+    }
+    const external = parsed.task.dependencies.filter((dependency) =>
+      completed.has(dependency.taskId) && !db.prepare('SELECT 1 FROM tasks WHERE task_id=?').get(dependency.taskId));
+    if (!external.length) {
+      reconciled.push(issue);
+      continue;
+    }
+    const externalIds = new Set(external.map((dependency) => dependency.taskId));
+    const retained = parsed.task.dependencies.filter((dependency) => !externalIds.has(dependency.taskId));
+    const encoded = JSON.stringify(retained.map((dependency) => ({ task_id: dependency.taskId, artifact: dependency.artifact })));
+    const evidence = JSON.stringify(external.map((dependency) => ({ task_id: dependency.taskId, artifact: dependency.artifact, source: 'GITHUB_ORCH_COMPLETE' })));
+    reconciled.push({
+      ...issue,
+      body: String(issue.body).replace(/^\*\*dependencies_json:\*\*\s*.*$/m, `**dependencies_json:** ${encoded}`)
+        + `\n**externally_satisfied_dependencies_json:** ${evidence}`,
+    });
+  }
+  return Object.freeze(reconciled);
+}
+
+export function listGithubCompletedTaskIds({ repoFullName, gh = 'gh', exec = execFileSync }) {
+  try {
+    const raw = String(exec(gh, ['issue', 'list', '--repo', repoFullName, '--state', 'all', '--label', 'orch:complete', '--limit', '100', '--json', 'number,title,body,labels'], {
+      encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024,
+    }));
+    return JSON.parse(raw || '[]').flatMap((issue) => {
+      const parsed = validateTaskContract(issue);
+      return parsed.ok ? [parsed.task.taskId] : [];
+    });
+  } catch {
+    return [];
+  }
 }
 
 export function cleanupProductionAgentStates(states) {
@@ -352,12 +404,6 @@ export function reconcileWithdrawnReadyTasks(db, issues, { now = new Date() } = 
   return Object.freeze(withdrawn.map((task) => task.task_id));
 }
 
-function isPidLive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error?.code !== 'ESRCH'; }
-}
-
 function ownership(contract) {
   return String(contract?.fileOwnership || '').split(',').map((value) => value.trim()).filter(Boolean);
 }
@@ -435,7 +481,7 @@ export function buildContinuitySnapshot({
   terminalTransition = null,
   registry = createSlotRegistry(),
   reservedSlotIds = [],
-  pidIsLive = isPidLive,
+  verifyProcessIdentity = verifyTaskProcessIdentity,
   alreadyPresentTaskIds = [],
 }) {
   const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all();
@@ -470,6 +516,7 @@ export function buildContinuitySnapshot({
     tasks: tasks.map((task) => {
       const contract = getTaskContract(task);
       const metadata = deliveryMetadata(contract);
+      const processIdentity = ACTIVE_STATES.has(task.state) ? verifyProcessIdentity(task) : null;
       return {
         taskId: task.task_id,
         state: task.state === 'READY' && task.stream === 'INTEGRATION_RELEASE' ? 'INTEGRATION_RESERVED' : task.state,
@@ -484,7 +531,8 @@ export function buildContinuitySnapshot({
         humanApprovalRequired: contract.humanApprovalRequired === true,
         retryForbidden: Boolean(contract.retryForbidden) || alreadyPresent.has(task.task_id),
         successorTaskId: contract.successorTaskId || null,
-        childProcessAlive: ACTIVE_STATES.has(task.state) ? pidIsLive(Number(task.child_pid)) : null,
+        childProcessAlive: processIdentity?.trusted ?? null,
+        processIdentityReason: processIdentity?.reason ?? null,
         semanticProgressAt: task.semantic_progress_at || (ACTIVE_STATES.has(task.state) ? task.updated_at : null),
         startedAt: ACTIVE_STATES.has(task.state) ? task.updated_at : null,
         attempt: task.attempt,
@@ -614,7 +662,14 @@ export function buildContinuityState({ snapshot, decision, intake, runtime, repl
     eligibleReadyCount,
     ineligibleReadyCount: Math.max(0, ready.length - eligibleReadyCount),
     readyCount: ready.length,
+    claimableReadyCount: eligibleReadyCount,
+    routeIneligibleReadyCount: Math.max(0, ready.length - eligibleReadyCount),
+    freeSlotCount: Math.max(0, snapshot.limits.global - active.length),
+    activeVerifiedWorkerCount: active.filter((task) => task.childProcessAlive !== false).length,
+    lastSuccessfulClaimAt: active.map((task) => task.startedAt).filter(Boolean).sort().at(-1) || null,
     lastSemanticProgressAt,
+    daemonPhase: decision.actions.some((action) => CLAIM_ACTIONS.has(action.type)) ? 'CLAIMING' : active.length ? 'EXECUTING' : 'IDLE',
+    stalledReason: decision.actions.find((action) => action.type === 'TERMINATE_STALLED_WORKER')?.reason || null,
     mostRecentContinuityAction: latestAction?.type || null,
     mostRecentContinuityActionAt: latestAction?.at || null,
     stalledWorkerCount: decision.actions.filter((action) => action.type === 'TERMINATE_STALLED_WORKER').length,
@@ -707,6 +762,7 @@ export async function runProductionPoll({
   terminalTransition = null,
   refreshRuntime = refreshRuntimeMain,
   replenish = replenishBacklog,
+  listCompletedTaskIds = listGithubCompletedTaskIds,
   syncActive = syncActiveGithubTasks,
   now = () => new Date(),
   onTaskTerminal = () => {},
@@ -731,7 +787,9 @@ export async function runProductionPoll({
         runtimeHealthy: runtime.clean === true && runtime.refreshState !== 'DIRTY',
       })
     : null;
-  const snapshots = issues ?? listReadyIssues({ repoFullName, gh });
+  const rawSnapshots = issues ?? listReadyIssues({ repoFullName, gh });
+  const completedTaskIds = listCompletedTaskIds({ repoFullName, gh });
+  const snapshots = reconcileGithubCompletedDependencies({ db, issues: rawSnapshots, completedTaskIds });
   const intake = importReadyIssues({ db, issues: snapshots, baseSha });
   const withdrawnReadyTasks = reconcileWithdrawnReadyTasks(db, snapshots, { now: now() });
   const dependencyBlockedTasks = blockTasksWithFailedDependencies(db, { now: now() });
@@ -742,7 +800,6 @@ export async function runProductionPoll({
     mainRef: runtime.latestHead,
     now: now(),
   });
-  const dependencies = listTaskDependencies(db);
   const ready = allTasks.filter((task) => task.state === 'READY');
   const runnableTaskIds = new Set(listRunnableTasks(db).map((task) => task.task_id));
   const deliverySelection = selectDeliveryReadyTasks(allTasks, { maxExecutableTasks: PRODUCT_LANE_CAPACITY });

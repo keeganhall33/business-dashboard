@@ -218,6 +218,7 @@ test('host startup preserves active task when recorded child is still live', asy
     const result = await runProductionHost({
       stateRoot: root,
       maxCycles: 1,
+      verifyProcessIdentity: () => ({ trusted: true, reason: null }),
       poll: async ({ db: hostDb }) => { observed = getTask(hostDb, 'live-task'); },
     });
     assert.deepEqual(result.recoveredStaleTasks, []);

@@ -7,17 +7,9 @@ import { runProductionPoll } from './daemon.mjs';
 import { buildDeliveryHealth } from '../delivery-policy.mjs';
 import { latestContinuityState } from '../delivery-report.mjs';
 import { publishContinuityStatusToGitHub } from './github-sync.mjs';
+import { advanceClaimStarvationWatchdog, buildLivenessTelemetry, verifyTaskProcessIdentity } from './poll-watchdog.mjs';
 
-function pidIsLive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error?.code === 'ESRCH') return false;
-    return true;
-  }
-}
+const ACTIVE_STATES = new Set(['CLAIMED', 'RUNNING', 'VALIDATING', 'PR_OPENED']);
 
 function lockPidIsLive(lockPath) {
   let raw;
@@ -27,7 +19,13 @@ function lockPidIsLive(lockPath) {
     return true;
   }
   const pid = Number(raw);
-  return pidIsLive(pid);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
 }
 
 function acquireHostLock(lockPath) {
@@ -60,13 +58,16 @@ export function readRuntimeCommit(repoRoot, exec = execFileSync) {
   }
 }
 
-export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive = pidIsLive } = {}) {
+export function recoverStaleActiveTasks(db, { now = () => new Date(), verifyProcessIdentity = verifyTaskProcessIdentity } = {}) {
   const active = db.prepare("SELECT * FROM tasks WHERE state IN ('CLAIMED','RUNNING','VALIDATING','PR_OPENED') ORDER BY updated_at,task_id").all();
   const recovered = [];
   for (const task of active) {
     const pid = Number(task.child_pid);
-    if (Number.isInteger(pid) && pid > 0 && isPidLive(pid)) continue;
-    const reason = 'V4_STALE_PROCESS_AFTER_HOST_RESTART';
+    const identity = verifyProcessIdentity(task);
+    if (identity.trusted) continue;
+    const reason = identity.reason === 'PROCESS_NOT_FOUND'
+      ? 'V4_STALE_PROCESS_AFTER_HOST_RESTART'
+      : `V4_UNTRUSTED_PROCESS_AFTER_HOST_RESTART:${identity.reason}`;
     recordTaskResult(db, {
       taskId: task.task_id,
       result: {
@@ -90,7 +91,7 @@ export function recoverStaleActiveTasks(db, { now = () => new Date(), isPidLive 
   return Object.freeze(recovered);
 }
 
-export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, maxConcurrentPolls = 6, publishContinuity = publishContinuityStatusToGitHub, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll = runProductionPoll, pollArgs = {}, maxCycles = Infinity, shutdownDrainMs = 5_000, emptyPollTimeoutMs = 2 * 60_000, maxConcurrentPolls = 6, publishContinuity = publishContinuityStatusToGitHub, verifyProcessIdentity = verifyTaskProcessIdentity, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!path.isAbsolute(stateRoot)) throw new Error('V4_HOST_STATE_ROOT_REQUIRED');
   if (!Number.isInteger(shutdownDrainMs) || shutdownDrainMs < 0) throw new Error('V4_HOST_SHUTDOWN_DRAIN_INVALID');
   if (!Number.isInteger(emptyPollTimeoutMs) || emptyPollTimeoutMs <= 0) throw new Error('V4_HOST_EMPTY_POLL_TIMEOUT_INVALID');
@@ -100,7 +101,7 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   const lockFd = acquireHostLock(lockPath);
   fs.writeFileSync(lockFd, `${process.pid}\n`);
   const db = openV4StateStore(path.join(stateRoot, 'state.sqlite'));
-  const recoveredStaleTasks = recoverStaleActiveTasks(db);
+  const recoveredStaleTasks = recoverStaleActiveTasks(db, { verifyProcessIdentity });
   let stopped = false;
   const stop = () => { stopped = true; };
   process.once('SIGTERM', stop);
@@ -118,6 +119,8 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
   const terminalTaskIds = new Set();
   const inFlightPolls = new Set();
   const pollStartedAtByPromise = new Map();
+  let claimStarvation = Object.freeze({ consecutiveCycles: 0, fault: false, reason: null });
+  let claimRecoveryTriggered = false;
 
   const oldestPollStartedAt = () => {
     if (pollStartedAtByPromise.size === 0) return null;
@@ -154,7 +157,6 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
           if (value?.continuity?.executedControlActions?.some((action) => action?.type === 'REFRESH_CLEAN_IDLE_RUNTIME')) {
             restartRequested = true;
           }
-          lastPollError = null;
           for (const transition of value?.terminalTransitions || []) queueTerminalTransition(transition);
           return { ok: true, value };
         },
@@ -192,6 +194,22 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       }
       const generatedAtMs = now();
       const pollStartedAt = oldestPollStartedAt();
+      const heartbeatTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all().map((task) => ({
+        ...task,
+        processIdentityTrusted: ACTIVE_STATES.has(task.state) ? verifyProcessIdentity(task).trusted : null,
+      }));
+      const liveness = buildLivenessTelemetry({
+        tasks: heartbeatTasks,
+        continuity: lastPollResult?.continuity || latestContinuityState(db),
+        daemonPhase: inFlightPolls.size ? 'POLLING' : 'IDLE',
+        stalledReason,
+      });
+      claimStarvation = advanceClaimStarvationWatchdog(claimStarvation, liveness);
+      if (!claimStarvation.fault) claimRecoveryTriggered = false;
+      if (claimStarvation.fault && !claimRecoveryTriggered && !restartRequested && inFlightPolls.size < maxConcurrentPolls) {
+        claimRecoveryTriggered = true;
+        launchPoll();
+      }
       const heartbeat = {
         pid: process.pid,
         cycles,
@@ -199,8 +217,16 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
         skippedPolls,
         recoveredStaleTasks: recoveredStaleTasks.length,
         lastPollError,
-        pollState: stalledReason ? 'STALLED' : restartRequested ? 'RESTARTING' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
-        stalledReason,
+        pollState: stalledReason || claimStarvation.fault ? 'STALLED' : restartRequested ? 'RESTARTING' : (inFlightPolls.size ? 'RUNNING' : 'IDLE'),
+        stalledReason: stalledReason || claimStarvation.reason,
+        ready: liveness.ready,
+        claimableReady: liveness.claimableReady,
+        routeIneligibleReady: liveness.routeIneligibleReady,
+        freeSlots: liveness.freeSlots,
+        activeVerifiedWorkers: liveness.activeVerifiedWorkers,
+        lastSuccessfulClaimAt: liveness.lastSuccessfulClaimAt,
+        lastSemanticProgressAt: liveness.lastSemanticProgressAt,
+        daemonPhase: liveness.daemonPhase,
         restartRequested,
         pollStartedAt: pollStartedAt === null ? null : new Date(pollStartedAt).toISOString(),
         currentPollElapsedMs: pollStartedAt === null ? 0 : Math.max(0, generatedAtMs - pollStartedAt),
