@@ -34,9 +34,8 @@ export function buildExecutiveOpportunityDetailViewV1(
   const unknowns: string[] = [];
   const fields: Array<[string, string]> = [
     ["Revenue potential", opportunity.upside],
-    ["Business fit", opportunity.fit],
-    ["Target date", opportunity.timing],
-    ["Next step status", opportunity.effort]
+    ["Next follow-up", opportunity.timing],
+    ["Next move", opportunity.next_move]
   ];
 
   for (const [label, value] of fields) {
@@ -104,10 +103,10 @@ export function ExecutiveOpportunityDetailV1({
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <DecisionMetric label="Target date" value={opportunity.timing} />
-            <DecisionMetric label="Next step status" value={opportunity.effort} />
-            <DecisionMetric label="Business fit" value={opportunity.fit} />
+            <DecisionMetric label="Status" value={humanize(editableOpportunity?.status) ?? "Not recorded"} />
+            <DecisionMetric label="Next follow-up" value={formatDate(opportunity.timing)} />
             <DecisionMetric label="Revenue potential" value={opportunity.upside} />
+            <DecisionMetric label="Primary contact" value={editableOpportunity?.contactName ?? "Not recorded"} />
           </div>
         </header>
 
@@ -124,6 +123,15 @@ export function ExecutiveOpportunityDetailV1({
             ) : null}
           </div>
         </section>
+
+        {editableOpportunity?.notes ? (
+          <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-900">Background and notes</summary>
+            <div className="whitespace-pre-wrap border-t border-slate-200 p-5 text-sm leading-6 text-slate-700">
+              {editableOpportunity.notes}
+            </div>
+          </details>
+        ) : null}
 
         {view.relatedRelationships.links.length > 0 ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="opportunity-related-relationships-v1">
@@ -173,13 +181,7 @@ export function ExecutiveOpportunityDetailV1({
             Relationships / CRM
           </Link>
           <Link href="/opportunities-actions" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
-            Planning readiness
-          </Link>
-          <Link href="/dashboard#decision-room-drilldown" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
-            Decision Room
-          </Link>
-          <Link href="/data-evidence" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800">
-            Data & Evidence
+            All opportunities
           </Link>
           <Link href="/dashboard" className="rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
             Back to Executive Home
@@ -191,7 +193,8 @@ export function ExecutiveOpportunityDetailV1({
 }
 
 function DecisionMetric({ label, value }: { label: string; value: string }) {
-  const unknown = !value.trim() || value.trim().toUpperCase() === "UNKNOWN";
+  const normalized = value.trim().toUpperCase();
+  const unknown = !normalized || normalized === "UNKNOWN" || normalized === "NOT RECORDED";
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
@@ -214,4 +217,16 @@ function formatTimestamp(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "Not available";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(date);
+}
+
+function formatDate(value?: string | null): string {
+  if (!value || value.trim().toUpperCase() === "UNKNOWN") return "Not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function humanize(value?: string | null): string | null {
+  if (!value?.trim()) return null;
+  return value.trim().toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
