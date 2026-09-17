@@ -13,8 +13,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="/dashboard" aria-label="Keegan Hall dashboard" className="shrink-0">
+        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <span aria-hidden="true" />
+          <Link href="/dashboard" aria-label="Keegan Hall dashboard" className="shrink-0 justify-self-center">
             <Image
               src="/keegan-hall-signature-v3.png"
               alt="Keegan Hall"
@@ -25,7 +26,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               className="h-10 w-auto sm:h-11"
             />
           </Link>
-          <nav className="hidden items-center gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">
+          <nav className="hidden items-center justify-self-end gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">
             {PRIMARY_NAV_ITEMS.map((item) => (
               <Suspense key={item.href} fallback={<Link href={item.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">{item.short_label}</Link>}>
                 <RangeAwareLink href={item.href} title={item.summary} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
