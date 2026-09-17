@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T23:32:00.000Z",
+  "timestamp": "2026-09-17T23:40:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -449,6 +449,54 @@
           "sender": "Ioana Hall — Manager, Keegan Hall Studio",
           "date": "2026-09-17",
           "summary": "Ioana introduced Keegan in the context of Academy100 and the 100th Oscars, established Jordan, Rory/Augusta National, 800+ hour craftsmanship and charity credibility, and asked whether there might be a natural opportunity for Keegan through an original artwork, centennial project, exhibition/event component, collector or donor experience, or another format aligned with Academy100's existing plans."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "michigan-stadium-100th-20260917",
+        "name": "Michigan Stadium — 100th Anniversary 2027 Activation",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "college-sports-brand-activation",
+        "company": {
+          "name": "Michigan Sports Properties / University of Michigan Athletics",
+          "website": "https://mgoblue.com/sports/2017/6/16/sponsorship",
+          "location": "Ann Arbor, Michigan, United States",
+          "description": "Potential sponsor-funded centennial art and fan-engagement activation tied to the 100th anniversary of Michigan Stadium during the 2027 football season, with possible original artwork, fan giveaway, VIP/donor gifting, collector edition and charitable components."
+        },
+        "primaryContact": {
+          "name": "Jennifer Cadicamo",
+          "title": "Vice President & General Manager, Michigan Sports Properties",
+          "email": "Jennifer.Cadicamo@michigansportsproperties.com"
+        },
+        "lastOutreachAt": "2026-09-17T23:40:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jennifer Cadicamo's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Michigan Sports Properties is still developing partner activations around the Michigan Stadium centennial and whether Keegan could fit within a sponsor-funded, fan, VIP or collector program.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-fit college-football opportunity with a defined 2027 centennial moment, existing sponsor-activation infrastructure, strong fan and donor ecosystem, and direct proof that Keegan's prior college-football art programs can drive fan engagement, charitable revenue and large-scale distribution.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jennifer Cadicamo on September 17, 2026.",
+          "Primary contact: Jennifer Cadicamo, Vice President & General Manager of Michigan Sports Properties. Email: Jennifer.Cadicamo@michigansportsproperties.com.",
+          "Michigan Sports Properties is Learfield's exclusive multimedia rights and sponsorship team for Michigan Athletics, making Jennifer an appropriate first contact for sponsor-funded activations, hospitality, promotions and brand partnerships tied to the centennial.",
+          "Opportunity trigger: Michigan will celebrate the 100th anniversary of Michigan Stadium throughout the 2027 football season, while new in-stadium partnership and activation inventory gives brands more ways to participate in the Big House.",
+          "College-football proof point used in outreach: Keegan has worked with the University of Washington and Alabama over the last several years.",
+          "Specific UW proof point used: the Michael Penix Jr. project included a 20,000-print game giveaway and a signed collector edition that sold out and helped raise more than $40,000 for charity.",
+          "Broader credibility used: original projects with Michael Jordan and Rory McIlroy, including the Masters artwork Rory gifted to Augusta National and the exclusive co-signed edition for Augusta members.",
+          "Concept space intentionally left open: original artwork, sponsor-funded activation, fan giveaway, VIP or donor gifting, limited collector edition, charitable component, or a combination of those.",
+          "Best positioning is not simply 'commission Keegan to draw Michigan Stadium.' The stronger structure is a centennial activation built around Michigan's existing sponsors, fans, donors and hospitality ecosystem.",
+          "If Jennifer engages, clarify: what Michigan is already planning around the centennial, which sponsors have relevant activation budget or inventory, whether a presenting partner is attached, rights/IP and approved imagery, fan giveaway economics, donor/VIP use, licensing/reproduction terms, charitable beneficiary possibilities, production quantities and key 2027 deadlines.",
+          "Commercial guardrail: prioritize a paid creative/project fee and/or meaningful licensed collector economics. A large original or major giveaway should only proceed after sponsor funding, rights, production budget and activation scope are clear.",
+          "Potential strong structure: sponsor-funded original + large-scale fan giveaway + premium signed/collector edition + donor/VIP gifting + charitable component, modeled on the success of the Penix/UW project but scaled appropriately for Michigan's centennial.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause and revisit only with a meaningful new centennial sponsor, event, merchandise, donor or activation announcement."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan around Michigan Stadium's 100th anniversary, highlighted his multi-year college-football work with UW and Alabama, cited the Michael Penix Jr. 20,000-print giveaway and sold-out charitable signed edition, added Jordan and Rory/Augusta credibility, and proposed exploring an original, sponsor-funded activation, fan giveaway, VIP/donor gifting, collector edition or charitable component without prescribing a finished concept."
         },
         "supportingDocs": null
       }
