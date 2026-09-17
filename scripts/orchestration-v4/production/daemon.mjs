@@ -45,6 +45,12 @@ export function continuityStewardEnabled(env = process.env) {
   return env.JEEVES_V4_CONTINUITY_STEWARD !== '0';
 }
 
+export function processIdentityLiveness(identity) {
+  if (identity?.trusted === true) return true;
+  if (identity?.reason === 'PROCESS_NOT_FOUND') return false;
+  return null;
+}
+
 export function taskMutationMode(task) {
   const body = String(getTaskContract(task)?.body ?? '');
   const directives = body
@@ -531,7 +537,7 @@ export function buildContinuitySnapshot({
         humanApprovalRequired: contract.humanApprovalRequired === true,
         retryForbidden: Boolean(contract.retryForbidden) || alreadyPresent.has(task.task_id),
         successorTaskId: contract.successorTaskId || null,
-        childProcessAlive: processIdentity?.trusted ?? null,
+        childProcessAlive: processIdentityLiveness(processIdentity),
         processIdentityReason: processIdentity?.reason ?? null,
         semanticProgressAt: task.semantic_progress_at || (ACTIVE_STATES.has(task.state) ? task.updated_at : null),
         startedAt: ACTIVE_STATES.has(task.state) ? task.updated_at : null,
@@ -595,9 +601,11 @@ function latestRecordedContinuityAction(db) {
 export function executeContinuityControlActions(db, decision, {
   killGroup = signalGroup,
   refreshMain = null,
+  verifyProcessIdentity = verifyTaskProcessIdentity,
   now = new Date(),
 } = {}) {
   const executed = [];
+  const safeToReplan = new Set();
   for (const action of decision.actions) {
     if (CLAIM_ACTIONS.has(action.type) || action.type === 'WAIT_FOR_ACTIVE_PROGRESS' || action.type === 'NO_ACTION') continue;
     const task = action.taskId ? getTask(db, action.taskId) : null;
@@ -605,11 +613,33 @@ export function executeContinuityControlActions(db, decision, {
       if (!task || !ACTIVE_STATES.has(task.state) || task.slot_id !== action.slotId) continue;
       const key = actionIdempotencyKey(action, task);
       if (continuityActionWasRecorded(db, key)) continue;
-      if (Number.isInteger(task.process_group_id) && task.process_group_id > 0) {
+      const identity = verifyProcessIdentity(task);
+      const liveness = processIdentityLiveness(identity);
+      let signalOutcome = 'PROCESS_MISSING';
+      if (identity?.trusted === true && identity?.ownership?.maySignal === true
+          && Number.isInteger(task.process_group_id) && task.process_group_id > 0) {
         killGroup(task.process_group_id, 'SIGTERM');
+        safeToReplan.add(task.task_id);
+        signalOutcome = 'SIGNALED_VERIFIED_PROCESS';
+      } else if (liveness === false) {
+        safeToReplan.add(task.task_id);
+      } else {
+        signalOutcome = 'SKIPPED_UNVERIFIED_PROCESS';
+      }
+      if (signalOutcome === 'SKIPPED_UNVERIFIED_PROCESS') {
+        executed.push(Object.freeze({
+          ...action,
+          signalOutcome,
+          processIdentityReason: identity?.reason ?? 'PROCESS_FACTS_INCOMPLETE',
+        }));
+        continue;
       }
       recordContinuityActionOnce(db, { action, task, now });
-      executed.push(action);
+      executed.push(Object.freeze({
+        ...action,
+        signalOutcome,
+        processIdentityReason: identity?.reason ?? 'PROCESS_FACTS_INCOMPLETE',
+      }));
       continue;
     }
     if (action.type === 'REFRESH_CLEAN_IDLE_RUNTIME') {
@@ -623,6 +653,10 @@ export function executeContinuityControlActions(db, decision, {
     if (action.type === 'REPLAN_TERMINAL_TASK' && task && ACTIVE_STATES.has(task.state)) {
       const key = actionIdempotencyKey(action, task);
       if (continuityActionWasRecorded(db, key)) continue;
+      if (!safeToReplan.has(task.task_id)) {
+        const identity = verifyProcessIdentity(task);
+        if (processIdentityLiveness(identity) !== false) continue;
+      }
       transitionTask(db, {
         taskId: task.task_id,
         expectedState: task.state,
@@ -764,6 +798,7 @@ export async function runProductionPoll({
   replenish = replenishBacklog,
   listCompletedTaskIds = listGithubCompletedTaskIds,
   syncActive = syncActiveGithubTasks,
+  verifyProcessIdentity = verifyTaskProcessIdentity,
   now = () => new Date(),
   onTaskTerminal = () => {},
 }) {
@@ -812,6 +847,7 @@ export async function runProductionPoll({
     terminalTransition,
     alreadyPresentTaskIds: alreadyPresentNoMutation.alreadyPresent,
     reservedSlotIds: integrationReady.length ? ['local-e'] : [],
+    verifyProcessIdentity,
   });
   const continuityDecision = continuityEnabled
     ? decideDeliveryContinuity(continuitySnapshot)
@@ -823,6 +859,7 @@ export async function runProductionPoll({
   const controlActions = continuityEnabled
     ? executeContinuityControlActions(db, continuityDecision, {
         now: now(),
+        verifyProcessIdentity,
         refreshMain: (action) => refreshRuntime({
           repoRoot,
           tasks: beforeRefresh,

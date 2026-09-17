@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { listTaskDependencies, openV4StateStore, recordTaskResult, releaseSlotForTerminalTask, transitionTask } from '../state-store/sqlite-store.mjs';
 import { V4_STATES } from '../state-machine.mjs';
-import { runProductionPoll } from './daemon.mjs';
+import { processIdentityLiveness, runProductionPoll } from './daemon.mjs';
 import { buildDeliveryHealth } from '../delivery-policy.mjs';
 import { latestContinuityState } from '../delivery-report.mjs';
 import { publishContinuityStatusToGitHub } from './github-sync.mjs';
@@ -194,10 +194,13 @@ export async function runProductionHost({ stateRoot, intervalMs = 20_000, poll =
       }
       const generatedAtMs = now();
       const pollStartedAt = oldestPollStartedAt();
-      const heartbeatTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all().map((task) => ({
-        ...task,
-        processIdentityTrusted: ACTIVE_STATES.has(task.state) ? verifyProcessIdentity(task).trusted : null,
-      }));
+      const heartbeatTasks = db.prepare('SELECT * FROM tasks ORDER BY created_at,task_id').all().map((task) => {
+        const identity = ACTIVE_STATES.has(task.state) ? verifyProcessIdentity(task) : null;
+        return {
+          ...task,
+          processIdentityTrusted: processIdentityLiveness(identity),
+        };
+      });
       const liveness = buildLivenessTelemetry({
         tasks: heartbeatTasks,
         continuity: lastPollResult?.continuity || latestContinuityState(db),

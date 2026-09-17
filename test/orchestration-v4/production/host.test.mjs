@@ -93,6 +93,42 @@ test('host keeps bounded intake polling while earlier polls remain unresolved', 
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('host heartbeat does not report incomplete worker identity as confirmed dead', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-pending-worker-'));
+  let observed = false;
+  let inserted = false;
+  try {
+    const result = await runProductionHost({
+      stateRoot: root,
+      maxCycles: 2,
+      maxConcurrentPolls: 1,
+      intervalMs: 1,
+      sleep: async () => { await new Promise((resolve) => setImmediate(resolve)); },
+      publishContinuity: async ({ heartbeat }) => {
+        observed ||= heartbeat.activeVerifiedWorkers === 1;
+        return { ok: true };
+      },
+      verifyProcessIdentity: () => ({
+        trusted: false,
+        reason: 'PROCESS_FACTS_INCOMPLETE',
+        ownership: { maySignal: false },
+      }),
+      poll: async ({ db }) => {
+        if (inserted) return;
+        inserted = true;
+        insertReadyTask(db, { taskId: 'starting', issueNumber: 9901, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+        claimTask(db, { taskId: 'starting', slotId: 'local-a' });
+        transitionTask(db, { taskId: 'starting', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(observed, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('terminal callbacks refill released slots before a long-running sibling poll settles', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-host-terminal-refill-'));
   const never = new Promise(() => {});
