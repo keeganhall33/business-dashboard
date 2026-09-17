@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T23:24:00.000Z",
+  "timestamp": "2026-09-17T23:32:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -402,6 +402,53 @@
           "sender": "Ioana Hall — Manager, Keegan Hall Studio",
           "date": "2026-09-17",
           "summary": "Ioana introduced Keegan to Kathryn around Super Bowl LXI and the 60-year anniversary of the first Super Bowl in Los Angeles, established Jordan, Rory/Augusta National and charity credibility, and proposed exploring an original artwork, sponsor activation, VIP/hospitality component, collector edition or charitable element while intentionally leaving the execution open to fit the Host Committee's existing plans."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "academy100-100th-oscars-20260917",
+        "name": "Academy100 — 100th Oscars / Centennial Art Collaboration",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "institutional-cultural-collaboration",
+        "company": {
+          "name": "Academy of Motion Picture Arts and Sciences / Academy100",
+          "website": "https://www.academy100.org/",
+          "location": "Los Angeles, California, United States",
+          "description": "Academy100 is the Academy's centennial initiative leading into the 100th Oscars in 2028, with opportunities spanning cultural programming, brand partnerships, exhibitions, donor/collector experiences and major institutional storytelling."
+        },
+        "primaryContact": {
+          "name": "Jenny Galante",
+          "title": "Chief Revenue and Business Development Officer",
+          "email": "jgalante@oscars.org"
+        },
+        "lastOutreachAt": "2026-09-17T23:32:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jenny Galante's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Academy100 is considering artist-led commissions, exhibitions, donor/collector experiences or other creative collaborations and who would be the best internal owner if Jenny is not.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potentially transformative non-sports institutional opportunity that could expand Keegan's positioning into film, cultural history and major patron/collector networks. Possible upside includes a paid centennial commission, exhibition or event participation, sponsor-funded activation, donor/collector experiences, entertainment-industry relationships and significant prestige.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jenny Galante on September 17, 2026.",
+          "Primary contact: Jenny Galante, Chief Revenue and Business Development Officer for the Academy. Email: jgalante@oscars.org.",
+          "Jenny is an appropriate first contact because her remit includes Academy100, strategic brand partnerships, Oscars sponsors and advertisers, giving her visibility across both institutional programming and potential sponsor-funded collaboration paths.",
+          "Opportunity trigger: Academy100 is building toward the 100th Academy Awards in 2028, creating a long runway for relationship-building, approvals, rights, artwork development and a premium institutional execution.",
+          "Initial positioning: Keegan as a hyper-realistic pencil artist focused on extraordinary people and defining moments in sports, music and culture, with Michael Jordan, Rory McIlroy/Augusta National, 800+ hour originals and more than $850,000 raised through charitable art projects used as credibility.",
+          "Concept space intentionally left open: original artwork, larger centennial project, exhibition or event component, collector or donor experience, sponsor-supported activation, or another role that fits Academy100's existing plans.",
+          "Strategic importance: this opportunity could materially broaden Keegan's identity beyond sports and place him in a film-history, cultural-legacy and institutional-art context.",
+          "Do not create speculative artwork before the Academy indicates interest and clarifies rights, subject approvals, image licensing and intended use.",
+          "If Jenny engages, clarify: who owns creative commissions and exhibitions, Academy100 programming calendar, sponsor/brand integration opportunities, donor/VIP programming, rights and archival-image access, subject/likeness approvals, Academy Museum involvement, event deadlines, budget, licensing/reproduction terms and whether signed or limited collector editions are viable.",
+          "Commercial guardrail: prioritize a paid institutional commission, sponsor-funded collaboration and/or meaningful collector/licensing economics. Charity or donor fundraising can be layered in, but should not be the sole economic structure for a major labor-intensive original.",
+          "Best-case structure could combine a paid centennial commission with Academy100 exhibition/event placement, sponsor participation, collector/donor access and potentially a limited licensed edition if rights permit.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, avoid repeated cold outreach and revisit only with a meaningful new Academy100 program, sponsor, exhibition or centennial announcement."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan in the context of Academy100 and the 100th Oscars, established Jordan, Rory/Augusta National, 800+ hour craftsmanship and charity credibility, and asked whether there might be a natural opportunity for Keegan through an original artwork, centennial project, exhibition/event component, collector or donor experience, or another format aligned with Academy100's existing plans."
         },
         "supportingDocs": null
       }
