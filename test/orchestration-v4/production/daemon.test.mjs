@@ -12,6 +12,7 @@ import {
   cleanupProductionAgentStates,
   continuityStewardEnabled,
   executeContinuityControlActions,
+  processIdentityLiveness,
   PRODUCT_LANE_CAPACITY,
   reconcileGithubCompletedDependencies,
   reconcileWithdrawnReadyTasks,
@@ -20,7 +21,6 @@ import {
   syncActiveTaskToGitHub,
   syncTerminalLifecycleTaskToGitHub,
   syncPendingGithubTasks,
-  runProductionPoll,
   taskMutationMode,
 } from '../../../scripts/orchestration-v4/production/daemon.mjs';
 import { decideDeliveryContinuity } from '../../../scripts/orchestration-v4/production/delivery-continuity-policy.mjs';
@@ -602,10 +602,105 @@ test('stall termination action is process-owned and idempotent across duplicate 
       patch: { childPid: 4567, processGroupId: 4567 },
     });
     const decision = { actions: [{ type: 'TERMINATE_STALLED_WORKER', taskId: 'stalled', slotId: 'local-a', reason: 'SEMANTIC_PROGRESS_STALL' }] };
-    const options = { killGroup: (pgid, signal) => { signals.push([pgid, signal]); return true; }, now: new Date('2026-09-13T20:00:00Z') };
+    const options = {
+      killGroup: (pgid, signal) => { signals.push([pgid, signal]); return true; },
+      verifyProcessIdentity: () => ({
+        trusted: true,
+        reason: null,
+        ownership: { maySignal: true },
+      }),
+      now: new Date('2026-09-13T20:00:00Z'),
+    };
     assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
     assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
     assert.deepEqual(signals, [[4567, 'SIGTERM']]);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('continuity distinguishes a missing worker from incomplete or untrusted identity evidence', () => {
+  assert.equal(processIdentityLiveness({ trusted: true, reason: null }), true);
+  assert.equal(processIdentityLiveness({ trusted: false, reason: 'PROCESS_NOT_FOUND' }), false);
+  assert.equal(processIdentityLiveness({ trusted: false, reason: 'PROCESS_FACTS_INCOMPLETE' }), null);
+  assert.equal(processIdentityLiveness({ trusted: false, reason: 'EXPECTED_TASK_ID_NOT_PRESENT' }), null);
+});
+
+test('overlapping polls do not terminate a live worker on incomplete identity evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-live-worker-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  try {
+    insertReadyTask(db, {
+      taskId: 'starting-worker', issueNumber: 2023, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA,
+      contract: { fileOwnership: 'src/starting-worker.ts', priority: 'P0', maxAttempts: 1 },
+    });
+    claimTask(db, { taskId: 'starting-worker', slotId: 'local-a' });
+    transitionTask(db, {
+      taskId: 'starting-worker', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING,
+      patch: { childPid: 4568, processGroupId: 4568 },
+      now: new Date('2026-09-13T19:59:59Z'),
+    });
+    const snapshot = buildContinuitySnapshot({
+      db,
+      runtime: { head: BASE_SHA, latestHead: BASE_SHA, ancestorHeads: [], clean: true, idle: false, refreshState: 'CURRENT' },
+      now: new Date('2026-09-13T20:00:00Z'),
+      semanticProgressWindowMs: 30 * 60_000,
+      verifyProcessIdentity: () => ({
+        trusted: false,
+        reason: 'EXPECTED_TASK_ID_NOT_PRESENT',
+        ownership: { maySignal: false },
+      }),
+    });
+    assert.equal(snapshot.tasks[0].childProcessAlive, null);
+    assert.equal(snapshot.tasks[0].processIdentityReason, 'EXPECTED_TASK_ID_NOT_PRESENT');
+    assert.deepEqual(decideDeliveryContinuity(snapshot).actions, [{ type: 'WAIT_FOR_ACTIVE_PROGRESS' }]);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('continuity never signals or replans an active process without verified ownership', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v4-continuity-untrusted-worker-'));
+  const db = openV4StateStore(path.join(root, 'state.sqlite'));
+  const signals = [];
+  try {
+    insertReadyTask(db, { taskId: 'untrusted', issueNumber: 2024, stream: 'CORE_INTELLIGENCE', baseSha: BASE_SHA });
+    claimTask(db, { taskId: 'untrusted', slotId: 'local-a' });
+    transitionTask(db, {
+      taskId: 'untrusted', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING,
+      patch: { childPid: 4569, processGroupId: 4569 },
+    });
+    const decision = { actions: [
+      { type: 'TERMINATE_STALLED_WORKER', taskId: 'untrusted', slotId: 'local-a', reason: 'SEMANTIC_PROGRESS_STALL' },
+      { type: 'REPLAN_TERMINAL_TASK', taskId: 'untrusted', reason: 'SEMANTIC_PROGRESS_STALL' },
+    ] };
+    const result = executeContinuityControlActions(db, decision, {
+      killGroup: (...args) => signals.push(args),
+      verifyProcessIdentity: () => ({
+        trusted: false,
+        reason: 'PROCESS_NOT_OWNED_BY_CURRENT_HOST',
+        ownership: { maySignal: false },
+      }),
+      now: new Date('2026-09-13T20:00:00Z'),
+    });
+    assert.deepEqual(signals, []);
+    assert.equal(result[0].signalOutcome, 'SKIPPED_UNVERIFIED_PROCESS');
+    assert.equal(getTask(db, 'untrusted').state, V4_STATES.RUNNING);
+
+    const recovered = executeContinuityControlActions(db, decision, {
+      killGroup: (...args) => signals.push(args),
+      verifyProcessIdentity: () => ({
+        trusted: true,
+        reason: null,
+        ownership: { maySignal: true },
+      }),
+      now: new Date('2026-09-13T20:00:01Z'),
+    });
+    assert.deepEqual(signals, [[4569, 'SIGTERM']]);
+    assert.equal(recovered.some((action) => action.type === 'REPLAN_TERMINAL_TASK'), true);
+    assert.equal(getTask(db, 'untrusted').state, V4_STATES.BLOCKED);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -620,7 +715,14 @@ test('terminal replan releases an orphaned active slot exactly once after a stal
     claimTask(db, { taskId: 'orphaned', slotId: 'local-a' });
     transitionTask(db, { taskId: 'orphaned', expectedState: V4_STATES.CLAIMED, toState: V4_STATES.RUNNING });
     const decision = { actions: [{ type: 'REPLAN_TERMINAL_TASK', taskId: 'orphaned', reason: 'SEMANTIC_PROGRESS_STALL' }] };
-    const options = { now: new Date('2026-09-13T20:00:00Z') };
+    const options = {
+      verifyProcessIdentity: () => ({
+        trusted: false,
+        reason: 'PROCESS_NOT_FOUND',
+        ownership: { maySignal: false },
+      }),
+      now: new Date('2026-09-13T20:00:00Z'),
+    };
     assert.equal(executeContinuityControlActions(db, decision, options).length, 1);
     assert.equal(executeContinuityControlActions(db, decision, options).length, 0);
     assert.equal(getTask(db, 'orphaned').state, V4_STATES.BLOCKED);
