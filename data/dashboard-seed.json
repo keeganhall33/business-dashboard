@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T23:16:00.000Z",
+  "timestamp": "2026-09-17T23:24:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -357,6 +357,51 @@
           "sender": "Keegan Hall",
           "date": "2026-09-17",
           "summary": "Keegan asked Gabe whether Upper Deck is considering anything for the 30th anniversary of Tiger Woods's 1997 Masters win, referenced the prior Jim Lee/Tiger 50th-birthday art-card precedent, and suggested possible directions including original artwork, cards, or a limited signed print run while keeping the execution open-ended."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "super-bowl-lxi-60-years-la-20260917",
+        "name": "Super Bowl LXI — 60 Years of Super Bowls in Los Angeles",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "major-event-brand-activation",
+        "company": {
+          "name": "Los Angeles Sports & Entertainment Commission / Super Bowl LXI Host Committee",
+          "website": "https://www.lasec.net/",
+          "location": "Los Angeles, California, United States",
+          "description": "Potential premium art, sponsor activation, VIP/hospitality, collector-edition and charitable collaboration tied to Super Bowl LXI and the 60-year anniversary of the first Super Bowl being played in Los Angeles."
+        },
+        "primaryContact": {
+          "name": "Kathryn Schloessman",
+          "title": "President & CEO, Los Angeles Sports & Entertainment Commission; CEO, Los Angeles Super Bowl Host Committee",
+          "email": "kschloessman@lasec.us"
+        },
+        "lastOutreachAt": "2026-09-17T23:24:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Kathryn Schloessman's response. If no reply, send one concise follow-up after roughly 7-10 business days focused on whether the Host Committee is developing sponsor, VIP, hospitality, collector or cultural programming around the 60-year Los Angeles anniversary and who owns that work internally.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential flagship Super Bowl activation with major sponsor access, premium hospitality/VIP placement, NFL and Los Angeles corporate relationships, collector-edition economics, charity integration and significant national prestige. Strong fit with Keegan's positioning around iconic people and defining moments.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Kathryn Schloessman on September 17, 2026.",
+          "Primary contact: Kathryn Schloessman, President & CEO of the Los Angeles Sports & Entertainment Commission and CEO of the Los Angeles Super Bowl Host Committee. Email: kschloessman@lasec.us.",
+          "Opportunity trigger: Super Bowl LXI will be hosted in Los Angeles in February 2027, and the Host Committee is highlighting that 2027 marks 60 years since the first Super Bowl was played in Los Angeles.",
+          "Initial positioning: Keegan's work centers on iconic people and defining moments in sports and culture; credibility referenced Michael Jordan's direct commission, Rory McIlroy/Augusta National, and more than $850,000 raised through charitable art projects.",
+          "Concept space intentionally left open: original artwork, sponsor activation, VIP or hospitality component, limited collector edition, charitable element, or another format integrated into existing Host Committee plans.",
+          "Do not develop artwork speculatively before learning what the Host Committee and its partners are already building around the 60-year anniversary.",
+          "If Kathryn engages, clarify who owns cultural/creative activations, which sponsors have relevant activation inventory or budget, VIP/hospitality opportunities, NFL rights and marks approvals, approved historical imagery, potential player/legend participation, autograph feasibility, charitable beneficiary, edition structure, and event deadlines.",
+          "Commercial guardrail: prioritize a paid/sponsor-funded project fee and/or meaningful licensed collector economics. Charity can be layered into the activation but should not default to Keegan donating hundreds of hours without a clear strategic or financial return.",
+          "Best strategic structure could involve the Host Committee identifying an aligned sponsor to underwrite the project, with the artwork then used across hospitality, VIP gifting, collector releases, content, charity or a presentation/unveiling moment.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause rather than repeatedly cold-emailing; revisit if a meaningful new sponsor, legacy program, hospitality initiative, charity partner or cultural activation is announced."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan to Kathryn around Super Bowl LXI and the 60-year anniversary of the first Super Bowl in Los Angeles, established Jordan, Rory/Augusta National and charity credibility, and proposed exploring an original artwork, sponsor activation, VIP/hospitality component, collector edition or charitable element while intentionally leaving the execution open to fit the Host Committee's existing plans."
         },
         "supportingDocs": null
       }
