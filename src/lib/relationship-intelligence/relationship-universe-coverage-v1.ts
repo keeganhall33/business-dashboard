@@ -214,7 +214,9 @@ function normalizeTarget(target: RelationshipUniverseTargetV1, index: number, no
     throw new Error(`target ${index}.requiredDimensions must contain at least one dimension`);
   }
 
-  const requiredDimensions = [...new Set(target.requiredDimensions)];
+  const requiredDimensions: RelationshipUniverseCoverageDimensionV1[] = [
+    ...new Set<RelationshipUniverseCoverageDimensionV1>(target.requiredDimensions)
+  ];
   for (const dimension of requiredDimensions) {
     if (!DIMENSIONS.includes(dimension)) throw new Error(`target ${index}.requiredDimensions contains unsupported dimension`);
   }
