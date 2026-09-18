@@ -351,7 +351,7 @@ export function CrmDirectoryIndexV1({
         <Link
           href="/relationships/follow-ups"
           className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-          aria-label="Open relationship follow-ups"
+          aria-label="Intelligent relationship inbox: Open relationship follow-ups"
         >
           <div className="flex items-start justify-between gap-3">
             <div>
