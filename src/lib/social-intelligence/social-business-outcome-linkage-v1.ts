@@ -126,6 +126,9 @@ const OUTCOME_KEYS = new Set([
 ]);
 const CONTENT_REF_KEYS = new Set(["platform", "contentId"]);
 const LINK_KEYS = new Set(["basis", "attributionRef", "evidenceRefs"]);
+const SOCIAL_PLATFORMS: readonly SocialPlatformV1[] = ["INSTAGRAM", "FACEBOOK", "YOUTUBE", "TIKTOK", "X", "THREADS", "LINKEDIN"];
+const OUTCOME_TRUTH_STATES: readonly SocialBusinessOutcomeTruthStateV1[] = ["KNOWN", "INFERRED", "UNKNOWN", "STALE", "PARTIAL", "CONFLICTED"];
+const LINK_BASES: readonly SocialOutcomeLinkBasisV1[] = ["EXACT_CONTENT_REF", "EXACT_TRACKING_REF", "EXACT_CAMPAIGN_REF"];
 
 function freeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -145,6 +148,11 @@ function assertAllowedKeys(value: Record<string, unknown>, allowed: ReadonlySet<
   }
 }
 
+function validatePlainObjectKeys(value: unknown, allowed: ReadonlySet<string>, field: string): void {
+  assertPlainObject(value, field);
+  assertAllowedKeys(value, allowed, field);
+}
+
 function requireNonEmpty(value: string, field: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${field} must be non-empty`);
@@ -155,6 +163,11 @@ function requireIso(value: string, field: string): string {
   const parsed = Date.parse(value);
   if (!value || Number.isNaN(parsed)) throw new Error(`${field} must be a valid timestamp`);
   return new Date(parsed).toISOString();
+}
+
+function requireAllowed<T extends string>(value: T, allowed: readonly T[], field: string): T {
+  if (!allowed.includes(value)) throw new Error(`${field} is not supported`);
+  return value;
 }
 
 function safeRef(value: string, field: string): string {
@@ -183,27 +196,24 @@ function zeroOutcomeCounts(): Record<SocialBusinessOutcomeKindV1, number> {
 }
 
 function normalizeContentRef(input: SocialContentRefV1, field: string): SocialContentRefV1 {
-  assertPlainObject(input, field);
-  assertAllowedKeys(input, CONTENT_REF_KEYS, field);
+  validatePlainObjectKeys(input, CONTENT_REF_KEYS, field);
   return freeze({
-    platform: input.platform,
+    platform: requireAllowed(input.platform, SOCIAL_PLATFORMS, `${field}.platform`),
     contentId: requireNonEmpty(input.contentId, `${field}.contentId`)
   });
 }
 
 function normalizeLinkEvidence(input: SocialOutcomeLinkEvidenceInputV1, field: string): SocialOutcomeLinkEvidenceInputV1 {
-  assertPlainObject(input, field);
-  assertAllowedKeys(input, LINK_KEYS, field);
+  validatePlainObjectKeys(input, LINK_KEYS, field);
   return freeze({
-    basis: input.basis,
+    basis: requireAllowed(input.basis, LINK_BASES, `${field}.basis`),
     attributionRef: safeRef(input.attributionRef, `${field}.attributionRef`),
     evidenceRefs: uniqueRefs(input.evidenceRefs ?? [], `${field}.evidenceRefs`)
   });
 }
 
 export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutcomeLinkageInputV1): SocialBusinessOutcomeLinkageV1 {
-  assertPlainObject(input, "input");
-  assertAllowedKeys(input, INPUT_KEYS, "input");
+  validatePlainObjectKeys(input, INPUT_KEYS, "input");
 
   const generatedAt = requireIso(input.generatedAt, "generatedAt");
   const generatedAtMs = Date.parse(generatedAt);
@@ -244,10 +254,12 @@ export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutco
   const rows: SocialBusinessOutcomeLinkageRowV1[] = [];
 
   for (const [index, raw] of input.outcomes.entries()) {
-    assertPlainObject(raw, `outcomes[${index}]`);
-    assertAllowedKeys(raw, OUTCOME_KEYS, `outcomes[${index}]`);
+    validatePlainObjectKeys(raw, OUTCOME_KEYS, `outcomes[${index}]`);
 
     const outcomeId = requireNonEmpty(raw.outcomeId, `outcomes[${index}].outcomeId`);
+    const kind = requireAllowed(raw.kind, SOCIAL_BUSINESS_OUTCOME_KINDS_V1, `outcomes[${index}].kind`);
+    const source = requireAllowed(raw.source, SOCIAL_BUSINESS_OUTCOME_SOURCES_V1, `outcomes[${index}].source`);
+    const truthState = requireAllowed(raw.truthState, OUTCOME_TRUTH_STATES, `outcomes[${index}].truthState`);
     const sourceRecordRef = safeRef(raw.sourceRecordRef, `outcomes[${index}].sourceRecordRef`);
     if (seenOutcomeIds.has(outcomeId)) throw new Error(`duplicate outcomeId: ${outcomeId}`);
     if (seenSourceRecords.has(sourceRecordRef)) throw new Error(`duplicate sourceRecordRef: ${sourceRecordRef}`);
@@ -276,7 +288,7 @@ export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutco
     if ((ref && !linkEvidence) || (!ref && linkEvidence)) verificationReasons.push("CONTENT_REF_AND_LINK_EVIDENCE_MUST_BOTH_BE_PRESENT");
     if (evidenceRefs.length === 0) verificationReasons.push("OUTCOME_EVIDENCE_REQUIRED");
     if (linkEvidence && linkEvidence.evidenceRefs.length === 0) verificationReasons.push("LINK_EVIDENCE_REQUIRED");
-    if (raw.truthState !== "KNOWN") verificationReasons.push(`OUTCOME_TRUTH_${raw.truthState}`);
+    if (truthState !== "KNOWN") verificationReasons.push(`OUTCOME_TRUTH_${truthState}`);
     if (ref && matches.length === 0) verificationReasons.push("CONTENT_REF_NOT_FOUND");
     if (ref && matches.length > 1) verificationReasons.push("AMBIGUOUS_CONTENT_REF");
 
@@ -304,13 +316,13 @@ export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutco
 
     rows.push(freeze({
       outcomeId,
-      kind: raw.kind,
-      source: raw.source,
+      kind,
+      source,
       sourceRecordRef,
       occurredAt,
       observedAt,
       completeThroughAt,
-      truthState: raw.truthState,
+      truthState,
       socialContentRef: key,
       platform: ref?.platform ?? null,
       contentId: ref?.contentId ?? null,
@@ -347,8 +359,8 @@ export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutco
       linkedOutcomeCount: 0,
       directTrackedOutcomeCount: 0,
       outcomeCounts: zeroOutcomeCounts(),
-      strongestAttributionClass: "SUPPORTED_ASSOCIATION" as const,
-      evidenceRefs: []
+      strongestAttributionClass: "SUPPORTED_ASSOCIATION" as Exclude<SocialOutcomeAttributionClassV1, "NOT_ESTABLISHED">,
+      evidenceRefs: [] as string[]
     };
     existing.linkedOutcomeCount += 1;
     existing.outcomeCounts[row.kind] += 1;
@@ -360,7 +372,7 @@ export function compileSocialBusinessOutcomeLinkageV1(input: SocialBusinessOutco
     summaries.set(row.socialContentRef, existing);
   }
 
-  const byContent = [...summaries.entries()]
+  const byContent: SocialContentBusinessOutcomeSummaryV1[] = [...summaries.entries()]
     .map(([socialContentRef, summary]) => freeze({
       socialContentRef,
       platform: summary.platform,
