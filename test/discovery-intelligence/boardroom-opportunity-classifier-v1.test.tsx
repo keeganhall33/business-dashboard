@@ -103,7 +103,7 @@ test("suppresses irrelevant sports results and generic celebrity mentions", () =
       storyId: "celebrity",
       syndicationKey: "celebrity",
       title: "Celebrity spotted at basketball game",
-      summary: "A famous actor was spotted at the arena and greeted fans.",
+      summary: "A famous actor attended the game and greeted fans.",
       entityRefs: ["entity:celebrity"],
       organizationRefs: []
     })
