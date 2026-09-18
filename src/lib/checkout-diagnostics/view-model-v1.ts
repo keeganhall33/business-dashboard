@@ -18,6 +18,15 @@ export const CHECKOUT_STAGE_ORDER = [
 export type CheckoutStageKey = (typeof CHECKOUT_STAGE_ORDER)[number];
 export type CheckoutDiagnosticsState = "WAITING_FOR_INSTRUMENTATION" | "PARTIAL" | "READY" | "UNAVAILABLE" | "CONFLICTED";
 export type EvidenceTruthState = "COMPLETE" | "PARTIAL" | "UNKNOWN" | "STALE" | "CONFLICTED" | "UNAVAILABLE";
+export type CheckoutIntegrityIssueCodeV1 =
+  | "INVALID_DATE_RANGE"
+  | "RANGE_LENGTH_MISMATCH"
+  | "RANGE_NOT_ADJACENT"
+  | "CURRENT_STAGE_INVERSION"
+  | "PRIOR_STAGE_INVERSION"
+  | "SEGMENT_PURCHASE_EXCEEDS_CHECKOUT"
+  | "INVALID_FRESHNESS"
+  | "COVERAGE_INCOMPLETE";
 
 export const CHECKOUT_STAGE_LABELS: Record<CheckoutStageKey, string> = {
   CHECKOUT_LOADED: "Checkout loaded",
@@ -133,6 +142,12 @@ export interface CheckoutRecommendationV1 {
   externalMutationAllowed: false;
 }
 
+export interface CheckoutIntegrityIssueV1 {
+  code: CheckoutIntegrityIssueCodeV1;
+  severity: "CONFLICT" | "INCOMPLETE";
+  message: string;
+}
+
 export interface CheckoutDiagnosticsViewModelV1 {
   state: CheckoutDiagnosticsState;
   stateLabel: string;
@@ -146,12 +161,15 @@ export interface CheckoutDiagnosticsViewModelV1 {
   sourceTruth: Record<"META" | "GA4" | "FUNNELKIT" | "WOO", EvidenceTruthState>;
   asOf: string | null;
   completeThrough: string | null;
+  integrityIssues: CheckoutIntegrityIssueV1[];
   decisionGrade: boolean;
   attributionNote: string;
   recommendation: CheckoutRecommendationV1 | null;
 }
 
 const SOURCE_KEYS = ["META", "GA4", "FUNNELKIT", "WOO"] as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function optionalCount(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
@@ -280,15 +298,146 @@ function normalizeSourceTruth(input: CheckoutDiagnosticsInputV1["sourceTruth"]):
   return Object.fromEntries(SOURCE_KEYS.map((source) => [source, input?.[source] ?? "UNKNOWN"])) as CheckoutDiagnosticsViewModelV1["sourceTruth"];
 }
 
-function deriveState(input: CheckoutDiagnosticsInputV1, errors: CheckoutErrorSummary | null, shipping: CheckoutShippingLatencyViewV1 | null, segments: CheckoutSegmentViewV1[], sourceTruth: CheckoutDiagnosticsViewModelV1["sourceTruth"]): CheckoutDiagnosticsState {
+function dateOnlyMs(value: string | null | undefined): number | null {
+  if (!value || !DATE_ONLY_PATTERN.test(value)) return null;
+  const milliseconds = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(milliseconds)) return null;
+  return new Date(milliseconds).toISOString().slice(0, 10) === value ? milliseconds : null;
+}
+
+function rangeDays(range: CheckoutDateRangeV1): number | null {
+  const start = dateOnlyMs(range.startDate);
+  const end = dateOnlyMs(range.endDate);
+  if (start === null || end === null || end < start) return null;
+  return Math.floor((end - start) / DAY_MS) + 1;
+}
+
+function buildRangeIntegrityIssues(range: CheckoutDiagnosticsInputV1["range"]): CheckoutIntegrityIssueV1[] {
+  const currentDays = rangeDays(range.current);
+  const priorDays = rangeDays(range.prior);
+  if (currentDays === null || priorDays === null) {
+    return [{
+      code: "INVALID_DATE_RANGE",
+      severity: "CONFLICT",
+      message: "Current and prior checkout ranges must be valid inclusive YYYY-MM-DD ranges before period comparison is decision-grade.",
+    }];
+  }
+
+  const issues: CheckoutIntegrityIssueV1[] = [];
+  if (currentDays !== priorDays) {
+    issues.push({
+      code: "RANGE_LENGTH_MISMATCH",
+      severity: "CONFLICT",
+      message: `Checkout comparison windows are not matched: current is ${currentDays} day(s) and prior is ${priorDays} day(s).`,
+    });
+  }
+
+  const currentStart = dateOnlyMs(range.current.startDate) as number;
+  const priorEnd = dateOnlyMs(range.prior.endDate) as number;
+  if (priorEnd + DAY_MS !== currentStart) {
+    issues.push({
+      code: "RANGE_NOT_ADJACENT",
+      severity: "CONFLICT",
+      message: "Checkout comparison windows must be exactly adjacent so overlapping or gapped dates cannot masquerade as a matched prior period.",
+    });
+  }
+  return issues;
+}
+
+function buildStageIntegrityIssues(
+  period: CheckoutStagePeriodInputV1 | null | undefined,
+  periodName: "current" | "prior",
+): CheckoutIntegrityIssueV1[] {
+  const issues: CheckoutIntegrityIssueV1[] = [];
+  for (let index = 1; index < CHECKOUT_STAGE_ORDER.length; index += 1) {
+    const previousKey = CHECKOUT_STAGE_ORDER[index - 1];
+    const currentKey = CHECKOUT_STAGE_ORDER[index];
+    const previousCount = stageCount(period, previousKey);
+    const currentCount = stageCount(period, currentKey);
+    if (previousCount === null || currentCount === null || currentCount <= previousCount) continue;
+    issues.push({
+      code: periodName === "current" ? "CURRENT_STAGE_INVERSION" : "PRIOR_STAGE_INVERSION",
+      severity: "CONFLICT",
+      message: `${periodName === "current" ? "Current" : "Prior"} checkout evidence is internally inconsistent: ${CHECKOUT_STAGE_LABELS[currentKey]} (${currentCount}) exceeds prerequisite ${CHECKOUT_STAGE_LABELS[previousKey]} (${previousCount}).`,
+    });
+  }
+  return issues;
+}
+
+function buildSegmentIntegrityIssues(segments: CheckoutSegmentViewV1[]): CheckoutIntegrityIssueV1[] {
+  return segments
+    .filter((segment) => segment.checkoutLoaded !== null && segment.purchases !== null && segment.purchases > segment.checkoutLoaded)
+    .map((segment) => ({
+      code: "SEGMENT_PURCHASE_EXCEEDS_CHECKOUT" as const,
+      severity: "CONFLICT" as const,
+      message: `Checkout segment ${segment.device} / ${segment.source} reports ${segment.purchases} purchases from ${segment.checkoutLoaded} checkout loads; reconcile segment telemetry before using it for diagnosis.`,
+    }));
+}
+
+function buildFreshnessIntegrityIssues(
+  freshness: CheckoutDiagnosticsInputV1["freshness"],
+  currentRange: CheckoutDateRangeV1,
+): CheckoutIntegrityIssueV1[] {
+  const asOfMs = freshness?.asOf ? Date.parse(freshness.asOf) : Number.NaN;
+  const completeThroughMs = dateOnlyMs(freshness?.completeThrough);
+  const currentEndMs = dateOnlyMs(currentRange.endDate);
+  if (!freshness?.asOf || !Number.isFinite(asOfMs) || completeThroughMs === null || currentEndMs === null) {
+    return [{
+      code: "INVALID_FRESHNESS",
+      severity: "INCOMPLETE",
+      message: "Checkout freshness metadata is missing or invalid; decision-grade checkout evidence requires a valid as-of instant and complete-through date.",
+    }];
+  }
+  if (completeThroughMs < currentEndMs) {
+    return [{
+      code: "COVERAGE_INCOMPLETE",
+      severity: "INCOMPLETE",
+      message: `Checkout evidence is complete only through ${freshness.completeThrough}; the selected current range ends ${currentRange.endDate}.`,
+    }];
+  }
+  return [];
+}
+
+function buildIntegrityIssues(
+  input: CheckoutDiagnosticsInputV1,
+  segments: CheckoutSegmentViewV1[],
+): CheckoutIntegrityIssueV1[] {
+  return [
+    ...buildRangeIntegrityIssues(input.range),
+    ...buildStageIntegrityIssues(input.current, "current"),
+    ...buildStageIntegrityIssues(input.prior, "prior"),
+    ...buildSegmentIntegrityIssues(segments),
+    ...buildFreshnessIntegrityIssues(input.freshness, input.range.current),
+  ];
+}
+
+function deriveState(
+  input: CheckoutDiagnosticsInputV1,
+  errors: CheckoutErrorSummary | null,
+  shipping: CheckoutShippingLatencyViewV1 | null,
+  segments: CheckoutSegmentViewV1[],
+  sourceTruth: CheckoutDiagnosticsViewModelV1["sourceTruth"],
+  integrityIssues: CheckoutIntegrityIssueV1[],
+): CheckoutDiagnosticsState {
   if (input.instrumentation === "INACTIVE") return "WAITING_FOR_INSTRUMENTATION";
   if (input.instrumentation === "UNAVAILABLE") return "UNAVAILABLE";
-  if (input.instrumentation === "CONFLICTED" || SOURCE_KEYS.some((source) => sourceTruth[source] === "CONFLICTED")) return "CONFLICTED";
+  if (
+    input.instrumentation === "CONFLICTED"
+    || SOURCE_KEYS.some((source) => sourceTruth[source] === "CONFLICTED")
+    || integrityIssues.some((issue) => issue.severity === "CONFLICT")
+  ) return "CONFLICTED";
 
   const stagesComplete = hasCompleteStagePeriod(input.current) && hasCompleteStagePeriod(input.prior);
   const sourcesComplete = SOURCE_KEYS.every((source) => sourceTruth[source] === "COMPLETE");
   const shippingComplete = shipping !== null && shipping.sampleSize !== null && shipping.waitsAtLeastFourSeconds !== null;
-  const instrumentationComplete = input.instrumentation === "ACTIVE" && stagesComplete && errors !== null && shippingComplete && segments.length > 0 && sourcesComplete;
+  const freshnessComplete = !integrityIssues.some((issue) => issue.severity === "INCOMPLETE");
+  const instrumentationComplete = input.instrumentation === "ACTIVE"
+    && stagesComplete
+    && errors !== null
+    && shippingComplete
+    && segments.length > 0
+    && sourcesComplete
+    && freshnessComplete;
 
   return instrumentationComplete ? "READY" : "PARTIAL";
 }
@@ -308,7 +457,7 @@ function buildRecommendation(state: CheckoutDiagnosticsState, largestDropoff: Ch
     return {
       kind: "DATA_QUALITY",
       summary: "Complete checkout instrumentation before treating observed drop-off as decision-grade.",
-      rationale: "One or more required stage, error, segment, latency, or source-truth inputs are missing, stale, partial, or unknown.",
+      rationale: "One or more required stage, error, segment, latency, freshness, range, or source-truth inputs are missing, stale, partial, or unknown.",
       requiresApproval: true,
       externalMutationAllowed: false,
     };
@@ -354,7 +503,8 @@ export function buildCheckoutDiagnosticsViewModelV1(input: CheckoutDiagnosticsIn
   const shippingLatency = buildShippingLatency(input.shippingLatency, errors);
   const segments = buildSegments(input.segments);
   const sourceTruth = normalizeSourceTruth(input.sourceTruth);
-  const state = deriveState(input, errors, shippingLatency, segments, sourceTruth);
+  const integrityIssues = buildIntegrityIssues(input, segments);
+  const state = deriveState(input, errors, shippingLatency, segments, sourceTruth, integrityIssues);
   const largestDropoff = findLargestDropoff(stageRows);
 
   return {
@@ -370,8 +520,9 @@ export function buildCheckoutDiagnosticsViewModelV1(input: CheckoutDiagnosticsIn
     sourceTruth,
     asOf: input.freshness?.asOf ?? null,
     completeThrough: input.freshness?.completeThrough ?? null,
+    integrityIssues,
     decisionGrade: state === "READY",
-    attributionNote: "Meta, GA4, FunnelKit, and Woo evidence may be reconciled for timing and segment context, but observed checkout friction is not causal attribution. Missing, partial, stale, or conflicted evidence must remain explicit.",
+    attributionNote: "Meta, GA4, FunnelKit, and Woo evidence may be reconciled for timing and segment context, but observed checkout friction is not causal attribution. Missing, partial, stale, conflicted, date-misaligned, or internally inconsistent evidence must remain explicit and cannot become decision-grade.",
     recommendation: buildRecommendation(state, largestDropoff, errors, shippingLatency),
   };
 }

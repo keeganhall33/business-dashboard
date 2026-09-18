@@ -106,10 +106,101 @@ test("active complete instrumentation calculates adjacent conversion and matched
 
   assert.equal(model.state, "READY");
   assert.equal(model.decisionGrade, true);
+  assert.deepEqual(model.integrityIssues, []);
   assert.equal(started?.currentStepConversion, 0.9);
   assert.equal(started?.priorStepConversion, 0.9);
   assert.ok(Math.abs((started?.conversionDeltaPoints ?? 999)) < 0.000001);
   assert.equal(model.segments[0].device, "Mobile");
+});
+
+test("current funnel stage inversion fails closed instead of creating decision-grade conversion evidence", () => {
+  const inconsistentCurrent = {
+    ...currentCounts,
+    SHIPPING_METHOD_SELECTED: currentCounts.SHIPPING_METHODS_LOADED + 5,
+  };
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    current: { stages: inconsistentCurrent },
+  }));
+
+  assert.equal(model.state, "CONFLICTED");
+  assert.equal(model.decisionGrade, false);
+  assert.equal(model.recommendation, null);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "CURRENT_STAGE_INVERSION"));
+});
+
+test("prior funnel stage inversion fails closed before matched-period comparison", () => {
+  const inconsistentPrior = {
+    ...priorCounts,
+    PURCHASE: priorCounts.ORDER_CREATED + 3,
+  };
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    prior: { stages: inconsistentPrior },
+  }));
+
+  assert.equal(model.state, "CONFLICTED");
+  assert.equal(model.decisionGrade, false);
+  assert.equal(model.recommendation, null);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "PRIOR_STAGE_INVERSION"));
+});
+
+test("segment purchases cannot exceed segment checkout loads", () => {
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    segments: [
+      { device: "Mobile", source: "Paid social", checkoutLoaded: 20, purchases: 21 },
+    ],
+  }));
+
+  assert.equal(model.state, "CONFLICTED");
+  assert.equal(model.decisionGrade, false);
+  assert.equal(model.recommendation, null);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "SEGMENT_PURCHASE_EXCEEDS_CHECKOUT"));
+});
+
+test("mismatched comparison-window lengths fail closed", () => {
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    range: {
+      current: { startDate: "2026-09-01", endDate: "2026-09-07" },
+      prior: { startDate: "2026-08-24", endDate: "2026-08-31" },
+    },
+  }));
+
+  assert.equal(model.state, "CONFLICTED");
+  assert.equal(model.decisionGrade, false);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "RANGE_LENGTH_MISMATCH"));
+});
+
+test("gapped comparison windows fail closed even when durations match", () => {
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    range: {
+      current: { startDate: "2026-09-01", endDate: "2026-09-07" },
+      prior: { startDate: "2026-08-24", endDate: "2026-08-30" },
+    },
+  }));
+
+  assert.equal(model.state, "CONFLICTED");
+  assert.equal(model.decisionGrade, false);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "RANGE_NOT_ADJACENT"));
+});
+
+test("coverage incomplete through the selected current range stays partial", () => {
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    freshness: { asOf: "2026-09-08T08:00:00Z", completeThrough: "2026-09-06" },
+  }));
+
+  assert.equal(model.state, "PARTIAL");
+  assert.equal(model.decisionGrade, false);
+  assert.equal(model.recommendation?.kind, "DATA_QUALITY");
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "COVERAGE_INCOMPLETE"));
+});
+
+test("invalid freshness metadata stays partial rather than silently current", () => {
+  const model = buildCheckoutDiagnosticsViewModelV1(readyInput({
+    freshness: { asOf: "not-an-instant", completeThrough: "2026-09-07" },
+  }));
+
+  assert.equal(model.state, "PARTIAL");
+  assert.equal(model.decisionGrade, false);
+  assert.ok(model.integrityIssues.some((issue) => issue.code === "INVALID_FRESHNESS"));
 });
 
 test("latency alert remains suppressed below the minimum sample threshold", () => {
