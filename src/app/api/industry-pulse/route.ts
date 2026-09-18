@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { parseSearchParams } from "@/lib/validation/parse";
 import { industryPulseQuerySchema } from "@/lib/validation/industryPulse";
 import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
@@ -6,6 +7,9 @@ import { getIndustryPulseSnapshot } from "@/lib/supabase/industryPulse";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const url = new URL(request.url);
     const parsed = parseSearchParams(url.searchParams, industryPulseQuerySchema);
