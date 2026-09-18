@@ -1,4 +1,5 @@
 import { ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { evaluateRules } from "@/lib/automation/evaluateRules";
 import { runAvery } from "@/lib/agents/avery";
 import { runLyra } from "@/lib/agents/lyra";
@@ -15,7 +16,10 @@ const runners: Record<(typeof sequence)[number], () => Promise<AgentRunResult>> 
   avery: runAvery
 };
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   const weeklyRun = await createSystemRun({ agentKey: "avery", runType: "weekly" });
 
   try {

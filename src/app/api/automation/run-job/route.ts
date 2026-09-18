@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { runDeliverableHarvest } from "@/lib/scheduler/deliverableHarvest";
 import { runProofEnforcementChecks } from "@/lib/scheduler/proofEnforcement";
 import { runCeoDigest } from "@/lib/scheduler/ceoDigest";
@@ -24,6 +25,9 @@ function isJobKey(value: string): value is JobKey {
 }
 
 export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   let body: RunJobRequest = {};
   try {
     body = (await request.json()) as RunJobRequest;
