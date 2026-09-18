@@ -96,18 +96,33 @@ export function CheckoutDiagnosticsPanelV1({ model }: { model: CheckoutDiagnosti
             </article>
 
             <article className="rounded-xl border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-950">Shipping-method latency</h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-950">Shipping-method latency</h3>
+                {model.shippingLatency?.materialAlert ? <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-900">Threshold met</span> : null}
+              </div>
               {model.shippingLatency ? (
-                <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div><dt className="text-slate-500">Sample</dt><dd className="font-semibold text-slate-950">{formatCount(model.shippingLatency.sampleSize)}</dd></div>
-                  <div><dt className="text-slate-500">4+ sec waits</dt><dd className="font-semibold text-slate-950">{formatPercent(model.shippingLatency.slowWaitShare)}</dd></div>
-                  <div><dt className="text-slate-500">Median</dt><dd className="font-semibold text-slate-950">{formatDuration(model.shippingLatency.medianMs)}</dd></div>
-                  <div><dt className="text-slate-500">P95</dt><dd className="font-semibold text-slate-950">{formatDuration(model.shippingLatency.p95Ms)}</dd></div>
-                  <div className="col-span-2 border-t border-slate-100 pt-2">
-                    <dt className="text-slate-500">Mobile Chrome</dt>
-                    <dd className="font-semibold text-slate-950">n={formatCount(model.shippingLatency.mobileChromeSampleSize)} · median {formatDuration(model.shippingLatency.mobileChromeMedianMs)} · p95 {formatDuration(model.shippingLatency.mobileChromeP95Ms)}</dd>
+                <div className="mt-2 space-y-3">
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    <div><dt className="text-slate-500">Sample</dt><dd className="font-semibold text-slate-950">{formatCount(model.shippingLatency.sampleSize)}</dd></div>
+                    <div><dt className="text-slate-500">4+ sec waits</dt><dd className="font-semibold text-slate-950">{formatPercent(model.shippingLatency.slowWaitShare)}</dd></div>
+                    <div><dt className="text-slate-500">Median</dt><dd className="font-semibold text-slate-950">{formatDuration(model.shippingLatency.medianMs)}</dd></div>
+                    <div><dt className="text-slate-500">P95</dt><dd className="font-semibold text-slate-950">{formatDuration(model.shippingLatency.p95Ms)}</dd></div>
+                    <div className="col-span-2 border-t border-slate-100 pt-2">
+                      <dt className="text-slate-500">Mobile Chrome</dt>
+                      <dd className="font-semibold text-slate-950">n={formatCount(model.shippingLatency.mobileChromeSampleSize)} · median {formatDuration(model.shippingLatency.mobileChromeMedianMs)} · p95 {formatDuration(model.shippingLatency.mobileChromeP95Ms)}</dd>
+                    </div>
+                  </dl>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Latency buckets</p>
+                    {model.shippingLatency.buckets.length ? (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {model.shippingLatency.buckets.map((bucket) => (
+                          <span key={bucket.label} className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700">{bucket.label}: {formatCount(bucket.count)}</span>
+                        ))}
+                      </div>
+                    ) : <p className="mt-1 text-xs text-slate-500">Unknown</p>}
                   </div>
-                </dl>
+                </div>
               ) : <p className="mt-2 text-sm text-slate-500">Unknown</p>}
             </article>
           </div>
