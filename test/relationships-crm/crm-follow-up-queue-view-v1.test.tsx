@@ -84,10 +84,14 @@ test("renders a truthful empty canonical queue", () => {
 test("production route uses the authoritative server loader without fixtures", () => {
   const routeSource = readFileSync(resolve(process.cwd(), "src/app/(app)/relationships/follow-ups/page.tsx"), "utf8");
   const homeSource = readFileSync(resolve(process.cwd(), "src/app/(app)/relationships/page.tsx"), "utf8");
+  const directorySource = readFileSync(resolve(process.cwd(), "src/components/relationships-crm/CrmDirectoryIndexV1.tsx"), "utf8");
   assert.match(routeSource, /loadProductionFollowUpQueueV1/);
   assert.match(routeSource, /queue=\{queue\}/);
   assert.match(routeSource, /force-no-store/);
   assert.doesNotMatch(routeSource, /fixture|seed/i);
   assert.match(homeSource, /href="\/relationships\/follow-ups"/);
   assert.match(homeSource, /Open follow-up queue/);
+  assert.match(directorySource, /href="\/relationships\/follow-ups"/);
+  assert.match(directorySource, /aria-label="Open relationship follow-ups"/);
+  assert.match(directorySource, /Open follow-up queue →/);
 });
