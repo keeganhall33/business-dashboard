@@ -2116,3 +2116,101 @@ export async function getDashboardSnapshotHistoryForKey(key: string, options?: {
   }
   return (data ?? []) as DashboardSnapshotRecord[];
 }
+
+
+export async function getOpportunityRelationshipContextV1(opportunityId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data: links, error: linksError } = await supabase
+    .from("crm_opportunity_entities_v1")
+    .select("entity_id,role,truth_state,freshness_state,evidence_refs,created_at")
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: true });
+
+  if (linksError) {
+    if (isMissingTableError(linksError, "crm_opportunity_entities_v1")) {
+      return { evidence: [], primaryContacts: [] };
+    }
+    throw linksError;
+  }
+
+  const entityIds = [...new Set((links ?? []).map((row) => row.entity_id).filter(Boolean))];
+  if (!entityIds.length) return { evidence: [], primaryContacts: [] };
+
+  const { data: entities, error: entitiesError } = await supabase
+    .from("entities_v1")
+    .select("entity_id,entity_type,canonical_name")
+    .in("entity_id", entityIds);
+
+  if (entitiesError) {
+    if (isMissingTableError(entitiesError, "entities_v1")) {
+      return { evidence: [], primaryContacts: [] };
+    }
+    throw entitiesError;
+  }
+
+  const entityById = new Map((entities ?? []).map((entity) => [entity.entity_id, entity]));
+  const allowedEvidenceStates = new Set(["KNOWN", "INFERRED", "UNKNOWN", "STALE", "CONFLICTED"]);
+
+  const evidence: Array<{
+    opportunityId: string;
+    entityType: "PERSON" | "COMPANY";
+    canonicalId: string | null;
+    label: string | null;
+    href: string | null;
+    resolution: "RESOLVED" | "UNAVAILABLE";
+    evidenceState: "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
+    evidenceRefs: string[];
+    role: string | null;
+  }> = (links ?? []).map((row) => {
+    const entity = entityById.get(row.entity_id);
+    const isPerson = entity?.entity_type === "person";
+    const entityType = isPerson ? "PERSON" : "COMPANY";
+    const canonicalId = entity?.entity_id ?? row.entity_id ?? null;
+    const label = entity?.canonical_name ?? null;
+    const truthState = String(row.truth_state ?? "").toUpperCase();
+    let evidenceState: "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED" =
+      allowedEvidenceStates.has(truthState)
+        ? (truthState as "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED")
+        : "UNKNOWN";
+    if (String(row.freshness_state ?? "").toUpperCase() === "STALE" && evidenceState === "KNOWN") {
+      evidenceState = "STALE";
+    }
+    const href =
+      canonicalId && entity
+        ? `${isPerson ? "/relationships/people/" : "/relationships/companies/"}${encodeURIComponent(canonicalId)}`
+        : null;
+
+    return {
+      opportunityId,
+      entityType,
+      canonicalId,
+      label,
+      href,
+      resolution: entity ? "RESOLVED" : "UNAVAILABLE",
+      evidenceState,
+      evidenceRefs: Array.isArray(row.evidence_refs)
+        ? row.evidence_refs.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+        : [],
+      role: typeof row.role === "string" ? row.role.toUpperCase() : null
+    };
+  });
+
+  return {
+    evidence: evidence.map(({ role: _role, ...entry }) => entry),
+    primaryContacts: evidence
+      .filter(
+        (entry) =>
+          entry.role === "CONTACT" &&
+          entry.resolution === "RESOLVED" &&
+          entry.evidenceState === "KNOWN" &&
+          entry.canonicalId &&
+          entry.label &&
+          entry.href
+      )
+      .map((entry) => ({
+        canonicalId: entry.canonicalId as string,
+        label: entry.label as string,
+        href: entry.href as string
+      }))
+  };
+}

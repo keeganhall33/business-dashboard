@@ -74,12 +74,14 @@ export function ExecutiveOpportunityDetailV1({
   opportunity,
   generatedAt,
   relationshipEvidence = null,
-  editableOpportunity
+  editableOpportunity,
+  primaryContacts = []
 }: {
   opportunity: ExecutiveCommandCenterOpportunityV1;
   generatedAt?: string | null;
   relationshipEvidence?: readonly OpportunityRelationshipEvidenceV1[] | null;
   editableOpportunity?: EditableOpportunityV1 | null;
+  primaryContacts?: readonly { canonicalId: string; label: string; href: string }[];
 }) {
   const view = buildExecutiveOpportunityDetailViewV1(opportunity, relationshipEvidence);
 
@@ -106,7 +108,11 @@ export function ExecutiveOpportunityDetailV1({
             <DecisionMetric label="Status" value={humanize(editableOpportunity?.status) ?? "Not recorded"} />
             <DecisionMetric label="Next follow-up" value={formatDate(opportunity.timing)} />
             <DecisionMetric label="Revenue potential" value={opportunity.upside} />
-            <DecisionMetric label="Primary contact" value={editableOpportunity?.contactName ?? "Not recorded"} />
+            <ContactDecisionMetric
+              label="Primary contact"
+              value={editableOpportunity?.contactName ?? "Not recorded"}
+              contacts={primaryContacts}
+            />
           </div>
         </header>
 
@@ -189,6 +195,34 @@ export function ExecutiveOpportunityDetailV1({
         </nav>
       </div>
     </main>
+  );
+}
+
+function ContactDecisionMetric({
+  label,
+  value,
+  contacts
+}: {
+  label: string;
+  value: string;
+  contacts: readonly { canonicalId: string; label: string; href: string }[];
+}) {
+  if (!contacts.length) return <DecisionMetric label={label} value={value} />;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dd className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-base font-semibold text-slate-950">
+        {contacts.map((contact, index) => (
+          <span key={contact.canonicalId} className="inline-flex items-center gap-x-1.5">
+            {index > 0 ? <span className="text-slate-400">/</span> : null}
+            <Link href={contact.href} className="text-blue-700 underline-offset-2 hover:underline">
+              {contact.label}
+            </Link>
+          </span>
+        ))}
+      </dd>
+    </div>
   );
 }
 
