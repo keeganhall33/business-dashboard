@@ -1,9 +1,13 @@
 import { badRequest, ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { activateAgentTasks } from "@/lib/agents/automation";
 import { hasAgentRunner } from "@/lib/agents/runAgentByKey";
 import { publishAgentStatusSnapshot } from "@/lib/agents/shared";
 
-export async function POST(_request: Request, context: { params: Promise<{ agentKey: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ agentKey: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { agentKey } = await context.params;
     if (!hasAgentRunner(agentKey)) {
