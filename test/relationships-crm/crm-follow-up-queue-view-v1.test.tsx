@@ -92,6 +92,6 @@ test("production route uses the authoritative server loader without fixtures", (
   assert.match(homeSource, /href="\/relationships\/follow-ups"/);
   assert.match(homeSource, /Open follow-up queue/);
   assert.match(directorySource, /href="\/relationships\/follow-ups"/);
-  assert.match(directorySource, /aria-label="Open relationship follow-ups"/);
+  assert.match(directorySource, /aria-label="Intelligent relationship inbox: Open relationship follow-ups"/);
   assert.match(directorySource, /Open follow-up queue →/);
 });
