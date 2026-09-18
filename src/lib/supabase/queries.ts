@@ -2151,14 +2151,27 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
   const entityById = new Map((entities ?? []).map((entity) => [entity.entity_id, entity]));
   const allowedEvidenceStates = new Set(["KNOWN", "INFERRED", "UNKNOWN", "STALE", "CONFLICTED"]);
 
-  const evidence = (links ?? []).map((row) => {
+  const evidence: Array<{
+    opportunityId: string;
+    entityType: "PERSON" | "COMPANY";
+    canonicalId: string | null;
+    label: string | null;
+    href: string | null;
+    resolution: "RESOLVED" | "UNAVAILABLE";
+    evidenceState: "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
+    evidenceRefs: string[];
+    role: string | null;
+  }> = (links ?? []).map((row) => {
     const entity = entityById.get(row.entity_id);
     const isPerson = entity?.entity_type === "person";
     const entityType = isPerson ? "PERSON" : "COMPANY";
     const canonicalId = entity?.entity_id ?? row.entity_id ?? null;
     const label = entity?.canonical_name ?? null;
     const truthState = String(row.truth_state ?? "").toUpperCase();
-    let evidenceState = allowedEvidenceStates.has(truthState) ? truthState : "UNKNOWN";
+    let evidenceState: "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED" =
+      allowedEvidenceStates.has(truthState)
+        ? (truthState as "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED")
+        : "UNKNOWN";
     if (String(row.freshness_state ?? "").toUpperCase() === "STALE" && evidenceState === "KNOWN") {
       evidenceState = "STALE";
     }
