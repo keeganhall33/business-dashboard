@@ -47,20 +47,39 @@ curl_smoke() {
     "$@"
 }
 
-# 1) The server-rendered dashboard must load successfully. In production this
-# exercises the protected overview API through the app's server-side
-# x-dashboard-secret path without exposing DASHBOARD_ADMIN_TOKEN to CI.
-dashboard_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
-[ "$dashboard_status" = "200" ] || fail "GET /dashboard returned $dashboard_status"
-ok_note "GET /dashboard"
+dashboard_headers=$(mktemp)
+overview_body=$(mktemp)
+trap 'rm -f "$dashboard_headers" "$overview_body"' EXIT
+
+# 1) The dashboard must either render directly (local/dev auth bypass) or enforce
+# the production private-login boundary. A production 307/302 redirect to /login
+# is now the expected security behavior and must not be treated as a failed deploy.
+dashboard_status=$(curl_smoke -D "$dashboard_headers" -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
+case "$dashboard_status" in
+  200)
+    ok_note "GET /dashboard rendered directly"
+    ;;
+  302|307)
+    dashboard_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' "$dashboard_headers")
+    case "$dashboard_location" in
+      *"/login"*) ;;
+      *) fail "GET /dashboard redirected to unexpected location: ${dashboard_location:-missing}" ;;
+    esac
+
+    login_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/login")
+    [ "$login_status" = "200" ] || fail "GET /login returned $login_status after protected dashboard redirect"
+    ok_note "GET /dashboard correctly requires private sign-in ($dashboard_status -> /login)"
+    ok_note "GET /login"
+    ;;
+  *)
+    fail "GET /dashboard returned $dashboard_status"
+    ;;
+esac
 
 # 2) Probe the overview API anonymously.
 # - Local/dev may intentionally allow it and return 200, in which case verify shape.
 # - Production intentionally requires DASHBOARD_ADMIN_TOKEN and should return 401.
-# A 401 here is therefore a security assertion, not a deployment failure, because
-# step 1 already proved the SSR dashboard could reach the protected API correctly.
-overview_body=$(mktemp)
-trap 'rm -f "$overview_body"' EXIT
+# A 401 here is therefore a security assertion, not a deployment failure.
 overview_status=$(curl_smoke -o "$overview_body" -w "%{http_code}" "$BASE_URL/api/dashboard/overview")
 
 case "$overview_status" in
