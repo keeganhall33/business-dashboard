@@ -112,6 +112,23 @@ test("rejects non-adjacent, non-30-day, duplicate, negative, and unbounded evide
   assert.equal(buildRevenueDecisionPacketV1(input({ observations: [observation("WOO", {}, {}, { evidenceRefs: Array.from({ length: 11 }, (_, index) => `e:${index}`) })] })).status, "INVALID_INPUT");
 });
 
+test("fails closed on unanchored CURRENT, future-dated, and impossible calendar evidence", () => {
+  const unanchored = input().observations.map((item) => item.source === "WOO"
+    ? { ...item, evidenceRefs: [] }
+    : item);
+  assert.equal(buildRevenueDecisionPacketV1(input({ observations: unanchored })).status, "INVALID_INPUT");
+
+  const futureDated = input().observations.map((item) => item.source === "GA4"
+    ? { ...item, observedAt: "2026-09-14T00:00:00.000Z" }
+    : item);
+  assert.equal(buildRevenueDecisionPacketV1(input({ observations: futureDated })).status, "INVALID_INPUT");
+
+  assert.equal(buildRevenueDecisionPacketV1(input({
+    currentRange: { startDate: "2026-02-30", endDate: "2026-03-31" },
+    comparisonRange: { startDate: "2026-01-31", endDate: "2026-03-01" }
+  })).status, "INVALID_INPUT");
+});
+
 test("is deterministic, sorts evidence, freezes output, and does not mutate input", () => {
   const value = input();
   value.observations[0].evidenceRefs = ["woo:z", "woo:a"];
