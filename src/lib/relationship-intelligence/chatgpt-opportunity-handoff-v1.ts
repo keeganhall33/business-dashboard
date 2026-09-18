@@ -124,11 +124,11 @@ function evidenceRefs(value: unknown, label: string): readonly string[] {
   return Object.freeze([...new Set(value.map((item, index) => opaqueRef(item, `${label}[${index}]`)))].sort());
 }
 
-function validInstant(value: unknown, label: string): string | Date {
+function instantIso(value: unknown, label: string): string {
   if (!(typeof value === "string" || value instanceof Date)) throw new Error(`${label} must be a valid timestamp`);
   const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
   if (!Number.isFinite(timestamp)) throw new Error(`${label} must be a valid timestamp`);
-  return value;
+  return new Date(timestamp).toISOString();
 }
 
 function boundedRationale(value: unknown): string {
@@ -145,8 +145,8 @@ function normalizePlanningWindow(value: unknown): EvidenceBackedPlanningWindowV1
   exactKeys(value, PLANNING_KEYS, "planningWindow");
   const object = objectRecord(value, "planningWindow");
   return Object.freeze({
-    startAt: validInstant(object.startAt, "planningWindow.startAt"),
-    endAt: validInstant(object.endAt, "planningWindow.endAt"),
+    startAt: instantIso(object.startAt, "planningWindow.startAt"),
+    endAt: instantIso(object.endAt, "planningWindow.endAt"),
     rationale: boundedRationale(object.rationale),
     evidenceRefs: evidenceRefs(object.evidenceRefs, "planningWindow.evidenceRefs"),
   });
@@ -200,8 +200,8 @@ export function compileChatGptOpportunityHandoffV1(input: ChatGptOpportunityHand
   const handoffId = opaqueRef(input.handoffId, "handoffId");
   const interactionRef = opaqueRef(input.interactionRef, "interactionRef");
   const normalizedEvidenceRefs = evidenceRefs(input.evidenceRefs, "evidenceRefs");
-  validInstant(input.observedAt, "observedAt");
-  validInstant(input.evaluatedAt, "evaluatedAt");
+  const observedAt = instantIso(input.observedAt, "observedAt");
+  const evaluatedAt = instantIso(input.evaluatedAt, "evaluatedAt");
 
   if (!Number.isInteger(input.maximumSignalAgeDays) || input.maximumSignalAgeDays < 1 || input.maximumSignalAgeDays > MAX_SIGNAL_AGE_DAYS) {
     throw new Error(`maximumSignalAgeDays must be an integer between 1 and ${MAX_SIGNAL_AGE_DAYS}`);
@@ -212,7 +212,7 @@ export function compileChatGptOpportunityHandoffV1(input: ChatGptOpportunityHand
     sourceKind: "CHATGPT",
     sourceEventKey: `external-expert-handoff:${handoffId}`,
     sourceRef: interactionRef,
-    observedAt: input.observedAt,
+    observedAt,
     evidenceRefs: normalizedEvidenceRefs,
     truthState: input.truthState,
     signalType: input.signalType,
@@ -227,7 +227,7 @@ export function compileChatGptOpportunityHandoffV1(input: ChatGptOpportunityHand
 
   const intake = normalizeOpportunitySignalsV1({
     observations: [observation],
-    evaluatedAt: input.evaluatedAt,
+    evaluatedAt,
     maximumSignalAgeDays: input.maximumSignalAgeDays,
   });
   const decision = intake.decisions[0];
