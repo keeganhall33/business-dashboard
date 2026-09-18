@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { activateAgentTasks } from "@/lib/agents/automation";
 import { runAgentByKey } from "@/lib/agents/runAgentByKey";
 import { getTaskById, updateTaskApproval } from "@/lib/supabase/queries";
@@ -6,6 +7,9 @@ import { parseJsonBody } from "@/lib/validation/parse";
 import { approveTaskSchema } from "@/lib/validation/tasks";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     if (process.env.E2E_TEST === "1") {
       const { id } = await context.params;
