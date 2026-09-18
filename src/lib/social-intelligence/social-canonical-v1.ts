@@ -390,7 +390,7 @@ function compareMetric(key: SocialMetricKeyV1, current: CanonicalSocialMetricV1,
   const currentValue = current.value;
   const priorValue = prior?.value ?? null;
   const absoluteDelta = currentValue == null || priorValue == null ? null : currentValue - priorValue;
-  const percentageDelta = absoluteDelta == null || priorValue === 0 ? null : (absoluteDelta / priorValue) * 100;
+  const percentageDelta = currentValue == null || priorValue == null || priorValue === 0 ? null : ((currentValue - priorValue) / priorValue) * 100;
   const direction: SocialMetricDirectionV1 = absoluteDelta == null ? "UNKNOWN" : absoluteDelta > 0 ? "UP" : absoluteDelta < 0 ? "DOWN" : "FLAT";
   return freeze({
     key,
@@ -525,7 +525,7 @@ export function calculateSocialAudienceTrendV1(points: readonly SocialAudienceTr
   const currentValue = current?.value ?? null;
   const priorValue = prior?.value ?? null;
   const absoluteDelta = currentValue == null || priorValue == null ? null : currentValue - priorValue;
-  const percentageDelta = absoluteDelta == null || priorValue === 0 ? null : (absoluteDelta / priorValue) * 100;
+  const percentageDelta = currentValue == null || priorValue == null || priorValue === 0 ? null : ((currentValue - priorValue) / priorValue) * 100;
   const velocity = (a: typeof current, b: typeof prior): number | null => {
     if (!a || !b || a.value == null || b.value == null) return null;
     const days = (Date.parse(a.at) - Date.parse(b.at)) / 86_400_000;
