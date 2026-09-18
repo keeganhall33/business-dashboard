@@ -210,7 +210,10 @@ test("surfaces entity conflicts and preserves observed competitor context withou
 
 test("suppresses exact repeated observations but fails closed on conflicting versions of the same run", () => {
   const duplicateA = observed("duplicate-a");
-  const duplicateB = observed("duplicate-b");
+  const duplicateB = observed("duplicate-b", {
+    evidenceRefs: duplicateA.evidenceRefs,
+    competitorEntities: duplicateA.competitorEntities
+  });
   const conflictingRun = observed("conflict-b", {
     mentionState: "ABSENT",
     positionClass: undefined,
