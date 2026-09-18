@@ -36,7 +36,7 @@ function parseClaimPayload(payload: unknown): ParsedClaim {
 }
 
 function buildUnambiguousSubjectIndex(claims: ClaimVersionLite[]) {
-  // For a given normalized subject name, only allow linking if we can prove a single canonicalId.
+  // For a given normalized subject name, only allow linking when claim evidence proves exactly one canonical id.
   const map = new Map<string, { canonicalIds: Set<string>; anyRows: ClaimVersionLite[] }>();
   for (const row of claims) {
     const parsed = parseClaimPayload(row.payload_json);
@@ -48,6 +48,11 @@ function buildUnambiguousSubjectIndex(claims: ClaimVersionLite[]) {
     map.set(key, entry);
   }
   return map;
+}
+
+function provenCanonicalId(entry: { canonicalIds: Set<string> } | undefined): string | null {
+  if (!entry || entry.canonicalIds.size !== 1) return null;
+  return entry.canonicalIds.values().next().value ?? null;
 }
 
 export function linkOpportunityToGraph(params: {
@@ -129,13 +134,14 @@ export function linkOpportunityToGraph(params: {
   // 2) Canonical entity id (if opportunity already had it; v1 opportunity table does not, so nothing here).
   // Reserved for future expansion.
 
-  // 4) Exact normalized organization name → unambiguous claim subject.
+  // 4) Exact normalized organization name → claim subject with one proven canonical identity.
   if (orgKey) {
     const entry = subjectIndex.get(orgKey);
-    const canLink = entry && (entry.canonicalIds.size <= 1);
-    if (canLink) {
-      for (const row of entry!.anyRows) {
+    const canonicalId = provenCanonicalId(entry);
+    if (canonicalId && entry) {
+      for (const row of entry.anyRows) {
         const parsed = parseClaimPayload(row.payload_json);
+        if (parsed.subject.canonicalId !== canonicalId) continue;
         if (!parsed.predicate || !allowed.has(parsed.predicate)) continue;
         push({
           opportunity_id: params.opportunity.id,
@@ -145,20 +151,21 @@ export function linkOpportunityToGraph(params: {
           role: parsed.predicate === "operates_event_program" ? "CONTEXT_FOR" : "SUPPORTS",
           match_method: "exact_org_name",
           confidence: clamp01(0.75),
-          explanation: `Linked by exact normalized organization match to claim subject (${parsed.subject.canonicalName ?? "unknown"}).`,
-          metadata: { predicate: parsed.predicate, org_key: orgKey }
+          explanation: `Linked by exact normalized organization match to a claim subject with proven canonical identity (${parsed.subject.canonicalName ?? "unknown"}).`,
+          metadata: { predicate: parsed.predicate, org_key: orgKey, subject_canonical_id: canonicalId }
         });
       }
     }
   }
 
-  // 5) Constrained alias match: allow opportunity name to equal subject name only when unambiguous.
+  // 5) Constrained alias match: allow opportunity name to equal subject name only when one canonical identity is proven.
   if (!orgKey && nameKey) {
     const entry = subjectIndex.get(nameKey);
-    const canLink = entry && (entry.canonicalIds.size <= 1);
-    if (canLink) {
-      for (const row of entry!.anyRows) {
+    const canonicalId = provenCanonicalId(entry);
+    if (canonicalId && entry) {
+      for (const row of entry.anyRows) {
         const parsed = parseClaimPayload(row.payload_json);
+        if (parsed.subject.canonicalId !== canonicalId) continue;
         if (!parsed.predicate || !allowed.has(parsed.predicate)) continue;
         push({
           opportunity_id: params.opportunity.id,
@@ -168,8 +175,8 @@ export function linkOpportunityToGraph(params: {
           role: "CONTEXT_FOR",
           match_method: "alias_unambiguous",
           confidence: clamp01(0.6),
-          explanation: `Linked by unambiguous alias match between opportunity name and claim subject (${parsed.subject.canonicalName ?? "unknown"}).`,
-          metadata: { predicate: parsed.predicate, name_key: nameKey }
+          explanation: `Linked by unambiguous alias match between opportunity name and a claim subject with proven canonical identity (${parsed.subject.canonicalName ?? "unknown"}).`,
+          metadata: { predicate: parsed.predicate, name_key: nameKey, subject_canonical_id: canonicalId }
         });
       }
     }
@@ -177,4 +184,3 @@ export function linkOpportunityToGraph(params: {
 
   return links;
 }
-
