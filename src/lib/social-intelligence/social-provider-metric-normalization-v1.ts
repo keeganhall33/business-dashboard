@@ -40,6 +40,7 @@ export type SocialProviderMetricNormalizationInputV1 = {
   authorizationState: "AUTHORIZED";
   readOnly: true;
   providerRunComplete: boolean;
+  previousSuccessfulSyncAt?: string | null;
   retrievedAt: string;
   periodId: string;
   window: SocialHistoryWindowV1;
@@ -209,6 +210,12 @@ export function compileSocialProviderMetricNormalizationV1(
   const retrievedAt = requireIso(input.retrievedAt, "retrievedAt");
   const retrievedMs = Date.parse(retrievedAt);
   if (retrievedMs > nowMs) throw new Error("retrievedAt cannot be in the future");
+  const previousSuccessfulSyncAt = input.previousSuccessfulSyncAt
+    ? requireIso(input.previousSuccessfulSyncAt, "previousSuccessfulSyncAt")
+    : null;
+  if (previousSuccessfulSyncAt && Date.parse(previousSuccessfulSyncAt) > retrievedMs) {
+    throw new Error("previousSuccessfulSyncAt cannot be after retrievedAt");
+  }
 
   const periodStartAt = requireIso(input.periodStartAt, "periodStartAt");
   const periodEndAt = requireIso(input.periodEndAt, "periodEndAt");
@@ -328,6 +335,7 @@ export function compileSocialProviderMetricNormalizationV1(
 
   const metricCoverage = normalizedMappings.map((mapping) => mapping.canonicalMetricKey).sort((left, right) => left.localeCompare(right));
   const normalizedLimitations = unique(limitations);
+  const lastSuccessfulSyncAt = input.providerRunComplete ? retrievedAt : previousSuccessfulSyncAt;
 
   return freeze({
     contractVersion: "SocialProviderMetricNormalizationV1",
@@ -343,7 +351,7 @@ export function compileSocialProviderMetricNormalizationV1(
     canonicalPeriod: { periodId, window: input.window, startAt: periodStartAt, endAt: periodEndAt, metrics: canonicalMetrics },
     sourceCoverage: {
       requestedState: partial ? "CONNECTED_PARTIAL" : "CONNECTED_AND_INGESTING",
-      lastSuccessfulSyncAt: retrievedAt,
+      lastSuccessfulSyncAt,
       metricCoverage,
       limitations: normalizedLimitations
     },
