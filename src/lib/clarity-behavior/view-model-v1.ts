@@ -121,6 +121,12 @@ const COMMERCE_EVENT_ALIASES: Record<string, ClarityCommerceStageV1> = {
   "purchase": "PURCHASE",
 };
 
+interface ClarityFreshnessAssessmentV1 {
+  proven: boolean;
+  stale: boolean;
+  futureExtraction: boolean;
+}
+
 function optionalNonNegativeNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
@@ -136,29 +142,75 @@ function metric(current: number | null, prior: number | null): ClarityMetricV1 {
   return { current, prior, delta, deltaPercent };
 }
 
+function validCalendarDate(value: string | null | undefined): number | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const milliseconds = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(milliseconds)) return null;
+  return new Date(milliseconds).toISOString().slice(0, 10) === value ? milliseconds : null;
+}
+
+function validDateRange(range: ClarityDateRangeV1 | null | undefined): boolean {
+  if (!range) return false;
+  const start = validCalendarDate(range.startDate);
+  const end = validCalendarDate(range.endDate);
+  return start !== null && end !== null && start <= end;
+}
+
+function requestedRangesValid(input: ClarityBehaviorInputV1): boolean {
+  return validDateRange(input.requestedRange.current) && validDateRange(input.requestedRange.prior);
+}
+
 function rangeEquals(left: ClarityDateRangeV1 | null | undefined, right: ClarityDateRangeV1): boolean {
-  return left?.startDate === right.startDate && left?.endDate === right.endDate;
+  return validDateRange(left)
+    && validDateRange(right)
+    && left?.startDate === right.startDate
+    && left?.endDate === right.endDate;
 }
 
 function validIsoInstant(value: string | null | undefined): number | null {
   if (!value) return null;
+  const match = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(value);
+  if (!match || validCalendarDate(match[1]) === null) return null;
   const milliseconds = Date.parse(value);
   return Number.isFinite(milliseconds) ? milliseconds : null;
 }
 
-function isStale(input: ClarityBehaviorInputV1): boolean {
+function assessFreshness(input: ClarityBehaviorInputV1): ClarityFreshnessAssessmentV1 {
   const extractedAt = validIsoInstant(input.freshness?.extractedAt);
   const now = validIsoInstant(input.freshness?.now);
   const maxAgeHours = input.freshness?.maxAgeHours;
-  if (extractedAt === null || now === null || typeof maxAgeHours !== "number" || !Number.isFinite(maxAgeHours) || maxAgeHours < 0) {
-    return false;
+  if (
+    extractedAt === null
+    || now === null
+    || typeof maxAgeHours !== "number"
+    || !Number.isFinite(maxAgeHours)
+    || maxAgeHours <= 0
+  ) {
+    return { proven: false, stale: false, futureExtraction: false };
   }
-  return now - extractedAt > maxAgeHours * 60 * 60 * 1000;
+  if (extractedAt > now) {
+    return { proven: false, stale: false, futureExtraction: true };
+  }
+  return {
+    proven: true,
+    stale: now - extractedAt > maxAgeHours * 60 * 60 * 1000,
+    futureExtraction: false,
+  };
 }
 
 function observedRangesMatch(input: ClarityBehaviorInputV1): boolean {
-  return rangeEquals(input.observedRange?.current, input.requestedRange.current)
+  return requestedRangesValid(input)
+    && rangeEquals(input.observedRange?.current, input.requestedRange.current)
     && rangeEquals(input.observedRange?.prior, input.requestedRange.prior);
+}
+
+function completeThroughCoversRequestedRange(input: ClarityBehaviorInputV1): boolean {
+  const completeThrough = validCalendarDate(input.freshness?.completeThrough);
+  const requestedEnd = validCalendarDate(input.requestedRange.current.endDate);
+  const now = validIsoInstant(input.freshness?.now);
+  if (completeThrough === null || requestedEnd === null || now === null) return false;
+  const nowDate = validCalendarDate(new Date(now).toISOString().slice(0, 10));
+  return nowDate !== null && completeThrough >= requestedEnd && completeThrough <= nowDate;
 }
 
 function hasCompleteCoreMetrics(input: ClarityBehaviorInputV1): boolean {
@@ -178,13 +230,16 @@ function hasCompleteCoreMetrics(input: ClarityBehaviorInputV1): boolean {
 }
 
 function deriveState(input: ClarityBehaviorInputV1): ClarityBehaviorState {
+  const freshness = assessFreshness(input);
   if (input.sourceTruth === "CONFLICTED") return "CONFLICTED";
   if (input.sourceTruth === "UNAVAILABLE") return "UNAVAILABLE";
-  if (input.sourceTruth === "STALE" || isStale(input)) return "STALE";
+  if (input.sourceTruth === "STALE" || (freshness.proven && freshness.stale)) return "STALE";
   if (input.sourceTruth !== "COMPLETE") return "PARTIAL";
+  if (!requestedRangesValid(input)) return "PARTIAL";
   if (!observedRangesMatch(input)) return "PARTIAL";
   if (!hasCompleteCoreMetrics(input)) return "PARTIAL";
-  if (!input.freshness?.completeThrough || input.freshness.completeThrough < input.requestedRange.current.endDate) return "PARTIAL";
+  if (!freshness.proven) return "PARTIAL";
+  if (!completeThroughCoversRequestedRange(input)) return "PARTIAL";
   return "READY";
 }
 
@@ -346,13 +401,30 @@ export function buildClarityBehaviorViewModelV1(input: ClarityBehaviorInputV1): 
     optionalNonNegativeNumber(prior.activeTimeSeconds),
   );
   const state = deriveState(input);
+  const freshness = assessFreshness(input);
   const truthNotes: string[] = [];
+  const completeThrough = validCalendarDate(input.freshness?.completeThrough);
+  const requestedEnd = validCalendarDate(input.requestedRange.current.endDate);
+  const now = validIsoInstant(input.freshness?.now);
+  const nowDate = now === null ? null : validCalendarDate(new Date(now).toISOString().slice(0, 10));
 
-  if (!observedRangesMatch(input)) truthNotes.push("Observed Clarity windows do not exactly match the requested current/prior ranges.");
-  if (input.freshness?.completeThrough && input.freshness.completeThrough < input.requestedRange.current.endDate) {
-    truthNotes.push(`Clarity is complete only through ${input.freshness.completeThrough}; the requested range ends ${input.requestedRange.current.endDate}.`);
+  if (!requestedRangesValid(input)) {
+    truthNotes.push("Requested Clarity current/prior ranges must use valid YYYY-MM-DD dates with startDate on or before endDate.");
   }
-  if (isStale(input)) truthNotes.push("The Clarity extraction exceeds the configured freshness limit.");
+  if (!observedRangesMatch(input)) truthNotes.push("Observed Clarity windows are invalid or do not exactly match the requested current/prior ranges.");
+  if (!freshness.proven) {
+    truthNotes.push(freshness.futureExtraction
+      ? "The Clarity extraction timestamp is after the supplied reference time; freshness cannot be established."
+      : "Clarity freshness is unproven because extractedAt, now, or a positive finite maxAgeHours is missing or invalid.");
+  }
+  if (completeThrough === null) {
+    truthNotes.push("Clarity completeThrough is missing or is not a valid calendar date; period completeness is unproven.");
+  } else if (requestedEnd !== null && completeThrough < requestedEnd) {
+    truthNotes.push(`Clarity is complete only through ${input.freshness?.completeThrough}; the requested range ends ${input.requestedRange.current.endDate}.`);
+  } else if (nowDate !== null && completeThrough > nowDate) {
+    truthNotes.push("Clarity completeThrough is after the supplied reference date; future-dated coverage cannot establish completeness.");
+  }
+  if (freshness.proven && freshness.stale) truthNotes.push("The Clarity extraction exceeds the configured freshness limit.");
   if (!hasCompleteCoreMetrics(input)) truthNotes.push("One or more core Clarity metrics are missing or invalid; missing values remain unknown rather than becoming zero.");
   if (input.sourceTruth === "CONFLICTED") truthNotes.push("Clarity source evidence is conflicted; behavioral recommendations are suppressed.");
   if (input.sourceTruth === "UNAVAILABLE") truthNotes.push("Clarity source evidence is unavailable; other analytics sources may continue independently.");
