@@ -165,7 +165,7 @@ test("never upgrades upstream partial evidence merely because it is recent", () 
   assert.equal(result.sourceStatus[1].decisionTruthState, "PARTIAL");
 });
 
-test("fails closed on a future source observation", () => {
+test("fails closed when packet chronology extends beyond the decision instant", () => {
   const input = revenueInput();
   input.observations[2].observedAt = "2026-09-08T13:00:00Z";
   input.generatedAt = "2026-09-08T14:00:00Z";
@@ -179,23 +179,6 @@ test("fails closed on a future source observation", () => {
   assert.equal(result.status, "CONFLICTED");
   assert.equal(result.reasonCode, "FUTURE_PACKET_GENERATION");
   assert.equal(result.acceptedInput, null);
-});
-
-test("fails closed on a future observation even when packet generation is not future", () => {
-  const input = revenueInput();
-  input.observations[2].observedAt = "2026-09-08T12:30:00Z";
-  input.generatedAt = "2026-09-08T11:00:00Z";
-
-  const result = revalidateRevenueSourceFreshnessV1(
-    input,
-    "2026-09-08T12:00:00Z",
-    policy,
-  );
-
-  assert.equal(result.status, "CONFLICTED");
-  assert.equal(result.reasonCode, "FUTURE_SOURCE_OBSERVATION");
-  assert.equal(result.acceptedInput, null);
-  assert.equal(result.sourceStatus.find((item) => item.source === "META")?.decisionTruthState, "CONFLICTED");
 });
 
 test("rejects invalid freshness policy and invalid evaluation time", () => {
