@@ -207,15 +207,19 @@ test("stale and future source or current evidence require verification", () => {
 });
 
 test("tampered source authority or causal claims fail closed", () => {
-  const authority = reviewCommercialLearningApplicationV1(input(
-    recurringReview({ pricing_change_allowed: true })
-  ));
+  const authorityReview = {
+    ...recurringReview(),
+    pricing_change_allowed: true
+  } as unknown as RecurringDecisionLessonReviewV1;
+  const authority = reviewCommercialLearningApplicationV1(input(authorityReview));
   assert.equal(authority.state, "VERIFY");
   assert.ok(authority.reasonCodes.includes("SOURCE_AUTHORITY_INVARIANT_FAILED"));
 
-  const causal = reviewCommercialLearningApplicationV1(input(
-    { ...recurringReview(), causal_interpretation: "CAUSAL" as never }
-  ));
+  const causalReview = {
+    ...recurringReview(),
+    causal_interpretation: "CAUSAL"
+  } as unknown as RecurringDecisionLessonReviewV1;
+  const causal = reviewCommercialLearningApplicationV1(input(causalReview));
   assert.equal(causal.state, "VERIFY");
   assert.ok(causal.reasonCodes.includes("SOURCE_CAUSALITY_INVARIANT_FAILED"));
 });
