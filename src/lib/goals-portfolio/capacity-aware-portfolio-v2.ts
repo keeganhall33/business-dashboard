@@ -219,7 +219,7 @@ function displacementNeeded(
     displaced.push(selected.id);
     if (assessFit(simulated, demand).state === "FIT") return displaced;
   }
-  return displaced;
+  return [];
 }
 
 function defaultOwner(opportunity: CapacityAwareOpportunityV2): PortfolioExecutionOwnerV2 {
@@ -342,7 +342,9 @@ export function buildCapacityAwarePortfolioV2(input: CapacityAwarePortfolioInput
       rationale:
         directFit.state === "UNKNOWN"
           ? "NOW is withheld because required capacity or demand is UNKNOWN; availability is not inferred."
-          : "NOW is withheld because the known capacity envelope would be exceeded; displacement is explicit."
+          : displacement.length > 0
+            ? "NOW is withheld because the known capacity envelope would be exceeded; the listed displacement is the smallest tested plan that makes the candidate feasible."
+            : "NOW is withheld because the known capacity envelope remains insufficient even after releasing all currently selected NOW capacity; no feasible displacement plan exists."
     });
   }
 
