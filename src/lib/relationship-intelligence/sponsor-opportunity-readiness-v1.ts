@@ -305,6 +305,14 @@ function planningStatus(
   }
 }
 
+function copySponsorField<T>(field: Readonly<{ state: string; value: T | null; evidenceRefs: readonly string[] }>) {
+  return {
+    state: field.state,
+    value: field.value,
+    evidenceRefs: [...field.evidenceRefs]
+  };
+}
+
 function buildDecision(
   access: SponsorAccessBriefV1,
   planning: EarlyPlanningDecisionV1 | null,
@@ -325,18 +333,22 @@ function buildDecision(
     ...(role?.evidenceRefs ?? [])
   ]);
 
+  const idealOutreachDateRange = planning?.idealOutreachDateRange
+    ? { ...planning.idealOutreachDateRange }
+    : null;
+
   return freezeDeep({
     candidateId: access.candidateId,
     status,
     canonicalOrganizationRef: access.canonicalOrganizationRef,
     canonicalPersonRef: access.canonicalPersonRef,
-    ecosystemRole: access.ecosystemRole,
-    decisionFunction: access.decisionFunction,
-    authorityClass: access.authorityClass,
+    ecosystemRole: copySponsorField(access.ecosystemRole) as SponsorAccessBriefV1["ecosystemRole"],
+    decisionFunction: copySponsorField(access.decisionFunction) as SponsorAccessBriefV1["decisionFunction"],
+    authorityClass: copySponsorField(access.authorityClass) as SponsorAccessBriefV1["authorityClass"],
     accessStatus: access.status,
     planningDisposition: planning?.disposition ?? null,
     roleDisposition: role?.disposition ?? null,
-    idealOutreachDateRange: planning?.idealOutreachDateRange ?? null,
+    idealOutreachDateRange,
     timingRationale: planning?.whyThisWindow ?? null,
     nextInternalAction: nextInternalAction(status),
     evidenceRefs,
