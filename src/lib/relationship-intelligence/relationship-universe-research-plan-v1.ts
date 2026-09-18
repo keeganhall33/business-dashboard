@@ -109,7 +109,7 @@ const EVIDENCE_NEED: Readonly<Record<RelationshipUniverseCoverageDimensionV1, Re
   CURRENT_SIGNAL: "CURRENT_MATERIAL_SIGNAL"
 });
 
-const SOURCE_CLASSES: Readonly<Record<RelationshipUniverseCoverageDimensionV1, readonly RelationshipUniverseResearchSourceClassV1[]>> = Object.freeze({
+const SOURCE_CLASSES = Object.freeze({
   DECISION_FUNCTION: Object.freeze(["OFFICIAL_ORGANIZATION_SOURCE", "AUTHORIZED_FIRST_PARTY"]),
   DECISION_AUTHORITY: Object.freeze(["AUTHORIZED_FIRST_PARTY", "OFFICIAL_ORGANIZATION_SOURCE"]),
   SPONSOR_ECOSYSTEM: Object.freeze(["OFFICIAL_ORGANIZATION_SOURCE", "PUBLIC_PRIMARY_SOURCE", "AUTHORIZED_FIRST_PARTY"]),
@@ -119,7 +119,7 @@ const SOURCE_CLASSES: Readonly<Record<RelationshipUniverseCoverageDimensionV1, r
   RELATIONSHIP_HISTORY: Object.freeze(["CANONICAL_RELATIONSHIP_GRAPH", "AUTHORIZED_FIRST_PARTY"]),
   CURRENT_ROLE: Object.freeze(["OFFICIAL_ORGANIZATION_SOURCE", "PUBLIC_PRIMARY_SOURCE", "AUTHORIZED_FIRST_PARTY"]),
   CURRENT_SIGNAL: Object.freeze(["PUBLIC_PRIMARY_SOURCE", "OFFICIAL_ORGANIZATION_SOURCE", "AUTHORIZED_FIRST_PARTY"])
-});
+}) as Readonly<Record<RelationshipUniverseCoverageDimensionV1, readonly RelationshipUniverseResearchSourceClassV1[]>>;
 
 function freezeDeep<T>(value: T): Readonly<T> {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
