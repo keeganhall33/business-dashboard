@@ -1,4 +1,5 @@
 import { ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { runAvery } from "@/lib/agents/avery";
 import { runLyra } from "@/lib/agents/lyra";
 import { runNoah } from "@/lib/agents/noah";
@@ -17,7 +18,10 @@ const runners: Record<AgentKey, () => Promise<AgentRunResult>> = {
   noah: runNoah
 };
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   const outputs: Array<{
     agentKey: AgentKey;
     runId: string;
