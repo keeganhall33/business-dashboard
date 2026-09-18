@@ -119,7 +119,7 @@ test("withholds forged ready handoffs whose qualification or truth state cannot 
     const result = project(forged);
 
     assert.equal(result.disposition, "VERIFY_REQUIRED");
-    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_REQUIRES_VERIFICATION"]);
     assert.equal(result.observation, null);
   }
 });
@@ -150,7 +150,7 @@ test("withholds forged ready handoffs with conflicted field evidence or no canon
   for (const forged of [conflictedField, noAnchor]) {
     const result = project(forged);
     assert.equal(result.disposition, "VERIFY_REQUIRED");
-    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_REQUIRES_VERIFICATION"]);
     assert.equal(result.observation, null);
   }
 });
@@ -167,7 +167,7 @@ test("requires a non-empty exact existing opportunity ref for link dispositions"
     const result = project(forged);
 
     assert.equal(result.disposition, "VERIFY_REQUIRED");
-    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_REQUIRES_VERIFICATION"]);
     assert.equal(result.observation, null);
   }
 });
@@ -187,7 +187,7 @@ test("requires emission disposition to agree with canonical match policy", () =>
   for (const forged of [forgedReady, forgedLink]) {
     const result = project(forged);
     assert.equal(result.disposition, "VERIFY_REQUIRED");
-    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_REQUIRES_VERIFICATION"]);
     assert.equal(result.observation, null);
   }
 });
