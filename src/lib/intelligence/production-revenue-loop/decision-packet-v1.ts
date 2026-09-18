@@ -79,7 +79,10 @@ const TRUTH_STATES: readonly RevenueTruthStateV1[] = ["CURRENT", "PARTIAL", "STA
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function dateValue(value: string): number {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? Date.parse(`${value}T00:00:00.000Z`) : Number.NaN;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return Number.NaN;
+  const milliseconds = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(milliseconds)) return Number.NaN;
+  return new Date(milliseconds).toISOString().slice(0, 10) === value ? milliseconds : Number.NaN;
 }
 
 function validRange(range: { startDate: string; endDate: string }): boolean {
@@ -96,16 +99,19 @@ function validMetrics(metrics: RevenueMetricsV1): boolean {
   return Boolean(metrics) && Object.values(metrics).every(numberOrNull);
 }
 
-function validObservation(observation: RevenueSourceObservationV1): boolean {
+function validObservation(observation: RevenueSourceObservationV1, generatedAtMs: number): boolean {
+  const observedAtMs = Date.parse(observation?.observedAt ?? "");
   return Boolean(
     observation &&
     SOURCES.includes(observation.source) &&
     TRUTH_STATES.includes(observation.truthState) &&
-    Number.isFinite(Date.parse(observation.observedAt)) &&
+    Number.isFinite(observedAtMs) &&
+    observedAtMs <= generatedAtMs &&
     validMetrics(observation.current) &&
     validMetrics(observation.previous) &&
     Array.isArray(observation.evidenceRefs) &&
     observation.evidenceRefs.length <= MAX_EVIDENCE_REFS_PER_SOURCE &&
+    (observation.truthState !== "CURRENT" || observation.evidenceRefs.length > 0) &&
     observation.evidenceRefs.every((ref) => typeof ref === "string" && ref.trim().length > 0 && ref.length <= 200)
   );
 }
@@ -181,16 +187,17 @@ function invalid(input: RevenueDecisionPacketInputV1): RevenueDecisionPacketV1 {
 
 export function buildRevenueDecisionPacketV1(input: RevenueDecisionPacketInputV1): RevenueDecisionPacketV1 {
   const sourceSet = new Set(input.observations.map((item) => item.source));
+  const generatedAtMs = Date.parse(input.generatedAt);
   const adjacent = dateValue(input.comparisonRange.endDate) + DAY_MS === dateValue(input.currentRange.startDate);
   if (
-    !Number.isFinite(Date.parse(input.generatedAt)) ||
+    !Number.isFinite(generatedAtMs) ||
     !validRange(input.currentRange) ||
     !validRange(input.comparisonRange) ||
     !adjacent ||
     !Array.isArray(input.observations) ||
     input.observations.length > SOURCES.length ||
     sourceSet.size !== input.observations.length ||
-    input.observations.some((item) => !validObservation(item))
+    input.observations.some((item) => !validObservation(item, generatedAtMs))
   ) return invalid(input);
 
   const bySource = new Map(input.observations.map((item) => [item.source, item]));
