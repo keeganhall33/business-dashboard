@@ -1,5 +1,6 @@
 import { activateAgentTasks } from "@/lib/agents/automation";
 import { notFound, ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import {
   createAgentMessage,
   createAgentUpdate,
@@ -11,6 +12,9 @@ import { parseJsonBody } from "@/lib/validation/parse";
 import { AgentPlanPayload, writeAgentOutputs } from "@/lib/agents/shared";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { id } = await context.params;
     const plan = await getAgentPlanById(id);
