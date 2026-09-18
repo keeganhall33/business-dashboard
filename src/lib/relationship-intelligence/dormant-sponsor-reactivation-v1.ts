@@ -113,6 +113,7 @@ const TRUTH_STATES = new Set<DormantTruthStateV1>(["KNOWN", "PARTIAL", "UNKNOWN"
 const LIMITATIONS = Object.freeze([
   "Historical sponsorship discussion is evidence of prior context, not proof that sponsor interest, budget, willingness, or relationship intent remains current.",
   "Current sponsor readiness is reused only through explicit evidence-backed mapping; matching names or organizations are never used to merge separate opportunities speculatively.",
+  "A current decision maker may differ from the historical contact when the evidence-backed link is organization- or opportunity-based; buyer turnover never becomes a relationship claim by itself.",
   "READY_FOR_INTERNAL_REACTIVATION_PREP authorizes internal preparation only. It does not send outreach, discover contact details, mutate CRM truth, or establish a current commitment."
 ] as const);
 
@@ -185,7 +186,10 @@ function uniqueIndex<T>(values: readonly T[], key: (value: T) => string, label: 
   return result;
 }
 
-function mappingIndex(mappings: readonly DormantSponsorMappingV1[], knownDormantIds: ReadonlySet<string>): ReadonlyMap<string, DormantSponsorMappingV1> {
+function mappingIndex(
+  mappings: readonly DormantSponsorMappingV1[],
+  knownDormantIds: ReadonlySet<string>
+): ReadonlyMap<string, DormantSponsorMappingV1> {
   if (!Array.isArray(mappings)) throw new Error("mappings must be an array");
   if (mappings.length > MAX_MAPPINGS) throw new Error(`mappings exceeds ${MAX_MAPPINGS}`);
   const result = new Map<string, DormantSponsorMappingV1>();
@@ -243,20 +247,13 @@ function nextInternalAction(disposition: DormantSponsorReactivationDispositionV1
 
 function sponsorDisposition(status: SponsorOpportunityReadinessDecisionV1["status"]): DormantSponsorReactivationDispositionV1 {
   switch (status) {
-    case "READY_TO_PREPARE":
-      return "READY_FOR_INTERNAL_REACTIVATION_PREP";
-    case "PLAN_AHEAD":
-      return "PLAN_AHEAD";
-    case "ACCESS_BLOCKED":
-      return "ACCESS_BLOCKED";
-    case "MISSED_WINDOW":
-      return "MISSED_WINDOW";
-    case "RESEARCH_REQUIRED":
-      return "RESEARCH_REQUIRED";
-    case "VERIFY_REQUIRED":
-      return "VERIFY_REQUIRED";
-    case "SUPPRESS":
-      return "SUPPRESS";
+    case "READY_TO_PREPARE": return "READY_FOR_INTERNAL_REACTIVATION_PREP";
+    case "PLAN_AHEAD": return "PLAN_AHEAD";
+    case "ACCESS_BLOCKED": return "ACCESS_BLOCKED";
+    case "MISSED_WINDOW": return "MISSED_WINDOW";
+    case "RESEARCH_REQUIRED": return "RESEARCH_REQUIRED";
+    case "VERIFY_REQUIRED": return "VERIFY_REQUIRED";
+    case "SUPPRESS": return "SUPPRESS";
   }
 }
 
@@ -278,11 +275,6 @@ function validateLinkBasis(
     reasons.add("DORMANT_AND_CURRENT_SPONSOR_ORGANIZATIONS_DISAGREE");
     return "VERIFY_REQUIRED";
   }
-  if (dormant.canonicalPersonRef && sponsor.canonicalPersonRef && dormant.canonicalPersonRef !== sponsor.canonicalPersonRef) {
-    gaps.add("CANONICAL_PERSON_MISMATCH");
-    reasons.add("DORMANT_AND_CURRENT_SPONSOR_PEOPLE_DISAGREE");
-    return "VERIFY_REQUIRED";
-  }
 
   if (mapping.linkBasis === "SAME_CANONICAL_ORGANIZATION") {
     if (!dormant.canonicalOrganizationRef || !sponsor.canonicalOrganizationRef) {
@@ -294,6 +286,9 @@ function validateLinkBasis(
       gaps.add("CANONICAL_ORGANIZATION_MISMATCH");
       reasons.add("ORGANIZATION_LINK_BASIS_DOES_NOT_MATCH");
       return "VERIFY_REQUIRED";
+    }
+    if (dormant.canonicalPersonRef && sponsor.canonicalPersonRef && dormant.canonicalPersonRef !== sponsor.canonicalPersonRef) {
+      reasons.add("CURRENT_DECISION_MAKER_DIFFERS_FROM_HISTORICAL_CONTACT");
     }
     reasons.add("EXPLICIT_MAPPING_CONFIRMED_BY_SAME_CANONICAL_ORGANIZATION");
     return null;
@@ -323,6 +318,9 @@ function validateLinkBasis(
     gaps.add("CURRENT_SPONSOR_CANONICAL_ORGANIZATION_REQUIRED");
     reasons.add("OPPORTUNITY_TO_SPONSOR_LINK_LACKS_CURRENT_SPONSOR_ORGANIZATION");
     return "VERIFY_REQUIRED";
+  }
+  if (dormant.canonicalPersonRef && sponsor.canonicalPersonRef && dormant.canonicalPersonRef !== sponsor.canonicalPersonRef) {
+    reasons.add("CURRENT_DECISION_MAKER_DIFFERS_FROM_HISTORICAL_CONTACT");
   }
   reasons.add("EXPLICIT_EVIDENCED_OPPORTUNITY_TO_SPONSOR_MAPPING_USED");
   return null;
@@ -406,7 +404,6 @@ function compileDecision(
     return baseDecision(candidate, handoff, "RESEARCH_REQUIRED", null, null, [...gaps], [...reasons]);
   }
 
-  for (const ref of mapping.evidenceRefs) reasons.add(`MAPPING_EVIDENCE:${ref}`);
   const truthDisposition = mappingTruthDisposition(mapping.truthState);
   if (truthDisposition) {
     gaps.add(`MAPPING_${mapping.truthState}`);
