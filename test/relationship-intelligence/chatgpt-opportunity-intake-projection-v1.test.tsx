@@ -100,6 +100,98 @@ test("suppresses watch-only handoffs instead of promoting them", () => {
   assert.equal(result.observation, null);
 });
 
+test("withholds forged ready handoffs whose qualification or truth state cannot support emission", () => {
+  const compiled = handoff();
+  const payloadPatches = [
+    { qualification: "CANDIDATE" },
+    { qualification: "WATCH" },
+    { truthState: "STALE" },
+    { truthState: "PARTIAL" },
+    { truthState: "CONFLICTED" }
+  ] as const;
+
+  for (const payloadPatch of payloadPatches) {
+    const forged = {
+      ...compiled,
+      disposition: "READY_FOR_CANONICAL_UPSERT",
+      payload: { ...compiled.payload, ...payloadPatch }
+    } as unknown as typeof compiled;
+    const result = project(forged);
+
+    assert.equal(result.disposition, "VERIFY_REQUIRED");
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.equal(result.observation, null);
+  }
+});
+
+test("withholds forged ready handoffs with conflicted field evidence or no canonical entity anchor", () => {
+  const compiled = handoff();
+  const conflictedField = {
+    ...compiled,
+    disposition: "READY_FOR_CANONICAL_UPSERT",
+    payload: {
+      ...compiled.payload,
+      summary: compiled.payload.summary == null
+        ? null
+        : { ...compiled.payload.summary, state: "CONFLICTED" as const }
+    }
+  } as unknown as typeof compiled;
+  const noAnchor = {
+    ...compiled,
+    disposition: "READY_FOR_CANONICAL_UPSERT",
+    payload: {
+      ...compiled.payload,
+      organizationRefs: [],
+      personRefs: [],
+      existingOpportunityRef: null
+    }
+  } as unknown as typeof compiled;
+
+  for (const forged of [conflictedField, noAnchor]) {
+    const result = project(forged);
+    assert.equal(result.disposition, "VERIFY_REQUIRED");
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.equal(result.observation, null);
+  }
+});
+
+test("requires a non-empty exact existing opportunity ref for link dispositions", () => {
+  const compiled = handoff({ existingOpportunityRef: "opportunity:arena-club", organizationRefs: [] });
+
+  for (const existingOpportunityRef of [null, "   "] as const) {
+    const forged = {
+      ...compiled,
+      disposition: "LINK_TO_EXISTING",
+      payload: { ...compiled.payload, existingOpportunityRef }
+    } as unknown as typeof compiled;
+    const result = project(forged);
+
+    assert.equal(result.disposition, "VERIFY_REQUIRED");
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.equal(result.observation, null);
+  }
+});
+
+test("requires emission disposition to agree with canonical match policy", () => {
+  const ready = handoff();
+  const linked = handoff({ existingOpportunityRef: "opportunity:arena-club", organizationRefs: [] });
+  const forgedReady = {
+    ...ready,
+    canonicalMatchPolicy: "EXPLICIT_EXISTING_REF_ONLY"
+  } as unknown as typeof ready;
+  const forgedLink = {
+    ...linked,
+    canonicalMatchPolicy: "SOURCE_IDENTITY_ONLY"
+  } as unknown as typeof linked;
+
+  for (const forged of [forgedReady, forgedLink]) {
+    const result = project(forged);
+    assert.equal(result.disposition, "VERIFY_REQUIRED");
+    assert.deepEqual(result.reasonCodes, ["HANDOFF_SEMANTICS_INCONSISTENT"]);
+    assert.equal(result.observation, null);
+  }
+});
+
 test("requires exact unambiguous canonical entity anchors", () => {
   const organizations = project(handoff({ organizationRefs: ["org:a", "org:b"] }));
   assert.equal(organizations.disposition, "VERIFY_REQUIRED");
