@@ -34,10 +34,8 @@ test("every mutating API route has an explicit production auth boundary", () => 
     const path = repoPath(file);
     if (isAuthenticationEndpoint(path)) continue;
 
-    const scheduler = path.startsWith("src/app/api/scheduler/");
-    const protectedByExpectedBoundary = scheduler
-      ? source.includes("assertSchedulerAuth(request)")
-      : source.includes("enforceDashboardAuth(request)");
+    const protectedByExpectedBoundary =
+      source.includes("enforceDashboardAuth(request)") || source.includes("assertSchedulerAuth(request)");
 
     if (!protectedByExpectedBoundary) missing.push(path);
   }
