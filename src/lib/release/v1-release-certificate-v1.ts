@@ -61,7 +61,8 @@ export type V1ReleaseBlockerCodeV1 =
   | "FINAL_ACCEPTANCE_REJECTED"
   | "FINAL_ACCEPTANCE_INVALID_TIMESTAMP"
   | "FINAL_ACCEPTANCE_FUTURE_EVIDENCE"
-  | "FINAL_ACCEPTANCE_MISSING_PROVENANCE";
+  | "FINAL_ACCEPTANCE_MISSING_PROVENANCE"
+  | "FINAL_ACCEPTANCE_UNSAFE_PROVENANCE";
 
 export type V1ReleaseBlockerV1 = {
   code: V1ReleaseBlockerCodeV1;
@@ -123,8 +124,13 @@ function cleanEvidenceRefs(refs: readonly string[] | undefined): string[] {
   return [...new Set(refs.map((ref) => ref.trim()).filter(Boolean))].sort();
 }
 
-function hasUnsafeEvidenceRef(refs: readonly string[]): boolean {
-  return refs.some((ref) => UNSAFE_EVIDENCE_REF.test(ref));
+function sanitizedEvidenceRefs(refs: readonly string[] | undefined): {
+  refs: string[];
+  unsafe: boolean;
+} {
+  const cleaned = cleanEvidenceRefs(refs);
+  const unsafe = cleaned.some((ref) => UNSAFE_EVIDENCE_REF.test(ref));
+  return { refs: unsafe ? [] : cleaned, unsafe };
 }
 
 function blocker(
@@ -232,20 +238,33 @@ export function compileV1ReleaseCertificateV1(
     }
 
     if (evidence.length > 1) {
-      const refs = cleanEvidenceRefs(evidence.flatMap((entry) => entry.evidenceRefs));
+      const mergedRefs = sanitizedEvidenceRefs(evidence.flatMap((entry) => entry.evidenceRefs));
+      const actionRequirement = evidence.some((entry) => entry.actionRequirement === "KEEGAN")
+        ? "KEEGAN"
+        : evidence.every((entry) => entry.actionRequirement === "NONE")
+          ? "NONE"
+          : "UNKNOWN";
+
       blockers.push(
         blocker(
           "DUPLICATE_GATE",
           gateId,
           `${gateId} has multiple evidence records. The certificate refuses to choose a winner.`,
-          refs,
-          evidence.some((entry) => entry.actionRequirement === "KEEGAN")
-            ? "KEEGAN"
-            : evidence.every((entry) => entry.actionRequirement === "NONE")
-              ? "NONE"
-              : "UNKNOWN"
+          mergedRefs.refs,
+          actionRequirement
         )
       );
+      if (mergedRefs.unsafe) {
+        blockers.push(
+          blocker(
+            "GATE_UNSAFE_PROVENANCE",
+            gateId,
+            `${gateId} evidence references contain secret/reference material that must not enter a release certificate.`,
+            [],
+            actionRequirement
+          )
+        );
+      }
       gateResults.push({
         gateId,
         status: "BLOCKING",
@@ -253,14 +272,15 @@ export function compileV1ReleaseCertificateV1(
         freshness: "UNKNOWN",
         releaseSha: null,
         observedAt: null,
-        evidenceRefs: refs,
-        actionRequirement: "UNKNOWN"
+        evidenceRefs: mergedRefs.refs,
+        actionRequirement
       });
       continue;
     }
 
     const gate = evidence[0];
-    const refs = cleanEvidenceRefs(gate.evidenceRefs);
+    const sanitizedRefs = sanitizedEvidenceRefs(gate.evidenceRefs);
+    const refs = sanitizedRefs.refs;
     const gateTimestampMs = parsedTimestamp(gate.observedAt);
     let gateBlocking = false;
 
@@ -327,7 +347,7 @@ export function compileV1ReleaseCertificateV1(
       gateBlocking = true;
     }
 
-    if (gate.state === "PASS" && refs.length === 0) {
+    if (gate.state === "PASS" && refs.length === 0 && !sanitizedRefs.unsafe) {
       blockers.push(
         blocker(
           "GATE_MISSING_PROVENANCE",
@@ -340,7 +360,7 @@ export function compileV1ReleaseCertificateV1(
       gateBlocking = true;
     }
 
-    if (hasUnsafeEvidenceRef(refs)) {
+    if (sanitizedRefs.unsafe) {
       blockers.push(
         blocker(
           "GATE_UNSAFE_PROVENANCE",
@@ -371,7 +391,7 @@ export function compileV1ReleaseCertificateV1(
     actionRequirementFromBlockers(blockers);
 
   if (mechanicalState === "READY") {
-    const acceptanceRefs = cleanEvidenceRefs(input.finalAcceptance.evidenceRefs);
+    const acceptanceRefs = sanitizedEvidenceRefs(input.finalAcceptance.evidenceRefs);
     const acceptanceAtMs = parsedTimestamp(input.finalAcceptance.observedAt);
 
     if (input.finalAcceptance.state === "ACCEPTED") {
@@ -383,7 +403,7 @@ export function compileV1ReleaseCertificateV1(
             "FINAL_ACCEPTANCE_INVALID_TIMESTAMP",
             null,
             "Final Keegan acceptance requires a valid observedAt timestamp.",
-            acceptanceRefs,
+            acceptanceRefs.refs,
             "KEEGAN"
           )
         );
@@ -394,19 +414,32 @@ export function compileV1ReleaseCertificateV1(
             "FINAL_ACCEPTANCE_FUTURE_EVIDENCE",
             null,
             "Final Keegan acceptance cannot be dated after certificate generation.",
-            acceptanceRefs,
+            acceptanceRefs.refs,
             "KEEGAN"
           )
         );
         acceptanceInvalid = true;
       }
 
-      if (acceptanceRefs.length === 0 || hasUnsafeEvidenceRef(acceptanceRefs)) {
+      if (acceptanceRefs.refs.length === 0 && !acceptanceRefs.unsafe) {
         blockers.push(
           blocker(
             "FINAL_ACCEPTANCE_MISSING_PROVENANCE",
             null,
-            "Final Keegan acceptance must have a safe evidence reference.",
+            "Final Keegan acceptance must have an evidence reference.",
+            [],
+            "KEEGAN"
+          )
+        );
+        acceptanceInvalid = true;
+      }
+
+      if (acceptanceRefs.unsafe) {
+        blockers.push(
+          blocker(
+            "FINAL_ACCEPTANCE_UNSAFE_PROVENANCE",
+            null,
+            "Final Keegan acceptance evidence contains secret/reference material that must not enter a release certificate.",
             [],
             "KEEGAN"
           )
@@ -427,7 +460,7 @@ export function compileV1ReleaseCertificateV1(
           "FINAL_ACCEPTANCE_REJECTED",
           null,
           "Final Keegan acceptance is explicitly REJECTED; release remains blocked until findings are resolved and acceptance is repeated.",
-          acceptanceRefs,
+          acceptanceRefs.refs,
           "KEEGAN"
         )
       );
