@@ -125,5 +125,7 @@ test("route loads the exact editable opportunity without waiting on the full das
   assert.match(source, /editableOpportunity=\{editable\}/);
   assert.match(source, /catch \{\s*notFound\(\)/);
   assert.match(source, /force-dynamic/);
+  assert.match(source, /evidence: "KNOWN"/);
+  assert.doesNotMatch(source, /KEEGAN_CONFIRMED|DASHBOARD_MANUAL|INFERRED/);
   assert.doesNotMatch(source, /getDashboardOverview|buildExecutiveOpportunityPortfolioV1|EXECUTIVE_HOME_FIXTURE_V1|Math\.random/);
 });

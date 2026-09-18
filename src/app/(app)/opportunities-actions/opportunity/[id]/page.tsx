@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { ExecutiveOpportunityDetailV1 } from "@/components/opportunity-intelligence/ExecutiveOpportunityDetailV1";
 import type { EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
-import type { ExecutiveCommandCenterOpportunityV1, ExecutiveCommandCenterTruthStateV1 } from "@/lib/executive-home/fixtures";
+import type { ExecutiveCommandCenterOpportunityV1 } from "@/lib/executive-home/fixtures";
 import { getOpportunityById } from "@/lib/supabase/queries";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +30,6 @@ export default async function ExecutiveOpportunityDetailPage({ params }: PagePro
   }
 
   const name = text(row.name) ?? "Untitled opportunity";
-  const source = text(row.source);
-  const evidence: ExecutiveCommandCenterTruthStateV1 = /keegan[_ -]?confirmed|user[_ -]?confirmed|dashboard[_ -]?manual/i.test(source ?? "") ? "KNOWN" : "INFERRED";
   const valueEstimate = number(row.value_estimate);
   const prestigeScore = number(row.prestige_score);
   const nextStep = text(row.next_step);
@@ -54,7 +52,7 @@ export default async function ExecutiveOpportunityDetailPage({ params }: PagePro
     fit: prestigeScore == null ? "UNKNOWN" : `${prestigeScore} / 100`,
     timing: editable.nextStepDueAt?.slice(0, 10) ?? "UNKNOWN",
     effort: nextStep ? "Next move recorded" : "UNKNOWN",
-    evidence,
+    evidence: "KNOWN",
     next_move: nextStep ?? "Add the next move for this opportunity.",
     detail_href: `/opportunities-actions/opportunity/${encodeURIComponent(editable.id)}`
   };

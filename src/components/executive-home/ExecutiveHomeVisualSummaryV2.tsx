@@ -144,7 +144,7 @@ export function ExecutiveHomeVisualSummaryV2({
 
       {model.biggestOpportunities.length || model.whatChanged.length ? <div className="mt-5 grid gap-4 lg:grid-cols-2">
         {model.biggestOpportunities.length ? <DecisionPanel title="Best opportunities" href="/opportunities-actions">
-          {model.biggestOpportunities.length ? model.biggestOpportunities.map((opportunity) => <a key={opportunity.id} href={opportunity.detail_href} className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-400"><div><p className="text-sm font-semibold text-slate-950">{opportunity.title}</p><p className="mt-1 text-xs leading-5 text-slate-600">{opportunity.next_move}</p></div><TruthChip state={opportunity.evidence} /></a>) : <CompactEmpty>No supported opportunity is ready.</CompactEmpty>}
+          {model.biggestOpportunities.length ? model.biggestOpportunities.map((opportunity) => <a key={opportunity.id} href={opportunity.detail_href} className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-400"><p className="text-sm font-semibold text-slate-950">{opportunity.title}</p><p className="mt-1 text-xs leading-5 text-slate-600">{opportunity.next_move}</p></a>) : <CompactEmpty>No supported opportunity is ready.</CompactEmpty>}
         </DecisionPanel> : null}
         {model.whatChanged.length ? <DecisionPanel title="What changed" href="/data-evidence">
           {model.whatChanged.length ? model.whatChanged.map((item) => <article key={item.id} className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4"><div><p className="text-sm font-semibold text-slate-950">{item.label}</p><p className="mt-1 text-xs leading-5 text-slate-600">{item.why_it_matters}</p></div><TruthChip state={item.truth_state} /></article>) : <CompactEmpty>No material change is currently verified.</CompactEmpty>}
@@ -155,7 +155,7 @@ export function ExecutiveHomeVisualSummaryV2({
 }
 
 function BusinessPulseCard({ metric }: { metric: ExecutiveBusinessPulseMetricV1 }) {
-  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-slate-600">{metric.label}</p><TruthLabel state={metric.truth_state} /></div><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{metric.value}</p><p className="mt-1 min-h-8 text-xs leading-4 text-slate-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
+  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-semibold text-slate-600">{metric.label}</p><p className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{metric.value}</p><p className="mt-1 min-h-8 text-xs leading-4 text-slate-500">{metric.comparison}</p><MiniTrend values={metric.trend} label={`${metric.label} trend`} /></article>;
 }
 
 function MiniTrend({ values, label }: { values: Array<number | null>; label: string }) {
@@ -173,11 +173,6 @@ function DirectionStep({ label, value }: { label: string; value: string }) {
 
 function DecisionPanel({ title, href, children }: { title: string; href: string; children: ReactNode }) {
   return <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><a href={href} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:underline">View all</a></div><div className="space-y-2">{children}</div></section>;
-}
-
-function TruthLabel({ state }: { state: ExecutiveCommandCenterTruthStateV1 }) {
-  const label = state === "KNOWN" ? "Verified" : state === "INFERRED" ? "Partial data" : state === "STALE" ? "Needs refresh" : state === "CONFLICTED" ? "Check data" : "Unavailable";
-  return <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${TRUTH_TONE[state]}`}>{label}</span>;
 }
 
 function PlainState({ state }: { state: ExecutiveIntelligenceCardV1["state"] }) {

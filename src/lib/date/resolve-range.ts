@@ -24,11 +24,12 @@ export function resolveRange(rangeParam: string | null, startParam: string | nul
 
   const normalized = (rangeParam ?? "").toLowerCase();
   const pacificToday = formatPacificIsoDate(now);
+  const latestCompletedPacificDay = addDaysIso(pacificToday, -1);
 
   if (normalized === "month_to_date") {
     const { year, monthIndex } = getPacificYearMonth(now);
     const startDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
-    return { preset: "month_to_date" as RangePreset, startDate, endDate: pacificToday };
+    return { preset: "month_to_date" as RangePreset, startDate, endDate: latestCompletedPacificDay };
   }
 
   if (normalized === "previous_month") {
@@ -46,7 +47,7 @@ export function resolveRange(rangeParam: string | null, startParam: string | nul
 
   if (normalized === "year_to_date") {
     const { year } = getPacificYearMonth(now);
-    return { preset: "year_to_date" as RangePreset, startDate: `${year}-01-01`, endDate: pacificToday };
+    return { preset: "year_to_date" as RangePreset, startDate: `${year}-01-01`, endDate: latestCompletedPacificDay };
   }
 
   const fallback = presets[normalized] ?? presets["30d"];
@@ -63,8 +64,10 @@ export function resolveRange(rangeParam: string | null, startParam: string | nul
     return { preset: "today" as RangePreset, startDate, endDate };
   }
 
-  const endDate = pacificToday;
+  // Rolling executive ranges use completed Pacific days. "Today" remains an
+  // explicit live view; it must not make the default 7/30/90-day totals appear
+  // incomplete simply because GA4 and commerce sources finalize overnight.
+  const endDate = latestCompletedPacificDay;
   const startDate = addDaysIso(endDate, -(fallback.days - 1));
   return { preset: fallback.preset, startDate, endDate };
 }
-
