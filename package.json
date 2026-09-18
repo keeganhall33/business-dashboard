@@ -23,7 +23,8 @@
     "woo:ingest": "node scripts/run-woo-telemetry.mjs",
     "delivery:status": "node scripts/orchestration-v4/delivery-report.mjs",
     "orchestration:v4-lite:host": "node scripts/orchestration-v4-lite/host.mjs",
-    "v1:certify": "tsx scripts/compile-v1-release-certificate-v1.ts"
+    "v1:certify": "tsx scripts/compile-v1-release-certificate-v1.ts",
+    "v1:smoke:certify": "tsx scripts/compile-v1-production-smoke-v1.ts"
   },
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
