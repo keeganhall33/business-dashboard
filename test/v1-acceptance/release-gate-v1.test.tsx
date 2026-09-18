@@ -83,6 +83,7 @@ test("production smoke proves exact release propagation and private-login behavi
   assert.match(smoke, /\/api\/dashboard\/overview/);
   assert.match(workflow, /EXPECTED_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /\.\/scripts\/smoke-check\.sh/);
+  assert.match(workflow, /cancel-in-progress:\s*true/);
 
   const smokeProtectedRoutes = new Set([
     ...EXECUTIVE_WORKSPACE_NAV_V1.map((workspace) => workspace.href),
