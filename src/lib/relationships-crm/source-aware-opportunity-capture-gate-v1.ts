@@ -166,12 +166,18 @@ function compileCandidate(
     });
   }
 
-  const qualification = qualifyOpportunityHandoffEvidenceV1({
-    handoff: candidate.handoff,
-    evidence: candidate.evidence,
-    now,
-    maximumEvidenceAgeDays
-  });
+  const qualification = maximumEvidenceAgeDays == null
+    ? qualifyOpportunityHandoffEvidenceV1({
+        handoff: candidate.handoff,
+        evidence: candidate.evidence,
+        now
+      })
+    : qualifyOpportunityHandoffEvidenceV1({
+        handoff: candidate.handoff,
+        evidence: candidate.evidence,
+        now,
+        maximumEvidenceAgeDays
+      });
 
   if (qualification.status !== "QUALIFIED" && qualification.status !== "ALREADY_QUALIFIED") {
     return freezeDeep({
@@ -229,10 +235,14 @@ export function compileSourceAwareOpportunityCaptureGateV1(
   }
 
   const seenHandoffIds = new Set<string>();
-  const normalized = input.candidates.map((candidate, index) => {
-    if (!isPlainObject(candidate)) throw new Error(`candidates[${index}] must be a plain object`);
+  const normalized: SourceAwareOpportunityCaptureCandidateV1[] = input.candidates.map((candidate, index) => {
+    if (candidate == null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new Error(`candidates[${index}] must be a plain object`);
+    }
     validateSafeHandoff(candidate.handoff);
-    if (!isPlainObject(candidate.evidence)) throw new Error(`candidates[${index}].evidence must be a plain object`);
+    if (candidate.evidence == null || typeof candidate.evidence !== "object" || Array.isArray(candidate.evidence)) {
+      throw new Error(`candidates[${index}].evidence must be a plain object`);
+    }
     if (seenHandoffIds.has(candidate.handoff.handoffId)) {
       throw new Error(`duplicate handoffId ${candidate.handoff.handoffId}`);
     }
