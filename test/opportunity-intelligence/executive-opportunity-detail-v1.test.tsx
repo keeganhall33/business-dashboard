@@ -66,6 +66,13 @@ test("known opportunity renders meaningful scan-first decision detail without in
         valueEstimate: null,
         notes: "Useful background that should be readable outside the editor."
       }}
+      primaryContacts={[
+        {
+          canonicalId: "person:alex-example",
+          label: "Alex Example",
+          href: "/relationships/people/person%3Aalex-example"
+        }
+      ]}
     />
   );
 
@@ -76,6 +83,8 @@ test("known opportunity renders meaningful scan-first decision detail without in
   assert.match(html, /In Conversation/);
   assert.match(html, /Next follow-up/);
   assert.match(html, /Primary contact/);
+  assert.match(html, /href="\/relationships\/people\/person%3Aalex-example"/);
+  assert.match(html, /Alex Example/);
   assert.match(html, /Revenue potential/);
   assert.match(html, /Background and notes/);
   assert.match(html, /Useful background/);
@@ -122,6 +131,9 @@ test("route loads the exact editable opportunity without waiting on the full das
   const source = fs.readFileSync(ROUTE_PATH, "utf8");
 
   assert.match(source, /getOpportunityById\(id\.trim\(\)\)/);
+  assert.match(source, /getOpportunityRelationshipContextV1\(editable\.id\)/);
+  assert.match(source, /relationshipEvidence=\{relationshipContext\.evidence\}/);
+  assert.match(source, /primaryContacts=\{relationshipContext\.primaryContacts\}/);
   assert.match(source, /editableOpportunity=\{editable\}/);
   assert.match(source, /catch \{\s*notFound\(\)/);
   assert.match(source, /force-dynamic/);
