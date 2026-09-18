@@ -2,6 +2,12 @@ import "@/lib/server-only";
 
 import { gateway, generateText, stepCountIs, ToolLoopAgent } from "ai";
 import type { AskJeevesAnswerV1, AskJeevesContextV1 } from "@/lib/ask-jeeves/answer-engine-v1";
+import {
+  runAskJeevesGovernedResearchV1,
+  type AskJeevesResearchStageExecutorV1,
+  type AskJeevesResearchStageRequestV1,
+  type AskJeevesResearchSourceV1,
+} from "@/lib/ask-jeeves/governed-research-runtime-v1";
 
 export type AskJeevesQuestionModeV2 =
   | "BUSINESS_LOOKUP"
@@ -184,9 +190,9 @@ const UNIVERSAL_JEEVES_INSTRUCTIONS = [
   "Use the supplied business context as verified internal evidence, not as the boundary of what you may discuss.",
   "For BUSINESS_LOOKUP questions, treat connected business records as authoritative and never invent a number, relationship, status, or source.",
   "For BUSINESS_ANALYSIS questions, explain patterns in the supplied business evidence and clearly distinguish evidence from inference.",
-  "For STRATEGIC_SYNTHESIS questions, reason across the internal context and use external research when it would materially improve the recommendation.",
-  "For EXTERNAL_RESEARCH questions, you must use web_search before answering. Look beyond the existing opportunity queue and identify genuinely new evidence-backed possibilities.",
-  "For GENERAL questions, answer normally from the model's knowledge. Use web_search whenever the answer depends on current, changing, niche, or uncertain information.",
+  "For STRATEGIC_SYNTHESIS questions, reason across the internal context and clearly distinguish evidence from inference.",
+  "For EXTERNAL_RESEARCH questions, current external claims require web evidence and independent source-support verification before they may be presented as verified.",
+  "For GENERAL questions, answer normally from the model's knowledge. Use current claims only when the route provides current evidence.",
   "A dashboardLookup may be a narrow legacy rules-engine response. It is supporting evidence only. Do not repeat it when it fails to answer the user's broader intent.",
   "Clearly separate verified internal facts, externally sourced facts, and your strategic inference. State meaningful uncertainty.",
   "Give a robust but concise executive answer in plain language. Lead with the conclusion, explain why, and finish with specific next steps when useful.",
@@ -220,7 +226,7 @@ function sourceLabel(url: string, title?: string) {
 function providerSourceLinks(result: { sources: Array<{ sourceType: string; url?: string; title?: string }> }) {
   return result.sources
     .filter((source): source is { sourceType: "url"; url: string; title?: string } => source.sourceType === "url" && typeof source.url === "string")
-    .slice(0, 6)
+    .slice(0, 8)
     .map((source) => ({ label: sourceLabel(source.url, source.title), href: source.url }));
 }
 
@@ -240,7 +246,156 @@ function toolSourceLinks(steps: ReadonlyArray<{ toolResults: ReadonlyArray<{ too
       }
     }
   }
-  return links.slice(0, 6);
+  return links.slice(0, 8);
+}
+
+function researchLinks(result: {
+  sources: Array<{ sourceType: string; url?: string; title?: string }>;
+  steps: ReadonlyArray<{ toolResults: ReadonlyArray<{ toolName: string; output: unknown }> }>;
+}): AskJeevesResearchSourceV1[] {
+  return [...providerSourceLinks(result), ...toolSourceLinks(result.steps)]
+    .filter((link, index, links) => links.findIndex((candidate) => candidate.href === link.href) === index)
+    .slice(0, 8);
+}
+
+function modelForResearchStage(request: AskJeevesResearchStageRequestV1) {
+  if (request.policy.model_tier === "LOCAL_EFFICIENT") return "openai/gpt-5.6-luna" as const;
+  if (request.policy.model_tier === "BALANCED") return "openai/gpt-5.6-terra" as const;
+  if (request.policy.model_tier === "FRONTIER") return "openai/gpt-6-astra" as const;
+  throw new Error("ASK_JEEVES_RESEARCH_MODEL_TIER_UNAVAILABLE");
+}
+
+function providerReasoningEffort(request: AskJeevesResearchStageRequestV1): "low" | "medium" | "high" {
+  const effort = request.policy.reasoning_effort;
+  if (effort === "low") return "low";
+  if (effort === "medium") return "medium";
+  return "high";
+}
+
+function researchStageInstructions(stage: AskJeevesResearchStageRequestV1["stage"]) {
+  if (stage === "SCOUT") {
+    return `${UNIVERSAL_JEEVES_INSTRUCTIONS} You are the source scout. Use web_search to identify a small set of current, credible sources relevant to the question. Do not make the final strategic recommendation. Prefer primary or authoritative sources when available.`;
+  }
+  if (stage === "SYNTHESIZE") {
+    return `${UNIVERSAL_JEEVES_INSTRUCTIONS} You are the evidence researcher and synthesizer. Use web_search to inspect the supplied source leads and any necessary corroborating sources. Produce the candidate executive answer only from supplied canonical internal evidence and externally sourced evidence. Do not invent access, relationships, budgets, economics, endorsements, causality, or certainty.`;
+  }
+  return `${UNIVERSAL_JEEVES_INSTRUCTIONS} You are an independent source-support verifier in a fresh context. Use web_search yourself. Check whether every material current/external claim in the candidate answer is supported by the supplied sources or independent corroboration. Begin your response with exactly VERIFIED if support is sufficient, otherwise begin with exactly UNVERIFIED. Do not rewrite or improve the candidate answer.`;
+}
+
+function researchStagePrompt(request: AskJeevesResearchStageRequestV1) {
+  if (request.stage === "SCOUT") {
+    return JSON.stringify({
+      currentDate: new Date().toISOString().slice(0, 10),
+      question: request.question,
+      verifiedInternalEvidence: request.internalEvidence,
+      task: "Find relevant current external source leads and summarize what should be researched."
+    });
+  }
+  if (request.stage === "SYNTHESIZE") {
+    return JSON.stringify({
+      currentDate: new Date().toISOString().slice(0, 10),
+      question: request.question,
+      verifiedInternalEvidence: request.internalEvidence,
+      sourceLeads: request.scoutSources,
+      scoutSummary: request.scoutSummary,
+      task: "Research the source leads, corroborate as needed, and produce a concise evidence-backed executive answer."
+    });
+  }
+  return JSON.stringify({
+    currentDate: new Date().toISOString().slice(0, 10),
+    question: request.question,
+    verifiedInternalEvidence: request.internalEvidence,
+    candidateAnswer: request.candidateAnswer,
+    citedSources: request.sources,
+    task: "Independently verify source support for the candidate answer. Do not use prior producer reasoning or conversation context."
+  });
+}
+
+const executeGovernedResearchStage: AskJeevesResearchStageExecutorV1 = async (request) => {
+  const model = modelForResearchStage(request);
+  const agent = new ToolLoopAgent({
+    model,
+    instructions: researchStageInstructions(request.stage),
+    stopWhen: stepCountIs(request.maxSteps),
+    maxOutputTokens: request.policy.budgets.max_output_tokens,
+    tools: {
+      web_search: gateway.tools.parallelSearch({
+        mode: "agentic",
+        maxResults: request.stage === "SYNTHESIZE" ? 10 : 8,
+        excerpts: { maxCharsPerResult: 2200, maxCharsTotal: 14000 },
+        fetchPolicy: { maxAgeSeconds: 0 }
+      })
+    },
+    providerOptions: {
+      gateway: { tags: ["feature:ask-jeeves", "mode:external-research", `stage:${request.stage.toLowerCase()}`] },
+      openai: { reasoningEffort: providerReasoningEffort(request) }
+    }
+  });
+
+  const result = await agent.generate({
+    prompt: researchStagePrompt(request),
+    abortSignal: request.abortSignal,
+    timeout: { totalMs: request.policy.budgets.max_runtime_ms }
+  });
+  const sources = researchLinks(result);
+
+  if (request.stage === "SCOUT") {
+    return { stage: "SCOUT", summary: result.text.trim(), sources };
+  }
+  if (request.stage === "SYNTHESIZE") {
+    return { stage: "SYNTHESIZE", answer: result.text.trim(), sources };
+  }
+  const text = result.text.trim();
+  return {
+    stage: "VERIFY",
+    supported: /^VERIFIED\b/i.test(text) && sources.length > 0,
+    reason: text.slice(0, 1200),
+    sources
+  };
+};
+
+function externalResearchInternalEvidence(
+  context: AskJeevesContextV1,
+  grounded: AskJeevesAnswerV1,
+): string[] {
+  return [
+    ...grounded.facts.slice(0, 12),
+    `Reporting period: ${context.home.hero.range_label}`,
+    ...context.opportunities.items.slice(0, 8).map((item) =>
+      `Known opportunity: ${item.title}; organization=${item.organization ?? "UNKNOWN"}; status=${item.status}; next=${item.nextMove}`
+    ),
+    ...context.crm.people.slice(0, 8).map((person) =>
+      `Known relationship: ${person.name}; company=${person.companyName ?? "UNKNOWN"}; state=${person.relationshipState ?? "UNKNOWN"}`
+    )
+  ].slice(0, 30);
+}
+
+async function governedExternalResearchAnswer(
+  question: string,
+  context: AskJeevesContextV1,
+  grounded: AskJeevesAnswerV1,
+): Promise<AskJeevesAnswerV1> {
+  const result = await runAskJeevesGovernedResearchV1({
+    question,
+    internalEvidence: externalResearchInternalEvidence(context, grounded),
+    executor: executeGovernedResearchStage,
+  });
+
+  if (result.status !== "VERIFIED") {
+    return {
+      answer: result.answer,
+      facts: grounded.facts,
+      links: grounded.links,
+      sources: grounded.sources,
+    };
+  }
+
+  return {
+    answer: result.answer,
+    facts: [],
+    links: result.sources.map((source) => ({ label: source.label, href: source.href })),
+    sources: result.sources.map((source) => source.label),
+  };
 }
 
 export async function enhanceAskJeevesAnswerV1(
@@ -251,68 +406,39 @@ export async function enhanceAskJeevesAnswerV1(
   const route = selectAskJeevesRouteV2(question);
   const mode = route.mode;
   if (route.model === "none") return grounded;
-  const prompt = buildPrompt(question, context, grounded, mode);
 
-  try {
-    if (!route.useWebSearch) {
-      const result = await generateText({
-        model: route.model,
-        system: UNIVERSAL_JEEVES_INSTRUCTIONS,
-        prompt,
-        maxOutputTokens: route.maxOutputTokens,
-        providerOptions: {
-          gateway: { tags: ["feature:ask-jeeves", `mode:${mode.toLowerCase()}`, `model:${route.model.split("/")[1]}`] }
-        }
-      });
-      logUsage(route, result.usage);
-      const answer = result.text.trim();
-      return answer ? { ...grounded, answer } : grounded;
+  if (mode === "EXTERNAL_RESEARCH") {
+    try {
+      return await governedExternalResearchAnswer(question, context, grounded);
+    } catch {
+      return {
+        answer: "I could not independently verify current external evidence well enough to answer that reliably. I will not substitute an unsourced current answer.",
+        facts: grounded.facts,
+        links: grounded.links,
+        sources: grounded.sources,
+      };
     }
+  }
 
-    const agent = new ToolLoopAgent({
+  const prompt = buildPrompt(question, context, grounded, mode);
+  try {
+    const result = await generateText({
       model: route.model,
-      instructions: UNIVERSAL_JEEVES_INSTRUCTIONS,
-      stopWhen: stepCountIs(6),
+      system: UNIVERSAL_JEEVES_INSTRUCTIONS,
+      prompt,
       maxOutputTokens: route.maxOutputTokens,
-      tools: {
-        web_search: gateway.tools.parallelSearch({
-          mode: "agentic",
-          maxResults: 10,
-          excerpts: { maxCharsPerResult: 2500, maxCharsTotal: 15000 },
-          fetchPolicy: { maxAgeSeconds: 0 }
-        })
-      },
       providerOptions: {
-        gateway: {
-          tags: ["feature:ask-jeeves", `mode:${mode.toLowerCase()}`]
-        }
+        gateway: { tags: ["feature:ask-jeeves", `mode:${mode.toLowerCase()}`, `model:${route.model.split("/")[1]}`] }
       }
     });
-
-    const result = await agent.generate({ prompt });
-    logUsage(route, result.totalUsage);
+    logUsage(route, result.usage);
     const answer = result.text.trim();
-    if (!answer) return grounded;
-    const researchedLinks = [...providerSourceLinks(result), ...toolSourceLinks(result.steps)].filter(
-      (link, index, links) => links.findIndex((candidate) => candidate.href === link.href) === index
-    ).slice(0, 6);
-    const keepGrounded = retainGroundedDetails(mode);
-    return {
-      answer,
-      facts: keepGrounded ? grounded.facts : [],
-      links: [...(keepGrounded ? grounded.links : []), ...researchedLinks].filter(
-        (link, index, links) => links.findIndex((candidate) => candidate.href === link.href) === index
-      ),
-      sources: [
-        ...(keepGrounded ? grounded.sources : []),
-        ...researchedLinks.map((link) => link.label)
-      ].filter((source, index, sources) => sources.indexOf(source) === index)
-    };
+    return answer ? { ...grounded, answer } : grounded;
   } catch {
     try {
       const result = await generateText({
         model: route.model,
-        system: `${UNIVERSAL_JEEVES_INSTRUCTIONS} Live web research is temporarily unavailable in this fallback path, so say when current external verification is still needed.`,
+        system: `${UNIVERSAL_JEEVES_INSTRUCTIONS} If external verification would be required for any current claim, say so rather than guessing.`,
         prompt,
         maxOutputTokens: route.maxOutputTokens,
         providerOptions: {
