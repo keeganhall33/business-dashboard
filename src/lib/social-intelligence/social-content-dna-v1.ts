@@ -49,7 +49,7 @@ export type ContentDnaPatternV1 = Readonly<{
   comparable_content_count: number;
   average_engagement_per_1000_exposure: number;
   platform_median_engagement_per_1000_exposure: number;
-  relative_to_platform_median: number;
+  relative_to_platform_median: number | null;
   association: ContentDnaAssociationV1;
   evidence_refs: readonly string[];
   interpretation: string;
@@ -186,13 +186,22 @@ function buildPatterns(platform: SocialPlatformV1, rows: readonly ComparableCont
     .filter((group) => group.rows.length >= 2)
     .map((group) => {
       const average = group.rows.reduce((sum, row) => sum + row.engagementPerThousand, 0) / group.rows.length;
-      const relative = platformMedian === 0 ? (average === 0 ? 1 : Number.POSITIVE_INFINITY) : average / platformMedian;
-      const association: ContentDnaAssociationV1 = relative >= 1.2
-        ? "ABOVE_PLATFORM_BASELINE"
-        : relative <= 0.8
-          ? "BELOW_PLATFORM_BASELINE"
-          : "WITHIN_PLATFORM_BASELINE";
-      const relativeText = Number.isFinite(relative) ? `${round(relative)}x` : "above a zero";
+      const zeroBaseline = platformMedian === 0;
+      const relative = zeroBaseline ? (average === 0 ? 1 : null) : average / platformMedian;
+      const association: ContentDnaAssociationV1 = zeroBaseline
+        ? average === 0
+          ? "WITHIN_PLATFORM_BASELINE"
+          : "ABOVE_PLATFORM_BASELINE"
+        : relative! >= 1.2
+          ? "ABOVE_PLATFORM_BASELINE"
+          : relative! <= 0.8
+            ? "BELOW_PLATFORM_BASELINE"
+            : "WITHIN_PLATFORM_BASELINE";
+      const relativeText = zeroBaseline
+        ? average === 0
+          ? "1x"
+          : "above a zero baseline with relative magnitude undefined"
+        : `${round(relative!)}x`;
       return Object.freeze({
         platform,
         dimension: group.dimension,
@@ -200,7 +209,7 @@ function buildPatterns(platform: SocialPlatformV1, rows: readonly ComparableCont
         comparable_content_count: group.rows.length,
         average_engagement_per_1000_exposure: round(average),
         platform_median_engagement_per_1000_exposure: round(platformMedian),
-        relative_to_platform_median: Number.isFinite(relative) ? round(relative) : relative,
+        relative_to_platform_median: relative === null ? null : round(relative),
         association,
         evidence_refs: Object.freeze(unique(group.rows.flatMap((row) => row.evidenceRefs))),
         interpretation: `${group.dimension.toLowerCase()} “${group.value}” is observed at ${relativeText} the ${platform} median normalized engagement in this bounded sample. This is an association, not a causal effect.`,
