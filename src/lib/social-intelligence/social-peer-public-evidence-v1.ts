@@ -7,7 +7,7 @@ export const SOCIAL_PEER_MAX_AGE_DAYS_V1 = 180;
 export const SOCIAL_PEER_SOURCE_KINDS_V1 = [
   "PUBLIC_PLATFORM_PAGE",
   "PUBLIC_WEB_PAGE",
-  "AUTHORIZED_EXPORT"
+  "PUBLIC_SEARCH_RESULT"
 ] as const;
 export type SocialPeerSourceKindV1 = (typeof SOCIAL_PEER_SOURCE_KINDS_V1)[number];
 
@@ -80,7 +80,7 @@ export type SocialPeerObservedPatternV1 = Readonly<{
   platform: SocialPlatformV1;
   dimension: SocialPeerPatternDimensionV1;
   value: string;
-  observationCount: number;
+  distinctContentCount: number;
   evidenceRefs: readonly string[];
   statement: string;
   state: "OBSERVED_REPETITION";
@@ -114,6 +114,15 @@ export type SocialPeerPublicEvidenceV1 = Readonly<{
   guardrails: readonly string[];
   externalAccessPerformed: false;
   writesPerformed: false;
+}>;
+
+type NormalizedCoverageWindow = Readonly<{
+  peerId: string;
+  platform: SocialPlatformV1;
+  startAt: string;
+  endAt: string;
+  coverage: SocialPeerCoverageWindowInputV1["coverage"];
+  evidenceRefs: readonly string[];
 }>;
 
 function freeze<T>(value: T): T {
@@ -150,6 +159,10 @@ function daysBetween(earlier: string, later: string): number {
   return (Date.parse(later) - Date.parse(earlier)) / 86_400_000;
 }
 
+function coverageKey(peerId: string, platform: SocialPlatformV1): string {
+  return `${peerId}\u0000${platform}`;
+}
+
 function normalizeObservation(
   input: SocialPeerPublicObservationInputV1,
   asOf: string,
@@ -158,6 +171,10 @@ function normalizeObservation(
   const observationId = nonEmpty(input.observationId, "observationId");
   if (seenIds.has(observationId)) throw new Error(`duplicate observationId: ${observationId}`);
   seenIds.add(observationId);
+
+  if (!(SOCIAL_PEER_SOURCE_KINDS_V1 as readonly string[]).includes(input.sourceKind)) {
+    throw new Error(`${observationId}.sourceKind must be a supported public source`);
+  }
 
   const peerId = nonEmpty(input.peerId, `${observationId}.peerId`);
   const peerDisplayName = nonEmpty(input.peerDisplayName, `${observationId}.peerDisplayName`);
@@ -195,6 +212,18 @@ function normalizeObservation(
   });
 }
 
+function validatePeerIdentity(observations: readonly SocialPeerPublicObservationV1[]): void {
+  const names = new Map<string, string>();
+  for (const observation of observations) {
+    const key = coverageKey(observation.peerId, observation.platform);
+    const prior = names.get(key);
+    if (prior && prior.toLocaleLowerCase() !== observation.peerDisplayName.toLocaleLowerCase()) {
+      throw new Error(`conflicting peer identity for ${observation.peerId}/${observation.platform}`);
+    }
+    names.set(key, observation.peerDisplayName);
+  }
+}
+
 function patternDimensions(observation: SocialPeerPublicObservationV1): Array<[SocialPeerPatternDimensionV1, string]> {
   const candidates: Array<[SocialPeerPatternDimensionV1, string | null]> = [
     ["FORMAT", observation.format],
@@ -215,16 +244,16 @@ function compilePatterns(observations: readonly SocialPeerPublicObservationV1[])
       platform: SocialPlatformV1;
       dimension: SocialPeerPatternDimensionV1;
       value: string;
-      observations: SocialPeerPublicObservationV1[];
+      byContent: Map<string, SocialPeerPublicObservationV1>;
     }
   >();
 
   for (const observation of observations) {
-    if (observation.freshness !== "CURRENT") continue;
+    if (observation.freshness !== "CURRENT" || !observation.contentId) continue;
     for (const [dimension, value] of patternDimensions(observation)) {
       const key = [observation.peerId, observation.platform, dimension, value.toLocaleLowerCase()].join("\u0000");
       const existing = groups.get(key);
-      if (existing) existing.observations.push(observation);
+      if (existing) existing.byContent.set(observation.contentId, observation);
       else {
         groups.set(key, {
           peerId: observation.peerId,
@@ -232,30 +261,31 @@ function compilePatterns(observations: readonly SocialPeerPublicObservationV1[])
           platform: observation.platform,
           dimension,
           value,
-          observations: [observation]
+          byContent: new Map([[observation.contentId, observation]])
         });
       }
     }
   }
 
   return [...groups.values()]
-    .filter((group) => group.observations.length >= 2)
-    .map((group) =>
-      freeze({
+    .filter((group) => group.byContent.size >= 2)
+    .map((group) => {
+      const distinctObservations = [...group.byContent.values()];
+      return freeze({
         peerId: group.peerId,
         peerDisplayName: group.peerDisplayName,
         platform: group.platform,
         dimension: group.dimension,
         value: group.value,
-        observationCount: group.observations.length,
-        evidenceRefs: unique(group.observations.flatMap((observation) => observation.evidenceRefs)),
-        statement: `${group.peerDisplayName} has ${group.observations.length} directly observed ${group.platform} examples tagged ${group.dimension.toLowerCase()} “${group.value}” in the bounded evidence set. This establishes repetition only, not performance, causality, endorsement, or a relationship.`,
+        distinctContentCount: distinctObservations.length,
+        evidenceRefs: unique(distinctObservations.flatMap((observation) => observation.evidenceRefs)),
+        statement: `${group.peerDisplayName} has ${distinctObservations.length} distinct directly observed ${group.platform} content items tagged ${group.dimension.toLowerCase()} “${group.value}” in the bounded evidence set. This establishes repetition only, not performance, causality, endorsement, or a relationship.`,
         state: "OBSERVED_REPETITION" as const,
         causalClaim: false as const,
         relationshipClaim: false as const,
         performanceClaim: false as const
-      })
-    )
+      });
+    })
     .sort((a, b) =>
       a.peerDisplayName.localeCompare(b.peerDisplayName) ||
       a.platform.localeCompare(b.platform) ||
@@ -264,15 +294,11 @@ function compilePatterns(observations: readonly SocialPeerPublicObservationV1[])
     );
 }
 
-function coverageKey(peerId: string, platform: SocialPlatformV1): string {
-  return `${peerId}\u0000${platform}`;
-}
-
 function compileCadence(
   observations: readonly SocialPeerPublicObservationV1[],
   coverageWindows: readonly SocialPeerCoverageWindowInputV1[]
 ): SocialPeerObservedCadenceV1[] {
-  const windows = new Map<string, SocialPeerCoverageWindowInputV1>();
+  const windows = new Map<string, NormalizedCoverageWindow>();
   for (const [index, input] of coverageWindows.entries()) {
     const peerId = nonEmpty(input.peerId, `coverageWindows[${index}].peerId`);
     const startAt = iso(input.startAt, `coverageWindows[${index}].startAt`);
@@ -282,7 +308,14 @@ function compileCadence(
     if (!evidenceRefs.length) throw new Error(`coverageWindows[${index}] requires evidence`);
     const key = coverageKey(peerId, input.platform);
     if (windows.has(key)) throw new Error(`duplicate coverage window for ${peerId}/${input.platform}`);
-    windows.set(key, freeze({ ...input, peerId, startAt, endAt, evidenceRefs }));
+    windows.set(key, freeze({
+      peerId,
+      platform: input.platform,
+      startAt,
+      endAt,
+      coverage: input.coverage,
+      evidenceRefs
+    }));
   }
 
   const identities = new Map<string, { peerId: string; peerDisplayName: string; platform: SocialPlatformV1 }>();
@@ -293,11 +326,8 @@ function compileCadence(
       platform: observation.platform
     });
   }
-  for (const window of windows.values()) {
-    const key = coverageKey(window.peerId, window.platform);
-    if (!identities.has(key)) {
-      identities.set(key, { peerId: window.peerId, peerDisplayName: window.peerId, platform: window.platform });
-    }
+  for (const key of windows.keys()) {
+    if (!identities.has(key)) throw new Error("coverage window requires at least one matching public observation");
   }
 
   return [...identities.entries()]
@@ -307,8 +337,8 @@ function compileCadence(
         return freeze({
           ...identity,
           state: "UNKNOWN" as const,
-          startAt: window ? iso(window.startAt, "coverage.startAt") : null,
-          endAt: window ? iso(window.endAt, "coverage.endAt") : null,
+          startAt: window?.startAt ?? null,
+          endAt: window?.endAt ?? null,
           observedPostCount: null,
           observedPostsPerWeek: null,
           evidenceRefs: window ? unique(window.evidenceRefs) : [],
@@ -317,25 +347,24 @@ function compileCadence(
         });
       }
 
-      const startAt = iso(window.startAt, "coverage.startAt");
-      const endAt = iso(window.endAt, "coverage.endAt");
       const rows = observations.filter(
         (observation) =>
           observation.peerId === identity.peerId &&
           observation.platform === identity.platform &&
           observation.contentId !== null &&
-          Date.parse(observation.observedAt) >= Date.parse(startAt) &&
-          Date.parse(observation.observedAt) <= Date.parse(endAt)
+          Date.parse(observation.observedAt) >= Date.parse(window.startAt) &&
+          Date.parse(observation.observedAt) <= Date.parse(window.endAt)
       );
-      const durationDays = daysBetween(startAt, endAt);
+      const distinctPostIds = new Set(rows.map((row) => row.contentId as string));
+      const durationDays = daysBetween(window.startAt, window.endAt);
       const evidenceRefs = unique([...window.evidenceRefs, ...rows.flatMap((row) => row.evidenceRefs)]);
       return freeze({
         ...identity,
         state: "OBSERVED_COMPLETE_WINDOW" as const,
-        startAt,
-        endAt,
-        observedPostCount: rows.length,
-        observedPostsPerWeek: Math.round((rows.length / durationDays) * 7 * 1000) / 1000,
+        startAt: window.startAt,
+        endAt: window.endAt,
+        observedPostCount: distinctPostIds.size,
+        observedPostsPerWeek: Math.round((distinctPostIds.size / durationDays) * 7 * 1000) / 1000,
         evidenceRefs,
         limitation: "Cadence describes only the evidenced complete public window; it is not a forecast or performance claim.",
         performanceClaim: false as const
@@ -353,6 +382,7 @@ export function compileSocialPeerPublicEvidenceV1(input: SocialPeerPublicEvidenc
   const asOf = iso(input.asOf, "asOf");
   const seenIds = new Set<string>();
   const observations = freeze(input.observations.map((observation) => normalizeObservation(observation, asOf, seenIds)));
+  validatePeerIdentity(observations);
   const patterns = freeze(compilePatterns(observations));
   const cadence = freeze(compileCadence(observations, input.coverageWindows ?? []));
   const staleObservationIds = freeze(
@@ -376,8 +406,8 @@ export function compileSocialPeerPublicEvidenceV1(input: SocialPeerPublicEvidenc
     guardrails: [
       "Only directly observed public/compliant facts are represented.",
       "Repeated formats, hooks, series, titles, or visible participants do not establish performance, causality, endorsement, sponsorship, or a relationship.",
-      "Competitor private metrics, audience quality, revenue, conversion, paid amplification, and attribution remain UNKNOWN unless separately evidenced through an authorized source.",
-      "Cadence is calculated only from an explicitly evidenced complete public-timeline window.",
+      "Competitor private metrics, audience quality, revenue, conversion, paid amplification, growth, and attribution remain UNKNOWN unless separately evidenced through a compliant source.",
+      "Cadence is calculated only from an explicitly evidenced complete public-timeline window and deduplicated content identities.",
       "This compiler performs no scraping, provider access, messaging, posting, account mutation, or other external action."
     ],
     externalAccessPerformed: false as const,
