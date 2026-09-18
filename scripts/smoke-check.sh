@@ -7,6 +7,9 @@ set -euo pipefail
 #   SMOKE_BASE_URL="https://<your-domain>" ./scripts/smoke-check.sh
 #   SMOKE_BASE_URL="http://localhost:3100" ./scripts/smoke-check.sh
 #
+# Optional release proof:
+#   EXPECTED_RELEASE_SHA="<git-sha>" ./scripts/smoke-check.sh
+#
 # Optional alerts:
 #   SLACK_WEBHOOK_URL="https://hooks.slack.com/..." ./scripts/smoke-check.sh
 
@@ -47,20 +50,53 @@ curl_smoke() {
     "$@"
 }
 
-# 1) The server-rendered dashboard must load successfully. In production this
-# exercises the protected overview API through the app's server-side
-# x-dashboard-secret path without exposing DASHBOARD_ADMIN_TOKEN to CI.
-dashboard_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
-[ "$dashboard_status" = "200" ] || fail "GET /dashboard returned $dashboard_status"
-ok_note "GET /dashboard"
+dashboard_headers=$(mktemp)
+health_body=$(mktemp)
+overview_body=$(mktemp)
+trap 'rm -f "$dashboard_headers" "$health_body" "$overview_body"' EXIT
 
-# 2) Probe the overview API anonymously.
+# 1) Prove the deployed runtime is healthy and, when a release SHA is supplied,
+# that the configured production URL is serving the exact expected Vercel commit.
+health_status=$(curl_smoke -o "$health_body" -w "%{http_code}" "$BASE_URL/api/health")
+[ "$health_status" = "200" ] || fail "GET /api/health returned $health_status"
+grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' "$health_body" || fail "health payload did not include ok:true"
+ok_note "GET /api/health ok:true"
+
+if [ -n "${EXPECTED_RELEASE_SHA:-}" ]; then
+  grep -Eq '"releaseSha"[[:space:]]*:[[:space:]]*"'"$EXPECTED_RELEASE_SHA"'"' "$health_body" \
+    || fail "production health did not report expected release $EXPECTED_RELEASE_SHA"
+  ok_note "production release matches $EXPECTED_RELEASE_SHA"
+fi
+
+# 2) The dashboard must either render directly (local/dev auth bypass) or enforce
+# the production private-login boundary. A production 307/302 redirect to /login
+# is the expected security behavior and must not be treated as a failed deploy.
+dashboard_status=$(curl_smoke -D "$dashboard_headers" -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
+case "$dashboard_status" in
+  200)
+    ok_note "GET /dashboard rendered directly"
+    ;;
+  302|307)
+    dashboard_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' "$dashboard_headers")
+    case "$dashboard_location" in
+      *"/login"*) ;;
+      *) fail "GET /dashboard redirected to unexpected location: ${dashboard_location:-missing}" ;;
+    esac
+
+    login_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/login")
+    [ "$login_status" = "200" ] || fail "GET /login returned $login_status after protected dashboard redirect"
+    ok_note "GET /dashboard correctly requires private sign-in ($dashboard_status -> /login)"
+    ok_note "GET /login"
+    ;;
+  *)
+    fail "GET /dashboard returned $dashboard_status"
+    ;;
+esac
+
+# 3) Probe the overview API anonymously.
 # - Local/dev may intentionally allow it and return 200, in which case verify shape.
 # - Production intentionally requires DASHBOARD_ADMIN_TOKEN and should return 401.
-# A 401 here is therefore a security assertion, not a deployment failure, because
-# step 1 already proved the SSR dashboard could reach the protected API correctly.
-overview_body=$(mktemp)
-trap 'rm -f "$overview_body"' EXIT
+# A 401 here is therefore a security assertion, not a deployment failure.
 overview_status=$(curl_smoke -o "$overview_body" -w "%{http_code}" "$BASE_URL/api/dashboard/overview")
 
 case "$overview_status" in
