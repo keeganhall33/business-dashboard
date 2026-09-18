@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: validated-main-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -90,5 +90,6 @@ jobs:
 # Deployment policy:
 # - Vercel Git integration is the only production deployment path.
 # - Pull requests and main both receive the same GitHub-native typecheck/test/build validation.
+# - Superseded validation/smoke runs are cancelled because only the newest ref can be the current release candidate.
 # - Production smoke checks run only after a validated push to main.
 # - Retired provider deployment tooling and deploy hooks are intentionally absent.

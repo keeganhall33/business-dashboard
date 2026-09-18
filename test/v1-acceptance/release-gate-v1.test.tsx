@@ -15,6 +15,14 @@ function appPageForHref(href: string): string {
   return resolve(process.cwd(), "src/app/(app)", pathname.slice(1), "page.tsx");
 }
 
+const V1_CRM_ROUTES = [
+  "/relationships",
+  "/relationships/people",
+  "/relationships/companies",
+  "/relationships/activity",
+  "/opportunities-actions"
+] as const;
+
 test("every canonical V1 executive workspace resolves to a real app route", () => {
   const ids = new Set<string>();
   const hrefs = new Set<string>();
@@ -48,13 +56,7 @@ test("every canonical V1 executive workspace resolves to a real app route", () =
 });
 
 test("V1 CRM directories and activity routes cannot disappear silently", () => {
-  for (const href of [
-    "/relationships",
-    "/relationships/people",
-    "/relationships/companies",
-    "/relationships/activity",
-    "/opportunities-actions"
-  ]) {
+  for (const href of V1_CRM_ROUTES) {
     assert.ok(existsSync(appPageForHref(href)), `missing V1 business route ${href}`);
   }
 });
@@ -81,4 +83,16 @@ test("production smoke proves exact release propagation and private-login behavi
   assert.match(smoke, /\/api\/dashboard\/overview/);
   assert.match(workflow, /EXPECTED_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /\.\/scripts\/smoke-check\.sh/);
+  assert.match(workflow, /cancel-in-progress:\s*true/);
+
+  const smokeProtectedRoutes = new Set([
+    ...EXECUTIVE_WORKSPACE_NAV_V1.map((workspace) => workspace.href),
+    ...V1_CRM_ROUTES
+  ]);
+  for (const href of smokeProtectedRoutes) {
+    assert.ok(
+      smoke.includes(`"${href}"`),
+      `production smoke is missing canonical V1 protected route ${href}`
+    );
+  }
 });
