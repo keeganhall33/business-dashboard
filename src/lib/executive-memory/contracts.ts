@@ -12,6 +12,8 @@ export type PreferenceSignalClassV1 =
   | "CURRENT_CONTEXT_DIFFERENCE"
   | "WEAK_SIGNAL_ONLY";
 export type PrecedentRelevanceV1 = "HIGH" | "MEDIUM" | "LOW" | "DO_NOT_USE";
+export type DecisionPrecedentEvidenceIntegrityV1 = "SUPPORTED" | "INFERRED_ONLY" | "UNKNOWN_ONLY" | "CONFLICTED";
+export type DecisionPrecedentSourceModeV1 = "DETERMINISTIC_FIXTURE" | "CALLER_SUPPLIED";
 
 export type DecisionPrecedentOptionV1 = {
   option_id: string;
@@ -72,6 +74,8 @@ export type DecisionPrecedentMatchV1 = {
     can_become_preference_rule: false;
     low_attribution_cannot_dominate: boolean;
     superficially_similar_only: boolean;
+    evidence_integrity_state: DecisionPrecedentEvidenceIntegrityV1;
+    requires_evidence_verification: boolean;
   };
 };
 
@@ -79,7 +83,7 @@ export type DecisionPrecedentRetrievalV1 = {
   retrieval_version: typeof DECISION_PRECEDENT_RETRIEVAL_VERSION_V1;
   current_decision_id: string;
   generated_at: string;
-  source_mode: "DETERMINISTIC_FIXTURE";
+  source_mode: DecisionPrecedentSourceModeV1;
   matches: DecisionPrecedentMatchV1[];
   dashboard_summary: {
     top_precedent_id: string | null;
@@ -87,6 +91,7 @@ export type DecisionPrecedentRetrievalV1 = {
     usable_precedent_count: number;
     blocked_low_attribution_count: number;
     current_context_difference_count: number;
+    evidence_verification_count: number;
   };
   keegan_action_required: "NO";
 };
