@@ -73,9 +73,9 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  const a = unique(left);
-  const b = unique(right);
+function sameStrings(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+  const a = unique(left ?? []);
+  const b = unique(right ?? []);
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
