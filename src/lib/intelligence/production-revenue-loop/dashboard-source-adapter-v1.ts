@@ -62,6 +62,13 @@ function validDateTime(value: string | null | undefined): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function dateOnlyValue(value: string | null | undefined): number {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return Number.NaN;
+  const parsed = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) return Number.NaN;
+  return new Date(parsed).toISOString().slice(0, 10) === value ? parsed : Number.NaN;
+}
+
 function sameRange(snapshot: DashboardOverviewResponse, expected: { startDate: string; endDate: string }): boolean {
   return snapshot.range?.startDate === expected.startDate && snapshot.range?.endDate === expected.endDate;
 }
@@ -79,16 +86,43 @@ function conflict(metadata: TelemetryMetadata | undefined, health: TelemetryHeal
   return values.some((value) => value.toUpperCase().includes("CONFLICT"));
 }
 
+function metadataRangeTruth(
+  metadata: TelemetryMetadata,
+  expected: { startDate: string; endDate: string }
+): RevenueTruthStateV1 | null {
+  if (
+    metadata.requestedStartDate !== expected.startDate ||
+    metadata.requestedEndDate !== expected.endDate
+  ) {
+    return "CONFLICTED";
+  }
+  if (metadata.generatedAt != null && !validDateTime(metadata.generatedAt)) return "CONFLICTED";
+  if (metadata.includesFutureDates || metadata.includesPartialDay) return "PARTIAL";
+
+  if (metadata.latestCompletedBusinessDate != null) {
+    const completed = dateOnlyValue(metadata.latestCompletedBusinessDate);
+    const expectedEnd = dateOnlyValue(expected.endDate);
+    if (!Number.isFinite(completed) || !Number.isFinite(expectedEnd)) return "CONFLICTED";
+    if (completed < expectedEnd) return "PARTIAL";
+  }
+  return null;
+}
+
 function snapshotTruth(
   source: RevenueSourceV1,
-  snapshot: DashboardOverviewResponse
+  snapshot: DashboardOverviewResponse,
+  expected: { startDate: string; endDate: string }
 ): RevenueTruthStateV1 {
   const key = SOURCE_KEYS[source];
   const metadata = snapshot.telemetryMetadata?.[key];
   const health = snapshot.telemetryHealth?.[key];
   if (conflict(metadata, health)) return "CONFLICTED";
-  if (metadata?.freshnessStatus === "stale") return "STALE";
-  if (!metadata || metadata.freshnessStatus === "no_data" || metadata.freshnessStatus === "unknown") return "UNKNOWN";
+  if (!metadata) return "UNKNOWN";
+
+  const rangeTruth = metadataRangeTruth(metadata, expected);
+  if (rangeTruth === "CONFLICTED") return "CONFLICTED";
+  if (metadata.freshnessStatus === "stale") return "STALE";
+  if (metadata.freshnessStatus === "no_data" || metadata.freshnessStatus === "unknown") return "UNKNOWN";
   if (metadata.coverageStatus === "unknown" || health?.status === "critical" || health?.status === "unknown") return "UNKNOWN";
 
   if (source === "WOO") {
@@ -102,7 +136,12 @@ function snapshotTruth(
     if (snapshot.metaAds.status === "PARTIAL") return "PARTIAL";
   }
 
-  if (snapshot.dataMode === "PARTIAL_LIVE_DATA" || metadata.coverageStatus === "partial" || health?.status === "warning") {
+  if (
+    rangeTruth === "PARTIAL" ||
+    snapshot.dataMode === "PARTIAL_LIVE_DATA" ||
+    metadata.coverageStatus === "partial" ||
+    health?.status === "warning"
+  ) {
     return "PARTIAL";
   }
   return "CURRENT";
@@ -195,7 +234,10 @@ export function adaptDashboardRevenueSourcesV1(
 
   const observations: RevenueSourceObservationV1[] = SOURCES.map((source) => ({
     source,
-    truthState: worstTruth(snapshotTruth(source, value.current), snapshotTruth(source, value.previous)),
+    truthState: worstTruth(
+      snapshotTruth(source, value.current, value.currentRange),
+      snapshotTruth(source, value.previous, value.comparisonRange)
+    ),
     observedAt: observedAt(source, value.current, value.previous),
     current: metrics(source, value.current),
     previous: metrics(source, value.previous),
