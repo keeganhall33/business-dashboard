@@ -133,14 +133,14 @@ test("withholds the entire decision when a CURRENT Woo observation has aged beyo
   assert.equal(result.acceptedDecision, null);
 });
 
-test("future source chronology fails closed as conflicted", () => {
-  const input = revenueInput();
-  input.observations[2] = { ...input.observations[2], observedAt: "2026-09-08T12:00:01Z" };
-  const result = buildFreshRevenueDecisionV1(gateInput({ revenueInput: input }));
+test("a revenue packet generated after the evaluation instant fails closed as conflicted", () => {
+  const result = buildFreshRevenueDecisionV1(
+    gateInput({ revenueInput: revenueInput({ generatedAt: "2026-09-08T13:00:00Z" }) }),
+  );
 
   assert.equal(result.status, "CONFLICTED");
   assert.equal(result.reasonCode, "SOURCE_FRESHNESS_CONFLICTED");
-  assert.equal(result.sourceFreshness.reasonCode, "INVALID_REVENUE_INPUT");
+  assert.equal(result.sourceFreshness.reasonCode, "FUTURE_PACKET_GENERATION");
   assert.equal(result.acceptedDecision, null);
 });
 
