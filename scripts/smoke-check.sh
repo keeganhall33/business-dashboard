@@ -50,10 +50,10 @@ curl_smoke() {
     "$@"
 }
 
-dashboard_headers=$(mktemp)
+route_headers=$(mktemp)
 health_body=$(mktemp)
 overview_body=$(mktemp)
-trap 'rm -f "$dashboard_headers" "$health_body" "$overview_body"' EXIT
+trap 'rm -f "$route_headers" "$health_body" "$overview_body"' EXIT
 
 # 1) Prove the deployed runtime is healthy and, when a release SHA is supplied,
 # that the configured production URL is serving the exact expected Vercel commit.
@@ -68,30 +68,54 @@ if [ -n "${EXPECTED_RELEASE_SHA:-}" ]; then
   ok_note "production release matches $EXPECTED_RELEASE_SHA"
 fi
 
-# 2) The dashboard must either render directly (local/dev auth bypass) or enforce
-# the production private-login boundary. A production 307/302 redirect to /login
-# is the expected security behavior and must not be treated as a failed deploy.
-dashboard_status=$(curl_smoke -D "$dashboard_headers" -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
-case "$dashboard_status" in
-  200)
-    ok_note "GET /dashboard rendered directly"
-    ;;
-  302|307)
-    dashboard_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' "$dashboard_headers")
-    case "$dashboard_location" in
-      *"/login"*) ;;
-      *) fail "GET /dashboard redirected to unexpected location: ${dashboard_location:-missing}" ;;
-    esac
+# 2) Every canonical Useful V1 workspace and core CRM directory must either render
+# directly (local/dev auth bypass) or enforce the production private-login boundary.
+# This is a route/runtime proof only; it does not claim authenticated business-data
+# correctness, which remains covered by source-specific/live acceptance gates.
+protected_routes=(
+  "/dashboard"
+  "/strategy"
+  "/opportunities-actions"
+  "/relationships"
+  "/relationships/people"
+  "/relationships/companies"
+  "/relationships/activity"
+  "/events-market-windows"
+  "/specialists"
+  "/learning"
+  "/data-evidence"
+  "/ask-jeeves"
+)
 
-    login_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/login")
-    [ "$login_status" = "200" ] || fail "GET /login returned $login_status after protected dashboard redirect"
-    ok_note "GET /dashboard correctly requires private sign-in ($dashboard_status -> /login)"
-    ok_note "GET /login"
-    ;;
-  *)
-    fail "GET /dashboard returned $dashboard_status"
-    ;;
-esac
+saw_login_redirect=false
+for route in "${protected_routes[@]}"; do
+  : > "$route_headers"
+  route_status=$(curl_smoke -D "$route_headers" -o /dev/null -w "%{http_code}" "$BASE_URL$route")
+
+  case "$route_status" in
+    200)
+      ok_note "GET $route rendered directly"
+      ;;
+    302|307)
+      route_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' "$route_headers")
+      case "$route_location" in
+        *"/login"*) ;;
+        *) fail "GET $route redirected to unexpected location: ${route_location:-missing}" ;;
+      esac
+      saw_login_redirect=true
+      ok_note "GET $route correctly requires private sign-in ($route_status -> /login)"
+      ;;
+    *)
+      fail "GET $route returned $route_status"
+      ;;
+  esac
+done
+
+if [ "$saw_login_redirect" = true ]; then
+  login_status=$(curl_smoke -o /dev/null -w "%{http_code}" "$BASE_URL/login")
+  [ "$login_status" = "200" ] || fail "GET /login returned $login_status after protected route redirect"
+  ok_note "GET /login"
+fi
 
 # 3) Probe the overview API anonymously.
 # - Local/dev may intentionally allow it and return 200, in which case verify shape.
