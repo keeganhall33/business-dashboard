@@ -339,7 +339,7 @@ export function compileConversionFrictionLearningReadinessV1(
   }
 
   const firstRule = first.criterion?.rule;
-  if (!firstRule || reviews.some((review) => !sameCriterionRule(firstRule, review.criterion?.rule))) {
+  if (!firstRule || reviews.some((review) => !sameCriterionRule(firstRule, review.criterion?.rule ?? null))) {
     return blocked(
       "CRITERION_RULE_MISMATCH",
       recommendationId,
