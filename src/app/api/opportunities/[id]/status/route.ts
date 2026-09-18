@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { getOpportunityById, updateOpportunityStatus } from "@/lib/supabase/queries";
 import { explainOpportunityTransition, isOpportunityForwardTransition } from "@/lib/opportunity-approval-pipeline";
 import { parseJsonBody } from "@/lib/validation/parse";
@@ -8,6 +9,9 @@ import { updateOpportunityStatusSchema } from "@/lib/validation/opportunities";
 type Context = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, context: Context) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { id } = await context.params;
     if (!id) return validationError("Missing opportunity id", []);
