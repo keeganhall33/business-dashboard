@@ -1,9 +1,13 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { createTask, getTasks } from "@/lib/supabase/queries";
 import { parseJsonBody, parseSearchParams } from "@/lib/validation/parse";
 import { createTaskSchema, tasksQuerySchema } from "@/lib/validation/tasks";
 
 export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const url = new URL(request.url);
     const parsed = parseSearchParams(url.searchParams, tasksQuerySchema);
@@ -19,6 +23,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const parsed = await parseJsonBody(request, createTaskSchema);
     if (!parsed.success) return validationError(parsed.error.message, parsed.error.issues);
