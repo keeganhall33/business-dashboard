@@ -3,6 +3,7 @@ import "@/lib/server-only";
 import { listActions } from "@/lib/actions/action-store";
 import type { DurableAction } from "@/lib/actions/action-contract";
 import { getLatestAgentFusionContext, type AgentFusionContext } from "@/lib/agents/fusion-context";
+import { enforceExecutiveApprovalTruthV1 } from "@/lib/executive-home/approval-truth-guard-v1";
 import {
   buildExecutiveHomeFromCanonicalSystemsV3,
   buildExecutiveHomeFromDashboardOverviewV1,
@@ -64,9 +65,11 @@ export async function loadExecutiveHomeV3(input: {
     }
   };
 
-  return buildExecutiveHomeFromCanonicalSystemsV3(
+  const projection = buildExecutiveHomeFromCanonicalSystemsV3(
     input.overview,
     canonical,
     input.baseBuilder ?? buildExecutiveHomeFromDashboardOverviewV1
   );
+
+  return enforceExecutiveApprovalTruthV1(projection, input.overview);
 }
