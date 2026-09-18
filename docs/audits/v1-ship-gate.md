@@ -7,7 +7,7 @@ This gate distinguishes mechanical release readiness from live-data proof. A gre
 | Capability | State | Evidence / remaining proof |
 | --- | --- | --- |
 | Integrated code | PASS | Current main has passed TypeScript, the focused/unit suite, production build, and diff hygiene in Validated Main. |
-| Production propagation | PASS | The production smoke now requires `/api/health` `ok:true`, the exact expected Vercel commit SHA, a valid private-login boundary for `/dashboard`, a healthy `/login`, and the protected overview API posture. |
+| Production propagation | PASS | The production smoke requires `/api/health` `ok:true`, the exact expected Vercel commit SHA, every canonical Useful V1 protected workspace plus core CRM directory/activity route to either render directly or enforce the private-login boundary, a healthy `/login` after protected redirects, and the protected overview API posture. This is route/runtime proof, not authenticated business-data acceptance. |
 | Executive Home truth | PASS | Authoritative metric truth correction is merged; current release validation must continue to preserve UNKNOWN/partial/stale semantics rather than manufacture confirmation. |
 | Primary workspace routes | PASS | `test/v1-acceptance/release-gate-v1.test.tsx` fails if a canonical V1 workspace, CRM directory/activity route, or release-smoke contract disappears. Existing detail-route integrity tests keep unimplemented controls fail-closed. |
 | CRM directory reads | PASS | Canonical People and Companies reads were recovered through the `entities_v1` production path; empty/unavailable stores remain honestly empty. |
@@ -24,7 +24,7 @@ Run the focused acceptance gate from an exact current-main checkout:
 node --import tsx --test test/v1-acceptance/release-gate-v1.test.tsx test/executive-workspace/route-integrity-v1.test.tsx
 ```
 
-Then require the normal Validated Main workflow to pass. On a push to `main`, the configured production proof must also pass against the exact commit SHA.
+Then require the normal Validated Main workflow to pass. On a push to `main`, the configured production proof must also pass against the exact commit SHA and exercise the canonical V1 protected-route matrix.
 
 ## Final release rule
 
