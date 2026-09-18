@@ -30,6 +30,7 @@ export type SocialContentOpportunitySuppressionReasonV1 =
   | "NO_DECISION_GRADE_TARGET"
   | "TARGET_LACKS_HIGH_INTENT_MEASUREMENT"
   | "TARGET_HAS_CONTRARY_FIRST_PARTY_EVIDENCE"
+  | "TARGET_ALREADY_TESTED_WITHOUT_SUPPORT"
   | "TARGET_ALREADY_HAS_FIRST_PARTY_SUPPORT";
 
 export type SocialContentOpportunityPeerContextV1 = Readonly<{
@@ -204,7 +205,7 @@ function currentPeerContext(
   const asOfMs = Date.parse(peerEvidence.asOf);
   if (!Number.isFinite(asOfMs) || asOfMs > generatedAtMs) return [];
   if (generatedAtMs - asOfMs > maxPeerEvidenceAgeHours * 3_600_000) return [];
-  const peerDimension = sourcePattern.dimension === "FORMAT"
+  const peerDimension: SocialContentOpportunityPeerContextV1["dimension"] | null = sourcePattern.dimension === "FORMAT"
     ? "FORMAT"
     : sourcePattern.dimension === "HOOK"
       ? "HOOK"
@@ -217,7 +218,7 @@ function currentPeerContext(
       pattern.dimension === peerDimension &&
       sameText(pattern.value, sourcePattern.value)
     )
-    .map((pattern: SocialPeerObservedPatternV1) => freeze({
+    .map((pattern: SocialPeerObservedPatternV1): SocialContentOpportunityPeerContextV1 => freeze({
       peerId: pattern.peerId,
       peerDisplayName: pattern.peerDisplayName,
       platform: pattern.platform,
@@ -248,7 +249,7 @@ function targetPatternDisposition(
   dna: SocialContentDnaAnalysisV1,
   targetPlatform: SocialPlatformV1,
   sourcePattern: ContentDnaPatternV1
-): "ABSENT" | "SUPPORTED" | "CONTRARY" {
+): "ABSENT" | "SUPPORTED" | "NEUTRAL" | "CONTRARY" {
   const targetPattern = dna.patterns.find((pattern) =>
     pattern.platform === targetPlatform &&
     pattern.dimension === sourcePattern.dimension &&
@@ -256,7 +257,8 @@ function targetPatternDisposition(
   );
   if (!targetPattern) return "ABSENT";
   if (targetPattern.association === "ABOVE_PLATFORM_BASELINE") return "SUPPORTED";
-  return "CONTRARY";
+  if (targetPattern.association === "BELOW_PLATFORM_BASELINE") return "CONTRARY";
+  return "NEUTRAL";
 }
 
 function successMetricLabel(metric: HighIntentMetric): string {
@@ -431,6 +433,17 @@ export function compileSocialContentOpportunityQueueV1(
           sourceDimension: pattern.dimension,
           observedMechanism: pattern.value,
           reason: "TARGET_ALREADY_HAS_FIRST_PARTY_SUPPORT" as const,
+          evidenceRefs: support.evidenceRefs
+        }));
+        continue;
+      }
+      if (targetDisposition === "NEUTRAL") {
+        suppressions.push(freeze({
+          sourcePlatform: pattern.platform,
+          targetPlatform,
+          sourceDimension: pattern.dimension,
+          observedMechanism: pattern.value,
+          reason: "TARGET_ALREADY_TESTED_WITHOUT_SUPPORT" as const,
           evidenceRefs: support.evidenceRefs
         }));
         continue;
