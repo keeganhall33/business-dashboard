@@ -62,6 +62,32 @@ test("capacity-aware portfolio refuses an overloaded NOW and names displacement"
   assert.equal(result.decision_support_only, true);
 });
 
+test("capacity-aware portfolio refuses impossible displacement plans", () => {
+  const result = buildCapacityAwarePortfolioV2(
+    baseInput([
+      opportunity({
+        opportunity_id: "alpha",
+        priority_score: 90,
+        resource_demand: { cash: 20, keegan_hours: 8, energy: 4 }
+      }),
+      opportunity({
+        opportunity_id: "oversized",
+        priority_score: 80,
+        resource_demand: { cash: 10, keegan_hours: 12, energy: 3 }
+      })
+    ])
+  );
+
+  assert.deepEqual(result.lanes.NOW, ["alpha"]);
+  assert.deepEqual(result.lanes.NEXT, ["oversized"]);
+  assert.deepEqual(result.items[1]!.constraint_codes, ["KEEGAN_HOURS_CAPACITY"]);
+  assert.deepEqual(result.items[1]!.required_displacement, []);
+  assert.match(result.items[1]!.rationale, /no feasible displacement plan exists/i);
+  assert.equal(result.remaining_capacity.keegan_hours, 2);
+  assert.equal(result.external_action_authorized, false);
+  assert.equal(result.decision_support_only, true);
+});
+
 test("capacity-aware portfolio permits NOW when an evidenced delegation option makes it feasible", () => {
   const input: CapacityAwarePortfolioInputV2 = {
     capacity: { cash: 50, keegan_hours: 2, energy: 3 },
