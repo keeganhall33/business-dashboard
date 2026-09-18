@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ExecutiveOpportunityDetailV1 } from "@/components/opportunity-intelligence/ExecutiveOpportunityDetailV1";
 import type { EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
 import type { ExecutiveCommandCenterOpportunityV1 } from "@/lib/executive-home/fixtures";
-import { getOpportunityById } from "@/lib/supabase/queries";
+import { getOpportunityById, getOpportunityRelationshipContextV1 } from "@/lib/supabase/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,5 +57,15 @@ export default async function ExecutiveOpportunityDetailPage({ params }: PagePro
     detail_href: `/opportunities-actions/opportunity/${encodeURIComponent(editable.id)}`
   };
 
-  return <ExecutiveOpportunityDetailV1 opportunity={opportunity} generatedAt={text(row.updated_at)} editableOpportunity={editable} />;
+  const relationshipContext = await getOpportunityRelationshipContextV1(editable.id);
+
+  return (
+    <ExecutiveOpportunityDetailV1
+      opportunity={opportunity}
+      generatedAt={text(row.updated_at)}
+      editableOpportunity={editable}
+      relationshipEvidence={relationshipContext.evidence}
+      primaryContacts={relationshipContext.primaryContacts}
+    />
+  );
 }
