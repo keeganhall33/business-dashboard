@@ -71,6 +71,8 @@ export type SponsorMapCoverageGapV1 =
   | "ACCESS_PATH_UNKNOWN"
   | "CONTACT_ROUTE_UNKNOWN"
   | "PLANNING_WINDOW_UNKNOWN"
+  | "MISSING_FIELD_EVIDENCE"
+  | "TRUTH_VALUE_CONFLICT"
   | "EVIDENCE_INFERRED_OR_PARTIAL"
   | "EVIDENCE_STALE"
   | "EVIDENCE_CONFLICTED";
@@ -152,6 +154,8 @@ const GAP_ORDER: readonly SponsorMapCoverageGapV1[] = [
   "ACCESS_PATH_UNKNOWN",
   "CONTACT_ROUTE_UNKNOWN",
   "PLANNING_WINDOW_UNKNOWN",
+  "MISSING_FIELD_EVIDENCE",
+  "TRUTH_VALUE_CONFLICT",
   "EVIDENCE_CONFLICTED",
   "EVIDENCE_STALE",
   "EVIDENCE_INFERRED_OR_PARTIAL"
@@ -267,6 +271,11 @@ function allFields(candidate: NormalizedCandidate): readonly Readonly<SponsorMap
   return fields;
 }
 
+function fieldHasAssertedValue(field: Readonly<SponsorMapEvidenceFieldV1<unknown>>): boolean {
+  if (field.value == null) return false;
+  return !(typeof field.value === "string" && field.value === "UNKNOWN");
+}
+
 function coverageGaps(candidate: NormalizedCandidate, nowMs: number, maximumEvidenceAgeDays: number): SponsorMapCoverageGapV1[] {
   const gaps = new Set<SponsorMapCoverageGapV1>();
   if (!candidate.canonicalOrganizationRef) gaps.add("MISSING_CANONICAL_ORGANIZATION");
@@ -279,6 +288,12 @@ function coverageGaps(candidate: NormalizedCandidate, nowMs: number, maximumEvid
   if (candidate.planningWindow.value == null || candidate.planningWindow.state === "UNKNOWN") gaps.add("PLANNING_WINDOW_UNKNOWN");
 
   const fields = allFields(candidate);
+  if (fields.some((field) => field.state === "KNOWN" && fieldHasAssertedValue(field) && field.evidenceRefs.length === 0)) {
+    gaps.add("MISSING_FIELD_EVIDENCE");
+  }
+  if (fields.some((field) => field.state === "UNKNOWN" && fieldHasAssertedValue(field))) {
+    gaps.add("TRUTH_VALUE_CONFLICT");
+  }
   if (fields.some((field) => field.state === "CONFLICTED")) gaps.add("EVIDENCE_CONFLICTED");
   if (fields.some((field) => field.state === "STALE") || nowMs - candidate.observedAtMs > maximumEvidenceAgeDays * DAY_MS) gaps.add("EVIDENCE_STALE");
   if (fields.some((field) => field.state === "INFERRED" || field.state === "PARTIAL")) gaps.add("EVIDENCE_INFERRED_OR_PARTIAL");
@@ -287,7 +302,13 @@ function coverageGaps(candidate: NormalizedCandidate, nowMs: number, maximumEvid
 
 function dispositionFor(gaps: readonly SponsorMapCoverageGapV1[]): SponsorMapDispositionV1 {
   if (gaps.includes("MISSING_CANONICAL_ORGANIZATION") || gaps.includes("MISSING_EVIDENCE")) return "SUPPRESS";
-  if (gaps.includes("EVIDENCE_CONFLICTED") || gaps.includes("EVIDENCE_STALE") || gaps.includes("EVIDENCE_INFERRED_OR_PARTIAL")) {
+  if (
+    gaps.includes("MISSING_FIELD_EVIDENCE") ||
+    gaps.includes("TRUTH_VALUE_CONFLICT") ||
+    gaps.includes("EVIDENCE_CONFLICTED") ||
+    gaps.includes("EVIDENCE_STALE") ||
+    gaps.includes("EVIDENCE_INFERRED_OR_PARTIAL")
+  ) {
     return "NEEDS_VERIFICATION";
   }
   if (gaps.length > 0) return "NEEDS_RESEARCH";
