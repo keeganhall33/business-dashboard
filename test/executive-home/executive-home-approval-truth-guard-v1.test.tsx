@@ -38,7 +38,25 @@ function overview(input: {
 }
 
 function projection() {
-  return { home: structuredClone(EXECUTIVE_HOME_FIXTURE_V1) };
+  const home = structuredClone(EXECUTIVE_HOME_FIXTURE_V1);
+  home.command_center.keegan_actions = [
+    {
+      id: "approval-queue",
+      label: "No Keegan approval required",
+      approval_state: "NONE",
+      detail: "No external action is queued."
+    }
+  ];
+  home.command_center.intelligence_engine = [
+    ...home.command_center.intelligence_engine,
+    {
+      id: "execution",
+      lane: "Execution",
+      status: "No approval block",
+      truth_state: "KNOWN"
+    }
+  ];
+  return { home };
 }
 
 test("missing approval evidence stays UNKNOWN instead of becoming a false clear queue", () => {
