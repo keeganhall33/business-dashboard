@@ -348,7 +348,11 @@ export function CrmDirectoryIndexV1({
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-600">Organizations, key people, active opportunities, last activity, next move, and supported value.</p>
         </Link>
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Intelligent relationship inbox">
+        <Link
+          href="/relationships/follow-ups"
+          className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          aria-label="Open relationship follow-ups"
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Needs attention</p>
@@ -361,7 +365,10 @@ export function CrmDirectoryIndexV1({
           <p className="mt-4 text-sm leading-6 text-slate-600">
             Review replies, overdue follow-ups, and relationships that need fresh information.
           </p>
-        </section>
+          <span className="mt-4 inline-flex text-sm font-semibold text-blue-700 group-hover:underline">
+            Open follow-up queue →
+          </span>
+        </Link>
       </section>
       {index.people.length === 0 && index.companies.length === 0 ? (
         <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm leading-6 text-slate-600">
