@@ -6,7 +6,7 @@ This gate distinguishes mechanical release readiness from live-data proof. A gre
 
 | Capability | State | Evidence / remaining proof |
 | --- | --- | --- |
-| Integrated code | PASS | Current main has passed TypeScript, the focused/unit suite, production build, and diff hygiene in Validated Main. |
+| Integrated code | PASS | Current main has passed TypeScript, the focused/unit suite, production build, and diff hygiene in Validated Main. Superseded validation/smoke runs are cancelled so an overtaken Vercel commit does not create a false release failure; the newest ref remains the release candidate that must pass. |
 | Production propagation | PASS | The production smoke requires `/api/health` `ok:true`, the exact expected Vercel commit SHA, every canonical Useful V1 protected workspace plus core CRM directory/activity route to either render directly or enforce the private-login boundary, a healthy `/login` after protected redirects, and the protected overview API posture. This is route/runtime proof, not authenticated business-data acceptance. |
 | Executive Home truth | PASS | Authoritative metric truth correction is merged; current release validation must continue to preserve UNKNOWN/partial/stale semantics rather than manufacture confirmation. |
 | Primary workspace routes | PASS | `test/v1-acceptance/release-gate-v1.test.tsx` fails if a canonical V1 workspace, CRM directory/activity route, or release-smoke contract disappears. Existing detail-route integrity tests keep unimplemented controls fail-closed. |
