@@ -1,15 +1,34 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ReactNode, Suspense } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { EXECUTIVE_WORKSPACE_NAV_V1 } from "@/lib/executive-workspace/ia";
 import { RangeAwareLink } from "@/components/navigation/RangeAwareLink";
+import {
+  DASHBOARD_SESSION_COOKIE,
+  canBypassDashboardAuth,
+  getDashboardSessionSecret,
+  verifyDashboardSession
+} from "@/lib/auth/dashboard-session";
 
 const NAV_ITEMS = EXECUTIVE_WORKSPACE_NAV_V1;
 const PRIMARY_NAV_IDS = new Set(["EXECUTIVE_HOME", "ASK_JEEVES", "OPPORTUNITIES_ACTIONS", "RELATIONSHIPS_CRM"]);
 const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter((item) => PRIMARY_NAV_IDS.has(item.id));
 const DATA_STATUS_ITEM = NAV_ITEMS.find((item) => item.id === "DATA_EVIDENCE");
 
-export default function AppLayout({ children }: { children: ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function AppLayout({ children }: { children: ReactNode }) {
+  if (!canBypassDashboardAuth()) {
+    const secret = getDashboardSessionSecret();
+    const cookieStore = await cookies();
+    const session = secret
+      ? verifyDashboardSession({ token: cookieStore.get(DASHBOARD_SESSION_COOKIE)?.value, secret })
+      : null;
+    if (!session) redirect(secret ? "/login" : "/login?error=configuration");
+  }
+
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -35,6 +54,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Suspense>
             ))}
             {DATA_STATUS_ITEM ? <Suspense fallback={<Link href={DATA_STATUS_ITEM.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">Data status</Link>}><RangeAwareLink href={DATA_STATUS_ITEM.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Data status</RangeAwareLink></Suspense> : null}
+            <form action="/api/auth/logout" method="post">
+              <button type="submit" className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Sign out</button>
+            </form>
           </nav>
         </div>
         <div className="mx-auto w-full max-w-[1600px] px-4 pb-3 sm:px-6 lg:hidden lg:px-8">
@@ -47,6 +69,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Suspense>
             ))}
             {DATA_STATUS_ITEM ? <Suspense fallback={<Link href={DATA_STATUS_ITEM.href} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">Data status</Link>}><RangeAwareLink href={DATA_STATUS_ITEM.href} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Data status</RangeAwareLink></Suspense> : null}
+            <form action="/api/auth/logout" method="post">
+              <button type="submit" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">Sign out</button>
+            </form>
           </div>
         </div>
       </header>
