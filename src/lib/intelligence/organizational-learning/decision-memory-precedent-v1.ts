@@ -154,11 +154,11 @@ function outcomeSummary(record: DecisionMemoryRecordV1, evidenceUses: EvidenceUs
   }
   addBoundEvidence(evidenceUses, "outcome:assessment", observation.assessment);
   for (const ref of observation.attributionEvidenceRefs) {
-    evidenceUses.push({ ref, state: "KNOWN", field: "outcome:attribution" });
+    evidenceUses.push({ ref, state: "UNKNOWN", field: "outcome:attribution" });
   }
   for (const confounder of observation.confounders) {
     for (const ref of confounder.evidenceRefs) {
-      evidenceUses.push({ ref, state: "KNOWN", field: `outcome:confounder:${confounder.confounderId}` });
+      evidenceUses.push({ ref, state: "UNKNOWN", field: `outcome:confounder:${confounder.confounderId}` });
     }
   }
 
@@ -309,6 +309,7 @@ export function compileDecisionMemoryPrecedentV1(args: {
     "Outcome status remains UNKNOWN because DecisionMemoryV1 does not encode an explicit precedent success/failure status.",
     "Attribution confidence remains UNKNOWN because attribution class is not converted into confidence.",
     "Governed lesson candidates are not promoted into precedent lessons; LESSON remains UNKNOWN until a separate reviewed learning contract authorizes promotion.",
+    "Raw attribution and confounder evidence references have no truth-state field in DecisionMemoryV1 and therefore remain UNKNOWN in precedent evidence instead of being upgraded.",
     "A single decision never becomes a preference rule; the precedent is classified WEAK_SIGNAL_ONLY."
   ];
 
