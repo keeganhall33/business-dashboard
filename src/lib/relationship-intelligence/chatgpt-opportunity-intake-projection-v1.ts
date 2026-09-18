@@ -95,6 +95,11 @@ function requiredText(value: unknown, label: string): string {
   return value.trim();
 }
 
+function optionalRequiredText(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  return value.trim();
+}
+
 function timestamp(value: string | Date, label: string): string {
   const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (!Number.isFinite(parsed.getTime())) throw new Error(`${label} must be a valid timestamp`);
@@ -113,6 +118,39 @@ function oneOrNull(values: readonly string[]): string | null | "AMBIGUOUS" {
   if (normalized.length === 0) return null;
   if (normalized.length > 1) return "AMBIGUOUS";
   return normalized[0];
+}
+
+function emissionFieldsAreKnown(handoff: OpportunityImportHandoffResultV1): boolean {
+  return [
+    handoff.payload.summary,
+    handoff.payload.whyNow,
+    handoff.payload.recommendedNextAction,
+    handoff.payload.planningWindow
+  ].every((field) => field == null || field.state === "KNOWN");
+}
+
+function emissionSemanticsAreConsistent(handoff: OpportunityImportHandoffResultV1): boolean {
+  if (handoff.disposition !== "READY_FOR_CANONICAL_UPSERT" && handoff.disposition !== "LINK_TO_EXISTING") {
+    return true;
+  }
+
+  if (handoff.payload.qualification !== "QUALIFIED" || handoff.payload.truthState !== "KNOWN") {
+    return false;
+  }
+  if (!emissionFieldsAreKnown(handoff)) return false;
+
+  if (handoff.disposition === "LINK_TO_EXISTING") {
+    return (
+      optionalRequiredText(handoff.payload.existingOpportunityRef) != null &&
+      handoff.canonicalMatchPolicy === "EXPLICIT_EXISTING_REF_ONLY"
+    );
+  }
+
+  return (
+    handoff.payload.existingOpportunityRef == null &&
+    handoff.canonicalMatchPolicy === "SOURCE_IDENTITY_ONLY" &&
+    (handoff.payload.organizationRefs.length > 0 || handoff.payload.personRefs.length > 0)
+  );
 }
 
 function baseResult(
@@ -145,6 +183,12 @@ export function projectChatGptOpportunityIntoIntakeV1(
   if (input.handoff.crmMutationPerformed || input.handoff.externalActionPerformed || input.handoff.writeAuthorityGranted) {
     throw new Error("handoff must remain side-effect-free and grant no write authority");
   }
+  if (!input.handoff.payload || typeof input.handoff.payload !== "object" || Array.isArray(input.handoff.payload)) {
+    throw new Error("handoff.payload must be an object");
+  }
+  if (!Array.isArray(input.handoff.payload.evidenceRefs)) throw new Error("handoff.payload.evidenceRefs must be an array");
+  if (!Array.isArray(input.handoff.payload.organizationRefs)) throw new Error("handoff.payload.organizationRefs must be an array");
+  if (!Array.isArray(input.handoff.payload.personRefs)) throw new Error("handoff.payload.personRefs must be an array");
 
   const generatedAt = timestamp(input.evaluatedAt, "evaluatedAt");
   const observedAt = timestamp(input.context.observedAt, "context.observedAt");
@@ -161,6 +205,9 @@ export function projectChatGptOpportunityIntoIntakeV1(
     return baseResult(generatedAt, "SUPPRESSED", ["HANDOFF_WATCH_ONLY"], null);
   }
   if (input.handoff.disposition === "NEEDS_VERIFICATION") {
+    return baseResult(generatedAt, "VERIFY_REQUIRED", ["HANDOFF_REQUIRES_VERIFICATION"], null);
+  }
+  if (!emissionSemanticsAreConsistent(input.handoff)) {
     return baseResult(generatedAt, "VERIFY_REQUIRED", ["HANDOFF_REQUIRES_VERIFICATION"], null);
   }
 
