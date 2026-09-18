@@ -16,6 +16,14 @@ const supabaseClient = supabaseUrl && supabaseServiceRoleKey
       auth: { autoRefreshToken: false, persistSession: false }
     })
   : null;
+
+const LEGACY_LIMITATIONS = Object.freeze([
+  'Legacy social:run uses manual observations, not proven live first-party platform ingestion',
+  'Legacy observations cannot establish channel metric completeness or source freshness',
+  'Website or commerce activity is not converted into social performance evidence',
+  'Legacy observations cannot establish cross-platform attribution or competitor performance'
+]);
+
 if (!supabaseClient) {
   console.warn(
     `[social] Supabase env missing; urlPresent=${Boolean(supabaseUrl)} keyPresent=${Boolean(supabaseServiceRoleKey)} - skipping remote snapshot upsert`
@@ -31,40 +39,41 @@ async function safeReadJson(file) {
   }
 }
 
-function deriveFromWebsite(website) {
-  if (!website?.wooCommerce?.recentOrders?.length) return [];
-  return website.wooCommerce.recentOrders.slice(0, 3).map((order) => ({
-    platform: 'Website referral',
-    title: `Order from ${order.customer || 'collector'}`,
-    format: 'Case study',
-    date: order.date,
-    metrics: `Total $${order.total}`,
-    engagement: 'High intent buyer',
-    collectorSignal: 'Recent purchaser',
-    why: 'Highlight the story behind a recent collector to attract similar buyers.',
-    nextIdea: `Share a behind-the-scenes post about ${order.customer || 'this collector'} and the artwork they chose.`,
-    confidence: 'medium',
-    source: 'WooCommerce recent orders',
-    status: 'new'
-  }));
+function stringOrNull(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function isoOrNull(value) {
+  const normalized = stringOrNull(value);
+  if (!normalized) return null;
+  const parsed = Date.parse(normalized);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
 }
 
 function normalizeManualEntries(entries) {
   if (!Array.isArray(entries)) return [];
-  return entries.map((entry) => ({
-    platform: entry.platform ?? 'Instagram',
-    title: entry.title ?? 'Untitled post',
-    format: entry.format ?? 'Image',
-    date: entry.date ?? new Date().toISOString(),
-    metrics: entry.metrics ?? '',
-    engagement: entry.engagement ?? '',
-    collectorSignal: entry.collectorSignal ?? '',
-    why: entry.why ?? 'Audience engaged strongly with this concept.',
-    nextIdea: entry.nextIdea ?? 'Create a follow-up piece expanding this story.',
-    confidence: entry.confidence ?? 'medium',
-    source: entry.source ?? 'manual_input',
-    status: entry.status ?? 'review'
-  }));
+  return entries
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry, index) => ({
+      observationId: stringOrNull(entry.observationId) ?? `manual:${index + 1}`,
+      platform: stringOrNull(entry.platform),
+      title: stringOrNull(entry.title),
+      format: stringOrNull(entry.format),
+      date: isoOrNull(entry.date),
+      metrics: stringOrNull(entry.metrics),
+      engagement: stringOrNull(entry.engagement),
+      collectorSignal: stringOrNull(entry.collectorSignal),
+      why: stringOrNull(entry.why),
+      nextIdea: stringOrNull(entry.nextIdea),
+      confidence: stringOrNull(entry.confidence),
+      status: stringOrNull(entry.status),
+      source: 'manual_input',
+      evidenceState: 'MANUAL_UNVERIFIED',
+      liveFirstPartyData: false,
+      providerEvidenceRefs: []
+    }));
 }
 
 async function appendLog(entry) {
@@ -76,30 +85,43 @@ async function appendLog(entry) {
 async function main() {
   const website = await safeReadJson(WEBSITE_JSON);
   const manualInput = await safeReadJson(MANUAL_INPUT);
-
-  const insights = [...deriveFromWebsite(website), ...normalizeManualEntries(manualInput ?? [])];
+  const insights = normalizeManualEntries(manualInput ?? []);
 
   const sourceDetails = {
-    websiteDerivedCount: deriveFromWebsite(website).length,
-    manualEntryCount: (manualInput ?? []).length,
-    hasManualInput: Boolean(manualInput && manualInput.length),
-    earliestManualEntry: manualInput && manualInput.length ? manualInput[manualInput.length - 1]?.date ?? null : null,
-    latestManualEntry: manualInput && manualInput.length ? manualInput[0]?.date ?? null : null,
-    lastWebsiteSnapshot: website?.generatedAt ?? website?.ga4?.generatedAt ?? null
+    manualEntryCount: Array.isArray(manualInput) ? manualInput.length : 0,
+    normalizedManualEntryCount: insights.length,
+    hasManualInput: insights.length > 0,
+    earliestManualEntry: insights.map((entry) => entry.date).filter(Boolean).sort()[0] ?? null,
+    latestManualEntry: insights.map((entry) => entry.date).filter(Boolean).sort().at(-1) ?? null,
+    websiteSnapshotPresent: Boolean(website),
+    lastWebsiteSnapshot: website?.generatedAt ?? website?.ga4?.generatedAt ?? null,
+    websiteDerivedCount: 0,
+    websiteDataUsedForSocialMetrics: false
   };
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    mode: sourceDetails.hasManualInput ? 'PARTIAL' : 'FALLBACK',
-    source: sourceDetails.hasManualInput ? 'manual_input' : 'website_only',
+    mode: 'SCAFFOLDED',
+    operationalState: 'SCAFFOLDED',
+    source: sourceDetails.hasManualInput ? 'manual_input' : 'none',
+    liveFirstPartyData: false,
+    coverageState: 'AVAILABLE_NEEDS_IMPLEMENTATION',
     insights,
-    sourceDetails
+    sourceDetails,
+    limitations: LEGACY_LIMITATIONS,
+    externalSocialAccessPerformed: false,
+    platformMutationPerformed: false
   };
 
   await fs.mkdir(path.join(DASHBOARD_ROOT, 'data', 'social'), { recursive: true });
   await fs.writeFile(OUTPUT_PATH, JSON.stringify(payload, null, 2));
-  await appendLog({ status: 'success', insightCount: insights.length });
-  console.log('[social] Social intelligence snapshot written');
+  await appendLog({
+    status: 'success',
+    operationalState: payload.operationalState,
+    liveFirstPartyData: false,
+    insightCount: insights.length
+  });
+  console.log('[social] Scaffolded legacy social snapshot written; live first-party data not proven');
 
   if (supabaseClient) {
     try {
@@ -115,7 +137,7 @@ async function main() {
         console.error('[social] Supabase snapshot upsert failed:', error.message);
         await appendLog({ status: 'warning', message: `supabase upsert failed: ${error.message}` });
       } else {
-        console.log('[social] Supabase dashboard snapshot updated (social)');
+        console.log('[social] Supabase dashboard snapshot updated (social scaffold)');
       }
     } catch (error) {
       console.error('[social] Supabase snapshot upsert threw:', error instanceof Error ? error.message : error);
