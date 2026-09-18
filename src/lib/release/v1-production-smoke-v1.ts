@@ -1,0 +1,425 @@
+import type {
+  V1ReleaseActionRequirementV1,
+  V1ReleaseGateEvidenceV1
+} from "@/lib/release/v1-release-certificate-v1";
+
+export const V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1 = [
+  "EXECUTIVE_HOME",
+  "OPPORTUNITY_DETAIL",
+  "CRM_PERSON",
+  "CRM_COMPANY",
+  "CRM_ACTIVITY",
+  "STRATEGY",
+  "DATA_EVIDENCE",
+  "LEARNING",
+  "EVENTS",
+  "SPECIALISTS"
+] as const;
+
+export type V1ProductionSmokeStepIdV1 =
+  (typeof V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1)[number];
+export type V1ProductionSmokeStepStateV1 = "PASS" | "FAIL" | "BLOCKED" | "UNKNOWN";
+
+export type V1ProductionSmokeObservationV1 = {
+  stepId: V1ProductionSmokeStepIdV1;
+  state: V1ProductionSmokeStepStateV1;
+  observedAt: string;
+  observedPath: string;
+  evidenceRefs: readonly string[];
+  releaseSha: string;
+  actionRequirement: V1ReleaseActionRequirementV1;
+  detail?: string | null;
+};
+
+export type V1ProductionSmokeInputV1 = {
+  releaseSha: string;
+  generatedAt: string;
+  environment: "PRODUCTION";
+  observations: readonly V1ProductionSmokeObservationV1[];
+};
+
+export type V1ProductionSmokeBlockerCodeV1 =
+  | "INVALID_RELEASE_SHA"
+  | "INVALID_GENERATED_AT"
+  | "MISSING_STEP"
+  | "DUPLICATE_STEP"
+  | "STEP_OUT_OF_ORDER"
+  | "STEP_NOT_PASS"
+  | "STEP_SHA_MISMATCH"
+  | "STEP_INVALID_TIMESTAMP"
+  | "STEP_FUTURE_EVIDENCE"
+  | "STEP_MISSING_PROVENANCE"
+  | "STEP_UNSAFE_PROVENANCE"
+  | "STEP_INVALID_PATH"
+  | "STEP_ACTION_REQUIRED";
+
+export type V1ProductionSmokeBlockerV1 = {
+  code: V1ProductionSmokeBlockerCodeV1;
+  stepId: V1ProductionSmokeStepIdV1 | null;
+  detail: string;
+  evidenceRefs: readonly string[];
+  actionRequirement: V1ReleaseActionRequirementV1;
+};
+
+export type V1ProductionSmokeStepResultV1 = {
+  stepId: V1ProductionSmokeStepIdV1;
+  status: "PASS" | "BLOCKING";
+  state: V1ProductionSmokeStepStateV1 | "MISSING" | "DUPLICATE";
+  observedAt: string | null;
+  observedPath: string | null;
+  evidenceRefs: readonly string[];
+  releaseSha: string | null;
+  actionRequirement: V1ReleaseActionRequirementV1;
+};
+
+export type V1ProductionSmokeResultV1 = {
+  contractVersion: "V1_PRODUCTION_SMOKE_V1";
+  releaseSha: string;
+  generatedAt: string;
+  environment: "PRODUCTION";
+  status: "PASS" | "BLOCKED";
+  gateEvidence: V1ReleaseGateEvidenceV1;
+  steps: readonly V1ProductionSmokeStepResultV1[];
+  blockers: readonly V1ProductionSmokeBlockerV1[];
+  authority: {
+    canDeploy: false;
+    canMutateProduction: false;
+    canSendEmail: false;
+    canBypassApproval: false;
+  };
+};
+
+const SHA_40 = /^[0-9a-f]{40}$/;
+const SAFE_PATH = /^\/[^?#\s]*$/;
+const UNSAFE_EVIDENCE_REF =
+  /(?:op:\/\/|begin\s+(?:rsa\s+)?private\s+key|(?:password|passwd|secret|token|api[_-]?key)\s*[=:])/i;
+
+function parsedTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sanitizedEvidenceRefs(refs: readonly string[] | undefined): {
+  refs: string[];
+  unsafe: boolean;
+} {
+  if (!refs) return { refs: [], unsafe: false };
+  const cleaned = [...new Set(refs.map((ref) => ref.trim()).filter(Boolean))].sort();
+  const unsafe = cleaned.some((ref) => UNSAFE_EVIDENCE_REF.test(ref));
+  return { refs: unsafe ? [] : cleaned, unsafe };
+}
+
+function blocker(
+  code: V1ProductionSmokeBlockerCodeV1,
+  stepId: V1ProductionSmokeStepIdV1 | null,
+  detail: string,
+  evidenceRefs: readonly string[],
+  actionRequirement: V1ReleaseActionRequirementV1
+): V1ProductionSmokeBlockerV1 {
+  return { code, stepId, detail, evidenceRefs: [...evidenceRefs], actionRequirement };
+}
+
+function aggregateActionRequirement(
+  values: readonly V1ReleaseActionRequirementV1[]
+): V1ReleaseActionRequirementV1 {
+  if (values.some((value) => value === "KEEGAN")) return "KEEGAN";
+  if (values.length > 0 && values.every((value) => value === "NONE")) return "NONE";
+  return "UNKNOWN";
+}
+
+/**
+ * Compiles explicit, already-observed production navigation evidence into the canonical
+ * PRODUCTION_SMOKE gate used by the Useful V1 release certificate.
+ *
+ * This compiler performs no browser automation, network requests, authentication,
+ * deployment, production mutation, or secret access. Callers must supply evidence from
+ * the live production run. Missing, partial, conflicted, out-of-order, or mismatched
+ * observations fail closed instead of being promoted to release truth.
+ */
+export function compileV1ProductionSmokeV1(
+  input: V1ProductionSmokeInputV1
+): V1ProductionSmokeResultV1 {
+  const blockers: V1ProductionSmokeBlockerV1[] = [];
+  const releaseShaValid = SHA_40.test(input.releaseSha);
+  const generatedAtMs = parsedTimestamp(input.generatedAt);
+
+  if (!releaseShaValid) {
+    blockers.push(
+      blocker(
+        "INVALID_RELEASE_SHA",
+        null,
+        "Production smoke evidence requires an exact lowercase 40-character Git commit SHA.",
+        [],
+        "UNKNOWN"
+      )
+    );
+  }
+
+  if (generatedAtMs == null) {
+    blockers.push(
+      blocker(
+        "INVALID_GENERATED_AT",
+        null,
+        "Production smoke generatedAt must be a valid timestamp.",
+        [],
+        "UNKNOWN"
+      )
+    );
+  }
+
+  const byStep = new Map<V1ProductionSmokeStepIdV1, V1ProductionSmokeObservationV1[]>();
+  for (const observation of input.observations) {
+    const current = byStep.get(observation.stepId) ?? [];
+    current.push(observation);
+    byStep.set(observation.stepId, current);
+  }
+
+  const uniqueSequence = input.observations
+    .filter((observation) => (byStep.get(observation.stepId)?.length ?? 0) === 1)
+    .map((observation) => observation.stepId);
+  const expectedPresentSequence = V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1.filter(
+    (stepId) => (byStep.get(stepId)?.length ?? 0) === 1
+  );
+  if (
+    uniqueSequence.length === V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1.length &&
+    uniqueSequence.some((stepId, index) => stepId !== expectedPresentSequence[index])
+  ) {
+    blockers.push(
+      blocker(
+        "STEP_OUT_OF_ORDER",
+        null,
+        "Production smoke observations must follow the declared Useful V1 acceptance path in order.",
+        [],
+        aggregateActionRequirement(input.observations.map((entry) => entry.actionRequirement))
+      )
+    );
+  }
+
+  const stepResults: V1ProductionSmokeStepResultV1[] = [];
+
+  for (const stepId of V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1) {
+    const evidence = byStep.get(stepId) ?? [];
+
+    if (evidence.length === 0) {
+      blockers.push(
+        blocker(
+          "MISSING_STEP",
+          stepId,
+          `${stepId} has no live production observation. Missing smoke evidence cannot be treated as PASS.`,
+          [],
+          "UNKNOWN"
+        )
+      );
+      stepResults.push({
+        stepId,
+        status: "BLOCKING",
+        state: "MISSING",
+        observedAt: null,
+        observedPath: null,
+        evidenceRefs: [],
+        releaseSha: null,
+        actionRequirement: "UNKNOWN"
+      });
+      continue;
+    }
+
+    if (evidence.length > 1) {
+      const sanitized = sanitizedEvidenceRefs(evidence.flatMap((entry) => entry.evidenceRefs));
+      const actionRequirement = aggregateActionRequirement(
+        evidence.map((entry) => entry.actionRequirement)
+      );
+      blockers.push(
+        blocker(
+          "DUPLICATE_STEP",
+          stepId,
+          `${stepId} has multiple observations. The smoke compiler refuses to choose a winner.`,
+          sanitized.refs,
+          actionRequirement
+        )
+      );
+      if (sanitized.unsafe) {
+        blockers.push(
+          blocker(
+            "STEP_UNSAFE_PROVENANCE",
+            stepId,
+            `${stepId} evidence references contain secret-like material and were removed from output.`,
+            [],
+            actionRequirement
+          )
+        );
+      }
+      stepResults.push({
+        stepId,
+        status: "BLOCKING",
+        state: "DUPLICATE",
+        observedAt: null,
+        observedPath: null,
+        evidenceRefs: sanitized.refs,
+        releaseSha: null,
+        actionRequirement
+      });
+      continue;
+    }
+
+    const observation = evidence[0];
+    const sanitized = sanitizedEvidenceRefs(observation.evidenceRefs);
+    const observedAtMs = parsedTimestamp(observation.observedAt);
+    let blocking = false;
+
+    if (observation.state !== "PASS") {
+      blockers.push(
+        blocker(
+          "STEP_NOT_PASS",
+          stepId,
+          `${stepId} is ${observation.state}; only an explicit live PASS can satisfy production smoke.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (!releaseShaValid || observation.releaseSha !== input.releaseSha) {
+      blockers.push(
+        blocker(
+          "STEP_SHA_MISMATCH",
+          stepId,
+          `${stepId} is not explicitly bound to the exact production release SHA.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (observedAtMs == null) {
+      blockers.push(
+        blocker(
+          "STEP_INVALID_TIMESTAMP",
+          stepId,
+          `${stepId} observedAt is not a valid timestamp.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    } else if (generatedAtMs != null && observedAtMs > generatedAtMs) {
+      blockers.push(
+        blocker(
+          "STEP_FUTURE_EVIDENCE",
+          stepId,
+          `${stepId} is dated after the smoke artifact generation time.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (!SAFE_PATH.test(observation.observedPath)) {
+      blockers.push(
+        blocker(
+          "STEP_INVALID_PATH",
+          stepId,
+          `${stepId} must record a production pathname only, without query parameters, fragments, whitespace, or credentials.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (sanitized.refs.length === 0 && !sanitized.unsafe) {
+      blockers.push(
+        blocker(
+          "STEP_MISSING_PROVENANCE",
+          stepId,
+          `${stepId} has no evidence reference.`,
+          [],
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (sanitized.unsafe) {
+      blockers.push(
+        blocker(
+          "STEP_UNSAFE_PROVENANCE",
+          stepId,
+          `${stepId} evidence references contain secret-like material and were removed from output.`,
+          [],
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    if (observation.actionRequirement !== "NONE") {
+      blockers.push(
+        blocker(
+          "STEP_ACTION_REQUIRED",
+          stepId,
+          `${stepId} still requires ${observation.actionRequirement} action and cannot certify a completed production smoke step.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    }
+
+    stepResults.push({
+      stepId,
+      status: blocking ? "BLOCKING" : "PASS",
+      state: observation.state,
+      observedAt: observation.observedAt,
+      observedPath: SAFE_PATH.test(observation.observedPath) ? observation.observedPath : null,
+      evidenceRefs: sanitized.refs,
+      releaseSha: observation.releaseSha,
+      actionRequirement: observation.actionRequirement
+    });
+  }
+
+  const status = blockers.length === 0 ? "PASS" : "BLOCKED";
+  const allSafeRefs = [...new Set(stepResults.flatMap((step) => step.evidenceRefs))].sort();
+  const validObservedTimes = stepResults
+    .map((step) => ({ value: step.observedAt, parsed: parsedTimestamp(step.observedAt) }))
+    .filter((entry): entry is { value: string; parsed: number } => entry.value != null && entry.parsed != null)
+    .sort((a, b) => a.parsed - b.parsed);
+  const latestObservedAt = validObservedTimes.at(-1)?.value ?? input.generatedAt;
+  const gateActionRequirement = aggregateActionRequirement(
+    stepResults.map((step) => step.actionRequirement)
+  );
+
+  const gateEvidence: V1ReleaseGateEvidenceV1 = {
+    gateId: "PRODUCTION_SMOKE",
+    state: status === "PASS" ? "PASS" : "BLOCKED",
+    freshness: status === "PASS" ? "CURRENT" : "UNKNOWN",
+    observedAt: latestObservedAt,
+    evidenceRefs: allSafeRefs,
+    releaseSha: releaseShaValid ? input.releaseSha : null,
+    actionRequirement: status === "PASS" ? "NONE" : gateActionRequirement,
+    detail:
+      status === "PASS"
+        ? "All required Useful V1 production smoke steps passed in order on the exact release SHA with provenance-backed observations."
+        : `Production smoke remains blocked by ${blockers.length} evidence-integrity or observation blocker(s).`
+  };
+
+  return {
+    contractVersion: "V1_PRODUCTION_SMOKE_V1",
+    releaseSha: input.releaseSha,
+    generatedAt: input.generatedAt,
+    environment: input.environment,
+    status,
+    gateEvidence,
+    steps: stepResults,
+    blockers,
+    authority: {
+      canDeploy: false,
+      canMutateProduction: false,
+      canSendEmail: false,
+      canBypassApproval: false
+    }
+  };
+}
