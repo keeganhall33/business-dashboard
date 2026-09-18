@@ -71,6 +71,7 @@ test("valid final acceptance can mark a mechanically ready certificate released"
     input({
       finalAcceptance: {
         state: "ACCEPTED",
+        releaseSha: RELEASE_SHA,
         observedAt: "2026-09-18T08:14:00.000Z",
         evidenceRefs: ["github://release-evidence/final-keegan-acceptance"]
       }
@@ -81,6 +82,48 @@ test("valid final acceptance can mark a mechanically ready certificate released"
   assert.equal(result.releaseState, "RELEASED");
   assert.equal(result.keeganActionRequired, "NO");
   assert.equal(result.blockers.length, 0);
+});
+
+test("final acceptance from a different release SHA cannot be replayed onto the current release", () => {
+  const result = compileV1ReleaseCertificateV1(
+    input({
+      finalAcceptance: {
+        state: "ACCEPTED",
+        releaseSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        observedAt: "2026-09-18T08:14:00.000Z",
+        evidenceRefs: ["github://release-evidence/prior-release-acceptance"]
+      }
+    })
+  );
+
+  assert.equal(result.mechanicalState, "READY");
+  assert.equal(result.releaseState, "BLOCKED");
+  assert.equal(result.keeganActionRequired, "YES");
+  assert.ok(blockerCodes(result).includes("FINAL_ACCEPTANCE_SHA_MISMATCH"));
+});
+
+test("final acceptance must occur after all required mechanical gate evidence", () => {
+  const gates = allPassingGates().map((entry) =>
+    entry.gateId === "IONOS_THREE_MAILBOX_PROOF"
+      ? gate("IONOS_THREE_MAILBOX_PROOF", { observedAt: "2026-09-18T08:13:00.000Z" })
+      : entry
+  );
+  const result = compileV1ReleaseCertificateV1(
+    input({
+      gates,
+      finalAcceptance: {
+        state: "ACCEPTED",
+        releaseSha: RELEASE_SHA,
+        observedAt: "2026-09-18T08:12:00.000Z",
+        evidenceRefs: ["github://release-evidence/acceptance-before-ionos-proof"]
+      }
+    })
+  );
+
+  assert.equal(result.mechanicalState, "READY");
+  assert.equal(result.releaseState, "BLOCKED");
+  assert.equal(result.keeganActionRequired, "YES");
+  assert.ok(blockerCodes(result).includes("FINAL_ACCEPTANCE_PRECEDES_GATE_EVIDENCE"));
 });
 
 test("the current IONOS-style runtime blocker stays explicit and does not manufacture a Keegan action", () => {
@@ -216,6 +259,7 @@ test("unsafe final-acceptance provenance cannot be emitted or release V1", () =>
     input({
       finalAcceptance: {
         state: "ACCEPTED",
+        releaseSha: RELEASE_SHA,
         observedAt: "2026-09-18T08:14:00.000Z",
         evidenceRefs: [secretRef]
       }
