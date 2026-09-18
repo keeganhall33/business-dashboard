@@ -132,7 +132,7 @@ function ratio(numerator: number | null, denominator: number | null): number | n
 
 function metric(current: number | null, prior: number | null): ClarityMetricV1 {
   const delta = current === null || prior === null ? null : current - prior;
-  const deltaPercent = delta === null || prior === 0 ? null : delta / prior;
+  const deltaPercent = current === null || prior === null || prior === 0 ? null : (current - prior) / prior;
   return { current, prior, delta, deltaPercent };
 }
 
