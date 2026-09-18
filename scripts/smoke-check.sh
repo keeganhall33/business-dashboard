@@ -7,6 +7,9 @@ set -euo pipefail
 #   SMOKE_BASE_URL="https://<your-domain>" ./scripts/smoke-check.sh
 #   SMOKE_BASE_URL="http://localhost:3100" ./scripts/smoke-check.sh
 #
+# Optional release proof:
+#   EXPECTED_RELEASE_SHA="<git-sha>" ./scripts/smoke-check.sh
+#
 # Optional alerts:
 #   SLACK_WEBHOOK_URL="https://hooks.slack.com/..." ./scripts/smoke-check.sh
 
@@ -48,12 +51,26 @@ curl_smoke() {
 }
 
 dashboard_headers=$(mktemp)
+health_body=$(mktemp)
 overview_body=$(mktemp)
-trap 'rm -f "$dashboard_headers" "$overview_body"' EXIT
+trap 'rm -f "$dashboard_headers" "$health_body" "$overview_body"' EXIT
 
-# 1) The dashboard must either render directly (local/dev auth bypass) or enforce
+# 1) Prove the deployed runtime is healthy and, when a release SHA is supplied,
+# that the configured production URL is serving the exact expected Vercel commit.
+health_status=$(curl_smoke -o "$health_body" -w "%{http_code}" "$BASE_URL/api/health")
+[ "$health_status" = "200" ] || fail "GET /api/health returned $health_status"
+grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' "$health_body" || fail "health payload did not include ok:true"
+ok_note "GET /api/health ok:true"
+
+if [ -n "${EXPECTED_RELEASE_SHA:-}" ]; then
+  grep -Eq '"releaseSha"[[:space:]]*:[[:space:]]*"'"$EXPECTED_RELEASE_SHA"'"' "$health_body" \
+    || fail "production health did not report expected release $EXPECTED_RELEASE_SHA"
+  ok_note "production release matches $EXPECTED_RELEASE_SHA"
+fi
+
+# 2) The dashboard must either render directly (local/dev auth bypass) or enforce
 # the production private-login boundary. A production 307/302 redirect to /login
-# is now the expected security behavior and must not be treated as a failed deploy.
+# is the expected security behavior and must not be treated as a failed deploy.
 dashboard_status=$(curl_smoke -D "$dashboard_headers" -o /dev/null -w "%{http_code}" "$BASE_URL/dashboard")
 case "$dashboard_status" in
   200)
@@ -76,7 +93,7 @@ case "$dashboard_status" in
     ;;
 esac
 
-# 2) Probe the overview API anonymously.
+# 3) Probe the overview API anonymously.
 # - Local/dev may intentionally allow it and return 200, in which case verify shape.
 # - Production intentionally requires DASHBOARD_ADMIN_TOKEN and should return 401.
 # A 401 here is therefore a security assertion, not a deployment failure.
