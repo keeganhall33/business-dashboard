@@ -87,7 +87,7 @@ test("accepts a complete authorized read-only run and advances the completed che
   assert.equal(result.checkpointAction, "ADVANCE_COMPLETED");
   assert.deepEqual(result.nextCheckpoint, {
     cursor: null,
-    completedThroughAt: retrievedAt
+    completedThroughAt: "2026-09-18T07:04:00.000Z"
   });
   assert.equal(result.externalAccessPerformed, false);
   assert.equal(result.writesPerformed, false);
@@ -137,6 +137,7 @@ test("failed runs cannot emit live proof or advance durable progress", () => {
     ...input,
     outcome: "FAILED",
     hasMore: true,
+    pages: [],
     snapshot: null,
     priorCheckpoint: {
       cursor: "cursor:resume-existing",
