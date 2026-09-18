@@ -21,7 +21,6 @@ export type ChatGptOpportunityIntakeProjectionReasonV1 =
   | "EXPLICIT_EXISTING_OPPORTUNITY_LINK"
   | "HANDOFF_REQUIRES_VERIFICATION"
   | "HANDOFF_WATCH_ONLY"
-  | "HANDOFF_SEMANTICS_INCONSISTENT"
   | "AMBIGUOUS_CANONICAL_ORGANIZATION"
   | "AMBIGUOUS_CANONICAL_PERSON";
 
@@ -209,7 +208,7 @@ export function projectChatGptOpportunityIntoIntakeV1(
     return baseResult(generatedAt, "VERIFY_REQUIRED", ["HANDOFF_REQUIRES_VERIFICATION"], null);
   }
   if (!emissionSemanticsAreConsistent(input.handoff)) {
-    return baseResult(generatedAt, "VERIFY_REQUIRED", ["HANDOFF_SEMANTICS_INCONSISTENT"], null);
+    return baseResult(generatedAt, "VERIFY_REQUIRED", ["HANDOFF_REQUIRES_VERIFICATION"], null);
   }
 
   const organizationRef = oneOrNull(input.handoff.payload.organizationRefs);
