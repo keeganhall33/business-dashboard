@@ -145,9 +145,9 @@ const STATE_ORDER: Readonly<Record<SponsorOpportunityPortfolioStateV1, number>> 
 });
 
 function freezeDeep<T>(value: T): Readonly<T> {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+  if (value && typeof value === "object") {
     for (const child of Object.values(value as Record<string, unknown>)) freezeDeep(child);
-    Object.freeze(value);
+    if (!Object.isFrozen(value)) Object.freeze(value);
   }
   return value as Readonly<T>;
 }
