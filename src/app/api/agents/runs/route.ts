@@ -1,7 +1,11 @@
 import { ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { getRecentSystemRunsByAgent } from "@/lib/supabase/queries";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const [sloan, lyra, noah, avery] = await Promise.all([
       getRecentSystemRunsByAgent("sloan", 10),
