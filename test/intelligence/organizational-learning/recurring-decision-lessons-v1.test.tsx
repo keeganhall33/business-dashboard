@@ -11,7 +11,7 @@ import {
   approveLearningCandidateV1,
   createValidatedLessonCandidateV1,
   promoteLearningToCanonicalV1,
-  supersedeLearningV1,
+  validateLearningObjectV1,
   type LearningObjectV1,
   type LearningTruthState
 } from "@/lib/intelligence/organizational-learning/learning-object-v1";
@@ -159,12 +159,18 @@ test("unapproved, inferred, stale, or superseded source lessons require verifica
   });
   const inferred = approvedLesson("lesson:inferred", "lineage:i", { truthState: "INFERRED" });
   const canonical = approvedLesson("lesson:canonical", "lineage:s", { canonical: true });
-  const superseded = supersedeLearningV1(
-    canonical as LearningObjectV1,
-    "lesson:successor",
-    "New reviewed evidence",
-    "2026-09-01T00:03:00.000Z"
-  );
+  const superseded = validateLearningObjectV1({
+    ...canonical,
+    learning_id: "lesson:superseded",
+    lifecycle_state: "SUPERSEDED",
+    version: canonical.version + 1,
+    updated_at: "2026-09-01T00:03:00.000Z",
+    supersession: {
+      predecessor_id: "lesson:canonical",
+      reason: "New reviewed evidence",
+      superseded_at: "2026-09-01T00:03:00.000Z"
+    }
+  });
 
   const cases: Array<[LearningObjectV1, string, string]> = [
     [unapproved as LearningObjectV1, "lineage:u", "SOURCE_LESSON_NOT_APPROVED"],
