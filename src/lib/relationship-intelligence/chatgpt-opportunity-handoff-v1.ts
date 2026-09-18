@@ -125,9 +125,9 @@ function evidenceRefs(value: unknown, label: string): readonly string[] {
 }
 
 function validInstant(value: unknown, label: string): string | Date {
-  if (!(typeof value === "string" || value instanceof Date) || !Number.isFinite(new Date(value).getTime())) {
-    throw new Error(`${label} must be a valid timestamp`);
-  }
+  if (!(typeof value === "string" || value instanceof Date)) throw new Error(`${label} must be a valid timestamp`);
+  const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error(`${label} must be a valid timestamp`);
   return value;
 }
 
