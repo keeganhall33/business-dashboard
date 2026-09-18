@@ -11,6 +11,11 @@ export const COUNTERFACTUAL_PORTFOLIO_REVIEW_POLICY_VERSION_V1 =
 const MAX_REVIEW_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_REFS = 200;
 
+type CounterfactualScenarioV1 = CounterfactualReviewV1["scenarios"][number];
+type CounterfactualDimensionV1 = CounterfactualScenarioV1["dimensions"][number];
+type CounterfactualAssumptionV1 = CounterfactualScenarioV1["assumptions"][number];
+type CounterfactualResourceDemandV1 = CounterfactualScenarioV1["resourceDemands"][number];
+
 export type CounterfactualPortfolioReviewStateV1 =
   | "READY_FOR_INTERNAL_REVIEW"
   | "KEEGAN_REVIEW_REQUIRED"
@@ -176,10 +181,16 @@ function safeCounterfactualAuthority(review: CounterfactualReviewV1 | undefined)
 function counterfactualEvidence(review: CounterfactualReviewV1 | undefined): readonly string[] {
   if (!review || !Array.isArray(review.scenarios)) return Object.freeze([]);
   return uniqueSorted(
-    review.scenarios.flatMap((scenario) => [
-      ...scenario.dimensions.flatMap((dimension) => dimension.evidenceRefs),
-      ...scenario.assumptions.flatMap((assumption) => assumption.evidenceRefs),
-      ...scenario.resourceDemands.flatMap((resource) => resource.evidenceRefs)
+    review.scenarios.flatMap((scenario: CounterfactualScenarioV1) => [
+      ...scenario.dimensions.flatMap(
+        (dimension: CounterfactualDimensionV1) => dimension.evidenceRefs
+      ),
+      ...scenario.assumptions.flatMap(
+        (assumption: CounterfactualAssumptionV1) => assumption.evidenceRefs
+      ),
+      ...scenario.resourceDemands.flatMap(
+        (resource: CounterfactualResourceDemandV1) => resource.evidenceRefs
+      )
     ])
   );
 }
