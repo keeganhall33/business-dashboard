@@ -142,7 +142,7 @@ function nonEmpty(value: string, field: string): string {
   return normalized;
 }
 
-function iso(value: string, field: string): string {
+function iso(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} must be a valid timestamp`);
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) throw new Error(`${field} must be a valid timestamp`);
