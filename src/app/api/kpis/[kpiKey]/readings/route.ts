@@ -1,9 +1,13 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { createAgentKpiReading } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { createKpiReadingSchema } from "@/lib/validation/kpis";
 
 export async function POST(request: Request, context: { params: Promise<{ kpiKey: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { kpiKey } = await context.params;
     const parsed = await parseJsonBody(request, createKpiReadingSchema);
