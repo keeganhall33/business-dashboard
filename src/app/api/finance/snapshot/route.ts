@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { upsertFinanceSnapshot } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { z } from "zod";
@@ -11,6 +12,9 @@ const financeSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     if (process.env.E2E_TEST === "1") {
       return ok({ ok: true, snapshot: { id: "finance-e2e", ...((await request.json().catch(() => ({}))) as object) } });

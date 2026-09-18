@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { industryPulsePatchSchema } from "@/lib/validation/industryPulse";
 import { getSystemState, upsertSystemState } from "@/lib/supabase/queries";
@@ -29,7 +30,10 @@ function normalizeStored(valueJson: unknown): Stored {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const state = await getSystemState("industry_pulse_interactions");
     const stored = normalizeStored(state?.value_json);
@@ -42,6 +46,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const parsed = await parseJsonBody(request, industryPulsePatchSchema);
     if (!parsed.success) return validationError(parsed.error.message, parsed.error.issues);

@@ -1,9 +1,13 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { listSystemRunCheckpoints, upsertSystemRunCheckpoint } from "@/lib/supabase/queries";
 import { parseJsonBody } from "@/lib/validation/parse";
 import { upsertCheckpointSchema } from "@/lib/validation/checkpoints";
 
-export async function GET(_request: Request, context: { params: Promise<{ runId: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ runId: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { runId } = await context.params;
     const items = await listSystemRunCheckpoints(runId);
@@ -16,6 +20,9 @@ export async function GET(_request: Request, context: { params: Promise<{ runId:
 }
 
 export async function POST(request: Request, context: { params: Promise<{ runId: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { runId } = await context.params;
     const parsed = await parseJsonBody(request, upsertCheckpointSchema);
