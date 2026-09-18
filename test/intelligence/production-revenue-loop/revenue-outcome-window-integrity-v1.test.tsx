@@ -75,7 +75,7 @@ test("allows aligned closed multisource windows without adding causality or exec
     approvalBypassAllowed: false,
   });
   assert.match(result.limitations.join(" "), /do not establish/i);
-  assert.match(result.limitations.join(" "), /not attributed/i);
+  assert.match(result.limitations.join(" "), /No source movement is attributed/i);
 });
 
 test("blocks mixed baseline ranges across WooCommerce, GA4, and Meta", () => {
