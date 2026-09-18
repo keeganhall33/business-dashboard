@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  compileDecisionMemoryRecurringLearningHandoffV1
+  compileDecisionMemoryRecurringLearningHandoffV1,
+  type DecisionMemoryRecurringLearningReasonV1
 } from "@/lib/intelligence/organizational-learning/decision-memory-recurring-learning-v1";
 import {
   attachDecisionOutcomeObservationV1,
@@ -18,7 +19,8 @@ import {
   type LearningObjectV1
 } from "@/lib/intelligence/organizational-learning/learning-object-v1";
 import {
-  evaluateRecurringDecisionLessonV1
+  evaluateRecurringDecisionLessonV1,
+  type RecurringLessonObservationV1
 } from "@/lib/intelligence/organizational-learning/recurring-decision-lessons-v1";
 
 const LESSON = "Holding the documented boundary avoided an unsupported concession in the observed case.";
@@ -156,13 +158,25 @@ function reviewedLesson(
   const evidence = [
     ...(overrides.includeLesson === false
       ? []
-      : [{ evidence_id: `evidence:lesson:${n}`, source_lineage_id: lineage, observed_at: overrides.evidenceObservedAt ?? "2026-09-10T10:00:00.000Z" }]),
+      : [{
+          evidence_id: `evidence:lesson:${n}`,
+          source_lineage_id: lineage,
+          observed_at: overrides.evidenceObservedAt ?? "2026-09-10T10:00:00.000Z"
+        }]),
     ...(overrides.includeAssessment === false
       ? []
-      : [{ evidence_id: `evidence:assessment:${n}`, source_lineage_id: lineage, observed_at: "2026-09-10T10:00:00.000Z" }]),
+      : [{
+          evidence_id: `evidence:assessment:${n}`,
+          source_lineage_id: lineage,
+          observed_at: "2026-09-10T10:00:00.000Z"
+        }]),
     ...(overrides.includeAction === false
       ? []
-      : [{ evidence_id: `evidence:action:${n}`, source_lineage_id: lineage, observed_at: "2026-09-01T10:01:00.000Z" }])
+      : [{
+          evidence_id: `evidence:action:${n}`,
+          source_lineage_id: lineage,
+          observed_at: "2026-09-01T10:01:00.000Z"
+        }])
   ];
   const candidate = createValidatedLessonCandidateV1({
     learning_id: `learning:${n}`,
@@ -264,7 +278,7 @@ test("waits for a canonical outcome instead of treating a decision as learned", 
 });
 
 test("fails closed on unreviewed, inferred, or mismatched lessons", () => {
-  const cases: Array<[LearningObjectV1, string]> = [
+  const cases: Array<[LearningObjectV1, DecisionMemoryRecurringLearningReasonV1]> = [
     [reviewedLesson(1, { candidateOnly: true }), "LEARNING_OBJECT_NOT_REVIEWED"],
     [reviewedLesson(1, { truthState: "INFERRED" }), "LEARNING_OBJECT_NOT_KNOWN"],
     [reviewedLesson(1, { content: "A different lesson." }), "LESSON_STATEMENT_MISMATCH"]
@@ -277,7 +291,7 @@ test("fails closed on unreviewed, inferred, or mismatched lessons", () => {
       generatedAt: GENERATED_AT
     });
     assert.equal(value.state, "VERIFY_RECORD");
-    assert.ok(value.reasonCodes.includes(expectedReason as never));
+    assert.ok(value.reasonCodes.includes(expectedReason));
     assert.deepEqual(value.observations, []);
   }
 });
@@ -374,5 +388,8 @@ test("handoff is deterministic and immutable without mutating source records", (
   assert.deepEqual(learningObject, learningBefore);
   assert.ok(Object.isFrozen(first));
   assert.ok(Object.isFrozen(first.observations));
-  assert.throws(() => (first.observations as RecurringLessonObservationV1[]).push(first.observations[0]));
+  assert.ok(Object.isFrozen(first.observations[0]));
+  assert.throws(() =>
+    (first.observations as RecurringLessonObservationV1[]).push(first.observations[0])
+  );
 });
