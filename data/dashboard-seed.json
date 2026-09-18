@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-13T18:50:00.000Z",
+  "timestamp": "2026-09-17T23:58:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -71,9 +71,27 @@
     },
     "pricingArchitecture": {
       "tiers": [
-        { "tier": "Collector", "rangeUsd": { "min": 450, "max": 1200 } },
-        { "tier": "Patron", "rangeUsd": { "min": 1500, "max": 5000 } },
-        { "tier": "Institutional", "rangeUsd": { "min": 8000, "max": null } }
+        {
+          "tier": "Collector",
+          "rangeUsd": {
+            "min": 450,
+            "max": 1200
+          }
+        },
+        {
+          "tier": "Patron",
+          "rangeUsd": {
+            "min": 1500,
+            "max": 5000
+          }
+        },
+        {
+          "tier": "Institutional",
+          "rangeUsd": {
+            "min": 8000,
+            "max": null
+          }
+        }
       ]
     },
     "narrativeStats": {
@@ -295,6 +313,239 @@
           "sender": "Keegan Hall",
           "date": "2026-09-13",
           "summary": "Keegan told Gregg he saw the Randy Johnson statue announcement, acknowledged that they have discussed art-related projects before, and suggested this one could be especially compelling if it combined an original piece with elements such as a Randy-signed collector edition, charity, fan giveaway, VIP gifting or another component tied to the Mariners' larger unveiling activation. He emphasized getting the idea in front of Gregg early while plans are still taking shape."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "upper-deck-tiger-woods-1997-masters-30th-20260917",
+        "name": "Upper Deck — Tiger Woods 1997 Masters 30th Anniversary",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "sports-collectibles-licensing",
+        "company": {
+          "name": "Upper Deck",
+          "website": "https://upperdeck.com/",
+          "location": "Carlsbad, California, United States",
+          "description": "Potential officially licensed Tiger Woods 30th-anniversary collectible/art program tied to his 1997 Masters victory, using Upper Deck's existing Tiger relationship and premium memorabilia/card platform."
+        },
+        "primaryContact": {
+          "name": "Gabe Garcia",
+          "title": "Upper Deck",
+          "email": null
+        },
+        "lastOutreachAt": "2026-09-17T23:16:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Gabe Garcia's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Upper Deck has any 2027 Tiger anniversary planning underway and whether an art-led card, original, or signed edition could fit.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-fit opportunity because Upper Deck already has the Tiger Woods licensing relationship and a history of art-led Tiger collectibles. Could produce a paid commission, licensed original-art card, premium signed edition, deeper Tiger/Upper Deck relationship, collector access and significant prestige.",
+        "notes": [
+          "Keegan emailed Gabe Garcia directly on September 17, 2026 regarding the upcoming 30th anniversary of Tiger Woods's 1997 Masters victory.",
+          "Keegan asked whether Upper Deck is considering any activation around the anniversary and referenced Upper Deck's prior Tiger art collaboration for Tiger's 50th birthday featuring Jim Lee artwork as relevant precedent.",
+          "Concept options intentionally left open: original artwork, trading cards, a limited signed print edition, or another premium collectible format.",
+          "Best strategic lane is through Upper Deck because it can manage Tiger licensing, authentication, athlete access and collectible distribution rather than Keegan attempting a separate Tiger licensing path.",
+          "Do not over-prescribe the execution before learning what Upper Deck already has planned for 2027.",
+          "If Gabe engages, clarify: whether a Tiger anniversary program already exists, product calendar and deadlines, Tiger signing availability, approved imagery and Masters-related rights constraints, card versus memorabilia budget, edition size, licensing/reproduction economics, and whether a 1/1 original art component is viable.",
+          "Commercial guardrail: prioritize a paid commission and/or meaningful licensed collector economics. A large original should only proceed once rights, budget, product use and Tiger participation are clear.",
+          "Potential premium formats: one-of-one graphite original art card; larger officially licensed original; ultra-limited Tiger-signed edition; original plus signed prints; or an art-led anniversary insert/chase concept.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, do not repeatedly chase; revisit only with a meaningful new trigger such as an announced Tiger 30th-anniversary product, signing, campaign or Upper Deck event."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Keegan Hall",
+          "date": "2026-09-17",
+          "summary": "Keegan asked Gabe whether Upper Deck is considering anything for the 30th anniversary of Tiger Woods's 1997 Masters win, referenced the prior Jim Lee/Tiger 50th-birthday art-card precedent, and suggested possible directions including original artwork, cards, or a limited signed print run while keeping the execution open-ended."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "super-bowl-lxi-60-years-la-20260917",
+        "name": "Super Bowl LXI — 60 Years of Super Bowls in Los Angeles",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "major-event-brand-activation",
+        "company": {
+          "name": "Los Angeles Sports & Entertainment Commission / Super Bowl LXI Host Committee",
+          "website": "https://www.lasec.net/",
+          "location": "Los Angeles, California, United States",
+          "description": "Potential premium art, sponsor activation, VIP/hospitality, collector-edition and charitable collaboration tied to Super Bowl LXI and the 60-year anniversary of the first Super Bowl being played in Los Angeles."
+        },
+        "primaryContact": {
+          "name": "Kathryn Schloessman",
+          "title": "President & CEO, Los Angeles Sports & Entertainment Commission; CEO, Los Angeles Super Bowl Host Committee",
+          "email": "kschloessman@lasec.us"
+        },
+        "lastOutreachAt": "2026-09-17T23:24:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Kathryn Schloessman's response. If no reply, send one concise follow-up after roughly 7-10 business days focused on whether the Host Committee is developing sponsor, VIP, hospitality, collector or cultural programming around the 60-year Los Angeles anniversary and who owns that work internally.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potential flagship Super Bowl activation with major sponsor access, premium hospitality/VIP placement, NFL and Los Angeles corporate relationships, collector-edition economics, charity integration and significant national prestige. Strong fit with Keegan's positioning around iconic people and defining moments.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Kathryn Schloessman on September 17, 2026.",
+          "Primary contact: Kathryn Schloessman, President & CEO of the Los Angeles Sports & Entertainment Commission and CEO of the Los Angeles Super Bowl Host Committee. Email: kschloessman@lasec.us.",
+          "Opportunity trigger: Super Bowl LXI will be hosted in Los Angeles in February 2027, and the Host Committee is highlighting that 2027 marks 60 years since the first Super Bowl was played in Los Angeles.",
+          "Initial positioning: Keegan's work centers on iconic people and defining moments in sports and culture; credibility referenced Michael Jordan's direct commission, Rory McIlroy/Augusta National, and more than $850,000 raised through charitable art projects.",
+          "Concept space intentionally left open: original artwork, sponsor activation, VIP or hospitality component, limited collector edition, charitable element, or another format integrated into existing Host Committee plans.",
+          "Do not develop artwork speculatively before learning what the Host Committee and its partners are already building around the 60-year anniversary.",
+          "If Kathryn engages, clarify who owns cultural/creative activations, which sponsors have relevant activation inventory or budget, VIP/hospitality opportunities, NFL rights and marks approvals, approved historical imagery, potential player/legend participation, autograph feasibility, charitable beneficiary, edition structure, and event deadlines.",
+          "Commercial guardrail: prioritize a paid/sponsor-funded project fee and/or meaningful licensed collector economics. Charity can be layered into the activation but should not default to Keegan donating hundreds of hours without a clear strategic or financial return.",
+          "Best strategic structure could involve the Host Committee identifying an aligned sponsor to underwrite the project, with the artwork then used across hospitality, VIP gifting, collector releases, content, charity or a presentation/unveiling moment.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause rather than repeatedly cold-emailing; revisit if a meaningful new sponsor, legacy program, hospitality initiative, charity partner or cultural activation is announced."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan to Kathryn around Super Bowl LXI and the 60-year anniversary of the first Super Bowl in Los Angeles, established Jordan, Rory/Augusta National and charity credibility, and proposed exploring an original artwork, sponsor activation, VIP/hospitality component, collector edition or charitable element while intentionally leaving the execution open to fit the Host Committee's existing plans."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "academy100-100th-oscars-20260917",
+        "name": "Academy100 — 100th Oscars / Centennial Art Collaboration",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "institutional-cultural-collaboration",
+        "company": {
+          "name": "Academy of Motion Picture Arts and Sciences / Academy100",
+          "website": "https://www.academy100.org/",
+          "location": "Los Angeles, California, United States",
+          "description": "Academy100 is the Academy's centennial initiative leading into the 100th Oscars in 2028, with opportunities spanning cultural programming, brand partnerships, exhibitions, donor/collector experiences and major institutional storytelling."
+        },
+        "primaryContact": {
+          "name": "Jenny Galante",
+          "title": "Chief Revenue and Business Development Officer",
+          "email": "jgalante@oscars.org"
+        },
+        "lastOutreachAt": "2026-09-17T23:32:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jenny Galante's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Academy100 is considering artist-led commissions, exhibitions, donor/collector experiences or other creative collaborations and who would be the best internal owner if Jenny is not.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "Potentially transformative non-sports institutional opportunity that could expand Keegan's positioning into film, cultural history and major patron/collector networks. Possible upside includes a paid centennial commission, exhibition or event participation, sponsor-funded activation, donor/collector experiences, entertainment-industry relationships and significant prestige.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jenny Galante on September 17, 2026.",
+          "Primary contact: Jenny Galante, Chief Revenue and Business Development Officer for the Academy. Email: jgalante@oscars.org.",
+          "Jenny is an appropriate first contact because her remit includes Academy100, strategic brand partnerships, Oscars sponsors and advertisers, giving her visibility across both institutional programming and potential sponsor-funded collaboration paths.",
+          "Opportunity trigger: Academy100 is building toward the 100th Academy Awards in 2028, creating a long runway for relationship-building, approvals, rights, artwork development and a premium institutional execution.",
+          "Initial positioning: Keegan as a hyper-realistic pencil artist focused on extraordinary people and defining moments in sports, music and culture, with Michael Jordan, Rory McIlroy/Augusta National, 800+ hour originals and more than $850,000 raised through charitable art projects used as credibility.",
+          "Concept space intentionally left open: original artwork, larger centennial project, exhibition or event component, collector or donor experience, sponsor-supported activation, or another role that fits Academy100's existing plans.",
+          "Strategic importance: this opportunity could materially broaden Keegan's identity beyond sports and place him in a film-history, cultural-legacy and institutional-art context.",
+          "Do not create speculative artwork before the Academy indicates interest and clarifies rights, subject approvals, image licensing and intended use.",
+          "If Jenny engages, clarify: who owns creative commissions and exhibitions, Academy100 programming calendar, sponsor/brand integration opportunities, donor/VIP programming, rights and archival-image access, subject/likeness approvals, Academy Museum involvement, event deadlines, budget, licensing/reproduction terms and whether signed or limited collector editions are viable.",
+          "Commercial guardrail: prioritize a paid institutional commission, sponsor-funded collaboration and/or meaningful collector/licensing economics. Charity or donor fundraising can be layered in, but should not be the sole economic structure for a major labor-intensive original.",
+          "Best-case structure could combine a paid centennial commission with Academy100 exhibition/event placement, sponsor participation, collector/donor access and potentially a limited licensed edition if rights permit.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, avoid repeated cold outreach and revisit only with a meaningful new Academy100 program, sponsor, exhibition or centennial announcement."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan in the context of Academy100 and the 100th Oscars, established Jordan, Rory/Augusta National, 800+ hour craftsmanship and charity credibility, and asked whether there might be a natural opportunity for Keegan through an original artwork, centennial project, exhibition/event component, collector or donor experience, or another format aligned with Academy100's existing plans."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "michigan-stadium-100th-20260917",
+        "name": "Michigan Stadium — 100th Anniversary 2027 Activation",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "college-sports-brand-activation",
+        "company": {
+          "name": "Michigan Sports Properties / University of Michigan Athletics",
+          "website": "https://mgoblue.com/sports/2017/6/16/sponsorship",
+          "location": "Ann Arbor, Michigan, United States",
+          "description": "Potential sponsor-funded centennial art and fan-engagement activation tied to the 100th anniversary of Michigan Stadium during the 2027 football season, with possible original artwork, fan giveaway, VIP/donor gifting, collector edition and charitable components."
+        },
+        "primaryContact": {
+          "name": "Jennifer Cadicamo",
+          "title": "Vice President & General Manager, Michigan Sports Properties",
+          "email": "Jennifer.Cadicamo@michigansportsproperties.com"
+        },
+        "lastOutreachAt": "2026-09-17T23:40:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jennifer Cadicamo's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Michigan Sports Properties is still developing partner activations around the Michigan Stadium centennial and whether Keegan could fit within a sponsor-funded, fan, VIP or collector program.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-fit college-football opportunity with a defined 2027 centennial moment, existing sponsor-activation infrastructure, strong fan and donor ecosystem, and direct proof that Keegan's prior college-football art programs can drive fan engagement, charitable revenue and large-scale distribution.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jennifer Cadicamo on September 17, 2026.",
+          "Primary contact: Jennifer Cadicamo, Vice President & General Manager of Michigan Sports Properties. Email: Jennifer.Cadicamo@michigansportsproperties.com.",
+          "Michigan Sports Properties is Learfield's exclusive multimedia rights and sponsorship team for Michigan Athletics, making Jennifer an appropriate first contact for sponsor-funded activations, hospitality, promotions and brand partnerships tied to the centennial.",
+          "Opportunity trigger: Michigan will celebrate the 100th anniversary of Michigan Stadium throughout the 2027 football season, while new in-stadium partnership and activation inventory gives brands more ways to participate in the Big House.",
+          "College-football proof point used in outreach: Keegan has worked with the University of Washington and Alabama over the last several years.",
+          "Specific UW proof point used: the Michael Penix Jr. project included a 20,000-print game giveaway and a signed collector edition that sold out and helped raise more than $40,000 for charity.",
+          "Broader credibility used: original projects with Michael Jordan and Rory McIlroy, including the Masters artwork Rory gifted to Augusta National and the exclusive co-signed edition for Augusta members.",
+          "Concept space intentionally left open: original artwork, sponsor-funded activation, fan giveaway, VIP or donor gifting, limited collector edition, charitable component, or a combination of those.",
+          "Best positioning is not simply 'commission Keegan to draw Michigan Stadium.' The stronger structure is a centennial activation built around Michigan's existing sponsors, fans, donors and hospitality ecosystem.",
+          "If Jennifer engages, clarify: what Michigan is already planning around the centennial, which sponsors have relevant activation budget or inventory, whether a presenting partner is attached, rights/IP and approved imagery, fan giveaway economics, donor/VIP use, licensing/reproduction terms, charitable beneficiary possibilities, production quantities and key 2027 deadlines.",
+          "Commercial guardrail: prioritize a paid creative/project fee and/or meaningful licensed collector economics. A large original or major giveaway should only proceed after sponsor funding, rights, production budget and activation scope are clear.",
+          "Potential strong structure: sponsor-funded original + large-scale fan giveaway + premium signed/collector edition + donor/VIP gifting + charitable component, modeled on the success of the Penix/UW project but scaled appropriately for Michigan's centennial.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause and revisit only with a meaningful new centennial sponsor, event, merchandise, donor or activation announcement."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana introduced Keegan around Michigan Stadium's 100th anniversary, highlighted his multi-year college-football work with UW and Alabama, cited the Michael Penix Jr. 20,000-print giveaway and sold-out charitable signed edition, added Jordan and Rory/Augusta credibility, and proposed exploring an original, sponsor-funded activation, fan giveaway, VIP/donor gifting, collector edition or charitable component without prescribing a finished concept."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "miami-nike-reunion-20260917",
+        "name": "University of Miami × Nike — 2027 Reunion Activation",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "college-sports-brand-activation",
+        "company": {
+          "name": "University of Miami Athletics / Legends Global",
+          "website": "https://miamihurricanes.com/hurricane-global-partnerships",
+          "location": "Coral Gables, Florida, United States",
+          "description": "Potential art, launch, fan-engagement, VIP/donor and collector activation tied to the reported University of Miami return to Nike beginning in 2027 and the legacy of Miami's historic Nike era."
+        },
+        "primaryContact": {
+          "name": "Jesse Marks",
+          "title": "Chief Revenue Officer, University of Miami Athletics / Legends Global",
+          "email": "jmarks@legends.net"
+        },
+        "lastOutreachAt": "2026-09-17T23:58:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jesse Marks's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Miami is developing launch, sponsorship, fan, donor or collector programming around the reported Nike transition and whether Keegan could fit within that work.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-upside college-football and brand-collaboration opportunity combining Miami's national football identity, Nike's global brand power, nostalgia around the original Nike era and Keegan's proven track record in sponsor-friendly college activations. Could create a paid commission, launch activation, large-scale fan distribution, limited collector edition, donor/VIP gifting, charity component and broader Nike relationship.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jesse Marks on September 17, 2026.",
+          "Primary contact: Jesse Marks, Chief Revenue Officer for University of Miami Athletics through Legends Global. Email: jmarks@legends.net.",
+          "Jesse is an appropriate first contact because his remit spans sponsorships, ticketing, premium seating, fundraising, consumer marketing, content, retail and revenue-generating partnerships for Miami Athletics.",
+          "Opportunity trigger: multiple reports indicate Miami is expected to return to Nike beginning July 1, 2027 under a long-term agreement. The initial outreach was intentionally framed as reacting to reports rather than treating the agreement as formally announced by Miami or Nike.",
+          "Creative narrative: Miami's return to Nike creates a legacy story connecting the original Nike era, championship history, iconic Hurricanes culture and the 2027 relaunch.",
+          "College-football proof point used in outreach: Keegan has worked with the University of Washington and Alabama over the last several years.",
+          "Specific UW proof point used: the Michael Penix Jr. project included a 20,000-print game giveaway and a signed collector edition that sold out and helped raise more than $40,000 for charity.",
+          "Broader credibility used: original projects with Michael Jordan and Rory McIlroy, including the Masters artwork Rory gifted to Augusta National and the exclusive co-signed edition for Augusta members.",
+          "Concept space intentionally left open: original artwork, launch activation, fan giveaway, VIP or donor gifting, limited collector edition, charitable component, or another format that fits Miami and Nike's existing rollout.",
+          "Do not over-prescribe Nike-specific creative or imply Nike participation until Miami confirms the agreement and internal launch plans.",
+          "If Jesse engages, clarify: formal Nike launch timing, who owns the rollout internally, Legends' role, Nike brand/marketing contacts, sponsor inventory, rights/IP and uniform/logo usage, athlete/legend participation, NIL considerations, fan giveaway quantities, donor/VIP use, licensing terms, budget and key deadlines.",
+          "Commercial guardrail: prioritize a paid project fee and/or meaningful licensed collector economics. A major original or mass giveaway should only proceed once rights, funding, production budget and activation scope are clear.",
+          "Potential strong structure: sponsor- or brand-funded original + launch content + fan giveaway or stadium activation + premium signed/collector edition + donor/VIP gifting + optional charitable component.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause and revisit when Miami/Nike formally announce the partnership or another meaningful launch trigger appears."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana contacted Jesse after reports that Miami is expected to return to Nike in 2027, introduced Keegan's UW/Alabama college-football track record and Penix activation results, added Jordan and Rory/Augusta credibility, and proposed exploring an original, launch activation, fan giveaway, VIP/donor gifting, collector edition or charitable component while keeping the concept open to Miami's existing rollout."
         },
         "supportingDocs": null
       }
