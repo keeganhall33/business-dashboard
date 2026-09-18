@@ -410,7 +410,7 @@ export function compileV1IonosThreeMailboxProofAuditV1(
       ));
     }
 
-    if (telemetry && Array.isArray(telemetry.mailboxes) && telemetry.mailboxes.some((mailbox) =>
+    if (telemetry && Array.isArray(telemetry.mailboxes) && telemetry.mailboxes.some((mailbox: IonosHistoricalPreviewTelemetryV1["mailboxes"][number]) =>
       mailbox.status === "FAILED" || mailbox.reason !== null
     )) {
       blockers.push(blocker(
@@ -421,7 +421,7 @@ export function compileV1IonosThreeMailboxProofAuditV1(
       ));
     }
 
-    if (telemetry && Array.isArray(telemetry.mailboxes) && telemetry.mailboxes.some((mailbox) =>
+    if (telemetry && Array.isArray(telemetry.mailboxes) && telemetry.mailboxes.some((mailbox: IonosHistoricalPreviewTelemetryV1["mailboxes"][number]) =>
       (mailbox.status !== "SCANNED" && mailbox.status !== "NO_MESSAGES")
       || (mailbox.status === "NO_MESSAGES" && (mailbox.candidateCount !== 0 || mailbox.envelopeCount !== 0))
     )) {
