@@ -83,14 +83,14 @@ export async function loadAutonomousGrowthLiveBriefingV1(
     return unavailable("DECISION_PORTFOLIO_LIVE_LOAD_FAILED");
   }
 
-  if (
-    history.truthState === "LIVE" &&
-    history.decisionGrade &&
-    history.latestPortfolio &&
-    history.entries.length > 0
-  ) {
+  if (history.truthState === "LIVE") {
+    if (!history.decisionGrade || !history.latestPortfolio) {
+      return unavailable("DECISION_PORTFOLIO_LIVE_STATE_MISMATCH");
+    }
+
     const head = history.entries[0];
     if (
+      !head ||
       !head.portfolio ||
       head.portfolio.portfolioId !== history.latestPortfolio.portfolioId ||
       head.truthState !== "LIVE" ||
