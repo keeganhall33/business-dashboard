@@ -1,3 +1,4 @@
+import React from "react";
 import type { CheckoutDiagnosticsViewModelV1 } from "@/lib/checkout-diagnostics/view-model-v1";
 
 function formatPercent(value: number | null): string {
