@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import {
   buildCareerOperatingSystem,
   getCareerAction,
@@ -14,7 +15,10 @@ export const revalidate = 0;
 
 const CAREER_AGENT_KEY = "avery";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     return NextResponse.json(await getSnapshot());
   } catch (error) {
@@ -26,6 +30,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionId = typeof body.actionId === "string" ? body.actionId : "";
