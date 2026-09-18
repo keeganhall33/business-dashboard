@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T23:40:00.000Z",
+  "timestamp": "2026-09-17T23:58:00.000Z",
   "range": {
     "preset": "30d",
     "startDate": "2026-04-19",
@@ -497,6 +497,55 @@
           "sender": "Ioana Hall — Manager, Keegan Hall Studio",
           "date": "2026-09-17",
           "summary": "Ioana introduced Keegan around Michigan Stadium's 100th anniversary, highlighted his multi-year college-football work with UW and Alabama, cited the Michael Penix Jr. 20,000-print giveaway and sold-out charitable signed edition, added Jordan and Rory/Augusta credibility, and proposed exploring an original, sponsor-funded activation, fan giveaway, VIP/donor gifting, collector edition or charitable component without prescribing a finished concept."
+        },
+        "supportingDocs": null
+      },
+      {
+        "id": "miami-nike-reunion-20260917",
+        "name": "University of Miami × Nike — 2027 Reunion Activation",
+        "tier": "A",
+        "status": "warming",
+        "priority": "high",
+        "source": "outbound",
+        "opportunityType": "college-sports-brand-activation",
+        "company": {
+          "name": "University of Miami Athletics / Legends Global",
+          "website": "https://miamihurricanes.com/hurricane-global-partnerships",
+          "location": "Coral Gables, Florida, United States",
+          "description": "Potential art, launch, fan-engagement, VIP/donor and collector activation tied to the reported University of Miami return to Nike beginning in 2027 and the legacy of Miami's historic Nike era."
+        },
+        "primaryContact": {
+          "name": "Jesse Marks",
+          "title": "Chief Revenue Officer, University of Miami Athletics / Legends Global",
+          "email": "jmarks@legends.net"
+        },
+        "lastOutreachAt": "2026-09-17T23:58:00.000Z",
+        "lastTouchType": "outbound-email",
+        "nextMove": "Await Jesse Marks's response. If no reply, send one concise follow-up after roughly 7-10 business days asking whether Miami is developing launch, sponsorship, fan, donor or collector programming around the reported Nike transition and whether Keegan could fit within that work.",
+        "nextMoveDueAt": "2026-09-29T16:00:00.000Z",
+        "estimatedValue": null,
+        "strategicValue": "High-upside college-football and brand-collaboration opportunity combining Miami's national football identity, Nike's global brand power, nostalgia around the original Nike era and Keegan's proven track record in sponsor-friendly college activations. Could create a paid commission, launch activation, large-scale fan distribution, limited collector edition, donor/VIP gifting, charity component and broader Nike relationship.",
+        "notes": [
+          "Ioana Hall sent the initial outreach from ioana@keeganhall.com to Jesse Marks on September 17, 2026.",
+          "Primary contact: Jesse Marks, Chief Revenue Officer for University of Miami Athletics through Legends Global. Email: jmarks@legends.net.",
+          "Jesse is an appropriate first contact because his remit spans sponsorships, ticketing, premium seating, fundraising, consumer marketing, content, retail and revenue-generating partnerships for Miami Athletics.",
+          "Opportunity trigger: multiple reports indicate Miami is expected to return to Nike beginning July 1, 2027 under a long-term agreement. The initial outreach was intentionally framed as reacting to reports rather than treating the agreement as formally announced by Miami or Nike.",
+          "Creative narrative: Miami's return to Nike creates a legacy story connecting the original Nike era, championship history, iconic Hurricanes culture and the 2027 relaunch.",
+          "College-football proof point used in outreach: Keegan has worked with the University of Washington and Alabama over the last several years.",
+          "Specific UW proof point used: the Michael Penix Jr. project included a 20,000-print game giveaway and a signed collector edition that sold out and helped raise more than $40,000 for charity.",
+          "Broader credibility used: original projects with Michael Jordan and Rory McIlroy, including the Masters artwork Rory gifted to Augusta National and the exclusive co-signed edition for Augusta members.",
+          "Concept space intentionally left open: original artwork, launch activation, fan giveaway, VIP or donor gifting, limited collector edition, charitable component, or another format that fits Miami and Nike's existing rollout.",
+          "Do not over-prescribe Nike-specific creative or imply Nike participation until Miami confirms the agreement and internal launch plans.",
+          "If Jesse engages, clarify: formal Nike launch timing, who owns the rollout internally, Legends' role, Nike brand/marketing contacts, sponsor inventory, rights/IP and uniform/logo usage, athlete/legend participation, NIL considerations, fan giveaway quantities, donor/VIP use, licensing terms, budget and key deadlines.",
+          "Commercial guardrail: prioritize a paid project fee and/or meaningful licensed collector economics. A major original or mass giveaway should only proceed once rights, funding, production budget and activation scope are clear.",
+          "Potential strong structure: sponsor- or brand-funded original + launch content + fan giveaway or stadium activation + premium signed/collector edition + donor/VIP gifting + optional charitable component.",
+          "Follow-up cadence: one concise follow-up around September 29 if no response. If still no engagement, pause and revisit when Miami/Nike formally announce the partnership or another meaningful launch trigger appears."
+        ],
+        "latestCommunication": {
+          "direction": "outbound",
+          "sender": "Ioana Hall — Manager, Keegan Hall Studio",
+          "date": "2026-09-17",
+          "summary": "Ioana contacted Jesse after reports that Miami is expected to return to Nike in 2027, introduced Keegan's UW/Alabama college-football track record and Penix activation results, added Jordan and Rory/Augusta credibility, and proposed exploring an original, launch activation, fan giveaway, VIP/donor gifting, collector edition or charitable component while keeping the concept open to Miami's existing rollout."
         },
         "supportingDocs": null
       }
