@@ -35,6 +35,7 @@ export type V1ReleaseGateEvidenceV1 = {
 
 export type V1FinalAcceptanceEvidenceV1 = {
   state: V1FinalAcceptanceStateV1;
+  releaseSha?: string | null;
   observedAt?: string | null;
   evidenceRefs?: readonly string[];
 };
@@ -59,8 +60,10 @@ export type V1ReleaseBlockerCodeV1 =
   | "GATE_MISSING_PROVENANCE"
   | "GATE_UNSAFE_PROVENANCE"
   | "FINAL_ACCEPTANCE_REJECTED"
+  | "FINAL_ACCEPTANCE_SHA_MISMATCH"
   | "FINAL_ACCEPTANCE_INVALID_TIMESTAMP"
   | "FINAL_ACCEPTANCE_FUTURE_EVIDENCE"
+  | "FINAL_ACCEPTANCE_PRECEDES_GATE_EVIDENCE"
   | "FINAL_ACCEPTANCE_MISSING_PROVENANCE"
   | "FINAL_ACCEPTANCE_UNSAFE_PROVENANCE";
 
@@ -397,6 +400,19 @@ export function compileV1ReleaseCertificateV1(
     if (input.finalAcceptance.state === "ACCEPTED") {
       let acceptanceInvalid = false;
 
+      if (!releaseShaValid || input.finalAcceptance.releaseSha !== input.releaseSha) {
+        blockers.push(
+          blocker(
+            "FINAL_ACCEPTANCE_SHA_MISMATCH",
+            null,
+            "Final Keegan acceptance must be explicitly bound to the exact release SHA.",
+            acceptanceRefs.refs,
+            "KEEGAN"
+          )
+        );
+        acceptanceInvalid = true;
+      }
+
       if (acceptanceAtMs == null) {
         blockers.push(
           blocker(
@@ -419,6 +435,24 @@ export function compileV1ReleaseCertificateV1(
           )
         );
         acceptanceInvalid = true;
+      } else {
+        const latestGateEvidenceMs = Math.max(
+          ...gateResults
+            .map((gate) => parsedTimestamp(gate.observedAt))
+            .filter((value): value is number => value != null)
+        );
+        if (Number.isFinite(latestGateEvidenceMs) && acceptanceAtMs < latestGateEvidenceMs) {
+          blockers.push(
+            blocker(
+              "FINAL_ACCEPTANCE_PRECEDES_GATE_EVIDENCE",
+              null,
+              "Final Keegan acceptance predates required release-gate evidence and must be repeated after the mechanical proof is complete.",
+              acceptanceRefs.refs,
+              "KEEGAN"
+            )
+          );
+          acceptanceInvalid = true;
+        }
       }
 
       if (acceptanceRefs.refs.length === 0 && !acceptanceRefs.unsafe) {
