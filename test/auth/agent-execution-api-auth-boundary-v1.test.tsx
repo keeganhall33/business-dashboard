@@ -6,7 +6,8 @@ import test from "node:test";
 const AGENT_EXECUTION_ROUTES = [
   "src/app/api/agents/run/[agentKey]/route.ts",
   "src/app/api/agents/run-all/route.ts",
-  "src/app/api/agents/nudge/[agentKey]/route.ts"
+  "src/app/api/agents/nudge/[agentKey]/route.ts",
+  "src/app/api/agents/plans/[id]/route.ts"
 ] as const;
 
 function readRoute(path: string): string {
@@ -75,6 +76,22 @@ test("agent nudge authenticates before resolving the agent, activating tasks, or
     "hasAgentRunner(agentKey)",
     "activateAgentTasks(agentKey",
     "publishAgentStatusSnapshot(agentKey)"
+  ]) {
+    assertAuthPrecedes(source, path, operation);
+  }
+});
+
+test("agent plan decisions authenticate before reading, publishing, approving, or activating a plan", () => {
+  const path = "src/app/api/agents/plans/[id]/route.ts";
+  const source = readRoute(path);
+
+  for (const operation of [
+    "await context.params",
+    "getAgentPlanById(id)",
+    "parseJsonBody(request, decidePlanSchema)",
+    "writeAgentOutputs({",
+    "activateAgentTasks(plan.agent_key",
+    'updateAgentPlanStatus({ id: plan.id, status: "approved"'
   ]) {
     assertAuthPrecedes(source, path, operation);
   }
