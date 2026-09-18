@@ -79,6 +79,20 @@ function snapshot(options?: {
   );
 }
 
+function assertAllNumbersFinite(value: unknown): void {
+  if (typeof value === "number") {
+    assert.ok(Number.isFinite(value), `expected finite number, received ${String(value)}`);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach(assertAllNumbersFinite);
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach(assertAllNumbersFinite);
+  }
+}
+
 const instagramRows = [
   content({
     id: "winner",
@@ -150,6 +164,29 @@ test("Content DNA emits evidence-backed attribute associations without causal cl
   assert.equal(seahawks?.comparable_content_count, 2);
   assert.match(seahawks?.interpretation ?? "", /association, not a causal effect/);
   assert.ok((seahawks?.evidence_refs.length ?? 0) > 0);
+});
+
+test("zero-baseline Content DNA patterns stay JSON-safe without claiming an infinite multiplier", () => {
+  const rows = [
+    content({ id: "breakout", publishedAt: "2026-09-17T12:00:00.000Z", reach: 1000, likes: 100, comments: 0, shares: 0, saves: 0, subject: "Breakout" }),
+    content({ id: "breakout-zero", publishedAt: "2026-09-16T12:00:00.000Z", reach: 1000, likes: 0, comments: 0, shares: 0, saves: 0, subject: "Breakout" }),
+    content({ id: "zero-a", publishedAt: "2026-09-15T12:00:00.000Z", reach: 1000, likes: 0, comments: 0, shares: 0, saves: 0, subject: "Zero" }),
+    content({ id: "zero-b", publishedAt: "2026-09-14T12:00:00.000Z", reach: 1000, likes: 0, comments: 0, shares: 0, saves: 0, subject: "Zero" })
+  ];
+
+  const result = analyzeSocialContentDnaV1([snapshot({ contentRows: rows })]);
+  const breakout = result.patterns.find((pattern) => pattern.dimension === "SUBJECT" && pattern.value === "Breakout");
+
+  assert.ok(breakout);
+  assert.equal(breakout?.platform_median_engagement_per_1000_exposure, 0);
+  assert.equal(breakout?.relative_to_platform_median, null);
+  assert.equal(breakout?.association, "ABOVE_PLATFORM_BASELINE");
+  assert.match(breakout?.interpretation ?? "", /relative magnitude undefined/);
+  assert.doesNotMatch(breakout?.interpretation ?? "", /infinite|infinity/i);
+
+  assertAllNumbersFinite(result);
+  const serialized = JSON.stringify(result);
+  assert.deepEqual(JSON.parse(serialized), result);
 });
 
 test("UNKNOWN metrics are never coerced to zero", () => {
