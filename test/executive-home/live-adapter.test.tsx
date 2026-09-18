@@ -137,6 +137,31 @@ test("business pulse hides a Meta snapshot that does not match the selected rang
   assert.equal(meta?.comparison, "Only a 30-day Meta snapshot is available");
 });
 
+test("canonical active opportunities are known and Executive Home omits generic truth badges", () => {
+  const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
+  dashboard.commerceTelemetry = {
+    range: dashboard.range,
+    woo: { summary: { revenue: 989, orders: 11, avgOrderValue: null, discountTotal: 0, shippingTotal: 0, taxTotal: 0, items: 11, completeness: "partial" }, timeseries: [] },
+    ga4: { summary: { revenue: 0, sessions: 2554, engagedSessions: 1000, eventCount: 19000, avgEngagementSeconds: 40, completeness: "partial" }, timeseries: [] }
+  };
+  dashboard.telemetryMetadata = {
+    woo: { source: "woo", fetchedAt: dashboard.timestamp, timezone: "America/Los_Angeles", coverageStatus: "partial", freshnessStatus: "fresh", pacificWindow: { startDate: dashboard.range.startDate, endDate: dashboard.range.endDate, includesPartialDay: false }, rowCounts: {} },
+    ga4: { source: "ga4", fetchedAt: dashboard.timestamp, timezone: "America/Los_Angeles", coverageStatus: "partial", freshnessStatus: "fresh", pacificWindow: { startDate: dashboard.range.startDate, endDate: dashboard.range.endDate, includesPartialDay: false }, rowCounts: {} }
+  };
+  dashboard.opportunityRadar = {
+    activeCount: 1,
+    readyForOutreachCount: 0,
+    topOpportunities: [{ id: "opp-1", name: "Arena Club", organization: "Arena Club", opportunityType: "partnership", status: "in_conversation", valueEstimate: null, prestigeScore: null, probabilityScore: null, ownerAgent: "avery", nextStep: "Wait for player approval", nextStepDueAt: null, supportingDocs: [], createdAt: dashboard.timestamp }],
+    nextFiveMoves: []
+  };
+
+  const { home, decisionRoom } = buildExecutiveHomeFromDashboardOverviewV1(dashboard);
+  const html = renderToString(<ExecutiveHomeShell data={home} decisionRoom={decisionRoom} />);
+
+  assert.equal(home.command_center.opportunities[0]?.evidence, "KNOWN");
+  assert.doesNotMatch(html, /Partial data|Needs confirmation/);
+});
+
 test("Executive Home production-shaped render is mobile-safe and light-first", () => {
   const dashboard = structuredClone(BASE_DASHBOARD) as DashboardOverviewResponse;
   dashboard.topActions = [

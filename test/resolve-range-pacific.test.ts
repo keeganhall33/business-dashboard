@@ -2,13 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveRange } from "../src/lib/date/resolve-range";
 
-test("7D preset uses Pacific calendar day and includes today plus 6 prior days", () => {
+test("7D preset uses the latest completed Pacific day", () => {
   // Anchor at a fixed instant.
   const now = new Date("2026-07-27T12:00:00Z");
   const range = resolveRange("7d", null, null, now);
   assert.equal(range.preset, "7d");
+  assert.equal(range.endDate, "2026-07-26");
+  assert.equal(range.startDate, "2026-07-20");
+});
+
+test("Today remains an explicit live range", () => {
+  const now = new Date("2026-07-27T12:00:00Z");
+  const range = resolveRange("today", null, null, now);
+  assert.equal(range.startDate, "2026-07-27");
   assert.equal(range.endDate, "2026-07-27");
-  assert.equal(range.startDate, "2026-07-21");
+});
+
+test("30D, MTD, and YTD stop at the latest completed Pacific day", () => {
+  const now = new Date("2026-07-27T12:00:00Z");
+  assert.deepEqual(resolveRange("30d", null, null, now), {
+    preset: "30d",
+    startDate: "2026-06-27",
+    endDate: "2026-07-26"
+  });
+  assert.equal(resolveRange("month_to_date", null, null, now).endDate, "2026-07-26");
+  assert.equal(resolveRange("year_to_date", null, null, now).endDate, "2026-07-26");
 });
 
 test("Yesterday preset is previous Pacific calendar day", () => {

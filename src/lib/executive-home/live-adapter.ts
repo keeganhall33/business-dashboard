@@ -433,7 +433,10 @@ function opportunityProjection(opportunity: NonNullable<DashboardOverviewRespons
     fit: opportunity.prestigeScore == null ? "UNKNOWN" : `${Math.round(opportunity.prestigeScore * 100)}% prestige fit`,
     timing: opportunity.nextStepDueAt ? "Next step scheduled" : "UNKNOWN",
     effort: opportunity.nextStep ? "Next step known" : "UNKNOWN",
-    evidence: opportunity.status.toUpperCase().includes("STALE") ? "STALE" : opportunity.status.toUpperCase().includes("CONFLICT") ? "CONFLICTED" : opportunity.status.toUpperCase().includes("UNKNOWN") || opportunity.status.toUpperCase().includes("UNVERIFIED") ? "UNKNOWN" : "INFERRED",
+    // Records in opportunity_pipeline are canonical opportunities Keegan added
+    // or approved. Their existence is known; freshness and next-step timing are
+    // separate concerns and must not downgrade the record to "INFERRED".
+    evidence: "KNOWN",
     next_move: opportunity.nextStep ?? "Wait for opportunity evidence.",
     detail_href: `/opportunities-actions/opportunity/${encodeURIComponent(opportunity.id)}`
   };
