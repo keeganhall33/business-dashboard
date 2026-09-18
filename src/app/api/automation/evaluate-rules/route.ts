@@ -1,8 +1,12 @@
 import { ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { evaluateRules } from "@/lib/automation/evaluateRules";
 import { createSystemRun, finishSystemRun } from "@/lib/supabase/queries";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   const run = await createSystemRun({ agentKey: "avery", runType: "rule_evaluation" });
 
   try {
