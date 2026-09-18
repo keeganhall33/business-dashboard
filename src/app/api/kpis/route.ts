@@ -1,4 +1,5 @@
 import { ok, serverError, validationError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { listAgentKpis, upsertAgentKpiDefinition } from "@/lib/supabase/queries";
 import { AgentKpiDefinition } from "@/lib/types/dashboard";
 import { parseJsonBody, parseSearchParams } from "@/lib/validation/parse";
@@ -31,6 +32,9 @@ let e2eKpis: E2EKpiDefinition[] = [
 ];
 
 export async function GET(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     if (process.env.E2E_TEST === "1") {
       return ok({ ok: true, items: e2eKpis, count: e2eKpis.length });
@@ -50,6 +54,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     if (process.env.E2E_TEST === "1") {
       const parsed = await parseJsonBody(request, upsertKpiSchema);
