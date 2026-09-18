@@ -5,7 +5,7 @@ import type {
   RelationshipTruthStateV1
 } from "@/lib/relationship-intelligence/contracts";
 
-export const RELATIONSHIP_PATHFINDER_POLICY_VERSION_V1 = "relationship_pathfinder_policy_v1.0.0" as const;
+export const RELATIONSHIP_PATHFINDER_POLICY_VERSION_V1 = "relationship_pathfinder_policy_v1.1.0" as const;
 
 export type RelationshipStrengthV1 = "STRONG" | "MEDIUM" | "WEAK" | "UNKNOWN";
 export type RelationshipWillingnessV1 = "LIKELY" | "POSSIBLE" | "UNLIKELY" | "UNKNOWN";
@@ -150,7 +150,7 @@ export class RelationshipPathfinderError extends Error {
   }
 }
 
-const SUPPORTED_TRUTH = new Set<RelationshipTruthStateV1>(["KNOWN", "INFERRED"]);
+const SUPPORTED_TRUTH = new Set<RelationshipTruthStateV1>(["KNOWN"]);
 const MAX_ENTITIES = 500;
 const MAX_EDGES = 2_000;
 const MAX_HOPS = 5;
@@ -210,10 +210,14 @@ function freeze<T>(value: T): T {
 function freshness(edge: CanonicalRelationshipEdgeRefV1, generatedAt: string): "FRESH" | "STALE" | "UNKNOWN" {
   if (edge.lastMeaningfulInteractionAt == null) return "UNKNOWN";
   const observedAt = Date.parse(timestamp(edge.lastMeaningfulInteractionAt, `${edge.edgeId}.lastMeaningfulInteractionAt`));
+  const generatedAtMs = Date.parse(generatedAt);
+  if (observedAt > generatedAtMs) {
+    throw new RelationshipPathfinderError("FUTURE_RELATIONSHIP_EVIDENCE", `${edge.edgeId}.lastMeaningfulInteractionAt must not be after generatedAt`);
+  }
   if (!Number.isInteger(edge.staleAfterDays) || edge.staleAfterDays < 1 || edge.staleAfterDays > 3_650) {
     throw new RelationshipPathfinderError("INVALID_STALENESS", `${edge.edgeId}.staleAfterDays is invalid`);
   }
-  const ageDays = Math.max(0, (Date.parse(generatedAt) - observedAt) / 86_400_000);
+  const ageDays = (generatedAtMs - observedAt) / 86_400_000;
   return ageDays > edge.staleAfterDays ? "STALE" : "FRESH";
 }
 
@@ -234,14 +238,14 @@ function exclusionReasons(edge: CanonicalRelationshipEdgeRefV1, generatedAt: str
   if (edge.evidenceQuality === "UNKNOWN" || edge.evidenceRefs.length === 0) reasons.push("RELATIONSHIP_EVIDENCE_UNSUPPORTED");
   const edgeFreshness = freshness(edge, generatedAt);
   if (edgeFreshness !== "FRESH") reasons.push(`RELATIONSHIP_${edgeFreshness}`);
-  if (!SUPPORTED_TRUTH.has(edge.willingness.state) || edge.willingness.level === "UNKNOWN") reasons.push("WILLINGNESS_UNSUPPORTED");
+  if (!SUPPORTED_TRUTH.has(edge.willingness.state) || edge.willingness.level === "UNKNOWN" || edge.willingness.evidenceRefs.length === 0) reasons.push("WILLINGNESS_UNSUPPORTED");
   if (edge.willingness.level === "UNLIKELY") reasons.push("WILLINGNESS_UNLIKELY");
-  if (!SUPPORTED_TRUTH.has(edge.contextFit.state) || edge.contextFit.level === "UNKNOWN") reasons.push("CONTEXT_FIT_UNSUPPORTED");
+  if (!SUPPORTED_TRUTH.has(edge.contextFit.state) || edge.contextFit.level === "UNKNOWN" || edge.contextFit.evidenceRefs.length === 0) reasons.push("CONTEXT_FIT_UNSUPPORTED");
   if (edge.contextFit.level === "LOW") reasons.push("CONTEXT_FIT_LOW");
-  if (!SUPPORTED_TRUTH.has(edge.introduction.state) || edge.introduction.appropriate == null) reasons.push("INTRODUCTION_UNSUPPORTED");
+  if (!SUPPORTED_TRUTH.has(edge.introduction.state) || edge.introduction.appropriate == null || edge.introduction.evidenceRefs.length === 0) reasons.push("INTRODUCTION_UNSUPPORTED");
   if (edge.introduction.appropriate === false) reasons.push("INTRODUCTION_INAPPROPRIATE");
   if (edge.introduction.appropriate === true && !edge.introduction.reason?.trim()) reasons.push("INTRODUCTION_REASON_MISSING");
-  if (!SUPPORTED_TRUTH.has(edge.timing.state) || edge.timing.window === "UNKNOWN") reasons.push("TIMING_UNSUPPORTED");
+  if (!SUPPORTED_TRUTH.has(edge.timing.state) || edge.timing.window === "UNKNOWN" || edge.timing.evidenceRefs.length === 0 || !edge.timing.rationale?.trim()) reasons.push("TIMING_UNSUPPORTED");
   if (edge.timing.window === "CLOSED") reasons.push("TIMING_CLOSED");
   return [...new Set(reasons)].sort((a, b) => a.localeCompare(b));
 }
@@ -327,7 +331,7 @@ function buildPath(
   const projectedEdges = edgePath.map((edge) => projection(edge, generatedAt));
   const last = edgePath[edgePath.length - 1];
   const allBlockers = [...new Set(projectedEdges.flatMap((edge) => edge.blockers))].sort((a, b) => a.localeCompare(b));
-  const authorityKnown = SUPPORTED_TRUTH.has(last.targetAuthority.state);
+  const authorityKnown = SUPPORTED_TRUTH.has(last.targetAuthority.state) && last.targetAuthority.evidenceRefs.length > 0;
   const authorityConfirmed = authorityKnown && last.targetAuthority.level === "DECISION_MAKER" && last.targetAuthority.roleRelevance !== "UNKNOWN";
   const researchRequired = !authorityKnown || last.targetAuthority.level === "UNKNOWN" || last.targetAuthority.roleRelevance === "UNKNOWN" || (requiresDecisionAuthority && !authorityConfirmed);
   const readiness: RelationshipPathReadinessV1 = researchRequired ? "RESEARCH_REQUIRED" : allBlockers.length > 0 ? "BLOCKED" : "READY";
@@ -365,7 +369,7 @@ function informationGainFor(excluded: ReadonlyMap<string, readonly string[]>): s
     for (const reason of reasons) {
       if (reason.includes("STALE")) actions.add("REFRESH_STALE_RELATIONSHIP_EVIDENCE");
       else if (reason.includes("CONFLICTED")) actions.add("RESOLVE_CONFLICTED_RELATIONSHIP_EVIDENCE");
-      else if (reason.includes("RELATIONSHIP_UNKNOWN") || reason === "RELATIONSHIP_EVIDENCE_UNSUPPORTED") actions.add("VERIFY_CANONICAL_RELATIONSHIP_EDGE");
+      else if (reason.includes("RELATIONSHIP_UNKNOWN") || reason === "RELATIONSHIP_INFERRED" || reason === "RELATIONSHIP_EVIDENCE_UNSUPPORTED") actions.add("VERIFY_CANONICAL_RELATIONSHIP_EDGE");
       else if (reason.startsWith("WILLINGNESS")) actions.add("VERIFY_INTRODUCER_WILLINGNESS");
       else if (reason.startsWith("CONTEXT_FIT")) actions.add("VERIFY_CONTEXT_FIT");
       else if (reason.startsWith("INTRODUCTION")) actions.add("VERIFY_INTRODUCTION_APPROPRIATENESS");
