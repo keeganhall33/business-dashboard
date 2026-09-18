@@ -156,9 +156,10 @@ export function CheckoutDiagnosticsPanelV1({ model }: { model: CheckoutDiagnosti
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bounded next step</p>
           <p className="mt-1 font-semibold text-slate-950">{model.recommendation.summary}</p>
           <p className="mt-1 text-sm text-slate-600">{model.recommendation.rationale}</p>
-          <p className="mt-2 text-xs font-semibold text-slate-500">Analysis only · approval required for consequential changes · no external mutation authorized</p>
         </div>
       ) : null}
+
+      <p className="text-xs font-semibold text-slate-500">Analysis only · approval required for consequential changes · no external mutation authorized</p>
 
       <div className="space-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
         <p>{model.attributionNote}</p>
