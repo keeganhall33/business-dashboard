@@ -188,7 +188,7 @@ function buildLineage(
       continue;
     }
 
-    const normalized = {
+    const normalized: DecisionAssumptionEvidenceLineageV1 = {
       evidenceId: entry.evidenceId.trim(),
       sourceLineageId: entry.sourceLineageId.trim(),
       observedAt
@@ -208,25 +208,26 @@ function buildLineage(
   return { map, conflict, futureEvidence };
 }
 
+const VERIFY_REASONS = new Set<DecisionAssumptionRevisitReasonV1>([
+  "DECISION_INTEGRITY_FLAGS",
+  "INVALID_CHRONOLOGY",
+  "MATERIAL_ASSUMPTION_NOT_EVIDENCED",
+  "DUPLICATE_ASSUMPTION_ASSESSMENT",
+  "ASSESSMENT_TARGET_UNKNOWN",
+  "ASSESSMENT_EVIDENCE_MISSING",
+  "ATTRIBUTION_EVIDENCE_MISSING",
+  "EVIDENCE_LINEAGE_MISSING",
+  "EVIDENCE_LINEAGE_CONFLICT",
+  "FUTURE_EVIDENCE"
+]);
+
 function stateFor(
   reasons: readonly DecisionAssumptionRevisitReasonV1[],
   hasRefuted: boolean,
   hasUnresolved: boolean,
   materialCount: number
 ): DecisionAssumptionRevisitStateV1 {
-  const verificationReasons = new Set<DecisionAssumptionRevisitReasonV1>([
-    "DECISION_INTEGRITY_FLAGS",
-    "INVALID_CHRONOLOGY",
-    "MATERIAL_ASSUMPTION_NOT_EVIDENCED",
-    "DUPLICATE_ASSUMPTION_ASSESSMENT",
-    "ASSESSMENT_TARGET_UNKNOWN",
-    "ASSESSMENT_EVIDENCE_MISSING",
-    "ATTRIBUTION_EVIDENCE_MISSING",
-    "EVIDENCE_LINEAGE_MISSING",
-    "EVIDENCE_LINEAGE_CONFLICT",
-    "FUTURE_EVIDENCE"
-  ]);
-  if (reasons.some((reason) => verificationReasons.has(reason))) return "VERIFY";
+  if (reasons.some((reason) => VERIFY_REASONS.has(reason))) return "VERIFY";
   if (materialCount === 0) return "NO_REVIEW_NEEDED";
   if (reasons.includes("OUTCOME_NOT_OBSERVED")) return "WAIT_FOR_EVIDENCE";
   if (hasRefuted) return "READY_FOR_REVIEW";
@@ -244,10 +245,9 @@ function nextInternalStepFor(
 }
 
 /**
- * Converts evidence-backed changes to material decision assumptions into a
- * bounded internal revisit signal. A refutation can request review, but it can
- * never change the decision, portfolio, score, confidence, allocation, or any
- * external action by itself.
+ * Turns evidence-backed changes to material DecisionMemory assumptions into a
+ * bounded internal revisit signal. It never mutates the source decision or the
+ * current portfolio and never upgrades correlation into causality.
  */
 export function reviewDecisionAssumptionsForRevisitV1(
   input: DecisionAssumptionRevisitReviewInputV1
@@ -262,33 +262,40 @@ export function reviewDecisionAssumptionsForRevisitV1(
   const reasons: DecisionAssumptionRevisitReasonV1[] = [];
 
   const decisionAt = parsedTimestamp(input.record.decidedAt);
+  const decisionAtMs = decisionAt ? Date.parse(decisionAt) : Number.NaN;
   const observation = input.record.outcomeObservation;
   const observationAt = observation ? parsedTimestamp(observation.observedAt) : null;
+  const observationAtMs = observationAt ? Date.parse(observationAt) : Number.NaN;
+
   if (
     !decisionAt ||
-    Date.parse(decisionAt) > reviewedAtMs ||
-    (observation &&
-      (!observationAt ||
-        Date.parse(observationAt) < Date.parse(decisionAt) ||
-        Date.parse(observationAt) > reviewedAtMs))
+    decisionAtMs > reviewedAtMs ||
+    (observation !== null &&
+      (!observationAt || observationAtMs < decisionAtMs || observationAtMs > reviewedAtMs))
   ) {
     reasons.push("INVALID_CHRONOLOGY");
   }
 
   if (input.record.integrityFlags.length > 0) reasons.push("DECISION_INTEGRITY_FLAGS");
-  if (observation?.attributionClass !== "UNKNOWN" && observation.attributionEvidenceRefs.length === 0) {
+  if (
+    observation !== null &&
+    observation.attributionClass !== "UNKNOWN" &&
+    observation.attributionEvidenceRefs.length === 0
+  ) {
     reasons.push("ATTRIBUTION_EVIDENCE_MISSING");
   }
 
   const materialAssumptions = input.record.assumptions.filter((assumption) => assumption.material);
   if (materialAssumptions.length === 0) reasons.push("NO_MATERIAL_ASSUMPTIONS");
-  if (!observation) reasons.push("OUTCOME_NOT_OBSERVED");
+  if (observation === null) reasons.push("OUTCOME_NOT_OBSERVED");
 
-  const materialById = new Map(materialAssumptions.map((assumption) => [assumption.assumptionId, assumption]));
   const allAssumptionIds = new Set(input.record.assumptions.map((assumption) => assumption.assumptionId));
   const assessmentCounts = new Map<string, number>();
   for (const assessment of observation?.assumptionAssessments ?? []) {
-    assessmentCounts.set(assessment.assumptionId, (assessmentCounts.get(assessment.assumptionId) ?? 0) + 1);
+    assessmentCounts.set(
+      assessment.assumptionId,
+      (assessmentCounts.get(assessment.assumptionId) ?? 0) + 1
+    );
     if (!allAssumptionIds.has(assessment.assumptionId)) reasons.push("ASSESSMENT_TARGET_UNKNOWN");
   }
   if ([...assessmentCounts.values()].some((count) => count > 1)) {
@@ -304,6 +311,10 @@ export function reviewDecisionAssumptionsForRevisitV1(
   let supportedCount = 0;
   let refutedCount = 0;
   let unresolvedCount = 0;
+
+  if (observation !== null && observation.attributionClass !== "UNKNOWN") {
+    requiredEvidenceRefs.push(...observation.attributionEvidenceRefs);
+  }
 
   for (const assumption of materialAssumptions) {
     const statementRefs = uniqueSorted(assumption.statement.evidenceRefs);
@@ -338,7 +349,7 @@ export function reviewDecisionAssumptionsForRevisitV1(
     }
     requiredEvidenceRefs.push(...assessmentRefs);
 
-    const refsForSignal = uniqueSorted([...statementRefs, ...assessmentRefs]);
+    const signalRefs = uniqueSorted([...statementRefs, ...assessmentRefs]);
     signals.push({
       assumptionId: assumption.assumptionId,
       statement: statementSupported ? assumption.statement.value : null,
@@ -348,7 +359,7 @@ export function reviewDecisionAssumptionsForRevisitV1(
       statementEvidenceRefs: statementRefs,
       assessmentEvidenceRefs: assessmentRefs,
       sourceLineageIds: uniqueSorted(
-        refsForSignal.flatMap((ref) => {
+        signalRefs.flatMap((ref) => {
           const entry = lineage.map.get(ref);
           return entry ? [entry.sourceLineageId] : [];
         })
@@ -357,7 +368,7 @@ export function reviewDecisionAssumptionsForRevisitV1(
   }
 
   if (
-    observation &&
+    observation !== null &&
     materialAssumptions.length > 0 &&
     refutedCount === 0 &&
     unresolvedCount === 0 &&
@@ -366,8 +377,8 @@ export function reviewDecisionAssumptionsForRevisitV1(
     reasons.push("ALL_MATERIAL_ASSUMPTIONS_SUPPORTED");
   }
 
-  const requiredRefs = uniqueSorted(requiredEvidenceRefs);
-  if (requiredRefs.some((ref) => !lineage.map.has(ref))) reasons.push("EVIDENCE_LINEAGE_MISSING");
+  const evidenceRefs = uniqueSorted(requiredEvidenceRefs);
+  if (evidenceRefs.some((ref) => !lineage.map.has(ref))) reasons.push("EVIDENCE_LINEAGE_MISSING");
 
   const reasonCodes = uniqueSorted(reasons) as DecisionAssumptionRevisitReasonV1[];
   const state = stateFor(
@@ -376,7 +387,6 @@ export function reviewDecisionAssumptionsForRevisitV1(
     unresolvedCount > 0,
     materialAssumptions.length
   );
-  const evidenceRefs = uniqueSorted(requiredRefs);
   const sourceLineageIds = uniqueSorted(
     evidenceRefs.flatMap((ref) => {
       const entry = lineage.map.get(ref);
@@ -385,11 +395,13 @@ export function reviewDecisionAssumptionsForRevisitV1(
   );
   const reviewSignals = signals.sort((a, b) => a.assumptionId.localeCompare(b.assumptionId));
   const nextInternalStep = nextInternalStepFor(state);
+  const attributionClass = observation?.attributionClass ?? "UNKNOWN";
+  const outcomeObservationId = observation?.observationId ?? null;
 
   const reviewId = `decision-assumption-review:${stableId({
     policyVersion: DECISION_ASSUMPTION_REVISIT_REVIEW_POLICY_VERSION_V1,
     decisionId: input.record.decisionId,
-    observationId: observation?.observationId ?? null,
+    observationId: outcomeObservationId,
     reviewedAt,
     state,
     reasonCodes,
@@ -407,8 +419,8 @@ export function reviewDecisionAssumptionsForRevisitV1(
     reasonCodes,
     decisionId: input.record.decisionId,
     decisionClass: input.record.decisionClass,
-    outcomeObservationId: observation?.observationId ?? null,
-    attributionClass: observation?.attributionClass ?? "UNKNOWN",
+    outcomeObservationId,
+    attributionClass,
     causalInterpretation: "NOT_ESTABLISHED",
     confidence: "NOT_ESTABLISHED",
     monetaryValue: null,
