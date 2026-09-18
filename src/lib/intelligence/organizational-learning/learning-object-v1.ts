@@ -39,6 +39,7 @@ export interface LearningApprovalV1 {
 
 export interface LearningSupersessionV1 {
   predecessor_id: string;
+  successor_id?: string;
   reason: string;
   superseded_at: string;
 }
@@ -78,6 +79,7 @@ export const LearningApprovalV1Schema = z.object({
 
 export const LearningSupersessionV1Schema = z.object({
   predecessor_id: nonEmpty,
+  successor_id: nonEmpty.optional(),
   reason: nonEmpty,
   superseded_at: isoTimestamp
 }).strict();
@@ -142,7 +144,7 @@ export function validateLearningObjectV1(input: unknown): Readonly<LearningObjec
   }
   if (value.lifecycle_state === "SUPERSEDED") {
     if (!value.supersession) throw new Error("SUPERSESSION_REQUIRED");
-    if (value.supersession.predecessor_id === value.learning_id) throw new Error("SELF_SUPERSESSION");
+    if (value.supersession.successor_id === value.learning_id) throw new Error("SELF_SUPERSESSION");
     assertTimestampOrder(value.created_at, value.supersession.superseded_at, "NON_MONOTONIC_SUPERSESSION");
   } else if (value.supersession !== null) {
     throw new Error("UNEXPECTED_SUPERSESSION");
@@ -236,7 +238,12 @@ export function supersedeLearningV1(
     lifecycle_state: "SUPERSEDED",
     version: current.version + 1,
     updated_at: superseded_at,
-    supersession: { predecessor_id: current.learning_id, reason, superseded_at }
+    supersession: {
+      predecessor_id: current.learning_id,
+      successor_id: successor_id.trim(),
+      reason,
+      superseded_at
+    }
   });
 }
 
