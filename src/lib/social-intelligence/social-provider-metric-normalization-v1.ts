@@ -89,7 +89,6 @@ const MAX_OBSERVATIONS = 100;
 const MAX_REFERENCE_LENGTH = 2_000;
 const MAX_TEXT_LENGTH = 500;
 const MAX_LIMITATIONS = 50;
-
 const FORBIDDEN_CREDENTIAL_KEYS = new Set([
   "accesstoken",
   "refreshtoken",
@@ -175,15 +174,10 @@ function normalizeLimitations(values: readonly string[] | undefined): string[] {
   return limitations;
 }
 
-function conversionFor(
-  metricKey: SocialMetricKeyV1,
-  nativeUnit: SocialProviderNativeUnitV1
-): NormalizedSocialProviderMetricV1["conversion"] {
+function conversionFor(metricKey: SocialMetricKeyV1, nativeUnit: SocialProviderNativeUnitV1): NormalizedSocialProviderMetricV1["conversion"] {
   const canonicalUnit = SOCIAL_METRIC_DEFINITIONS_V1[metricKey].unit;
   if (canonicalUnit === "COUNT") {
-    if (nativeUnit !== "COUNT") {
-      throw new Error(`${metricKey} requires COUNT provider units; received ${nativeUnit}`);
-    }
+    if (nativeUnit !== "COUNT") throw new Error(`${metricKey} requires COUNT provider units; received ${nativeUnit}`);
     return "IDENTITY";
   }
   if (nativeUnit === "SECONDS") return "IDENTITY";
@@ -211,8 +205,7 @@ export function compileSocialProviderMetricNormalizationV1(
     throw new Error("social provider normalization requires an official API or authorized export source");
   }
 
-  const nowIso = requireIso(now, "now");
-  const nowMs = Date.parse(nowIso);
+  const nowMs = Date.parse(requireIso(now, "now"));
   const retrievedAt = requireIso(input.retrievedAt, "retrievedAt");
   const retrievedMs = Date.parse(retrievedAt);
   if (retrievedMs > nowMs) throw new Error("retrievedAt cannot be in the future");
@@ -229,11 +222,13 @@ export function compileSocialProviderMetricNormalizationV1(
   if (input.mappings.length > MAX_MAPPINGS) throw new Error(`mappings exceeds ${MAX_MAPPINGS} items`);
   if (!Array.isArray(input.observations)) throw new Error("observations must be an array");
   if (input.observations.length > MAX_OBSERVATIONS) throw new Error(`observations exceeds ${MAX_OBSERVATIONS} items`);
+  const mappings = input.mappings as readonly SocialProviderMetricMappingV1[];
+  const observations = input.observations as readonly SocialProviderMetricObservationV1[];
 
   const allowedMetricKeys = new Set<string>(SOCIAL_METRIC_KEYS_V1);
   const mappingsByProvider = new Map<string, SocialProviderMetricMappingV1>();
   const providerByCanonical = new Map<SocialMetricKeyV1, string>();
-  const normalizedMappings = input.mappings.map((mapping, index) => {
+  const normalizedMappings = mappings.map((mapping, index) => {
     const providerMetricKey = requireNonEmpty(mapping.providerMetricKey, `mappings[${index}].providerMetricKey`);
     if (!allowedMetricKeys.has(mapping.canonicalMetricKey)) {
       throw new Error(`${providerMetricKey} maps to unsupported canonical metric ${String(mapping.canonicalMetricKey)}`);
@@ -248,16 +243,14 @@ export function compileSocialProviderMetricNormalizationV1(
     }
     const canonicalDefinition = SOCIAL_METRIC_DEFINITIONS_V1[mapping.canonicalMetricKey];
     if (mapping.aggregation !== canonicalDefinition.aggregation) {
-      throw new Error(
-        `${providerMetricKey} aggregation ${mapping.aggregation} does not match canonical ${mapping.canonicalMetricKey} aggregation ${canonicalDefinition.aggregation}`
-      );
+      throw new Error(`${providerMetricKey} aggregation ${mapping.aggregation} does not match canonical ${mapping.canonicalMetricKey} aggregation ${canonicalDefinition.aggregation}`);
     }
     conversionFor(mapping.canonicalMetricKey, mapping.nativeUnit);
     const providerDefinitionId = safeReference(mapping.providerDefinitionId, `mappings[${index}].providerDefinitionId`);
     const definitionEvidenceRefs = normalizeRefs(mapping.definitionEvidenceRefs, `mappings[${index}].definitionEvidenceRefs`);
     if (!definitionEvidenceRefs.length) throw new Error(`${providerMetricKey} requires provider definition evidence`);
 
-    const normalized = freeze({
+    const normalized: SocialProviderMetricMappingV1 = freeze({
       providerMetricKey,
       canonicalMetricKey: mapping.canonicalMetricKey,
       nativeUnit: mapping.nativeUnit,
@@ -271,24 +264,15 @@ export function compileSocialProviderMetricNormalizationV1(
   });
 
   const observationsByProvider = new Map<string, SocialProviderMetricObservationV1>();
-  for (const [index, observation] of input.observations.entries()) {
+  for (const [index, observation] of observations.entries()) {
     const providerMetricKey = requireNonEmpty(observation.providerMetricKey, `observations[${index}].providerMetricKey`);
-    if (!mappingsByProvider.has(providerMetricKey)) {
-      throw new Error(`observation ${providerMetricKey} has no explicit provider-to-canonical mapping`);
-    }
+    if (!mappingsByProvider.has(providerMetricKey)) throw new Error(`observation ${providerMetricKey} has no explicit provider-to-canonical mapping`);
     if (observationsByProvider.has(providerMetricKey)) throw new Error(`duplicate provider metric observation: ${providerMetricKey}`);
     const capturedAt = requireIso(observation.capturedAt, `observations[${index}].capturedAt`);
     if (Date.parse(capturedAt) > retrievedMs) throw new Error(`${providerMetricKey}.capturedAt cannot be after retrievedAt`);
     const evidenceRefs = normalizeRefs(observation.evidenceRefs, `observations[${index}].evidenceRefs`);
-    if (observation.value != null && !evidenceRefs.length) {
-      throw new Error(`${providerMetricKey} KNOWN observation requires provider evidence`);
-    }
-    observationsByProvider.set(providerMetricKey, freeze({
-      providerMetricKey,
-      value: observation.value,
-      capturedAt,
-      evidenceRefs
-    }));
+    if (observation.value != null && !evidenceRefs.length) throw new Error(`${providerMetricKey} KNOWN observation requires provider evidence`);
+    observationsByProvider.set(providerMetricKey, freeze({ providerMetricKey, value: observation.value, capturedAt, evidenceRefs }));
   }
 
   const canonicalMetrics: Partial<Record<SocialMetricKeyV1, SocialMetricObservationInputV1>> = {};
@@ -312,7 +296,7 @@ export function compileSocialProviderMetricNormalizationV1(
         value: null,
         truthState: "UNKNOWN",
         capturedAt: observation?.capturedAt ?? null,
-        evidenceRefs: freeze([] as string[]),
+        evidenceRefs: [] as string[],
         definitionEvidenceRefs: mapping.definitionEvidenceRefs
       }));
       canonicalMetrics[mapping.canonicalMetricKey] = { value: null, evidenceRefs: [] };
@@ -333,23 +317,16 @@ export function compileSocialProviderMetricNormalizationV1(
       evidenceRefs: observation.evidenceRefs ?? [],
       definitionEvidenceRefs: mapping.definitionEvidenceRefs
     }));
-    canonicalMetrics[mapping.canonicalMetricKey] = {
-      value,
-      evidenceRefs: observation.evidenceRefs ?? []
-    };
+    canonicalMetrics[mapping.canonicalMetricKey] = { value, evidenceRefs: observation.evidenceRefs ?? [] };
   }
 
   const partial = !input.providerRunComplete || missingProviderMetrics.length > 0;
-  if (!input.providerRunComplete && limitations.length === 0) {
-    throw new Error("incomplete provider run requires an explicit limitation");
-  }
+  if (!input.providerRunComplete && limitations.length === 0) throw new Error("incomplete provider run requires an explicit limitation");
   for (const metricKey of missingProviderMetrics) {
     limitations.push(`Mapped provider metric ${metricKey} was not observed; canonical value remains UNKNOWN.`);
   }
 
-  const metricCoverage = normalizedMappings
-    .map((mapping) => mapping.canonicalMetricKey)
-    .sort((left, right) => left.localeCompare(right));
+  const metricCoverage = normalizedMappings.map((mapping) => mapping.canonicalMetricKey).sort((left, right) => left.localeCompare(right));
   const normalizedLimitations = unique(limitations);
 
   return freeze({
@@ -363,13 +340,7 @@ export function compileSocialProviderMetricNormalizationV1(
     normalizationState: partial ? "PARTIAL" : "READY",
     metrics: normalizedMetrics.sort((left, right) => left.canonicalMetricKey.localeCompare(right.canonicalMetricKey)),
     missingProviderMetrics: missingProviderMetrics.sort((left, right) => left.localeCompare(right)),
-    canonicalPeriod: {
-      periodId,
-      window: input.window,
-      startAt: periodStartAt,
-      endAt: periodEndAt,
-      metrics: canonicalMetrics
-    },
+    canonicalPeriod: { periodId, window: input.window, startAt: periodStartAt, endAt: periodEndAt, metrics: canonicalMetrics },
     sourceCoverage: {
       requestedState: partial ? "CONNECTED_PARTIAL" : "CONNECTED_AND_INGESTING",
       lastSuccessfulSyncAt: retrievedAt,
