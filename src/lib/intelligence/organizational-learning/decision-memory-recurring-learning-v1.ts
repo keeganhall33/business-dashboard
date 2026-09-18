@@ -124,8 +124,8 @@ function stableId(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
 }
 
-function uniqueSorted(values: readonly string[]): string[] {
-  return [...new Set(values.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))]
+function uniqueSorted<T extends string>(values: readonly T[]): T[] {
+  return [...new Set(values.map((value) => value.trim() as T).filter((value) => value.length > 0))]
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -147,6 +147,7 @@ function result(args: {
   learningId: string | null;
   observations?: readonly RecurringLessonObservationV1[];
 }): DecisionMemoryRecurringLearningHandoffV1 {
+  const observations = (args.observations ?? []).map((observation) => Object.freeze({ ...observation }));
   return Object.freeze({
     contractVersion: "DecisionMemoryRecurringLearningHandoffV1" as const,
     policyVersion: DECISION_MEMORY_RECURRING_LEARNING_POLICY_VERSION_V1,
@@ -160,7 +161,7 @@ function result(args: {
     learningId: args.learningId,
     attributionClass: args.record.outcomeObservation?.attributionClass ?? null,
     causalInterpretation: "NOT_ESTABLISHED" as const,
-    observations: Object.freeze([...(args.observations ?? [])]),
+    observations: Object.freeze(observations),
     limitations: limitations(),
     actionAuthority: Object.freeze(authority())
   });
@@ -318,10 +319,12 @@ export function compileDecisionMemoryRecurringLearningHandoffV1(args: {
   if (missingEvidence(observation.assessment.evidenceRefs, learning).length > 0) {
     reasons.push("OUTCOME_EVIDENCE_GAP");
   }
-  const actionRefsInLearning = args.record.actionEvidenceRefs.filter((ref) =>
-    learning.evidence.some((item) => item.evidence_id === ref)
-  );
-  if (actionRefsInLearning.length === 0) reasons.push("ACTION_EVIDENCE_GAP");
+  if (
+    args.record.actionEvidenceRefs.length > 0 &&
+    missingEvidence(args.record.actionEvidenceRefs, learning).length > 0
+  ) {
+    reasons.push("ACTION_EVIDENCE_GAP");
+  }
 
   const lessonEvidenceIds = new Set(observation.lessonCandidate.evidenceRefs);
   const lessonLineages = uniqueSorted(
