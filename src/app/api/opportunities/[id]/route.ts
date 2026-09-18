@@ -1,7 +1,11 @@
 import { notFound, ok, serverError } from "@/lib/api/responses";
+import { enforceDashboardAuth } from "@/lib/auth/dashboard";
 import { getOpportunityById } from "@/lib/supabase/queries";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authResponse = enforceDashboardAuth(request);
+  if (authResponse) return authResponse;
+
   try {
     const { id } = await context.params;
     const opportunity = await getOpportunityById(id).catch(() => null);
