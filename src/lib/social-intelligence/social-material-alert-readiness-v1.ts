@@ -293,7 +293,7 @@ function evaluateCandidate(
     window: candidate.window,
     direction: candidate.direction,
     state,
-    reasons: unique(reasons),
+    reasons: [...new Set(reasons)].sort((left, right) => left.localeCompare(right)),
     supportingCorroborationIds: unique(supporting.map((row) => row.corroborationId)),
     contradictingCorroborationIds: unique(contradicting.map((row) => row.corroborationId)),
     contextOnlyCorroborationIds: unique(contextOnly.map((row) => row.corroborationId)),
