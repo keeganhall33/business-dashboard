@@ -267,8 +267,6 @@ function stateFrom(
       return "RECOVER_NEXT_CYCLE";
     case "RESEARCH_GAPS":
       return "RESEARCH_REQUIRED";
-    case "VERIFY_BEFORE_ACTION":
-      return "VERIFY_REQUIRED";
   }
 }
 
