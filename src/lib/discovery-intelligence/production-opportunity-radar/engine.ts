@@ -1,6 +1,10 @@
 import type { ExternalEventV1 } from "@/lib/external-intelligence/contracts/external-event-v1";
 import { detectOpportunityCandidatesFromEventV1 } from "@/lib/external-intelligence/opportunities/opportunity-candidate-policy-v1";
 import {
+  reviewOpportunityRadarPrecisionV1,
+  type OpportunityRadarTruthStateV1
+} from "@/lib/discovery-intelligence/opportunity-radar-precision-review-v1";
+import {
   evaluateOpportunityPlanningReadinessV1,
   type EvidenceTriStateV1,
   type OpportunityArtworkClassV1,
@@ -11,7 +15,7 @@ import {
   type StrategicUpsideLevelV1
 } from "@/lib/opportunity-intelligence/planning-readiness-v1";
 
-export const PRODUCTION_OPPORTUNITY_RADAR_POLICY_VERSION = "production_opportunity_radar_v1.0" as const;
+export const PRODUCTION_OPPORTUNITY_RADAR_POLICY_VERSION = "production_opportunity_radar_v1.1" as const;
 const DAY_MS = 86_400_000;
 
 export type CanonicalExternalEventRowV1 = {
@@ -168,6 +172,24 @@ function verificationTruth(payload: Record<string, unknown>): OpportunityTruthSt
   return "UNKNOWN";
 }
 
+function precisionTruth(state: OpportunityTruthStateV1): OpportunityRadarTruthStateV1 {
+  if (state === "KNOWN") return "KNOWN";
+  if (state === "CONFLICTED") return "CONFLICTED";
+  return "UNKNOWN";
+}
+
+function precisionField<T extends string | number>(
+  value: T | null,
+  state: OpportunityTruthStateV1,
+  ref: string
+): { state: OpportunityRadarTruthStateV1; value: T | null; evidenceRefs: string[] } {
+  return {
+    state: value == null ? "UNKNOWN" : precisionTruth(state),
+    value,
+    evidenceRefs: [ref]
+  };
+}
+
 function productionRange(attrs: Map<string, string>): "UNKNOWN" | { minDays: number; maxDays: number } {
   const min = Number(attrs.get("production_window_min_days"));
   const max = Number(attrs.get("production_window_max_days"));
@@ -187,7 +209,10 @@ function freshness(rows: CanonicalExternalEventRowV1[], nowIso: string): Product
   }).sort().reverse();
   const newest = values[0] ?? null;
   if (!newest) return { newest_evidence_at: null, state: "UNKNOWN" };
-  const ageDays = Math.floor((Date.parse(nowIso) - Date.parse(newest)) / DAY_MS);
+  const newestMs = Date.parse(newest);
+  const nowMs = Date.parse(nowIso);
+  if (newestMs > nowMs) return { newest_evidence_at: newest, state: "UNKNOWN" };
+  const ageDays = Math.floor((nowMs - newestMs) / DAY_MS);
   return { newest_evidence_at: newest, state: ageDays <= 45 ? "FRESH" : "STALE" };
 }
 
@@ -273,7 +298,15 @@ export function buildProductionOpportunityRadarV1(input: {
     }
 
     const times = record(payload.times);
-    const detectedAt = iso(times?.announcement_time) ?? iso(times?.event_time) ?? iso(row.created_at) ?? now;
+    const detectedAt = iso(times?.announcement_time) ?? iso(times?.event_time) ?? iso(row.created_at);
+    if (!detectedAt) {
+      suppressions.push(suppression(row.event_id, "MISSING_OBSERVED_TIME", [ref]));
+      continue;
+    }
+    if (Date.parse(detectedAt) > Date.parse(now)) {
+      suppressions.push(suppression(row.event_id, "FUTURE_OBSERVED_TIME", [ref]));
+      continue;
+    }
     const deliverBy = iso(attrs.get("deliver_by")) ?? iso(times?.effective_until);
     const engageBy = iso(attrs.get("engage_by")) ?? null;
     const planningSignalClass = enumOr<OpportunityPlanningSignalClassV1>(attrs.get("planning_signal_class"), [
@@ -326,6 +359,7 @@ export function buildProductionOpportunityRadarV1(input: {
     const accessPath = attrs.get("access_path") ?? "UNKNOWN";
     const nextMove = attrs.get("single_best_next_move") ?? "UNKNOWN";
     const whyNow = attrs.get("why_now") ?? "UNKNOWN";
+    const differentiatedThesis = attrs.get("differentiated_thesis") ?? "UNKNOWN";
     const economics = attrs.get("economics_revenue_structure") ?? "UNKNOWN";
     const strategicUpside = attrs.get("strategic_upside") ?? "UNKNOWN";
     const majorNewWork = ["STANDARD_ORIGINAL", "MAJOR_ORIGINAL"].includes(artworkClass);
@@ -342,6 +376,42 @@ export function buildProductionOpportunityRadarV1(input: {
     else if (!["ACTIONABLE", "PREPARE_EARLY"].includes(readiness.eligibility)) reason = `READINESS_${readiness.eligibility}`;
     if (reason) {
       suppressions.push(suppression(row.event_id, reason, [ref]));
+      continue;
+    }
+
+    const precisionState = precisionTruth(truthState);
+    const precision = reviewOpportunityRadarPrecisionV1({
+      candidates: [{
+        candidateId: candidate.opportunity_candidate_id,
+        title: attrs.get("opportunity_title") ?? candidate.hypothesis,
+        observedAt: detectedAt,
+        sourceRefs: [ref],
+        syndicationKey: key,
+        planningHorizonMonths: precisionField(
+          readiness.planningRunwayDays == null ? null : readiness.planningRunwayDays / 30,
+          truthState,
+          ref
+        ),
+        keeganFit: precisionField(whyKeegan === "UNKNOWN" ? null : whyKeegan, truthState, ref),
+        buyerOrFunction: precisionField(decisionMaker === "UNKNOWN" ? null : decisionMaker, truthState, ref),
+        differentiatedThesis: precisionField(
+          differentiatedThesis === "UNKNOWN" ? null : differentiatedThesis,
+          truthState,
+          ref
+        ),
+        accessPath: precisionField(accessPath === "UNKNOWN" ? null : accessPath, truthState, ref),
+        safeNextMove: precisionField(nextMove === "UNKNOWN" ? null : nextMove, truthState, ref)
+      }],
+      now,
+      maximumSurfaced: 1
+    });
+    if (precision.qualified.length === 0) {
+      const precisionReasons = precision.suppressed[0]?.reasonCodes ?? ["UNKNOWN_EVIDENCE"];
+      suppressions.push(suppression(row.event_id, `PRECISION_REVIEW_${precisionReasons.join("__")}`, [ref]));
+      continue;
+    }
+    if (precisionState !== "KNOWN") {
+      suppressions.push(suppression(row.event_id, `PRECISION_REVIEW_${precisionState}`, [ref]));
       continue;
     }
 
@@ -390,7 +460,6 @@ export function buildProductionOpportunityRadarV1(input: {
   qualified.sort((a, b) => b.score - a.score || a.opportunity_candidate_id.localeCompare(b.opportunity_candidate_id));
   const candidates = qualified.slice(0, limit);
   const source_freshness = freshness(input.rows, now);
-  const proofPass = candidates.length > 0 && suppressions.length > 0 && source_freshness.state === "FRESH";
   return {
     policy_version: PRODUCTION_OPPORTUNITY_RADAR_POLICY_VERSION,
     generated_at: now,
@@ -400,7 +469,7 @@ export function buildProductionOpportunityRadarV1(input: {
     surfaced_count: candidates.length,
     suppressed_count: suppressions.length,
     source_freshness,
-    proof_status: proofPass ? "LIVE_PRECISION_PROVEN" : "IMPLEMENTED_NEEDS_LIVE_PROOF",
+    proof_status: "IMPLEMENTED_NEEDS_LIVE_PROOF",
     candidates,
     suppressions,
     safety: {

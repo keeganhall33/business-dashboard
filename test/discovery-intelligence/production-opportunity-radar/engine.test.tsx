@@ -8,6 +8,8 @@ import {
 
 const NOW = "2026-09-10T20:00:00.000Z";
 const HASH = "a".repeat(64);
+const DEFAULT_OBSERVED_AT = "2026-09-10T18:00:00.000Z";
+const DEFAULT_CREATED_AT = "2026-09-10T19:00:00.000Z";
 
 function row(input: {
   id: string;
@@ -16,8 +18,13 @@ function row(input: {
   artwork?: string;
   differentiation?: string;
   verification?: string;
+  observedAt?: string | null;
+  createdAt?: string | null;
+  omit?: string[];
   overrides?: Record<string, string>;
 }): CanonicalExternalEventRowV1 {
+  const observedAt = input.observedAt === undefined ? DEFAULT_OBSERVED_AT : input.observedAt;
+  const createdAt = input.createdAt === undefined ? DEFAULT_CREATED_AT : input.createdAt;
   const attributes = {
     appointment_role: "brand partnership strategy",
     originating_evidence_id: input.origin ?? input.id,
@@ -29,6 +36,7 @@ function row(input: {
     production_window_max_days: "120",
     capacity_fit: "FIT",
     differentiation_role: input.differentiation ?? "DISTINCTIVE_LEAD_ARTIST",
+    differentiated_thesis: "Create an ownable one-of-one athlete-brand cultural artifact rather than generic campaign content.",
     original_sale_allowed: "YES",
     print_proceeds_donation: "UNKNOWN",
     sponsor_underwriting: "YES",
@@ -51,6 +59,7 @@ function row(input: {
     strategic_upside: "Creates a repeatable athlete-brand commission path.",
     ...input.overrides
   };
+  const omitted = new Set(input.omit ?? []);
   return {
     event_id: input.id,
     event_type: "entity_appointed_to_role",
@@ -59,7 +68,7 @@ function row(input: {
     content_hash: HASH,
     schema_version: "external_event_v1",
     policy_version: "external_event_v1.test",
-    created_at: "2026-09-10T19:00:00.000Z",
+    created_at: createdAt,
     payload_json: {
       schema_version: "external_event_v1",
       event_id: input.id,
@@ -68,11 +77,13 @@ function row(input: {
         { role: "appointed_entity", entity_ref: { entity_id: `agency-${input.id}`, entity_type: "organization", canonical_name: "Example Agency" } },
         { role: "appointing_entity", entity_ref: { entity_id: `brand-${input.id}`, entity_type: "organization", canonical_name: "Example Brand" } }
       ],
-      attributes: Object.entries(attributes).map(([key, value]) => ({ key, value })),
+      attributes: Object.entries(attributes)
+        .filter(([key]) => !omitted.has(key))
+        .map(([key, value]) => ({ key, value })),
       times: {
-        announcement_time: "2026-09-10T18:00:00.000Z",
-        event_time: "2026-09-10T18:00:00.000Z",
-        retrieved_at: "2026-09-10T19:00:00.000Z",
+        announcement_time: observedAt,
+        event_time: observedAt,
+        retrieved_at: observedAt ?? createdAt,
         effective_from: null,
         effective_until: null
       },
@@ -124,7 +135,7 @@ test("suppresses generic crowded work even with a long runway", () => {
   assert.equal(result.suppressions[0]?.reason, "CROWDED_OR_COMMODITY_ROLE");
 });
 
-test("fails closed on unverified evidence and caps output at five", () => {
+test("fails closed on unverified evidence and caps output at five without claiming live proof", () => {
   const rows = Array.from({ length: 7 }, (_, index) => row({
     id: `candidate-${index}`,
     deliverBy: "2027-04-10T00:00:00.000Z"
@@ -133,5 +144,61 @@ test("fails closed on unverified evidence and caps output at five", () => {
   const result = buildProductionOpportunityRadarV1({ rows, nowIso: NOW });
   assert.equal(result.surfaced_count, 5);
   assert.equal(result.suppressions.some((item) => item.reason === "EVIDENCE_UNKNOWN"), true);
-  assert.equal(result.proof_status, "LIVE_PRECISION_PROVEN");
+  assert.equal(result.proof_status, "IMPLEMENTED_NEEDS_LIVE_PROOF");
+});
+
+test("requires an explicit differentiated thesis before qualifying a radar candidate", () => {
+  const result = buildProductionOpportunityRadarV1({
+    rows: [row({ id: "missing-thesis", deliverBy: "2027-04-10T00:00:00.000Z", omit: ["differentiated_thesis"] })],
+    nowIso: NOW
+  });
+  assert.equal(result.surfaced_count, 0);
+  assert.equal(
+    result.suppressions[0]?.reason,
+    "PRECISION_REVIEW_UNKNOWN_EVIDENCE__GENERIC_THESIS"
+  );
+});
+
+test("precision review suppresses stale opportunity evidence even when the event remains corroborated", () => {
+  const result = buildProductionOpportunityRadarV1({
+    rows: [row({
+      id: "stale",
+      deliverBy: "2027-04-10T00:00:00.000Z",
+      observedAt: "2026-05-01T18:00:00.000Z",
+      createdAt: "2026-05-01T19:00:00.000Z"
+    })],
+    nowIso: NOW
+  });
+  assert.equal(result.surfaced_count, 0);
+  assert.equal(result.suppressions[0]?.reason, "PRECISION_REVIEW_STALE_EVIDENCE");
+});
+
+test("missing observed time fails closed instead of manufacturing current evidence", () => {
+  const result = buildProductionOpportunityRadarV1({
+    rows: [row({
+      id: "no-time",
+      deliverBy: "2027-04-10T00:00:00.000Z",
+      observedAt: null,
+      createdAt: null
+    })],
+    nowIso: NOW
+  });
+  assert.equal(result.surfaced_count, 0);
+  assert.equal(result.suppressions[0]?.reason, "MISSING_OBSERVED_TIME");
+  assert.equal(result.source_freshness.state, "UNKNOWN");
+});
+
+test("future evidence is rejected and cannot make source freshness look current", () => {
+  const result = buildProductionOpportunityRadarV1({
+    rows: [row({
+      id: "future",
+      deliverBy: "2027-04-10T00:00:00.000Z",
+      observedAt: "2026-09-11T18:00:00.000Z",
+      createdAt: "2026-09-11T19:00:00.000Z"
+    })],
+    nowIso: NOW
+  });
+  assert.equal(result.surfaced_count, 0);
+  assert.equal(result.suppressions[0]?.reason, "FUTURE_OBSERVED_TIME");
+  assert.equal(result.source_freshness.state, "UNKNOWN");
 });
