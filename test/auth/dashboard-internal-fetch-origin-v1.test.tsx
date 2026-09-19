@@ -13,7 +13,7 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
 }
 
-test("Executive Home ignores request-controlled origins for authenticated internal fetches", async (t) => {
+test("dashboard overview ignores caller-controlled origins for authenticated internal fetches", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalVercelUrl = process.env.VERCEL_URL;
   const originalPublicUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -62,16 +62,25 @@ test("Executive Home ignores request-controlled origins for authenticated intern
   assert.equal(capturedInit?.redirect, "error", "auth-bearing server fetches must not follow redirects");
 });
 
-test("Executive Home page does not derive an internal API origin from request host headers", () => {
-  const pageSource = readFileSync(resolve(process.cwd(), "src/app/(app)/dashboard/page.tsx"), "utf8");
+test("authenticated dashboard overview callers do not derive internal API origins from request headers", () => {
+  const callerPaths = [
+    "src/app/(app)/dashboard/page.tsx",
+    "src/app/(app)/opportunities-actions/page.tsx",
+    "src/app/(app)/specialists/page.tsx",
+    "src/app/api/ask-jeeves/route.ts",
+  ];
+
+  for (const callerPath of callerPaths) {
+    const source = readFileSync(resolve(process.cwd(), callerPath), "utf8");
+    assert.doesNotMatch(source, /x-forwarded-host/i, callerPath);
+    assert.doesNotMatch(source, /x-forwarded-proto/i, callerPath);
+    assert.doesNotMatch(source, /hdrs\.get\("host"\)/, callerPath);
+    assert.doesNotMatch(source, /baseUrl/, callerPath);
+  }
+
   const apiSource = readFileSync(resolve(process.cwd(), "src/lib/api/dashboard.ts"), "utf8");
-
-  assert.doesNotMatch(pageSource, /x-forwarded-host/i);
-  assert.doesNotMatch(pageSource, /x-forwarded-proto/i);
-  assert.doesNotMatch(pageSource, /hdrs\.get\("host"\)/);
-  assert.doesNotMatch(pageSource, /baseUrl/);
-
   assert.match(apiSource, /const vercelOrigin = normalizeOrigin\(process\.env\.VERCEL_URL, "https:"\);/);
   assert.match(apiSource, /assertTrustedServerFetchTarget\(input\);/);
   assert.match(apiSource, /targetUrl\.origin !== trustedUrl\.origin/);
+  assert.match(apiSource, /redirect: isServer \? "error" : init\?\.redirect/);
 });
