@@ -136,13 +136,15 @@ test("carries a warm path only when its exact terminal person is an evidenced bu
   assert.deepEqual(paths[0].evidenceRefs, ["source:intro"]);
 });
 
-test("preserves explicit planning windows without deriving outreach timing", () => {
+test("preserves explicit planning windows at opportunity scope without deriving sponsor timing", () => {
   const result = buildSponsorEcosystemMapV1({ accessMaps: [accessMap()], asOf: AS_OF });
-  const window = result.ecosystems[0].planningWindows[0];
+  const window = result.opportunityPlanningWindows[0];
 
+  assert.equal(window.opportunityId, "opp:uw-brand-2027");
   assert.equal(window.windowType, "SPONSOR_RENEWAL");
   assert.equal(window.windowStart, "2026-12-01T00:00:00.000Z");
   assert.equal(window.windowEnd, "2027-01-31T23:59:59.000Z");
+  assert.equal("planningWindows" in result.ecosystems[0], false);
   assert.equal(result.inferredPlanningTiming, false);
 });
 
