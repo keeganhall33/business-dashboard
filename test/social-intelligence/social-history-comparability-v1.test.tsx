@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   compileCanonicalSocialAccountSnapshotV1,
+  type CanonicalSocialAccountSnapshotV1,
   type SocialPeriodInputV1
 } from "../../src/lib/social-intelligence/social-canonical-v1";
+import type { SocialPlatformConnectorStateV1 } from "../../src/lib/social-intelligence/social-connector-proof-v1";
 import { compileSocialHistoryComparabilityV1 } from "../../src/lib/social-intelligence/social-history-comparability-v1";
 
 const now = "2026-09-19T06:00:00Z";
@@ -40,7 +42,7 @@ function snapshot(options?: {
   retrievedAt?: string;
   lastSuccessfulSyncAt?: string | null;
   requestedState?: "CONNECTED_AND_INGESTING" | "CONNECTED_PARTIAL";
-}) {
+}): CanonicalSocialAccountSnapshotV1 {
   const retrievedAt = options?.retrievedAt ?? "2026-09-19T05:30:00Z";
   return compileCanonicalSocialAccountSnapshotV1(
     {
@@ -62,12 +64,52 @@ function snapshot(options?: {
   );
 }
 
-test("certifies only fresh contiguous named windows with evidence-backed comparable metrics", () => {
-  const result = compileSocialHistoryComparabilityV1(snapshot(), { now, windows: ["7D"] });
+function liveConnectorFor(
+  input: CanonicalSocialAccountSnapshotV1,
+  overrides: Partial<SocialPlatformConnectorStateV1> = {}
+): SocialPlatformConnectorStateV1 {
+  const base: SocialPlatformConnectorStateV1 = {
+    platform: input.platform,
+    connectorId: "meta-graph-instagram",
+    readiness: "LIVE_PROVEN",
+    availability: "AVAILABLE",
+    authorizationState: "AUTHORIZED",
+    implementationState: "IMPLEMENTED",
+    sourceKind: "OFFICIAL_API",
+    readOnly: true,
+    liveFirstPartyDataProven: true,
+    needsKeeganAction: false,
+    supportedMetrics: ["AUDIENCE_TOTAL", "REACH"],
+    historicalBackfill: "LIMITED",
+    limitations: [],
+    proof: {
+      snapshotId: input.snapshotId,
+      retrievedAt: input.retrievedAt,
+      syncOutcome: "SUCCESS",
+      providerEvidenceRefs: ["provider-request:meta:instagram:request-123"],
+      canonicalEvidenceRefs: input.evidenceRefs
+    }
+  };
+  return { ...base, ...overrides };
+}
+
+function review(input: CanonicalSocialAccountSnapshotV1, connectorState = liveConnectorFor(input), staleAfterHours = 48) {
+  return compileSocialHistoryComparabilityV1(input, {
+    now,
+    windows: ["7D"],
+    staleAfterHours,
+    connectorState
+  });
+}
+
+test("certifies only fresh contiguous named windows bound to exact live connector proof", () => {
+  const input = snapshot();
+  const result = review(input);
   const window = result.windows[0];
   const audience = window.metrics.find((metric) => metric.key === "AUDIENCE_TOTAL")!;
 
   assert.equal(result.sourceDecisionGrade, true);
+  assert.equal(result.connectorProofBound, true);
   assert.deepEqual(result.decisionGradeWindows, ["7D"]);
   assert.equal(window.state, "READY");
   assert.equal(window.contiguous, true);
@@ -84,6 +126,40 @@ test("certifies only fresh contiguous named windows with evidence-backed compara
   assert.equal(result.writesPerformed, false);
 });
 
+test("refuses manual or merely authorized social history without exact LIVE_PROVEN connector proof", () => {
+  const input = snapshot();
+  const connector = liveConnectorFor(input, {
+    readiness: "AUTHORIZED_NOT_PROVEN",
+    liveFirstPartyDataProven: false,
+    proof: null
+  });
+  const result = review(input, connector);
+
+  assert.equal(result.connectorProofBound, false);
+  assert.equal(result.sourceDecisionGrade, false);
+  assert.equal(result.windows[0].state, "SOURCE_NOT_DECISION_GRADE");
+  assert.deepEqual(result.decisionGradeWindows, []);
+  assert.match(result.sourceIssues.join(" "), /LIVE_PROVEN|exact canonical snapshot/i);
+});
+
+test("requires live proof to bind to the exact canonical snapshot and evidence set", () => {
+  const input = snapshot();
+  const connector = liveConnectorFor(input, {
+    proof: {
+      snapshotId: "social:instagram:different-snapshot",
+      retrievedAt: input.retrievedAt,
+      syncOutcome: "SUCCESS",
+      providerEvidenceRefs: ["provider-request:meta:instagram:request-123"],
+      canonicalEvidenceRefs: ["provider:instagram:unrelated:evidence"]
+    }
+  });
+  const result = review(input, connector);
+
+  assert.equal(result.connectorProofBound, false);
+  assert.equal(result.windows[0].state, "SOURCE_NOT_DECISION_GRADE");
+  assert.match(result.sourceIssues.join(" "), /exact canonical snapshot|evidence refs/i);
+});
+
 test("fails closed when same-label periods overlap instead of presenting a misleading delta", () => {
   const input = snapshot({
     periods: [
@@ -91,7 +167,7 @@ test("fails closed when same-label periods overlap instead of presenting a misle
       period("prior-overlap", "2026-09-07T00:00:00Z", "2026-09-14T00:00:00Z", 12_400, 39_000)
     ]
   });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
   const window = result.windows[0];
 
   assert.equal(window.state, "VERIFY_RANGE");
@@ -108,7 +184,7 @@ test("rejects gapped comparisons and periods whose duration does not match the n
       period("prior-gapped", "2026-09-05T00:00:00Z", "2026-09-12T00:00:00Z", 12_400, 39_000)
     ]
   });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
   const window = result.windows[0];
 
   assert.equal(window.state, "VERIFY_RANGE");
@@ -124,7 +200,7 @@ test("requires provenance on both sides of a known metric comparison", () => {
       period("prior", "2026-09-05T00:00:00Z", "2026-09-12T00:00:00Z", 12_400, 39_000, false)
     ]
   });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
   const window = result.windows[0];
 
   assert.equal(window.state, "VERIFY_PROVENANCE");
@@ -139,7 +215,7 @@ test("keeps missing covered metrics UNKNOWN instead of converting absence to zer
       period("prior", "2026-09-05T00:00:00Z", "2026-09-12T00:00:00Z", 12_400, null)
     ]
   });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
   const reach = result.windows[0].metrics.find((metric) => metric.key === "REACH")!;
 
   assert.equal(result.windows[0].state, "PARTIAL");
@@ -153,7 +229,7 @@ test("keeps missing covered metrics UNKNOWN instead of converting absence to zer
 
 test("marks otherwise comparable history stale when successful-sync evidence is too old", () => {
   const input = snapshot({ lastSuccessfulSyncAt: "2026-09-15T05:30:00Z" });
-  const result = compileSocialHistoryComparabilityV1(input, { now, staleAfterHours: 48, windows: ["7D"] });
+  const result = review(input, liveConnectorFor(input), 48);
 
   assert.equal(result.sourceDecisionGrade, false);
   assert.equal(result.windows[0].state, "STALE_SOURCE");
@@ -162,20 +238,20 @@ test("marks otherwise comparable history stale when successful-sync evidence is 
 });
 
 test("fails closed on future retrieval or synchronization evidence", () => {
-  const futureRetrieved = snapshot({
+  const input = snapshot({
     retrievedAt: "2026-09-20T05:30:00Z",
     lastSuccessfulSyncAt: "2026-09-20T05:30:00Z"
   });
-  const result = compileSocialHistoryComparabilityV1(futureRetrieved, { now, windows: ["7D"] });
+  const result = review(input);
 
   assert.equal(result.sourceDecisionGrade, false);
   assert.equal(result.windows[0].state, "FUTURE_EVIDENCE");
   assert.match(result.sourceIssues.join(" "), /future/i);
 });
 
-test("does not certify a partial connector as decision-grade history even when ranges are otherwise valid", () => {
+test("does not certify a partial canonical source as decision-grade history even with connector proof", () => {
   const input = snapshot({ requestedState: "CONNECTED_PARTIAL" });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
 
   assert.equal(result.sourceDecisionGrade, false);
   assert.equal(result.windows[0].state, "SOURCE_NOT_DECISION_GRADE");
@@ -186,19 +262,22 @@ test("requires a prior period before a named window can drive period-over-period
   const input = snapshot({
     periods: [period("current", "2026-09-12T00:00:00Z", "2026-09-19T00:00:00Z", 12_600, 42_000)]
   });
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const result = review(input);
 
   assert.equal(result.windows[0].state, "NEEDS_HISTORY");
   assert.equal(result.windows[0].priorPeriodId, null);
   assert.deepEqual(result.windows[0].decisionGradeMetrics, []);
 });
 
-test("does not mutate input and freezes the comparability review", () => {
+test("does not mutate input or connector proof and freezes the comparability review", () => {
   const input = snapshot();
-  const before = JSON.stringify(input);
-  const result = compileSocialHistoryComparabilityV1(input, { now, windows: ["7D"] });
+  const connector = liveConnectorFor(input);
+  const beforeSnapshot = JSON.stringify(input);
+  const beforeConnector = JSON.stringify(connector);
+  const result = review(input, connector);
 
-  assert.equal(JSON.stringify(input), before);
+  assert.equal(JSON.stringify(input), beforeSnapshot);
+  assert.equal(JSON.stringify(connector), beforeConnector);
   assert.equal(Object.isFrozen(result), true);
   assert.equal(Object.isFrozen(result.windows), true);
   assert.equal(Object.isFrozen(result.windows[0]), true);
