@@ -96,7 +96,7 @@ function brief(overrides: Partial<SponsorAccessBriefV1> = {}): SponsorAccessBrie
 }
 
 function result(briefs: readonly SponsorAccessBriefV1[] = [brief()]): SponsorAccessBriefResultV1 {
-  const counts: SponsorAccessBriefResultV1["counts"] = {
+  const counts: Record<SponsorAccessBriefV1["status"], number> = {
     ACCESS_READY: 0,
     PATH_BLOCKED: 0,
     NO_SUPPORTED_PATH: 0,
