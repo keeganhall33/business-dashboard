@@ -24,15 +24,7 @@ export default function OpportunitiesActionsPage({ searchParams }: PageProps) {
 
 async function LiveOpportunitiesActionsPage({ searchParams }: PageProps) {
   const hdrs = await headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "https";
   const cookie = hdrs.get("cookie");
-  const baseUrl = (() => {
-    if (!host) return "";
-    if (!/^[A-Za-z0-9.:-]+$/.test(host)) return "";
-    if (proto !== "http" && proto !== "https") return "";
-    return `${proto}://${host}`;
-  })();
 
   const resolvedParams = (await searchParams) ?? {};
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
@@ -41,7 +33,7 @@ async function LiveOpportunitiesActionsPage({ searchParams }: PageProps) {
 
   const overview = await getDashboardOverview(
     { preset, startDate: start, endDate: end },
-    { baseUrl, cookie }
+    { cookie }
   );
   const portfolio = sanitizeDashboardPayloadForHtml(
     buildExecutiveOpportunityPortfolioV1(overview.opportunityRadar?.topOpportunities ?? [])
