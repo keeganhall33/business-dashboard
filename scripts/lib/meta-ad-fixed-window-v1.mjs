@@ -26,6 +26,19 @@ export const META_AD_INSIGHT_FIELDS_V1 = Object.freeze([
   'action_values',
 ]);
 
+export const META_CAMPAIGN_INSIGHT_FIELDS_V1 = Object.freeze([
+  'campaign_id',
+  'campaign_name',
+  'spend',
+  'impressions',
+  'clicks',
+  'ctr',
+  'cpc',
+  'cpm',
+  'actions',
+  'action_values',
+]);
+
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -37,7 +50,7 @@ function deepFreeze(value) {
 function parseNow(nowInput) {
   const now = nowInput instanceof Date ? new Date(nowInput.getTime()) : new Date(nowInput);
   if (!Number.isFinite(now.getTime())) {
-    throw new Error('Meta ad fixed-window now instant is invalid');
+    throw new Error('Meta fixed-window now instant is invalid');
   }
   return now;
 }
@@ -95,7 +108,7 @@ export function buildMetaAdFixedWindowPlanV1(nowInput = new Date()) {
 function requiredText(row, key) {
   const value = row?.[key];
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`Meta ad insight row is missing ${key}`);
+    throw new Error(`Meta insight row is missing ${key}`);
   }
   return value.trim();
 }
@@ -108,15 +121,15 @@ function optionalText(row, key) {
 function nonNegativeNumber(row, key, { required = false, integer = false } = {}) {
   const raw = row?.[key];
   if (raw === null || raw === undefined || raw === '') {
-    if (required) throw new Error(`Meta ad insight row is missing ${key}`);
+    if (required) throw new Error(`Meta insight row is missing ${key}`);
     return null;
   }
   if (typeof raw !== 'string' && typeof raw !== 'number') {
-    throw new Error(`Meta ad insight row has invalid ${key}`);
+    throw new Error(`Meta insight row has invalid ${key}`);
   }
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0 || (integer && !Number.isSafeInteger(parsed))) {
-    throw new Error(`Meta ad insight row has invalid ${key}`);
+    throw new Error(`Meta insight row has invalid ${key}`);
   }
   return parsed;
 }
@@ -124,27 +137,23 @@ function nonNegativeNumber(row, key, { required = false, integer = false } = {})
 function actionValue(actions, target) {
   if (actions === null || actions === undefined) return null;
   if (!Array.isArray(actions)) {
-    throw new Error('Meta ad insight row has invalid action evidence');
+    throw new Error('Meta insight row has invalid action evidence');
   }
   const matches = actions.filter((action) => action?.action_type === target);
   if (matches.length === 0) return null;
   if (matches.length > 1) {
-    throw new Error(`Meta ad insight row has conflicting ${target} action evidence`);
+    throw new Error(`Meta insight row has conflicting ${target} action evidence`);
   }
   const raw = matches[0]?.value ?? matches[0]?.action_value ?? matches[0]?.inline_value;
   if (raw === null || raw === undefined || raw === '') return null;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Meta ad insight row has invalid ${target} action value`);
+    throw new Error(`Meta insight row has invalid ${target} action value`);
   }
   return parsed;
 }
 
-export function summarizeMetaAdInsightV1(row) {
-  if (!row || typeof row !== 'object' || Array.isArray(row)) {
-    throw new Error('Meta ad insight row is malformed');
-  }
-
+function summarizePerformanceFields(row) {
   const spend = nonNegativeNumber(row, 'spend', { required: true });
   const impressions = nonNegativeNumber(row, 'impressions', { required: true, integer: true });
   const clicks = nonNegativeNumber(row, 'clicks', { required: true, integer: true });
@@ -154,13 +163,7 @@ export function summarizeMetaAdInsightV1(row) {
   const purchases = actionValue(row.actions, 'offsite_conversion.purchase');
   const purchaseValue = actionValue(row.action_values, 'offsite_conversion.purchase');
 
-  return deepFreeze({
-    campaignId: requiredText(row, 'campaign_id'),
-    campaignName: optionalText(row, 'campaign_name'),
-    adSetId: requiredText(row, 'adset_id'),
-    adSetName: optionalText(row, 'adset_name'),
-    adId: requiredText(row, 'ad_id'),
-    adName: optionalText(row, 'ad_name'),
+  return {
     spend,
     impressions,
     clicks,
@@ -170,5 +173,33 @@ export function summarizeMetaAdInsightV1(row) {
     purchases,
     purchaseValue,
     roas: purchaseValue !== null && spend > 0 ? purchaseValue / spend : null,
+  };
+}
+
+function assertInsightRow(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    throw new Error('Meta insight row is malformed');
+  }
+}
+
+export function summarizeMetaCampaignInsightV1(row) {
+  assertInsightRow(row);
+  return deepFreeze({
+    campaignId: requiredText(row, 'campaign_id'),
+    campaignName: optionalText(row, 'campaign_name'),
+    ...summarizePerformanceFields(row),
+  });
+}
+
+export function summarizeMetaAdInsightV1(row) {
+  assertInsightRow(row);
+  return deepFreeze({
+    campaignId: requiredText(row, 'campaign_id'),
+    campaignName: optionalText(row, 'campaign_name'),
+    adSetId: requiredText(row, 'adset_id'),
+    adSetName: optionalText(row, 'adset_name'),
+    adId: requiredText(row, 'ad_id'),
+    adName: optionalText(row, 'ad_name'),
+    ...summarizePerformanceFields(row),
   });
 }
