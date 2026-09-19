@@ -123,18 +123,28 @@ async function main() {
       const rows = normalized.rows;
       const activityEntries = normalized.activityEntries;
       const activityCompletions = normalized.activityCompletions;
+      const coverageDetails = {
+        endpoint: 'funnelkit-app/funnel-analytics/{id}/steps',
+        funnel_id: FUNNEL_ID,
+        activity_entries: activityEntries,
+        activity_completions: activityCompletions
+      };
       const written = await rpcOrThrow(db, 'ingest_funnelkit_day_v2', {
         p_rows: rows,
         p_coverage_date: day,
         p_run_ref: runId,
-        p_details: {
-          endpoint: 'funnelkit-app/funnel-analytics/{id}/steps',
-          funnel_id: FUNNEL_ID,
-          activity_entries: activityEntries,
-          activity_completions: activityCompletions
-        }
+        p_details: coverageDetails
       });
       const writtenCount = normalizeFunnelKitWrittenRowCountV1(written);
+
+      // Coverage is recorded only after the raw write succeeds.  If this second RPC
+      // fails, the day stays conservatively unproven rather than being labeled complete.
+      await rpcOrThrow(db, 'mark_funnelkit_coverage_day_v1', {
+        p_coverage_date: day,
+        p_run_ref: runId,
+        p_row_count: writtenCount,
+        p_details: coverageDetails
+      });
 
       totalSteps += writtenCount;
       processedDays += 1;
