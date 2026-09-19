@@ -107,6 +107,7 @@ test("withholds a packet when CURRENT source evidence has aged past the explicit
   const meta = run.sourceFreshness.sourceStatus.find(
     (item: { source: string }) => item.source === "META",
   );
+  assert.ok(meta);
   assert.equal(meta.inputTruthState, "CURRENT");
   assert.equal(meta.decisionTruthState, "STALE");
   assert.equal(run.externalMutationPerformed, false);
