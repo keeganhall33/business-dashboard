@@ -200,12 +200,15 @@ function accumulateItem(
     );
   }
 
-  if (item.engagementState === "OUTPERFORMING" && item.outperformingEngagementMetrics.length > 0) {
+  const communityMetrics = item.outperformingEngagementMetrics.filter(
+    (metric) => metric === "COMMENTS" || metric === "SHARES" || metric === "SAVES"
+  );
+  if (item.engagementState === "OUTPERFORMING" && communityMetrics.length > 0) {
     addEvidence(
       accumulators.get("COMMUNITY")!,
       item,
       item.performanceEvidenceRefs,
-      `Within-platform comparable engagement evidence is outperforming for ${item.outperformingEngagementMetrics.join(", ")}.`
+      `Within-platform comparable community engagement evidence is outperforming for ${communityMetrics.join(", ")}.`
     );
   }
 
