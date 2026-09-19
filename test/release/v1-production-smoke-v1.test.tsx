@@ -7,6 +7,7 @@ import {
   type V1ReleaseGateEvidenceV1
 } from "@/lib/release/v1-release-certificate-v1";
 import {
+  V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1,
   compileV1ProductionSmokeV1,
@@ -192,6 +193,44 @@ test("future-dated route observations cannot become current smoke evidence", () 
       (entry) => entry.code === "STEP_FUTURE_EVIDENCE" && entry.stepId === "LEARNING"
     )
   );
+});
+
+test("stale route observations cannot be replayed as current smoke evidence", () => {
+  const input = validInput();
+  const staleObservedAt = new Date(
+    Date.parse(GENERATED_AT) - V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1 - 1
+  ).toISOString();
+  input.observations = input.observations.map((entry) =>
+    entry.stepId === "EXECUTIVE_HOME" ? { ...entry, observedAt: staleObservedAt } : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_STALE_EVIDENCE" && entry.stepId === "EXECUTIVE_HOME"
+    )
+  );
+  assert.equal(result.gateEvidence.freshness, "UNKNOWN");
+});
+
+test("the one-hour production-smoke freshness boundary is inclusive", () => {
+  const input = validInput();
+  const boundaryObservedAt = new Date(
+    Date.parse(GENERATED_AT) - V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1
+  ).toISOString();
+  input.observations = input.observations.map((entry) => ({
+    ...entry,
+    observedAt: boundaryObservedAt
+  }));
+  input.deviceObservations = input.deviceObservations.map((entry) => ({
+    ...entry,
+    observedAt: boundaryObservedAt
+  }));
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "PASS");
+  assert.equal(result.gateEvidence.freshness, "CURRENT");
 });
 
 test("non-pass route state or outstanding action remains blocking", () => {
@@ -390,6 +429,21 @@ test("future-dated or secret-like device evidence fails closed and is sanitized"
     []
   );
   assert.equal(JSON.stringify(result).includes("do-not-persist"), false);
+});
+
+test("stale device observations cannot be replayed as current smoke evidence", () => {
+  const input = validInput();
+  const staleObservedAt = new Date(
+    Date.parse(GENERATED_AT) - V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1 - 1
+  ).toISOString();
+  input.deviceObservations = input.deviceObservations.map((entry) =>
+    entry.deviceClass === "MOBILE" ? { ...entry, observedAt: staleObservedAt } : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_STALE_EVIDENCE"));
+  assert.equal(result.gateEvidence.freshness, "UNKNOWN");
 });
 
 test("secret-like route provenance is removed and blocks certification", () => {
