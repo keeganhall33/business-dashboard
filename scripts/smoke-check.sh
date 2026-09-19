@@ -68,10 +68,11 @@ if [ -n "${EXPECTED_RELEASE_SHA:-}" ]; then
   ok_note "production release matches $EXPECTED_RELEASE_SHA"
 fi
 
-# 2) Every canonical Useful V1 workspace and core CRM directory must either render
-# directly (local/dev auth bypass) or enforce the production private-login boundary.
-# This is a route/runtime proof only; it does not claim authenticated business-data
-# correctness, which remains covered by source-specific/live acceptance gates.
+# 2) Every canonical Useful V1 workspace and core CRM directory must enforce the
+# production private-login boundary when the governed exact-SHA proof is active.
+# Local/dev smoke without EXPECTED_RELEASE_SHA may intentionally render directly.
+# This is a route/runtime proof only; authenticated business-data correctness remains
+# covered by source-specific/live acceptance gates.
 protected_routes=(
   "/dashboard"
   "/strategy"
@@ -94,7 +95,10 @@ for route in "${protected_routes[@]}"; do
 
   case "$route_status" in
     200)
-      ok_note "GET $route rendered directly"
+      if [ -n "${EXPECTED_RELEASE_SHA:-}" ]; then
+        fail "governed production smoke requires private sign-in for protected route $route; received HTTP 200"
+      fi
+      ok_note "GET $route rendered directly in local/dev smoke"
       ;;
     302|307)
       route_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' "$route_headers")
