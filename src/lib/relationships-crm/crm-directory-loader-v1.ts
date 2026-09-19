@@ -207,6 +207,28 @@ function pipelineEvidenceStateV1(opportunity: OpportunityRowV1): CrmPersonDirect
   return isOld || isOverdue ? "STALE" : /keegan[_ -]?confirmed|user[_ -]?confirmed/i.test(opportunity.source ?? "") ? "KNOWN" : "UNKNOWN";
 }
 
+function canonicalPersonEvidenceStateV1(context: {
+  relationship?: RelationshipRowV1;
+  opportunity?: OpportunityRowV1;
+  profile?: EntityProfileRowV1;
+}): CrmPersonDirectoryRecordV1["evidenceState"] {
+  if (context.relationship) return evidenceState(text(context.relationship.truth_state), text(context.relationship.freshness_state));
+  if (context.profile) return "KNOWN";
+  if (context.opportunity) return pipelineEvidenceStateV1(context.opportunity);
+  return "UNKNOWN";
+}
+
+function canonicalCompanyEvidenceStateV1(context: {
+  opportunities?: OpportunityRowV1[];
+  profile?: EntityProfileRowV1;
+}): CrmCompanyDirectoryRecordV1["evidenceState"] {
+  if (context.profile) return "KNOWN";
+  const states = (context.opportunities ?? []).map(pipelineEvidenceStateV1);
+  if (states.includes("STALE")) return "STALE";
+  if (states.length > 0 && states.every((state) => state === "KNOWN")) return "KNOWN";
+  return "UNKNOWN";
+}
+
 function pipelinePersonRecordV1(name: string, opportunities: OpportunityRowV1[]): CrmPersonDirectoryRecordV1 {
   const primary = opportunities[0];
   const evidence = pipelineEvidenceStateV1(primary);
@@ -268,7 +290,6 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
 }): CrmPersonDirectoryRecordV1 {
   const id = row.entity_id.trim();
   const relationship = context?.relationship;
-  const linked = Boolean(context?.opportunity || context?.companyName);
   const nextMove = text(relationship?.next_best_move_json?.move);
 
   return {
@@ -290,7 +311,7 @@ function toPersonRecordV1(row: CanonicalEntityRowV1, context?: {
     activeOpportunity: text(context?.opportunity?.name),
     activeOpportunityHref: context?.opportunity?.id ? `/opportunities-actions/opportunity/${encodeURIComponent(context.opportunity.id)}` : null,
     activeAsk: text(context?.profile?.next_move) ?? humanize(nextMove),
-    evidenceState: relationship ? evidenceState(text(relationship.truth_state), text(relationship.freshness_state)) : linked ? "KNOWN" : "KNOWN",
+    evidenceState: canonicalPersonEvidenceStateV1(context ?? {}),
     notesMd: text(context?.profile?.notes_md),
     detailHref: crmPersonDetailHrefV1(id)
   };
@@ -313,7 +334,7 @@ function toCompanyRecordV1(row: CanonicalEntityRowV1, context?: { people?: Array
     nextFollowUpAt: text(context?.profile?.next_follow_up_at),
     nextMove: text(context?.profile?.next_move) ?? context?.opportunities?.find((opportunity) => text(opportunity.next_step))?.next_step ?? null,
     supportedValue: money(context?.profile?.supported_value ?? context?.opportunities?.find((opportunity) => opportunity.value_estimate != null)?.value_estimate),
-    evidenceState: "KNOWN",
+    evidenceState: canonicalCompanyEvidenceStateV1(context ?? {}),
     primaryEmail: text(context?.profile?.primary_email),
     phone: text(context?.profile?.phone),
     websiteUrl: text(context?.profile?.website_url),
