@@ -149,7 +149,7 @@ export function ExecutiveStrategyWorkspaceV1({
             ["Prepare", model.counts.prepare],
             ["Monitor", model.counts.monitor],
             ["Wait", model.counts.wait],
-            ["Unknown/conflicted", model.counts.unknownOrConflicted],
+            ["Needs review", model.counts.unknownOrConflicted],
           ].map(([label, value]) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
@@ -173,15 +173,15 @@ export function ExecutiveStrategyWorkspaceV1({
 
         <section className="grid gap-5 xl:grid-cols-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active bets</p>
-            <h2 className="mt-1 text-xl font-semibold">Recommendations still in play</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">In progress</p>
+            <h2 className="mt-1 text-xl font-semibold">Ideas still worth watching</h2>
             <div className="mt-3 space-y-3">
               {model.activeBets.length ? model.activeBets.map((item) => <PriorityCard key={item.id} item={item} compact />) : <EmptyState>No active bet is supported by the current recommendation set.</EmptyState>}
             </div>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dependencies and blockers</p>
-            <h2 className="mt-1 text-xl font-semibold">What prevents stronger action</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">What is holding things back</p>
+            <h2 className="mt-1 text-xl font-semibold">Why we are not acting yet</h2>
             <div className="mt-3 space-y-3">
               {model.blockers.length ? model.blockers.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -194,8 +194,8 @@ export function ExecutiveStrategyWorkspaceV1({
             </div>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Decision points</p>
-            <h2 className="mt-1 text-xl font-semibold">Where judgment or new evidence matters</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Decisions to watch</p>
+            <h2 className="mt-1 text-xl font-semibold">Where your judgment or better data matters</h2>
             <div className="mt-3 space-y-3">
               {model.decisionPoints.length ? model.decisionPoints.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
