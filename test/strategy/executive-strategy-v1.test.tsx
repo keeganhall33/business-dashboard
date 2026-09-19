@@ -230,7 +230,7 @@ test("strategy workspace renders scan-first sections without inventing unsupport
   assert.match(html, /Current priorities/);
   assert.match(html, /Ideas still worth watching/);
   assert.match(html, /What is holding things back/);
-  assert.match(html, /Decision points/);
+  assert.match(html, /Decisions to watch/);
   assert.match(html, /Next safe moves/);
   assert.match(html, /Economics: Unknown/);
   assert.match(html, /current partner budget/);
