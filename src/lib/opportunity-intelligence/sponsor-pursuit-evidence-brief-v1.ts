@@ -255,65 +255,69 @@ export function buildSponsorPursuitEvidenceBriefV1(input: Readonly<{
     ]);
   }
 
+  const qualification = input.qualification;
+  const roleReview = input.roleReview;
+  const warmAccess = input.warmAccess;
+  const planning = input.planning;
+
   const authority = authorityIssues({
-    qualification: input.qualification,
-    roleReview: input.roleReview,
-    warmAccess: input.warmAccess,
-    planning: input.planning,
+    qualification,
+    roleReview,
+    warmAccess,
+    planning,
   });
   if (authority.length > 0) return empty("BLOCKED", evaluatedAt, opportunityId, authority);
 
-  if (input.qualification.status !== "READY") {
+  if (qualification.status !== "READY") {
     return empty("BLOCKED", evaluatedAt, opportunityId, ["QUALIFICATION_BRIEF_NOT_READY"]);
   }
 
-  if ([input.roleReview.status, input.warmAccess.status, input.planning.status].includes("STALE")) {
+  if ([roleReview.status, warmAccess.status, planning.status].includes("STALE")) {
     return empty("STALE", evaluatedAt, opportunityId, ["UPSTREAM_RELATIONSHIP_EVIDENCE_STALE"]);
   }
-  if ([input.roleReview.status, input.warmAccess.status, input.planning.status].includes("UNAVAILABLE")) {
+  if ([roleReview.status, warmAccess.status, planning.status].includes("UNAVAILABLE")) {
     return empty("UNAVAILABLE", evaluatedAt, opportunityId, ["UPSTREAM_RELATIONSHIP_EVIDENCE_UNAVAILABLE"]);
   }
 
   const ids = unique([
-    input.roleReview.opportunityId ?? "",
-    input.warmAccess.opportunityId ?? "",
-    input.planning.opportunityId ?? "",
+    roleReview.opportunityId ?? "",
+    warmAccess.opportunityId ?? "",
+    planning.opportunityId ?? "",
   ]);
   if (ids.length !== 1) return empty("BLOCKED", evaluatedAt, opportunityId, ["OPPORTUNITY_IDENTITY_MISMATCH"]);
   const exactOpportunityId = ids[0];
   if (!exactOpportunityId) return empty("BLOCKED", evaluatedAt, null, ["OPPORTUNITY_IDENTITY_MISSING"]);
 
   const sourceTimes = [
-    input.qualification.generatedAt,
-    input.roleReview.evaluatedAt,
-    input.warmAccess.evaluatedAt,
-    input.planning.evaluatedAt,
+    qualification.generatedAt,
+    roleReview.evaluatedAt,
+    warmAccess.evaluatedAt,
+    planning.evaluatedAt,
   ];
   if (sourceTimes.some((value) => outsideFreshnessBound(value, evaluatedAtMs, maximumAgeMs))) {
     return empty("STALE", evaluatedAt, exactOpportunityId, ["UPSTREAM_EVIDENCE_OUTSIDE_FRESHNESS_BOUND"]);
   }
 
-  if (input.roleReview.bindings.length === 0) {
+  if (roleReview.bindings.length === 0) {
     return empty("NO_CURRENT_SPONSOR_BUYERS", evaluatedAt, exactOpportunityId, ["NO_CURRENT_SPONSOR_BUYER_BINDINGS"]);
   }
 
-  const qualificationDecisions = input.qualification.decisions.filter(
+  const qualificationDecisions = qualification.decisions.filter(
     (decision) => decision.canonicalOpportunityRef === exactOpportunityId,
   );
   const qualificationReady = qualificationDecisions.filter(
     (decision) => decision.disposition === "READY_FOR_INTERNAL_REVIEW",
   );
   const qualificationVerify = qualificationDecisions.some((decision) => decision.disposition === "VERIFY_REQUIRED");
-  const upstreamVerificationRequired =
-    input.roleReview.verificationRequired || input.warmAccess.verificationRequired;
+  const upstreamVerificationRequired = roleReview.verificationRequired || warmAccess.verificationRequired;
 
-  const buyers: SponsorPursuitEvidenceBuyerV1[] = input.roleReview.bindings.map((role) => {
-    const warm = input.warmAccess.bindings.filter(
+  const buyers: SponsorPursuitEvidenceBuyerV1[] = roleReview.bindings.map((role) => {
+    const warm = warmAccess.bindings.filter(
       (binding) =>
         binding.personCanonicalId === role.personCanonicalId &&
         binding.organizationCanonicalId === role.organizationCanonicalId,
     );
-    const timing = input.planning.bindings.filter(
+    const timing = planning.bindings.filter(
       (binding) =>
         binding.personCanonicalId === role.personCanonicalId &&
         binding.organizationCanonicalId === role.organizationCanonicalId,
@@ -370,9 +374,9 @@ export function buildSponsorPursuitEvidenceBriefV1(input: Readonly<{
 
   const issues = unique([
     qualificationDecisions.length === 0 ? "NO_EXACT_QUALIFICATION_DECISION" : "",
-    input.roleReview.issues.length > 0 ? "ROLE_REVIEW_HAS_ISSUES" : "",
-    input.warmAccess.issues.length > 0 ? "WARM_ACCESS_REVIEW_HAS_ISSUES" : "",
-    input.planning.issues.length > 0 ? "PLANNING_REVIEW_HAS_ISSUES" : "",
+    roleReview.issues.length > 0 ? "ROLE_REVIEW_HAS_ISSUES" : "",
+    warmAccess.issues.length > 0 ? "WARM_ACCESS_REVIEW_HAS_ISSUES" : "",
+    planning.issues.length > 0 ? "PLANNING_REVIEW_HAS_ISSUES" : "",
   ]);
 
   return Object.freeze({
