@@ -40,6 +40,7 @@ export type SocialExecutiveOverviewReasonV1 =
   | "CHANNEL_CONNECTOR_HEALTH_MISSING"
   | "CHANNEL_CONNECTOR_TRUTH_MISMATCH"
   | "CONNECTOR_HEALTH_STALE"
+  | "CONNECTOR_HEALTH_NOT_FULLY_OPERATIONAL"
   | "CONTENT_PERFORMANCE_STALE"
   | "CONTENT_PERFORMANCE_NOT_READY"
   | "BUSINESS_VALUE_STALE"
@@ -234,18 +235,18 @@ function uniqueReasons(values: readonly SocialExecutiveOverviewReasonV1[]): Soci
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function componentAgeState(
+function componentAge(
   observedAt: string,
   generatedAtMs: number,
   maxEvidenceAgeHours: number,
   staleReason: SocialExecutiveOverviewReasonV1,
   field: string
-): { observedAt: string; stale: boolean; reason: SocialExecutiveOverviewReasonV1 | null } {
+): { observedAt: string; stale: boolean; staleReason: SocialExecutiveOverviewReasonV1 | null } {
   const normalized = iso(observedAt, field);
   const observedMs = Date.parse(normalized);
   if (observedMs > generatedAtMs) throw new Error(`${field} cannot be in the future`);
   const stale = generatedAtMs - observedMs > maxEvidenceAgeHours * 3_600_000;
-  return { observedAt: normalized, stale, reason: stale ? staleReason : null };
+  return { observedAt: normalized, stale, staleReason: stale ? staleReason : null };
 }
 
 function assertChannelAuthority(channel: SocialChannelDrilldownV1): void {
@@ -306,9 +307,9 @@ function assertQueueAuthority(queue: SocialContentOpportunityQueueV1): void {
   if (queue.postingAuthority !== "NONE" || queue.externalAccessPerformed !== false || queue.writesPerformed !== false) {
     throw new Error("opportunityQueue widens action authority");
   }
-  if (queue.opportunities.some((item) => item.executionAuthority !== "NONE" || item.publicPostingRequiresApproval !== true || item.confidence !== null)) {
-    throw new Error("opportunityQueue item widens action authority or confidence");
-  }
+  if (queue.opportunities.some((item) =>
+    item.executionAuthority !== "NONE" || item.publicPostingRequiresApproval !== true || item.confidence !== null
+  )) throw new Error("opportunityQueue item widens action authority or confidence");
 }
 
 function assertAlertAuthority(review: SocialMaterialAlertReadinessV1): void {
@@ -321,7 +322,10 @@ function assertAlertAuthority(review: SocialMaterialAlertReadinessV1): void {
   }
 }
 
-function audienceMetric(channel: SocialChannelDrilldownV1, key: "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE"): SocialExecutiveAudienceMetricV1 {
+function audienceMetric(
+  channel: SocialChannelDrilldownV1,
+  key: "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE"
+): SocialExecutiveAudienceMetricV1 {
   const metric = channel.metrics.find((row) => row.key === key);
   if (!metric) {
     return freeze({
@@ -366,10 +370,9 @@ function channelCard(
   const connectorCurrent = connector?.canonicalDataState === "CURRENT" && connector.liveFirstPartyDataProven === true;
   const channelCurrent = channel.availability === "READY" && channel.sourceHealth.freshness === "FRESH";
   if (!connector) reasons.push("CHANNEL_CONNECTOR_HEALTH_MISSING");
-  else if (channelCurrent !== connectorCurrent || (channelCurrent && connector.sourceHealth !== "HEALTHY")) {
-    reasons.push("CHANNEL_CONNECTOR_TRUTH_MISMATCH");
-  }
-  if (!channelCurrent || !connectorCurrent) reasons.push("CHANNEL_NOT_DECISION_GRADE");
+  else if (channelCurrent !== connectorCurrent) reasons.push("CHANNEL_CONNECTOR_TRUTH_MISMATCH");
+  const decisionGrade = channelCurrent && connectorCurrent && connector?.sourceHealth === "HEALTHY";
+  if (!decisionGrade) reasons.push("CHANNEL_NOT_DECISION_GRADE");
 
   return freeze({
     platform: channel.platform,
@@ -382,7 +385,7 @@ function channelCard(
     connectorSourceHealth: connector?.sourceHealth ?? null,
     canonicalDataState: connector?.canonicalDataState ?? null,
     liveFirstPartyDataProven: connector?.liveFirstPartyDataProven ?? false,
-    decisionGrade: channelCurrent && connectorCurrent && connector?.sourceHealth === "HEALTHY",
+    decisionGrade,
     audience: audienceMetric(channel, "AUDIENCE_TOTAL"),
     netNewAudience: audienceMetric(channel, "NET_NEW_AUDIENCE"),
     warningCodes: unique(channel.warnings.map((warning) => warning.code)),
@@ -499,6 +502,15 @@ function alertCandidate(item: SocialMaterialAlertReadinessItemV1): SocialExecuti
   });
 }
 
+function component(
+  name: SocialExecutiveOverviewComponentV1["component"],
+  state: SocialExecutiveOverviewComponentStateV1,
+  observedAt: string | null,
+  reasons: readonly SocialExecutiveOverviewReasonV1[]
+): SocialExecutiveOverviewComponentV1 {
+  return freeze({ component: name, state, observedAt, reasons: uniqueReasons(reasons) });
+}
+
 export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewInputV1): SocialExecutiveOverviewV1 {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("input must be an object");
   if (!Array.isArray(input.channelDrilldowns)) throw new Error("channelDrilldowns must be an array");
@@ -525,20 +537,26 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
   const reasons: SocialExecutiveOverviewReasonV1[] = [];
   const components: SocialExecutiveOverviewComponentV1[] = [];
 
-  const connectorAge = componentAgeState(
+  const connectorObserved = componentAge(
     input.connectorHealth.generatedAt,
     generatedAtMs,
     input.maxEvidenceAgeHours,
     "CONNECTOR_HEALTH_STALE",
     "connectorHealth.generatedAt"
   );
-  if (connectorAge.reason) reasons.push(connectorAge.reason);
-  components.push(freeze({
-    component: "CONNECTOR_HEALTH" as const,
-    state: connectorAge.stale ? "VERIFY_REQUIRED" as const : "CURRENT" as const,
-    observedAt: connectorAge.observedAt,
-    reasons: connectorAge.reason ? [connectorAge.reason] : []
-  }));
+  const connectorReasons: SocialExecutiveOverviewReasonV1[] = [];
+  if (connectorObserved.staleReason) connectorReasons.push(connectorObserved.staleReason);
+  const connectorOperationalGap = input.connectorHealth.platforms.some((row) =>
+    row.sourceHealth !== "HEALTHY" && row.sourceHealth !== "NOT_APPLICABLE"
+  );
+  if (connectorOperationalGap) connectorReasons.push("CONNECTOR_HEALTH_NOT_FULLY_OPERATIONAL");
+  reasons.push(...connectorReasons);
+  components.push(component(
+    "CONNECTOR_HEALTH",
+    connectorObserved.stale ? "VERIFY_REQUIRED" : connectorOperationalGap ? "PARTIAL" : "CURRENT",
+    connectorObserved.observedAt,
+    connectorReasons
+  ));
 
   const connectorMap = connectorByPlatform(input.connectorHealth);
   const seenChannel = new Set<string>();
@@ -558,14 +576,9 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     : cards.every((card) => card.decisionGrade)
       ? "CURRENT"
       : "PARTIAL";
-  components.push(freeze({
-    component: "CHANNEL_DRILLDOWNS" as const,
-    state: channelState,
-    observedAt: null,
-    reasons: uniqueReasons(channelReasons)
-  }));
+  components.push(component("CHANNEL_DRILLDOWNS", channelState, null, channelReasons));
 
-  const performanceAge = componentAgeState(
+  const performanceObserved = componentAge(
     input.performanceReview.evaluatedAt,
     generatedAtMs,
     input.maxEvidenceAgeHours,
@@ -573,18 +586,18 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     "performanceReview.evaluatedAt"
   );
   const performanceReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (performanceAge.reason) performanceReasons.push(performanceAge.reason);
+  if (performanceObserved.staleReason) performanceReasons.push(performanceObserved.staleReason);
   if (input.performanceReview.status !== "READY") performanceReasons.push("CONTENT_PERFORMANCE_NOT_READY");
   reasons.push(...performanceReasons);
-  const performanceCurrent = performanceReasons.length === 0;
-  components.push(freeze({
-    component: "CONTENT_PERFORMANCE" as const,
-    state: performanceAge.stale ? "VERIFY_REQUIRED" as const : input.performanceReview.status === "READY" ? "CURRENT" as const : "PARTIAL" as const,
-    observedAt: performanceAge.observedAt,
-    reasons: uniqueReasons(performanceReasons)
-  }));
+  const performanceState: SocialExecutiveOverviewComponentStateV1 = performanceObserved.stale || input.performanceReview.status === "VERIFY_REQUIRED"
+    ? "VERIFY_REQUIRED"
+    : input.performanceReview.status === "READY"
+      ? "CURRENT"
+      : "PARTIAL";
+  components.push(component("CONTENT_PERFORMANCE", performanceState, performanceObserved.observedAt, performanceReasons));
+  const performanceCurrent = performanceState === "CURRENT";
 
-  const businessAge = componentAgeState(
+  const businessObserved = componentAge(
     input.businessValueReview.evaluatedAt,
     generatedAtMs,
     input.maxEvidenceAgeHours,
@@ -592,18 +605,18 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     "businessValueReview.evaluatedAt"
   );
   const businessReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (businessAge.reason) businessReasons.push(businessAge.reason);
+  if (businessObserved.staleReason) businessReasons.push(businessObserved.staleReason);
   if (input.businessValueReview.status !== "READY") businessReasons.push("BUSINESS_VALUE_NOT_READY");
   reasons.push(...businessReasons);
-  const businessCurrent = businessReasons.length === 0;
-  components.push(freeze({
-    component: "BUSINESS_VALUE" as const,
-    state: businessAge.stale ? "VERIFY_REQUIRED" as const : input.businessValueReview.status === "READY" ? "CURRENT" as const : "PARTIAL" as const,
-    observedAt: businessAge.observedAt,
-    reasons: uniqueReasons(businessReasons)
-  }));
+  const businessState: SocialExecutiveOverviewComponentStateV1 = businessObserved.stale || input.businessValueReview.status === "VERIFY_REQUIRED"
+    ? "VERIFY_REQUIRED"
+    : input.businessValueReview.status === "READY"
+      ? "CURRENT"
+      : "PARTIAL";
+  components.push(component("BUSINESS_VALUE", businessState, businessObserved.observedAt, businessReasons));
+  const businessCurrent = businessState === "CURRENT";
 
-  const queueAge = componentAgeState(
+  const queueObserved = componentAge(
     input.opportunityQueue.generatedAt,
     generatedAtMs,
     input.maxEvidenceAgeHours,
@@ -611,60 +624,50 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     "opportunityQueue.generatedAt"
   );
   const queueReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (queueAge.reason) queueReasons.push(queueAge.reason);
+  if (queueObserved.staleReason) queueReasons.push(queueObserved.staleReason);
   if (input.opportunityQueue.status !== "READY") queueReasons.push("OPPORTUNITY_QUEUE_NOT_READY");
   reasons.push(...queueReasons);
-  const queueCurrent = queueReasons.length === 0;
-  components.push(freeze({
-    component: "OPPORTUNITY_QUEUE" as const,
-    state: queueAge.stale ? "VERIFY_REQUIRED" as const : input.opportunityQueue.status === "READY" ? "CURRENT" as const : "PARTIAL" as const,
-    observedAt: queueAge.observedAt,
-    reasons: uniqueReasons(queueReasons)
-  }));
+  const queueState: SocialExecutiveOverviewComponentStateV1 = queueObserved.stale
+    ? "VERIFY_REQUIRED"
+    : input.opportunityQueue.status === "READY"
+      ? "CURRENT"
+      : "PARTIAL";
+  components.push(component("OPPORTUNITY_QUEUE", queueState, queueObserved.observedAt, queueReasons));
+  const queueCurrent = queueState === "CURRENT";
 
   const alertReasons: SocialExecutiveOverviewReasonV1[] = [];
-  let alertObservedAt: string | null = null;
-  let alertHasStale = false;
-  let alertHasNotReady = false;
+  let newestAlertAt: string | null = null;
+  let alertState: SocialExecutiveOverviewComponentStateV1 = "CURRENT";
   const alertCandidates: SocialExecutiveAlertReviewV1[] = [];
-  const seenAlertPlatformAccount = new Set<string>();
   for (const [index, review] of input.alertReadiness.entries()) {
-    const age = componentAgeState(
+    const observed = componentAge(
       review.evaluatedAt,
       generatedAtMs,
       input.maxEvidenceAgeHours,
       "ALERT_READINESS_STALE",
       `alertReadiness[${index}].evaluatedAt`
     );
-    if (!alertObservedAt || Date.parse(age.observedAt) > Date.parse(alertObservedAt)) alertObservedAt = age.observedAt;
-    if (age.reason) {
-      alertHasStale = true;
-      alertReasons.push(age.reason);
+    if (!newestAlertAt || Date.parse(observed.observedAt) > Date.parse(newestAlertAt)) newestAlertAt = observed.observedAt;
+    if (observed.staleReason) {
+      alertReasons.push(observed.staleReason);
+      alertState = "VERIFY_REQUIRED";
     }
     if (review.status === "VERIFY_REQUIRED") {
-      alertHasNotReady = true;
       alertReasons.push("ALERT_READINESS_NOT_READY");
+      alertState = "VERIFY_REQUIRED";
     }
-    const identitySet = new Set(review.items.map((item) => `${item.platform}\u0000${item.accountId}`));
-    for (const identity of identitySet) seenAlertPlatformAccount.add(identity);
-    if (!age.stale && review.status !== "VERIFY_REQUIRED") {
+    if (!observed.stale && review.status !== "VERIFY_REQUIRED") {
       for (const item of review.items.filter((row) => row.state === "READY_FOR_ALERT_REVIEW")) {
         alertCandidates.push(alertCandidate(item));
       }
     }
   }
   reasons.push(...alertReasons);
-  components.push(freeze({
-    component: "ALERT_READINESS" as const,
-    state: alertHasStale ? "VERIFY_REQUIRED" as const : alertHasNotReady ? "PARTIAL" as const : "CURRENT" as const,
-    observedAt: alertObservedAt,
-    reasons: uniqueReasons(alertReasons)
-  }));
+  components.push(component("ALERT_READINESS", alertState, newestAlertAt, alertReasons));
 
-  const normalizedReasons = uniqueReasons(reasons);
-  const status: SocialExecutiveOverviewStatusV1 = components.some((component) => component.state === "VERIFY_REQUIRED")
+  const status: SocialExecutiveOverviewStatusV1 = components.some((row) => row.state === "VERIFY_REQUIRED")
     ? "VERIFY_REQUIRED"
-    : components.some((component) => component.state === "PARTIAL")
+    : components.some((row) => row.state === "PARTIAL")
       ? "PARTIAL"
       : "READY";
 
@@ -673,7 +676,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     generatedAt,
     window: input.window,
     status,
-    reasons: normalizedReasons,
+    reasons: uniqueReasons(reasons),
     components,
     channelCards: cards,
     audienceTotalAcrossPlatforms: null,
