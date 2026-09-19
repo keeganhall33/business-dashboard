@@ -164,10 +164,7 @@ function validTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-function uniqueRefs(
-  value: unknown,
-  maximum: number
-): readonly string[] | null {
+function uniqueRefs(value: unknown, maximum: number): readonly string[] | null {
   if (!Array.isArray(value) || value.length > maximum) return null;
   const normalized: string[] = [];
   for (const entry of value) {
@@ -193,7 +190,7 @@ function deepFreeze<T>(value: T): Readonly<T> {
 }
 
 function withheld(
-  reasonCode: Extract<CompanyBrainCorrectionDestinationPlanV1, { status: "WITHHELD" }>["reasonCode"] | CompanyBrainCorrectionDestinationPlanV1["reasonCode"],
+  reasonCode: CompanyBrainCorrectionDestinationPlanV1["reasonCode"],
   input?: CompanyBrainCorrectionDestinationInputV1,
   evidenceRefs: readonly string[] = [],
   affectedCanonicalRefs: readonly string[] = []
@@ -229,10 +226,7 @@ export function planCompanyBrainCorrectionDestinationV1(
     return withheld("INVALID_INPUT");
   }
 
-  const evidenceRefs = uniqueRefs(
-    input.evidenceRefs,
-    MAX_CORRECTION_DESTINATION_EVIDENCE_REFS_V1
-  );
+  const evidenceRefs = uniqueRefs(input.evidenceRefs, MAX_CORRECTION_DESTINATION_EVIDENCE_REFS_V1);
   const affectedCanonicalRefs = uniqueRefs(
     input.affectedCanonicalRefs,
     MAX_CORRECTION_DESTINATION_AFFECTED_REFS_V1
