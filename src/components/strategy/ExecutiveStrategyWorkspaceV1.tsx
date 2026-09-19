@@ -2,6 +2,15 @@ import Link from "next/link";
 import { AutonomousGrowthBriefingV1 } from "@/components/executive-home/AutonomousGrowthBriefingV1";
 import type { AutonomousGrowthBriefingV1 as AutonomousGrowthBriefingModelV1 } from "@/lib/executive-home/autonomous-growth-briefing-v1";
 import type { ExecutiveStrategyWorkspaceModelV1, StrategyWorkspaceRecordV1 } from "@/lib/strategy/executive-strategy-v1";
+import {
+  executiveApprovalLabel,
+  executiveBlockerCopy,
+  executiveConfidenceLabel,
+  executiveMissingDataLabels,
+  executiveSourceModeLabel,
+  executiveTruthLabel,
+  executiveUrgencyLabel,
+} from "@/lib/presentation/executive-language-v1";
 
 function badgeClass(state: StrategyWorkspaceRecordV1["epistemicState"]) {
   if (state === "KNOWN") return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -32,39 +41,6 @@ function laneLabel(lane: StrategyWorkspaceRecordV1["lane"]) {
   return "Needs more evidence";
 }
 
-function sourceModeLabel(mode: ExecutiveStrategyWorkspaceModelV1["sourceMode"]) {
-  if (mode === "LIVE_DATA") return "Live data";
-  if (mode === "PARTIAL_LIVE_DATA") return "Some sources still connecting";
-  if (mode === "SEED_DATA") return "Setup data only";
-  return "Data still connecting";
-}
-
-function truthLabel(state: StrategyWorkspaceRecordV1["epistemicState"]) {
-  if (state === "KNOWN") return "Evidence verified";
-  if (state === "CONFLICTED") return "Evidence conflicts";
-  if (state === "STALE") return "Needs fresh data";
-  if (state === "INFERRED") return "Reasoned estimate";
-  return "Not yet verified";
-}
-
-function confidenceLabel(confidence: StrategyWorkspaceRecordV1["confidence"]) {
-  if (confidence === "strongly_supported") return "Strong evidence";
-  if (confidence === "likely") return "Good evidence";
-  if (confidence === "possible") return "Early signal";
-  if (confidence === "insufficient_evidence") return "Not enough evidence";
-  return "Not assessed";
-}
-
-function approvalLabel(level: StrategyWorkspaceRecordV1["approvalLevel"]) {
-  if (level === "L5_EXECUTED_AND_MEASURED") return "Completed and measured";
-  if (level === "L4_APPROVED_FOR_EXECUTION") return "Approved to execute";
-  if (level === "L3_READY_FOR_APPROVAL") return "Ready for your approval";
-  if (level === "L2_DRAFT_PREPARED") return "Draft prepared";
-  if (level === "L1_RECOMMENDATION") return "Idea for review";
-  if (level === "L0_INSIGHT") return "Insight only";
-  return "Not assessed";
-}
-
 function plainTitle(item: StrategyWorkspaceRecordV1) {
   const title = item.title.toLowerCase();
   if (title.includes("traffic-driven change")) return "Figure out what changed your website traffic";
@@ -80,23 +56,6 @@ function plainAction(action: string) {
     .replace(/Identify which channel\(s\) increased\/decreased traffic; avoid scaling without attribution/gi, "Identify which marketing channels changed traffic before increasing ad spend.");
 }
 
-function plainMissing(items: string[]) {
-  return items.map((item) => {
-    const value = item.toLowerCase();
-    if (value === "email" || value.includes("email")) return "email campaign performance";
-    if (value === "matchback" || value.includes("matchback")) return "ad-to-order attribution";
-    return item.replaceAll("_", " ");
-  });
-}
-
-function plainBlocker(blocker: string | null) {
-  if (!blocker) return null;
-  if (/Evidence truth remains UNKNOWN/i.test(blocker)) return "We do not yet have enough verified data to act confidently.";
-  if (/freshness remains UNKNOWN/i.test(blocker)) return "We cannot confirm that the supporting data is current yet.";
-  if (/freshness requires review/i.test(blocker)) return "The supporting data needs to be refreshed before acting.";
-  if (/conflicted evidence/i.test(blocker)) return "The available data points disagree, so this needs review before acting.";
-  return blocker;
-}
 
 function Economics({ item }: { item: StrategyWorkspaceRecordV1 }) {
   if (!item.economics) return <span className="text-slate-500">Financial impact: Not estimated yet</span>;
@@ -119,7 +78,7 @@ function PriorityCard({ item, compact = false }: { item: StrategyWorkspaceRecord
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap gap-2">
             <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${laneClass(item.lane)}`}>{laneLabel(item.lane)}</span>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{truthLabel(item.epistemicState)}</span>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{executiveTruthLabel(item.epistemicState)}</span>
           </div>
           <h3 className="mt-3 text-base font-semibold text-slate-950">{plainTitle(item)}</h3>
           <p className="mt-2 text-sm leading-6 text-slate-700">{plainAction(item.recommendedAction)}</p>
@@ -133,13 +92,13 @@ function PriorityCard({ item, compact = false }: { item: StrategyWorkspaceRecord
       {!compact ? (
         <>
           <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
-            <span className="text-slate-500">Evidence strength: <strong className="text-slate-800">{confidenceLabel(item.confidence)}</strong></span>
-            <span className="text-slate-500">Timing: <strong className="text-slate-800">{item.urgency === "high" ? "Act soon" : item.urgency === "medium" ? "Important, not immediate" : item.urgency === "low" ? "Can wait" : "Not assessed"}</strong></span>
-            <span className="text-slate-500">Status: <strong className="text-slate-800">{approvalLabel(item.approvalLevel)}</strong></span>
+            <span className="text-slate-500">Evidence strength: <strong className="text-slate-800">{executiveConfidenceLabel(item.confidence)}</strong></span>
+            <span className="text-slate-500">Timing: <strong className="text-slate-800">{executiveUrgencyLabel(item.urgency)}</strong></span>
+            <span className="text-slate-500">Status: <strong className="text-slate-800">{executiveApprovalLabel(item.approvalLevel)}</strong></span>
             <Economics item={item} />
           </div>
-          {plainBlocker(item.blocker) ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><strong>Why we cannot act yet:</strong> {plainBlocker(item.blocker)}</p> : null}
-          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600"><strong>Still needed:</strong> {plainMissing(item.dataMissing).join(", ")}</p> : null}
+          {executiveBlockerCopy(item.blocker) ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><strong>Why we cannot act yet:</strong> {executiveBlockerCopy(item.blocker)}</p> : null}
+          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600"><strong>Still needed:</strong> {executiveMissingDataLabels(item.dataMissing).join(", ")}</p> : null}
           {item.dependencies.length ? <p className="mt-2 text-xs text-slate-600"><strong>Depends on:</strong> {item.dependencies.join(", ")}</p> : null}
         </>
       ) : null}
@@ -175,7 +134,7 @@ export function ExecutiveStrategyWorkspaceV1({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Data status</div>
-              <div className="mt-1 font-semibold text-slate-900">{sourceModeLabel(model.sourceMode)}</div>
+              <div className="mt-1 font-semibold text-slate-900">{executiveSourceModeLabel(model.sourceMode)}</div>
             </div>
           </div>
           <p className="mt-5 rounded-2xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700">{model.notice}</p>
@@ -226,7 +185,7 @@ export function ExecutiveStrategyWorkspaceV1({
             <div className="mt-3 space-y-3">
               {model.blockers.length ? model.blockers.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{truthLabel(item.epistemicState)}</span></div>
+                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{executiveTruthLabel(item.epistemicState)}</span></div>
                   <h3 className="mt-3 font-semibold">{item.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{item.blocker ?? item.dataMissing[0] ?? item.dependencies[0] ?? "Evidence certainty is not current."}</p>
                   <Link href={item.evidenceHref} className="mt-3 inline-block text-xs font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">Inspect evidence</Link>
