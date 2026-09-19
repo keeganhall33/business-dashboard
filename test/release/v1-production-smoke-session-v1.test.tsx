@@ -16,6 +16,9 @@ const TEST_NOW_MS = Date.now();
 const GENERATED_AT = new Date(TEST_NOW_MS - 60_000).toISOString();
 const OBSERVED_AT = new Date(TEST_NOW_MS - 5 * 60_000).toISOString();
 const SMOKE_RUN_ID = "smoke-run-20260918-1755";
+const PRODUCTION_ORIGIN = "https://mission.keeganhall.com";
+
+process.env.DASHBOARD_PRODUCTION_URL = PRODUCTION_ORIGIN;
 
 const TEST_PATHS: Record<(typeof V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1)[number], string> = {
   EXECUTIVE_HOME: "/dashboard",
@@ -42,6 +45,7 @@ function validInput(): V1ProductionSmokeSessionInputV1 {
       state: "PASS" as const,
       observedAt: OBSERVED_AT,
       observedPath: TEST_PATHS[stepId],
+      observedUrl: `${PRODUCTION_ORIGIN}${TEST_PATHS[stepId]}`,
       evidenceRefs: [`github://production-smoke/${SMOKE_RUN_ID}/${stepId.toLowerCase()}`],
       releaseSha: RELEASE_SHA,
       actionRequirement: "NONE" as const
@@ -54,6 +58,7 @@ function validInput(): V1ProductionSmokeSessionInputV1 {
         state: "PASS" as const,
         observedAt: OBSERVED_AT,
         observedPath: TEST_PATHS[stepId],
+        observedUrl: `${PRODUCTION_ORIGIN}${TEST_PATHS[stepId]}`,
         viewportWidth: deviceClass === "DESKTOP" ? 1440 : 390,
         viewportHeight: deviceClass === "DESKTOP" ? 900 : 844,
         evidenceRefs: [
@@ -160,7 +165,11 @@ test("device route evidence must prove the same canonical pathname as the route 
   const input = validInput();
   input.deviceObservations = input.deviceObservations.map((observation) =>
     observation.deviceClass === "MOBILE" && observation.stepId === "STRATEGY"
-      ? { ...observation, observedPath: "/learning" }
+      ? {
+          ...observation,
+          observedPath: "/learning",
+          observedUrl: `${PRODUCTION_ORIGIN}/learning`
+        }
       : observation
   );
 
@@ -168,6 +177,53 @@ test("device route evidence must prove the same canonical pathname as the route 
     () => compileSessionBoundV1ProductionSmokeV1(input),
     /SMOKE_DEVICE_ROUTE_MISMATCH: MOBILE STRATEGY/
   );
+});
+
+test("preview or alternate-origin route evidence cannot certify production smoke", () => {
+  const input = validInput();
+  input.observations = input.observations.map((observation) =>
+    observation.stepId === "STRATEGY"
+      ? { ...observation, observedUrl: `https://preview.example.vercel.app${observation.observedPath}` }
+      : observation
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_PRODUCTION_ORIGIN_MISMATCH: STRATEGY/
+  );
+});
+
+test("declared production path cannot differ from the absolute URL that was actually observed", () => {
+  const input = validInput();
+  input.observations = input.observations.map((observation) =>
+    observation.stepId === "STRATEGY"
+      ? { ...observation, observedUrl: `${PRODUCTION_ORIGIN}/learning` }
+      : observation
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_PRODUCTION_PATH_MISMATCH: STRATEGY/
+  );
+});
+
+test("production smoke fails closed when the governed production origin is unavailable", () => {
+  const previousDashboardProductionUrl = process.env.DASHBOARD_PRODUCTION_URL;
+  const previousSmokeBaseUrl = process.env.SMOKE_BASE_URL;
+  delete process.env.DASHBOARD_PRODUCTION_URL;
+  delete process.env.SMOKE_BASE_URL;
+
+  try {
+    assert.throws(
+      () => compileSessionBoundV1ProductionSmokeV1(validInput()),
+      /SMOKE_PRODUCTION_ORIGIN_UNAVAILABLE/
+    );
+  } finally {
+    if (previousDashboardProductionUrl == null) delete process.env.DASHBOARD_PRODUCTION_URL;
+    else process.env.DASHBOARD_PRODUCTION_URL = previousDashboardProductionUrl;
+    if (previousSmokeBaseUrl == null) delete process.env.SMOKE_BASE_URL;
+    else process.env.SMOKE_BASE_URL = previousSmokeBaseUrl;
+  }
 });
 
 test("one stale device-route observation blocks the whole final smoke session", () => {
@@ -211,12 +267,20 @@ test("session binding does not weaken canonical route truth", () => {
   const input = validInput();
   input.observations = input.observations.map((observation) =>
     observation.stepId === "STRATEGY"
-      ? { ...observation, observedPath: "/learning" }
+      ? {
+          ...observation,
+          observedPath: "/learning",
+          observedUrl: `${PRODUCTION_ORIGIN}/learning`
+        }
       : observation
   );
   input.deviceObservations = input.deviceObservations.map((observation) =>
     observation.stepId === "STRATEGY"
-      ? { ...observation, observedPath: "/learning" }
+      ? {
+          ...observation,
+          observedPath: "/learning",
+          observedUrl: `${PRODUCTION_ORIGIN}/learning`
+        }
       : observation
   );
 
