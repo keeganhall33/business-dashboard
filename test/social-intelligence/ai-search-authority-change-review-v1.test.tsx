@@ -286,5 +286,5 @@ test("rejects raw query or answer text and remains deeply immutable", () => {
   assert.equal(Object.isFrozen(result.changes), true);
   assert.equal(Object.isFrozen(result.changes[0]), true);
   assert.equal(Object.isFrozen(result.guardrails), true);
-  assert.match(result.guardrails.join(" "), /does not establish search ranking, authority, recommendation, endorsement, competitor performance, relationship, attribution, causality/i);
+  assert.match(result.guardrails.join(" "), /do not establish search ranking, authority, recommendation, endorsement, competitor performance, relationship, attribution, causality/i);
 });
