@@ -5,25 +5,20 @@ import type {
 } from "./social-canonical-v1";
 import type {
   SocialChannelDrilldownV1,
-  SocialChannelMetricStateV1
+  SocialChannelMetricStateV1,
+  SocialChannelWarningV1
 } from "./social-channel-drilldown-v1";
 import type {
   SocialConnectorHealthPlatformV1,
   SocialConnectorHealthReviewV1
 } from "./social-connector-health-review-v1";
-import type {
-  SocialContentPerformanceReviewV1
-} from "./social-content-performance-review-v1";
-import type {
-  SocialContentBusinessValueReviewV1
-} from "./social-content-business-value-review-v1";
+import type { SocialContentPerformanceReviewV1 } from "./social-content-performance-review-v1";
+import type { SocialContentBusinessValueReviewV1 } from "./social-content-business-value-review-v1";
 import type {
   SocialContentOpportunityPriorityV1,
   SocialContentOpportunityQueueV1
 } from "./social-content-opportunity-queue-v1";
-import type {
-  SocialMaterialAlertReadinessV1
-} from "./social-material-alert-readiness-v1";
+import type { SocialMaterialAlertReadinessV1 } from "./social-material-alert-readiness-v1";
 
 export const SOCIAL_EXECUTIVE_OVERVIEW_V1_VERSION = "SocialExecutiveOverviewV1" as const;
 export const SOCIAL_EXECUTIVE_OVERVIEW_MAX_CHANNELS_V1 = 20;
@@ -218,12 +213,7 @@ function uniqueReasons(values: readonly SocialExecutiveOverviewReasonV1[]): Soci
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function evidenceAge(
-  observedAt: string,
-  generatedAtMs: number,
-  maxAgeHours: number,
-  field: string
-): { observedAt: string; stale: boolean } {
+function evidenceAge(observedAt: string, generatedAtMs: number, maxAgeHours: number, field: string): { observedAt: string; stale: boolean } {
   const normalized = requireIso(observedAt, field);
   const observedMs = Date.parse(normalized);
   if (observedMs > generatedAtMs) throw new Error(`${field} cannot be in the future`);
@@ -270,17 +260,7 @@ function audienceMetric(channel: SocialChannelDrilldownV1, key: "AUDIENCE_TOTAL"
   if (!row) {
     return deepFreeze({ metric: key, value: null, priorValue: null, absoluteDelta: null, percentageDelta: null, direction: "UNKNOWN", state: "UNKNOWN", decisionGrade: false, evidenceRefs: [] });
   }
-  return deepFreeze({
-    metric: key,
-    value: row.value,
-    priorValue: row.priorValue,
-    absoluteDelta: row.absoluteDelta,
-    percentageDelta: row.percentageDelta,
-    direction: row.direction,
-    state: row.state,
-    decisionGrade: row.decisionGrade,
-    evidenceRefs: unique(row.evidenceRefs)
-  });
+  return deepFreeze({ metric: key, value: row.value, priorValue: row.priorValue, absoluteDelta: row.absoluteDelta, percentageDelta: row.percentageDelta, direction: row.direction, state: row.state, decisionGrade: row.decisionGrade, evidenceRefs: unique(row.evidenceRefs) });
 }
 
 function component(name: SocialExecutiveOverviewComponentV1["component"], state: SocialExecutiveOverviewComponentStateV1, observedAt: string | null, reasons: readonly SocialExecutiveOverviewReasonV1[]): SocialExecutiveOverviewComponentV1 {
@@ -344,7 +324,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
       decisionGrade,
       audience: audienceMetric(channel, "AUDIENCE_TOTAL"),
       netNewAudience: audienceMetric(channel, "NET_NEW_AUDIENCE"),
-      warningCodes: unique(channel.warnings.map((warning) => warning.code)),
+      warningCodes: unique(channel.warnings.map((warning: SocialChannelWarningV1) => warning.code)),
       limitations: unique([...(channel.sourceHealth.limitations ?? []), ...(connector?.limitations ?? [])]),
       evidenceRefs: unique([...(channel.evidenceRefs ?? []), ...(connector?.evidenceRefs ?? [])]),
       uniqueAudienceClaim: false as const
@@ -369,19 +349,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     for (const platform of platforms) {
       const top = input.performanceReview.outperformers.filter((row) => row.platform === platform).sort((a, b) => b.ratioToComparableMedian - a.ratioToComparableMedian || a.contentId.localeCompare(b.contentId))[0];
       if (!top) continue;
-      contentHighlightsByPlatform.push(deepFreeze({
-        platform: top.platform,
-        accountId: top.accountId,
-        contentId: top.contentId,
-        metric: top.metric,
-        classification: "OUTPERFORMING" as const,
-        ratioToComparableMedian: top.ratioToComparableMedian,
-        evidenceRefs: unique(top.evidenceRefs),
-        interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" as const,
-        crossPlatformWinnerClaim: false as const,
-        causalClaim: false as const,
-        attributionClaim: false as const
-      }));
+      contentHighlightsByPlatform.push(deepFreeze({ platform: top.platform, accountId: top.accountId, contentId: top.contentId, metric: top.metric, classification: "OUTPERFORMING" as const, ratioToComparableMedian: top.ratioToComparableMedian, evidenceRefs: unique(top.evidenceRefs), interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" as const, crossPlatformWinnerClaim: false as const, causalClaim: false as const, attributionClaim: false as const }));
     }
   }
 
@@ -400,21 +368,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
     for (const platform of platforms) {
       const top = established.filter((row) => row.platform === platform).sort((a, b) => b.directTrackedOutcomeCount - a.directTrackedOutcomeCount || b.linkedOutcomeCount - a.linkedOutcomeCount || a.contentRef.localeCompare(b.contentRef))[0];
       if (!top || top.businessValueState === "NOT_ESTABLISHED") continue;
-      businessValueHighlightsByPlatform.push(deepFreeze({
-        platform: top.platform,
-        accountId: top.accountId,
-        contentId: top.contentId,
-        contentRef: top.contentRef,
-        businessValueState: top.businessValueState,
-        directTrackedOutcomeCount: top.directTrackedOutcomeCount,
-        linkedOutcomeCount: top.linkedOutcomeCount,
-        highIntentMetrics: [...top.highIntentMetrics],
-        evidenceRefs: unique([...top.performanceEvidenceRefs, ...top.outcomeEvidenceRefs]),
-        crossPlatformWinnerClaim: false as const,
-        causalClaim: false as const,
-        revenueAttributionClaim: false as const,
-        monetaryValue: null
-      }));
+      businessValueHighlightsByPlatform.push(deepFreeze({ platform: top.platform, accountId: top.accountId, contentId: top.contentId, contentRef: top.contentRef, businessValueState: top.businessValueState, directTrackedOutcomeCount: top.directTrackedOutcomeCount, linkedOutcomeCount: top.linkedOutcomeCount, highIntentMetrics: [...top.highIntentMetrics], evidenceRefs: unique([...top.performanceEvidenceRefs, ...top.outcomeEvidenceRefs]), crossPlatformWinnerClaim: false as const, causalClaim: false as const, revenueAttributionClaim: false as const, monetaryValue: null }));
     }
   }
 
@@ -426,26 +380,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
   reasons.push(...queueReasons);
   components.push(component("OPPORTUNITY_QUEUE", queueState, queueAge.observedAt, queueReasons));
 
-  const recommendedActions: SocialExecutiveRecommendedActionV1[] = queueState === "CURRENT" ? [...input.opportunityQueue.opportunities]
-    .sort((a, b) => a.rank - b.rank || a.opportunityId.localeCompare(b.opportunityId))
-    .slice(0, maxActions)
-    .map((item) => deepFreeze({
-      opportunityId: item.opportunityId,
-      rank: item.rank,
-      priority: item.priority,
-      targetPlatform: item.targetPlatform,
-      sourcePlatform: item.sourcePlatform,
-      observedMechanism: item.observedMechanism,
-      experimentPlan: item.experimentPlan,
-      successMetricPlan: item.successMetricPlan,
-      evidenceRefs: unique(item.firstPartyEvidenceRefs),
-      requiresApprovalForPosting: true as const,
-      executionAuthority: "NONE" as const,
-      confidence: null,
-      causalClaim: false as const,
-      revenueAttributionClaim: false as const,
-      competitorPerformanceClaim: false as const
-    })) : [];
+  const recommendedActions: SocialExecutiveRecommendedActionV1[] = queueState === "CURRENT" ? [...input.opportunityQueue.opportunities].sort((a, b) => a.rank - b.rank || a.opportunityId.localeCompare(b.opportunityId)).slice(0, maxActions).map((item) => deepFreeze({ opportunityId: item.opportunityId, rank: item.rank, priority: item.priority, targetPlatform: item.targetPlatform, sourcePlatform: item.sourcePlatform, observedMechanism: item.observedMechanism, experimentPlan: item.experimentPlan, successMetricPlan: item.successMetricPlan, evidenceRefs: unique(item.firstPartyEvidenceRefs), requiresApprovalForPosting: true as const, executionAuthority: "NONE" as const, confidence: null, causalClaim: false as const, revenueAttributionClaim: false as const, competitorPerformanceClaim: false as const })) : [];
 
   const alertReasons: SocialExecutiveOverviewReasonV1[] = [];
   const alertReviewCandidates: SocialExecutiveAlertReviewV1[] = [];
@@ -454,34 +389,12 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
   for (const [index, review] of input.alertReadiness.entries()) {
     const age = evidenceAge(review.evaluatedAt, generatedAtMs, input.maxEvidenceAgeHours, `alertReadiness[${index}].evaluatedAt`);
     if (!newestAlertAt || Date.parse(age.observedAt) > Date.parse(newestAlertAt)) newestAlertAt = age.observedAt;
-    if (age.stale) {
-      alertReasons.push("ALERT_READINESS_STALE");
-      alertState = "VERIFY_REQUIRED";
-    }
-    if (review.status === "VERIFY_REQUIRED") {
-      alertReasons.push("ALERT_READINESS_NOT_READY");
-      alertState = "VERIFY_REQUIRED";
-    }
+    if (age.stale) { alertReasons.push("ALERT_READINESS_STALE"); alertState = "VERIFY_REQUIRED"; }
+    if (review.status === "VERIFY_REQUIRED") { alertReasons.push("ALERT_READINESS_NOT_READY"); alertState = "VERIFY_REQUIRED"; }
     if (!age.stale && review.status !== "VERIFY_REQUIRED") {
       for (const item of review.items) {
         if (item.state !== "READY_FOR_ALERT_REVIEW") continue;
-        alertReviewCandidates.push(deepFreeze({
-          signalId: item.signalId,
-          platform: item.platform,
-          accountId: item.accountId,
-          metric: item.metric,
-          window: item.window,
-          direction: item.direction,
-          independentSupportingSourceCount: item.independentSupportingSourceCount,
-          evidenceRefs: unique(item.evidenceRefs),
-          eligibleForNotification: false as const,
-          notificationAuthority: "NONE" as const,
-          causalClaim: false as const,
-          attributionClaim: false as const,
-          competitorPerformanceClaim: false as const,
-          relationshipClaim: false as const,
-          endorsementClaim: false as const
-        }));
+        alertReviewCandidates.push(deepFreeze({ signalId: item.signalId, platform: item.platform, accountId: item.accountId, metric: item.metric, window: item.window, direction: item.direction, independentSupportingSourceCount: item.independentSupportingSourceCount, evidenceRefs: unique(item.evidenceRefs), eligibleForNotification: false as const, notificationAuthority: "NONE" as const, causalClaim: false as const, attributionClaim: false as const, competitorPerformanceClaim: false as const, relationshipClaim: false as const, endorsementClaim: false as const }));
       }
     }
   }
