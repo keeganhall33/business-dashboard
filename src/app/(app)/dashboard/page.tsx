@@ -19,18 +19,7 @@ const EXECUTIVE_HOME_PORTFOLIO_MAX_AGE_MS = 36 * 60 * 60 * 1_000;
 
 export default async function DashboardPage({ searchParams }: PageProps) {
   const hdrs = await headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "https";
   const cookie = hdrs.get("cookie");
-
-  // Derive origin from the incoming request for same-deployment SSR fetches.
-  // Avoid using NEXT_PUBLIC_APP_URL here because it may be protected in preview.
-  const baseUrl = (() => {
-    if (!host) return "";
-    if (!/^[A-Za-z0-9.:-]+$/.test(host)) return "";
-    if (proto !== "http" && proto !== "https") return "";
-    return `${proto}://${host}`;
-  })();
 
   const resolvedParams = (await searchParams) ?? {};
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
@@ -38,7 +27,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
   const now = new Date().toISOString();
   const [overview, chiefOfStaffBriefing] = await Promise.all([
-    getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie }),
+    getDashboardOverview({ preset, startDate: start, endDate: end }, { cookie }),
     loadAutonomousGrowthLiveBriefingV1({
       now,
       maxAgeMs: EXECUTIVE_HOME_PORTFOLIO_MAX_AGE_MS,
