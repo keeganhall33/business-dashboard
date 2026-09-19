@@ -150,15 +150,23 @@ function freeze<T>(value: T): T {
   return value;
 }
 
-function refs(values: readonly string[], label: string): string[] {
-  if (!Array.isArray(values) || values.length > MAX_REFS) {
+function uniqueRefs(values: readonly string[], label: string): string[] {
+  if (!Array.isArray(values)) {
     throw new DecisionPortfolioReallocationLineageError("INVALID_REFS", `${label} is invalid`);
   }
-  const normalized = values.map((value) => text(value, label));
-  if (new Set(normalized).size !== normalized.length) {
+  const normalized = [...new Set(values.map((value) => text(value, label)))].sort((a, b) => a.localeCompare(b));
+  if (normalized.length > MAX_REFS) {
+    throw new DecisionPortfolioReallocationLineageError("INVALID_REFS", `${label} exceeds the reference bound`);
+  }
+  return normalized;
+}
+
+function exactRefs(values: readonly string[], label: string): string[] {
+  const normalized = uniqueRefs(values, label);
+  if (normalized.length !== values.length) {
     throw new DecisionPortfolioReallocationLineageError("DUPLICATE_REF", `${label} contains duplicate references`);
   }
-  return [...normalized].sort((a, b) => a.localeCompare(b));
+  return normalized;
 }
 
 function difference(left: readonly string[], right: readonly string[]): string[] {
@@ -167,7 +175,7 @@ function difference(left: readonly string[], right: readonly string[]): string[]
 }
 
 function sameRefs(left: readonly string[], right: readonly string[]): boolean {
-  return stable([...left].sort((a, b) => a.localeCompare(b))) === stable([...right].sort((a, b) => a.localeCompare(b)));
+  return stable(uniqueRefs(left, "left refs")) === stable(uniqueRefs(right, "right refs"));
 }
 
 function assertPortfolio(portfolio: DecisionPortfolioV1, label: string): void {
@@ -182,19 +190,7 @@ function assertPortfolio(portfolio: DecisionPortfolioV1, label: string): void {
   }
 }
 
-function assertNoWidenedAuthority(review: DecisionPortfolioReallocationReviewV1): void {
-  if (Object.values(review.authority).some((value) => value !== false)) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "REALLOCATION_AUTHORITY_WIDENED",
-      "source reallocation review widened action authority"
-    );
-  }
-}
-
-function validateReview(
-  review: DecisionPortfolioReallocationReviewV1,
-  previous: DecisionPortfolioV1
-): void {
+function validateReview(review: DecisionPortfolioReallocationReviewV1, previous: DecisionPortfolioV1): void {
   if (
     review.contractVersion !== DECISION_PORTFOLIO_REALLOCATION_CONTRACT_VERSION_V1 ||
     review.policyVersion !== DECISION_PORTFOLIO_REALLOCATION_POLICY_VERSION_V1
@@ -210,8 +206,12 @@ function validateReview(
       "source reallocation review does not belong to the previous portfolio"
     );
   }
-  assertNoWidenedAuthority(review);
-
+  if (Object.values(review.authority).some((value) => value !== false)) {
+    throw new DecisionPortfolioReallocationLineageError(
+      "REALLOCATION_AUTHORITY_WIDENED",
+      "source reallocation review widened action authority"
+    );
+  }
   const generatedAt = timestamp(review.generatedAt, "review.generatedAt");
   if (Date.parse(generatedAt) < Date.parse(timestamp(previous.generatedAt, "previous.generatedAt"))) {
     throw new DecisionPortfolioReallocationLineageError(
@@ -223,47 +223,37 @@ function validateReview(
   const previousById = new Map(previous.items.map((item) => [item.candidate.id, item]));
   const candidateIds = new Set<string>();
   const outcomeIds = new Set<string>();
-  for (const candidateReview of review.candidateReviews) {
-    const candidateId = text(candidateReview.candidateId, "candidateReview.candidateId");
-    const outcomeId = text(candidateReview.outcomeId, `${candidateId}.outcomeId`);
+  for (const item of review.candidateReviews) {
+    const candidateId = text(item.candidateId, "candidateReview.candidateId");
+    const outcomeId = text(item.outcomeId, `${candidateId}.outcomeId`);
     if (candidateIds.has(candidateId)) {
-      throw new DecisionPortfolioReallocationLineageError(
-        "DUPLICATE_REVIEW_CANDIDATE",
-        `source review repeats candidate ${candidateId}`
-      );
+      throw new DecisionPortfolioReallocationLineageError("DUPLICATE_REVIEW_CANDIDATE", `source review repeats candidate ${candidateId}`);
     }
     if (outcomeIds.has(outcomeId)) {
-      throw new DecisionPortfolioReallocationLineageError(
-        "DUPLICATE_REVIEW_OUTCOME",
-        `source review repeats outcome ${outcomeId}`
-      );
+      throw new DecisionPortfolioReallocationLineageError("DUPLICATE_REVIEW_OUTCOME", `source review repeats outcome ${outcomeId}`);
     }
     candidateIds.add(candidateId);
     outcomeIds.add(outcomeId);
     const previousItem = previousById.get(candidateId);
     if (!previousItem) {
-      throw new DecisionPortfolioReallocationLineageError(
-        "REVIEW_CANDIDATE_NOT_IN_SOURCE",
-        `source review candidate ${candidateId} is not in the previous portfolio`
-      );
+      throw new DecisionPortfolioReallocationLineageError("REVIEW_CANDIDATE_NOT_IN_SOURCE", `source review candidate ${candidateId} is not in the previous portfolio`);
     }
-    if (previousItem.disposition !== candidateReview.previousDisposition) {
-      throw new DecisionPortfolioReallocationLineageError(
-        "PREVIOUS_DISPOSITION_MISMATCH",
-        `source review disposition for ${candidateId} does not match the previous portfolio`
-      );
+    if (previousItem.disposition !== item.previousDisposition) {
+      throw new DecisionPortfolioReallocationLineageError("PREVIOUS_DISPOSITION_MISMATCH", `source review disposition for ${candidateId} does not match the previous portfolio`);
     }
-    refs(candidateReview.evidenceRefs, `${candidateId}.evidenceRefs`);
-    refs(candidateReview.sourceRefs, `${candidateId}.sourceRefs`);
+    if (!new Set(["HOLD", "RECONSIDER", "VERIFY"]).has(item.reviewState)) {
+      throw new DecisionPortfolioReallocationLineageError("INVALID_REVIEW_STATE", `${candidateId} has an invalid review state`);
+    }
+    if (!new Set(["CAUSAL", "CONTRIBUTORY", "CORRELATIONAL", "NOT_ESTABLISHED"]).has(item.attributionClass)) {
+      throw new DecisionPortfolioReallocationLineageError("INVALID_ATTRIBUTION_CLASS", `${candidateId} has an invalid attribution class`);
+    }
+    exactRefs(item.evidenceRefs, `${candidateId}.evidenceRefs`);
+    exactRefs(item.sourceRefs, `${candidateId}.sourceRefs`);
   }
 
   const reconsiderCount = review.candidateReviews.filter((item) => item.reviewState === "RECONSIDER").length;
   const verificationCount = review.candidateReviews.filter((item) => item.reviewState === "VERIFY").length;
-  const expectedStatus = verificationCount > 0
-    ? "VERIFICATION_REQUIRED"
-    : reconsiderCount > 0
-      ? "REVIEW_REQUIRED"
-      : "NO_CHANGE";
+  const expectedStatus = verificationCount > 0 ? "VERIFICATION_REQUIRED" : reconsiderCount > 0 ? "REVIEW_REQUIRED" : "NO_CHANGE";
   const expectedRequiresRebuild = reconsiderCount > 0 && verificationCount === 0;
   if (
     review.audit.outcomesConsidered !== review.candidateReviews.length ||
@@ -278,16 +268,10 @@ function validateReview(
     );
   }
 
-  const expectedEvidenceRefs = refs(
-    review.candidateReviews.flatMap((item) => item.evidenceRefs),
-    "review.candidateEvidenceRefs"
-  );
-  const expectedSourceRefs = refs(
-    review.candidateReviews.flatMap((item) => item.sourceRefs),
-    "review.candidateSourceRefs"
-  );
-  const actualEvidenceRefs = refs(review.evidenceRefs, "review.evidenceRefs");
-  const actualSourceRefs = refs(review.sourceRefs, "review.sourceRefs");
+  const expectedEvidenceRefs = uniqueRefs(review.candidateReviews.flatMap((item) => item.evidenceRefs), "review candidate evidence refs");
+  const expectedSourceRefs = uniqueRefs(review.candidateReviews.flatMap((item) => item.sourceRefs), "review candidate source refs");
+  const actualEvidenceRefs = exactRefs(review.evidenceRefs, "review.evidenceRefs");
+  const actualSourceRefs = exactRefs(review.sourceRefs, "review.sourceRefs");
   if (!sameRefs(expectedEvidenceRefs, actualEvidenceRefs) || !sameRefs(expectedSourceRefs, actualSourceRefs)) {
     throw new DecisionPortfolioReallocationLineageError(
       "REALLOCATION_REVIEW_PROVENANCE_MISMATCH",
@@ -305,26 +289,17 @@ function validateChange(
     supplied.contractVersion !== DECISION_PORTFOLIO_CHANGE_CONTRACT_VERSION_V1 ||
     supplied.policyVersion !== DECISION_PORTFOLIO_CHANGE_POLICY_VERSION_V1
   ) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "INVALID_CHANGE_CONTRACT",
-      "portfolio change contract or policy is invalid"
-    );
+    throw new DecisionPortfolioReallocationLineageError("INVALID_CHANGE_CONTRACT", "portfolio change contract or policy is invalid");
   }
   if (Object.values(supplied.authority).some((value) => value !== false)) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "CHANGE_AUTHORITY_WIDENED",
-      "portfolio change widened action authority"
-    );
+    throw new DecisionPortfolioReallocationLineageError("CHANGE_AUTHORITY_WIDENED", "portfolio change widened action authority");
   }
   if (
     supplied.attribution.selectionCause !== "NOT_ESTABLISHED" ||
     supplied.attribution.rankCause !== "NOT_ESTABLISHED" ||
     supplied.attribution.outcomeCause !== "NOT_ESTABLISHED"
   ) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "CHANGE_ATTRIBUTION_WIDENED",
-      "portfolio change may not invent attribution"
-    );
+    throw new DecisionPortfolioReallocationLineageError("CHANGE_ATTRIBUTION_WIDENED", "portfolio change may not invent attribution");
   }
   const recomputed = compareDecisionPortfoliosV1({
     previous,
@@ -349,18 +324,16 @@ function buildBindings(
     .filter((item) => item.reviewState === "RECONSIDER")
     .map((item) => {
       const currentItem = currentById.get(item.candidateId);
-      const currentEvidenceRefs = currentItem ? refs(currentItem.candidate.evidenceRefs, `${item.candidateId}.currentEvidenceRefs`) : [];
-      const currentSourceRefs = currentItem ? refs(currentItem.candidate.sourceRefs, `${item.candidateId}.currentSourceRefs`) : [];
-      const reviewEvidenceRefs = refs(item.evidenceRefs, `${item.candidateId}.reviewEvidenceRefs`);
-      const reviewSourceRefs = refs(item.sourceRefs, `${item.candidateId}.reviewSourceRefs`);
+      const currentEvidenceRefs = currentItem ? exactRefs(currentItem.candidate.evidenceRefs, `${item.candidateId}.currentEvidenceRefs`) : [];
+      const currentSourceRefs = currentItem ? exactRefs(currentItem.candidate.sourceRefs, `${item.candidateId}.currentSourceRefs`) : [];
+      const reviewEvidenceRefs = exactRefs(item.evidenceRefs, `${item.candidateId}.reviewEvidenceRefs`);
+      const reviewSourceRefs = exactRefs(item.sourceRefs, `${item.candidateId}.reviewSourceRefs`);
       const missingEvidenceRefs = difference(reviewEvidenceRefs, currentEvidenceRefs);
       const missingSourceRefs = difference(reviewSourceRefs, currentSourceRefs);
-      const bindingIssues: DecisionPortfolioReallocationEvidenceBindingV1["bindingIssues"][number][] = [];
+      const bindingIssues: Array<DecisionPortfolioReallocationEvidenceBindingV1["bindingIssues"][number]> = [];
 
       if (!currentItem) bindingIssues.push("RECONSIDERED_CANDIDATE_MISSING");
-      if (currentItem && currentItem.candidate.evidenceState !== "KNOWN") {
-        bindingIssues.push("CURRENT_CANDIDATE_NOT_KNOWN");
-      }
+      if (currentItem && currentItem.candidate.evidenceState !== "KNOWN") bindingIssues.push("CURRENT_CANDIDATE_NOT_KNOWN");
       if (missingEvidenceRefs.length > 0) bindingIssues.push("REVIEW_EVIDENCE_NOT_BOUND");
       if (missingSourceRefs.length > 0) bindingIssues.push("REVIEW_SOURCE_NOT_BOUND");
 
@@ -398,23 +371,14 @@ export function certifyDecisionPortfolioReallocationLineageV1(input: {
   const currentGeneratedAt = timestamp(input.current.generatedAt, "current.generatedAt");
   const reviewGeneratedAt = timestamp(input.reallocationReview.generatedAt, "review.generatedAt");
   const certifiedAt = timestamp(input.certifiedAt, "certifiedAt");
-
   if (Date.parse(currentGeneratedAt) < Date.parse(previousGeneratedAt)) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "CURRENT_PORTFOLIO_PREDATES_SOURCE",
-      "current portfolio predates the source portfolio"
-    );
+    throw new DecisionPortfolioReallocationLineageError("CURRENT_PORTFOLIO_PREDATES_SOURCE", "current portfolio predates the source portfolio");
   }
   if (Date.parse(certifiedAt) < Date.parse(canonicalChange.comparedAt)) {
-    throw new DecisionPortfolioReallocationLineageError(
-      "CERTIFICATION_BEFORE_CHANGE",
-      "certification cannot precede the canonical portfolio comparison"
-    );
+    throw new DecisionPortfolioReallocationLineageError("CERTIFICATION_BEFORE_CHANGE", "certification cannot precede the canonical portfolio comparison");
   }
 
-  const reviewedCandidateIds = [...input.reallocationReview.candidateReviews]
-    .map((item) => item.candidateId)
-    .sort((a, b) => a.localeCompare(b));
+  const reviewedCandidateIds = input.reallocationReview.candidateReviews.map((item) => item.candidateId).sort((a, b) => a.localeCompare(b));
   const reconsiderCandidateIds = input.reallocationReview.candidateReviews
     .filter((item) => item.reviewState === "RECONSIDER")
     .map((item) => item.candidateId)
@@ -424,13 +388,14 @@ export function certifyDecisionPortfolioReallocationLineageV1(input: {
     .map((item) => item.candidateId)
     .sort((a, b) => a.localeCompare(b));
 
+  const currentAfterReview = Date.parse(currentGeneratedAt) > Date.parse(reviewGeneratedAt);
   const rebuildObserved =
+    input.reallocationReview.requiresPortfolioRebuild &&
     input.current.portfolioId !== input.previous.portfolioId &&
-    Date.parse(currentGeneratedAt) > Date.parse(reviewGeneratedAt);
+    currentAfterReview;
   const evidenceBindings = buildBindings(input.reallocationReview, input.current);
   const unresolvedBindings = evidenceBindings.filter((binding) => binding.state !== "BOUND").length;
-  const reviewEvidenceBoundToCurrentCandidates =
-    evidenceBindings.length > 0 && unresolvedBindings === 0;
+  const reviewEvidenceBoundToCurrentCandidates = evidenceBindings.length > 0 && unresolvedBindings === 0;
 
   let status: DecisionPortfolioReallocationLineageStatusV1;
   let lineageReady = false;
@@ -493,7 +458,7 @@ export function certifyDecisionPortfolioReallocationLineageV1(input: {
     },
     interpretation: {
       reviewEvidenceBoundToCurrentCandidates,
-      selectionChangedAfterReview: canonicalChange.status === "SELECTION_CHANGE",
+      selectionChangedAfterReview: currentAfterReview && canonicalChange.status === "SELECTION_CHANGE",
       selectionChangeCause: "NOT_ESTABLISHED",
       rankChangeCause: "NOT_ESTABLISHED",
       outcomeCause: "NOT_ESTABLISHED",
