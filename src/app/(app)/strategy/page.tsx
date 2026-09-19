@@ -6,6 +6,7 @@ import { buildStrategyEvidenceReviewQueueV1 } from "@/lib/core-intelligence/stra
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
 import { computeComparisonDateRange } from "@/lib/dashboard/performance-baseline";
+import { loadAutonomousGrowthLiveBriefingV1 } from "@/lib/executive-home/autonomous-growth-live-briefing-loader-v1";
 import { explainRevenueChange } from "@/lib/intelligence/explanation-engine";
 import { buildRecommendationsFromExplanation } from "@/lib/intelligence/recommendation-engine";
 import type { RecommendationsResponse } from "@/lib/intelligence/recommendation-contract";
@@ -22,9 +23,19 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+const STRATEGY_PORTFOLIO_MAX_AGE_MS = 36 * 60 * 60 * 1_000;
+
 export default async function StrategyPage({ searchParams }: PageProps) {
   const { preset, start, end } = await resolveRangeQuery(searchParams);
-  const overview = await getDashboardOverview({ preset, startDate: start, endDate: end });
+  const now = new Date().toISOString();
+  const [overview, chiefOfStaffBriefing] = await Promise.all([
+    getDashboardOverview({ preset, startDate: start, endDate: end }),
+    loadAutonomousGrowthLiveBriefingV1({
+      now,
+      maxAgeMs: STRATEGY_PORTFOLIO_MAX_AGE_MS,
+      historyLimit: 6,
+    }),
+  ]);
   const sanitized = sanitizeDashboardPayloadForHtml(overview);
   const comparison = computeComparisonDateRange(sanitized.range);
 
@@ -110,5 +121,5 @@ export default async function StrategyPage({ searchParams }: PageProps) {
     generatedAt: sanitized.timestamp,
   });
 
-  return <ExecutiveStrategyWorkspaceV1 model={model} />;
+  return <ExecutiveStrategyWorkspaceV1 model={model} chiefOfStaffBriefing={chiefOfStaffBriefing} />;
 }

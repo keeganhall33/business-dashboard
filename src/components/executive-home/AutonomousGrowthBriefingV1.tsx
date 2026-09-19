@@ -16,15 +16,17 @@ function truthLabel(state: string) {
 
 export function AutonomousGrowthBriefingV1({
   briefing,
+  embedded = false,
 }: {
   briefing: AutonomousGrowthBriefingV1;
+  embedded?: boolean;
 }) {
   const live = briefing.status === "LIVE";
 
   return (
     <section
       data-testid="autonomous-growth-briefing"
-      className="mx-auto mt-5 max-w-7xl px-4 sm:px-6 lg:px-8"
+      className={embedded ? "" : "mx-auto mt-5 max-w-7xl px-4 sm:px-6 lg:px-8"}
       aria-label="Chief of staff briefing"
     >
       <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -34,9 +36,13 @@ export function AutonomousGrowthBriefingV1({
             <h2 className="mt-1 text-xl font-semibold tracking-normal text-slate-950">Chief of staff briefing</h2>
             <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">{statusCopy(briefing)}</p>
           </div>
-          <a href="/strategy" className="text-sm font-semibold text-slate-800 underline underline-offset-4">
-            Open Strategy
-          </a>
+          {embedded ? (
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Read-only synthesis</span>
+          ) : (
+            <a href="/strategy" className="text-sm font-semibold text-slate-800 underline underline-offset-4">
+              Open Strategy
+            </a>
+          )}
         </div>
 
         {!live ? (

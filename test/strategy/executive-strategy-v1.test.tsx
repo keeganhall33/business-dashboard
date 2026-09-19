@@ -244,5 +244,7 @@ test("strategy production route uses canonical recommendation pipeline and no st
   assert.match(source, /getCommerceTelemetry/);
   assert.match(source, /buildRecommendationsFromExplanation/);
   assert.match(source, /buildExecutiveActionSynthesisV1/);
+  assert.match(source, /loadAutonomousGrowthLiveBriefingV1/);
+  assert.match(source, /chiefOfStaffBriefing=\{chiefOfStaffBriefing\}/);
   assert.doesNotMatch(source, /fixture/i);
 });
