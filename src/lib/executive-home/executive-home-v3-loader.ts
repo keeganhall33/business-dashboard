@@ -17,6 +17,7 @@ export type ExecutiveHomeV3ReadDependencies = {
   loadFusion: () => Promise<AgentFusionContext | null>;
   loadActions: () => Promise<DurableAction[]>;
   loadFollowUps: (input: { now: string }) => Promise<CanonicalRelationshipFollowUpQueueResultV1 | null>;
+  clock: () => Date;
 };
 
 type ExecutiveHomeV3BaseBuilder = typeof buildExecutiveHomeFromDashboardOverviewV1;
@@ -24,11 +25,12 @@ type ExecutiveHomeV3BaseBuilder = typeof buildExecutiveHomeFromDashboardOverview
 const defaultDependencies: ExecutiveHomeV3ReadDependencies = {
   loadFusion: getLatestAgentFusionContext,
   loadActions: listActions,
-  loadFollowUps: ({ now }) => loadProductionFollowUpQueueV1({ now })
+  loadFollowUps: ({ now }) => loadProductionFollowUpQueueV1({ now }),
+  clock: () => new Date()
 };
 
-function validNow(value: string | Date | undefined, fallback: string): string {
-  const date = value == null ? new Date(fallback) : value instanceof Date ? value : new Date(value);
+function validNow(value: string | Date | undefined, fallback: Date): string {
+  const date = value == null ? fallback : value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) throw new Error("Executive Home V3 now must be a valid timestamp");
   return date.toISOString();
 }
@@ -43,8 +45,8 @@ export async function loadExecutiveHomeV3(input: {
   dependencies?: Partial<ExecutiveHomeV3ReadDependencies>;
   baseBuilder?: ExecutiveHomeV3BaseBuilder;
 }): Promise<ReturnType<ExecutiveHomeV3BaseBuilder>> {
-  const now = validNow(input.now, input.overview.timestamp);
   const dependencies = { ...defaultDependencies, ...input.dependencies };
+  const now = validNow(input.now, dependencies.clock());
   const [fusionResult, actionsResult, followUpsResult] = await Promise.allSettled([
     dependencies.loadFusion(),
     dependencies.loadActions(),
