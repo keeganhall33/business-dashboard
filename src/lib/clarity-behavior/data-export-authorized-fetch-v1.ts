@@ -455,7 +455,7 @@ export async function fetchAuthorizedClarityDataExportV1(
     responseBytes,
     evidenceRefs: [input.evidenceRef.trim()],
     coverage: {
-      providerWindow: { ...input.plan.expectedUtcWindow },
+      providerWindow: { ...input.plan.expectedUtcWindow! },
       basis: "PROVIDER_DOCUMENTED_LOOKBACK_FROM_REQUEST_START" as const,
       providerTimestampObserved: false as const,
       exactServerReceiptTimeKnown: false as const,
