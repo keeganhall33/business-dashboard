@@ -6,6 +6,7 @@ import {
   type V1ReleaseCertificationInputV1
 } from "@/lib/release/v1-release-certificate-v1";
 import {
+  V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1,
   compileRuntimeV1ReleaseCertificateV1,
   parseV1ReleaseCertificationInputV1
 } from "@/lib/release/v1-release-certificate-runtime-v1";
@@ -93,4 +94,48 @@ test("explicit acceptance still must be bound to the exact release SHA", () => {
   const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
   assert.equal(certificate.releaseState, "BLOCKED");
   assert.ok(certificate.blockers.some((blocker) => blocker.code === "FINAL_ACCEPTANCE_SHA_MISMATCH"));
+});
+
+test("runtime certification demotes stale live evidence even when the caller labels it CURRENT", () => {
+  const candidate = validInput();
+  candidate.gates = candidate.gates.map((gate) =>
+    gate.gateId === "EXECUTIVE_HOME_TRUTH"
+      ? {
+          ...gate,
+          observedAt: new Date(
+            Date.parse(GENERATED_AT) - V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 - 1
+          ).toISOString()
+        }
+      : gate
+  );
+
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
+  const executiveHome = certificate.gates.find((gate) => gate.gateId === "EXECUTIVE_HOME_TRUTH");
+
+  assert.equal(certificate.mechanicalState, "BLOCKED");
+  assert.equal(certificate.releaseState, "BLOCKED");
+  assert.equal(executiveHome?.freshness, "STALE");
+  assert.equal(executiveHome?.status, "BLOCKING");
+  assert.equal(certificate.certifiedClaims.executiveHomeTruth, false);
+  assert.ok(
+    certificate.blockers.some(
+      (blocker) =>
+        blocker.code === "GATE_NOT_CURRENT" && blocker.gateId === "EXECUTIVE_HOME_TRUTH"
+    )
+  );
+});
+
+test("exact-SHA static release gates are not expired by the live-runtime freshness window", () => {
+  const candidate = validInput();
+  candidate.gates = candidate.gates.map((gate) =>
+    gate.gateId === "INTEGRATED_CODE"
+      ? { ...gate, observedAt: "2026-09-17T17:25:00.000Z" }
+      : gate
+  );
+
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
+
+  assert.equal(certificate.mechanicalState, "READY");
+  assert.equal(certificate.certifiedClaims.integratedCode, true);
+  assert.equal(certificate.releaseState, "READY_FOR_KEEGAN_ACCEPTANCE");
 });

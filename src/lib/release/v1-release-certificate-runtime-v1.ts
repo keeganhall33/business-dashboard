@@ -4,7 +4,8 @@ import {
   V1_RELEASE_REQUIRED_GATES_V1,
   compileV1ReleaseCertificateV1,
   type V1ReleaseCertificateV1,
-  type V1ReleaseCertificationInputV1
+  type V1ReleaseCertificationInputV1,
+  type V1ReleaseGateIdV1
 } from "@/lib/release/v1-release-certificate-v1";
 
 const gateStateSchema = z.enum(["PASS", "FAIL", "BLOCKED", "UNKNOWN", "CONFLICTED"]);
@@ -14,6 +15,22 @@ const finalAcceptanceStateSchema = z.enum(["PENDING", "ACCEPTED", "REJECTED", "U
 const gateIdSchema = z.enum(V1_RELEASE_REQUIRED_GATES_V1);
 
 const evidenceRefsSchema = z.array(z.string()).readonly();
+
+/**
+ * Live/runtime release evidence must be re-observed close to certification time.
+ * Static exact-SHA gates (integrated code, review audit, and P0 code/security review)
+ * remain replay-safe for the same immutable release SHA, while production/data gates
+ * are demoted to STALE after one hour even if an external input labels them CURRENT.
+ */
+export const V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 = 60 * 60 * 1_000;
+
+const V1_RELEASE_LIVE_GATES_V1 = new Set<V1ReleaseGateIdV1>([
+  "PRODUCTION_PROPAGATION",
+  "PRODUCTION_SMOKE",
+  "EXECUTIVE_HOME_TRUTH",
+  "CRM_DIRECTORY_READS",
+  "IONOS_THREE_MAILBOX_PROOF"
+]);
 
 export const V1_RELEASE_CERTIFICATION_INPUT_SCHEMA_V1 = z
   .object({
@@ -57,11 +74,46 @@ export function parseV1ReleaseCertificationInputV1(value: unknown): V1ReleaseCer
   return V1_RELEASE_CERTIFICATION_INPUT_SCHEMA_V1.parse(value);
 }
 
+function demoteStaleLiveGateEvidenceV1(
+  input: V1ReleaseCertificationInputV1
+): V1ReleaseCertificationInputV1 {
+  const generatedAtMs = Date.parse(input.generatedAt);
+  if (!Number.isFinite(generatedAtMs)) return input;
+
+  let changed = false;
+  const gates = input.gates.map((gate) => {
+    if (!V1_RELEASE_LIVE_GATES_V1.has(gate.gateId) || gate.freshness !== "CURRENT") {
+      return gate;
+    }
+
+    const observedAtMs = Date.parse(gate.observedAt);
+    if (
+      !Number.isFinite(observedAtMs) ||
+      generatedAtMs - observedAtMs <= V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1
+    ) {
+      return gate;
+    }
+
+    changed = true;
+    return {
+      ...gate,
+      freshness: "STALE" as const,
+      detail:
+        gate.detail ??
+        `${gate.gateId} live evidence is older than the one-hour runtime release-certification window.`
+    };
+  });
+
+  return changed ? { ...input, gates } : input;
+}
+
 /**
  * Runtime-safe entry point for producing a V1 certificate from external JSON.
- * This performs validation only; it does not collect evidence, deploy, mutate
- * production, send email, or grant approval authority.
+ * This performs validation and fail-closed live-evidence freshness enforcement only;
+ * it does not collect evidence, deploy, mutate production, send email, or grant
+ * approval authority.
  */
 export function compileRuntimeV1ReleaseCertificateV1(value: unknown): V1ReleaseCertificateV1 {
-  return compileV1ReleaseCertificateV1(parseV1ReleaseCertificationInputV1(value));
+  const parsed = parseV1ReleaseCertificationInputV1(value);
+  return compileV1ReleaseCertificateV1(demoteStaleLiveGateEvidenceV1(parsed));
 }
