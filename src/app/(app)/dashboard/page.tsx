@@ -1,6 +1,8 @@
+import { AutonomousGrowthBriefingV1 } from "@/components/executive-home/AutonomousGrowthBriefingV1";
 import { ExecutiveHomeShell } from "@/components/executive-home/ExecutiveHomeShell";
 import { getDashboardOverview } from "@/lib/api/dashboard";
 import { sanitizeDashboardPayloadForHtml } from "@/lib/dashboard/sanitize-html";
+import { loadAutonomousGrowthLiveBriefingV1 } from "@/lib/executive-home/autonomous-growth-live-briefing-loader-v1";
 import { loadExecutiveHomeV3 } from "@/lib/executive-home/executive-home-v3-loader";
 import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
 import { headers } from "next/headers";
@@ -12,6 +14,8 @@ export const fetchCache = "force-no-store";
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+const EXECUTIVE_HOME_PORTFOLIO_MAX_AGE_MS = 36 * 60 * 60 * 1_000;
 
 export default async function DashboardPage({ searchParams }: PageProps) {
   const hdrs = await headers();
@@ -32,7 +36,15 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
   const start = typeof resolvedParams.start === "string" ? resolvedParams.start : undefined;
   const end = typeof resolvedParams.end === "string" ? resolvedParams.end : undefined;
-  const overview = await getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie });
+  const now = new Date().toISOString();
+  const [overview, chiefOfStaffBriefing] = await Promise.all([
+    getDashboardOverview({ preset, startDate: start, endDate: end }, { baseUrl, cookie }),
+    loadAutonomousGrowthLiveBriefingV1({
+      now,
+      maxAgeMs: EXECUTIVE_HOME_PORTFOLIO_MAX_AGE_MS,
+      historyLimit: 6,
+    }),
+  ]);
   const executiveHome = await loadExecutiveHomeV3({
     overview,
     baseBuilder: buildExecutiveHomeFromDashboardOverviewV1
@@ -41,6 +53,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // Avoid leaking forbidden strings or raw timestamps into the HTML/RSC payload.
   const sanitizedHome = sanitizeDashboardPayloadForHtml(executiveHome.home);
   const sanitizedDecisionRoom = sanitizeDashboardPayloadForHtml(executiveHome.decisionRoom);
+  const sanitizedChiefOfStaffBriefing = sanitizeDashboardPayloadForHtml(chiefOfStaffBriefing);
 
-  return <ExecutiveHomeShell data={sanitizedHome} decisionRoom={sanitizedDecisionRoom} reportingRange={overview.range} />;
+  return (
+    <>
+      <AutonomousGrowthBriefingV1 briefing={sanitizedChiefOfStaffBriefing} />
+      <ExecutiveHomeShell data={sanitizedHome} decisionRoom={sanitizedDecisionRoom} reportingRange={overview.range} />
+    </>
+  );
 }
