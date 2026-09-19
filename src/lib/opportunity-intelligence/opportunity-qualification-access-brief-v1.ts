@@ -84,6 +84,17 @@ export type OpportunityQualificationAccessBriefResultV1 = Readonly<{
   }>;
 }>;
 
+type AccessProjectionV1 = {
+  accessMapAsOf: string | null;
+  decisionMakers: OpportunityAccessMapV1["decisionMakers"];
+  sponsorshipLinks: OpportunityAccessMapV1["sponsorshipLinks"];
+  warmAccessPaths: OpportunityAccessMapV1["warmAccessPaths"];
+  planningWindows: OpportunityAccessMapV1["planningWindows"];
+  accessResearchGaps: readonly OpportunityAccessFactKindV1[];
+  accessVerificationRequired: boolean;
+  accessEvidenceRefs: readonly string[];
+};
+
 const MINUTE_MS = 60_000;
 const MAX_AGE_MINUTES = 43_200;
 const ACCESS_KINDS: readonly OpportunityAccessFactKindV1[] = [
@@ -253,16 +264,16 @@ function nextAction(disposition: OpportunityQualificationAccessBriefDispositionV
   }
 }
 
-function emptyAccess() {
+function emptyAccess(): AccessProjectionV1 {
   return {
     accessMapAsOf: null,
-    decisionMakers: [] as OpportunityAccessMapV1["decisionMakers"],
-    sponsorshipLinks: [] as OpportunityAccessMapV1["sponsorshipLinks"],
-    warmAccessPaths: [] as OpportunityAccessMapV1["warmAccessPaths"],
-    planningWindows: [] as OpportunityAccessMapV1["planningWindows"],
-    accessResearchGaps: [] as readonly OpportunityAccessFactKindV1[],
+    decisionMakers: [],
+    sponsorshipLinks: [],
+    warmAccessPaths: [],
+    planningWindows: [],
+    accessResearchGaps: [],
     accessVerificationRequired: false,
-    accessEvidenceRefs: [] as readonly string[]
+    accessEvidenceRefs: []
   };
 }
 
@@ -283,7 +294,7 @@ function buildDecision(
 ): OpportunityQualificationAccessBriefDecisionV1 {
   const reasons = new Set<string>(decision.reasonCodes.map((reason) => `QUALIFICATION:${reason}`));
   let disposition = mapUpstreamDisposition(decision.disposition);
-  let access = emptyAccess();
+  let access: AccessProjectionV1 = emptyAccess();
 
   if (decision.disposition === "READY_FOR_INTERNAL_QUALIFICATION_REVIEW") {
     if (!decision.canonicalOpportunityRef) {
