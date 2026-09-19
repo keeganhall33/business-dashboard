@@ -75,9 +75,9 @@ export function parseV1ReleaseCertificationInputV1(value: unknown): V1ReleaseCer
 }
 
 function enforceLiveGateFreshnessV1(
-  input: V1ReleaseCertificationInputV1,
-  runtimeNowMs: number
+  input: V1ReleaseCertificationInputV1
 ): V1ReleaseCertificationInputV1 {
+  const runtimeNowMs = Date.now();
   let changed = false;
   const gates = input.gates.map((gate) => {
     if (!V1_RELEASE_LIVE_GATES_V1.has(gate.gateId) || gate.freshness !== "CURRENT") {
@@ -121,17 +121,10 @@ function enforceLiveGateFreshnessV1(
  * it does not collect evidence, deploy, mutate production, send email, or grant
  * approval authority.
  *
- * Live evidence age is evaluated against the actual runtime clock, never the
- * caller-supplied generatedAt value. Tests may inject runtimeNowMs explicitly.
+ * Live evidence age is evaluated against the actual runtime wall clock, never the
+ * caller-supplied generatedAt value or an overrideable caller clock.
  */
-export function compileRuntimeV1ReleaseCertificateV1(
-  value: unknown,
-  runtimeNowMs: number = Date.now()
-): V1ReleaseCertificateV1 {
-  if (!Number.isFinite(runtimeNowMs)) {
-    throw new TypeError("runtimeNowMs must be a finite Unix timestamp in milliseconds.");
-  }
-
+export function compileRuntimeV1ReleaseCertificateV1(value: unknown): V1ReleaseCertificateV1 {
   const parsed = parseV1ReleaseCertificationInputV1(value);
-  return compileV1ReleaseCertificateV1(enforceLiveGateFreshnessV1(parsed, runtimeNowMs));
+  return compileV1ReleaseCertificateV1(enforceLiveGateFreshnessV1(parsed));
 }
