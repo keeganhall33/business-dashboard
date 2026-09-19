@@ -288,8 +288,9 @@ export function certifyExperimentReallocationSuccessIntegrityV1(input: {
       reasons.add("SUCCESS_CRITERION_STATE_MISMATCH");
     }
     const handoffOutcomeRefs = refs(outcome.evidenceRefs, `${experimentId}.handoff.outcome.evidenceRefs`);
-    if (evidenceRefs.some((ref) => !handoffOutcomeRefs.includes(ref))) {
-      reasons.add("HANDOFF_OUTCOME_MISSING_SUCCESS_EVIDENCE");
+    const observationRefs = refs(observation.evidenceRefs, `${experimentId}.observation.evidenceRefs`);
+    if (observationRefs.some((ref) => !handoffOutcomeRefs.includes(ref))) {
+      reasons.add("HANDOFF_OUTCOME_MISSING_OBSERVATION_EVIDENCE");
     }
   }
 
