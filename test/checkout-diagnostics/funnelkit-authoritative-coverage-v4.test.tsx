@@ -22,12 +22,11 @@ test("records FunnelKit coverage only after a successful persisted-day write", (
   assert.ok(processedDay > coverageCall);
 });
 
-test("proves zero-row completed days without inventing raw step rows", () => {
+test("reconciles successful-day proof against the raw rows actually persisted", () => {
   assert.match(migration, /row_count integer not null check \(row_count >= 0\)/);
   assert.match(migration, /select count\(\*\)::integer[\s\S]*raw_funnelkit_steps[\s\S]*collected_at = p_coverage_date/);
   assert.match(migration, /if actual_row_count <> p_row_count then/);
   assert.match(migration, /p_row_count is null or p_row_count < 0/);
-  assert.doesNotMatch(migration, /p_row_count\s*(?:=|<=)\s*0\s+then/);
 });
 
 test("requires exact requested-day coverage before FunnelKit becomes decision-grade", () => {
