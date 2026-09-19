@@ -187,7 +187,7 @@ function compilePlatformHealth(
 
   if (runIsNewer && latestRun?.runState === "FAILED") issues.push("LATEST_PROVIDER_RUN_FAILED");
   if (runIsNewer && latestRun?.runState === "PARTIAL") issues.push("LATEST_PROVIDER_RUN_PARTIAL");
-  if (runIsNewer && latestRun?.runState === "COMPLETE") issues.push("CANONICAL_PROOF_LAGGING");
+  if (runIsNewer && proofMs != null && latestRun?.runState === "COMPLETE") issues.push("CANONICAL_PROOF_LAGGING");
 
   const normalizedIssues = [...new Set(issues)].sort((left, right) => left.localeCompare(right));
   const sourceHealth = classifyHealth(row, latestRun, normalizedIssues);
