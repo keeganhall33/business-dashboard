@@ -380,7 +380,7 @@ export function compileIonosHistoricalOpportunityBackfillV1(
       recordReasons.push("FUTURE_RECORD_OBSERVATION_BLOCKS_BACKFILL");
     }
 
-    const candidate = record.rawRecord.candidate;
+    const candidate = record.rawRecord.candidate as unknown as IonosHistoricalOpportunityCandidateV1;
     const title = normalizeField(candidate.title, `record:${record.sourceRecordRef}.candidate.title`, true);
     if (!title || title.state !== "KNOWN" || title.value == null) {
       recordReasons.push("KNOWN_EVIDENCED_TITLE_REQUIRED");
