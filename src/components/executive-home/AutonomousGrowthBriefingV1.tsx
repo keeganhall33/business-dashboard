@@ -2,12 +2,12 @@ import type { AutonomousGrowthBriefingV1 } from "@/lib/executive-home/autonomous
 
 function statusCopy(briefing: AutonomousGrowthBriefingV1): string {
   if (briefing.status === "LIVE") {
-    return "Verified decision portfolio. Selection is not execution proof; consequential actions remain approval-gated.";
+    return "Your current priorities have enough verified support to brief you. You still approve consequential actions.";
   }
   if (briefing.status === "STALE") {
-    return "The latest persisted decision portfolio is stale, so current actions are withheld until it is refreshed.";
+    return "This briefing needs fresher data before it can confidently recommend what to do next.";
   }
-  return "No decision-grade persisted portfolio is available, so this briefing will not synthesize current actions.";
+  return "The Chief of Staff briefing is still connecting the decision data it needs. Other strategy sections can continue working while this comes online.";
 }
 
 function truthLabel(state: string) {
@@ -37,7 +37,7 @@ export function AutonomousGrowthBriefingV1({
             <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">{statusCopy(briefing)}</p>
           </div>
           {embedded ? (
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Read-only synthesis</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Briefing only</span>
           ) : (
             <a href="/strategy" className="text-sm font-semibold text-slate-800 underline underline-offset-4">
               Open Strategy
@@ -85,7 +85,7 @@ export function AutonomousGrowthBriefingV1({
                 <div className="flex items-end justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Selected portfolio</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">Capacity-feasible work selected by the canonical allocator.</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">Priorities that fit the current evidence and available capacity.</p>
                   </div>
                   <span className="text-sm font-semibold text-slate-900">{briefing.selectedPortfolio.length} shown</span>
                 </div>
@@ -118,10 +118,10 @@ export function AutonomousGrowthBriefingV1({
                     <dd className="mt-1 text-2xl font-semibold text-slate-950">{briefing.delegated.IOANA.length}</dd>
                   </div>
                 </dl>
-                <p className="mt-3 text-xs leading-5 text-slate-600">These are selected owner queues only. This view does not claim the work has started or completed.</p>
+                <p className="mt-3 text-xs leading-5 text-slate-600">These items have an owner, but that does not mean the work has started or finished yet.</p>
                 <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                   <p className="text-xs font-semibold text-slate-900">North Star trajectory</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">Unknown in this projection. No trajectory is inferred from allocation alone.</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">Not enough evidence yet to show a reliable trajectory.</p>
                 </div>
               </article>
             </div>
