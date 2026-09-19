@@ -7,8 +7,10 @@ import {
   type V1ReleaseGateEvidenceV1
 } from "@/lib/release/v1-release-certificate-v1";
 import {
+  V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1,
   compileV1ProductionSmokeV1,
+  type V1ProductionSmokeDeviceObservationV1,
   type V1ProductionSmokeInputV1,
   type V1ProductionSmokeObservationV1
 } from "@/lib/release/v1-production-smoke-v1";
@@ -48,16 +50,32 @@ function validObservation(
   };
 }
 
+function validDeviceObservation(
+  deviceClass: (typeof V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1)[number]
+): V1ProductionSmokeDeviceObservationV1 {
+  return {
+    deviceClass,
+    state: "PASS",
+    observedAt: OBSERVED_AT,
+    viewportWidth: deviceClass === "DESKTOP" ? 1440 : 390,
+    viewportHeight: deviceClass === "DESKTOP" ? 900 : 844,
+    evidenceRefs: [`github://production-smoke/device/${deviceClass.toLowerCase()}`],
+    releaseSha: RELEASE_SHA,
+    actionRequirement: "NONE"
+  };
+}
+
 function validInput(): V1ProductionSmokeInputV1 {
   return {
     releaseSha: RELEASE_SHA,
     generatedAt: GENERATED_AT,
     environment: "PRODUCTION",
-    observations: V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1.map(validObservation)
+    observations: V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1.map(validObservation),
+    deviceObservations: V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1.map(validDeviceObservation)
   };
 }
 
-test("all required exact-SHA canonical production observations compile to canonical PRODUCTION_SMOKE PASS evidence", () => {
+test("all required exact-SHA canonical production observations plus desktop/mobile coverage compile to PRODUCTION_SMOKE PASS evidence", () => {
   const result = compileV1ProductionSmokeV1(validInput());
 
   assert.equal(result.status, "PASS");
@@ -68,6 +86,7 @@ test("all required exact-SHA canonical production observations compile to canoni
   assert.equal(result.gateEvidence.releaseSha, RELEASE_SHA);
   assert.equal(result.gateEvidence.actionRequirement, "NONE");
   assert.equal(result.steps.every((step) => step.status === "PASS"), true);
+  assert.equal(result.deviceCoverage.every((device) => device.status === "PASS"), true);
   assert.equal(result.authority.canDeploy, false);
   assert.equal(result.authority.canMutateProduction, false);
   assert.equal(result.authority.canSendEmail, false);
@@ -102,27 +121,35 @@ test("canonical smoke gate can be consumed directly by the existing V1 release c
   assert.equal(certificate.releaseState, "READY_FOR_KEEGAN_ACCEPTANCE");
 });
 
-test("missing observations fail closed", () => {
+test("missing route observations fail closed", () => {
   const input = validInput();
   input.observations = input.observations.filter((entry) => entry.stepId !== "SPECIALISTS");
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "MISSING_STEP" && entry.stepId === "SPECIALISTS"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "MISSING_STEP" && entry.stepId === "SPECIALISTS"
+    )
+  );
   assert.equal(result.gateEvidence.state, "BLOCKED");
   assert.equal(result.gateEvidence.freshness, "UNKNOWN");
 });
 
-test("duplicate observations fail closed rather than choosing a winner", () => {
+test("duplicate route observations fail closed rather than choosing a winner", () => {
   const input = validInput();
   input.observations = [...input.observations, validObservation("EXECUTIVE_HOME")];
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "DUPLICATE_STEP" && entry.stepId === "EXECUTIVE_HOME"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "DUPLICATE_STEP" && entry.stepId === "EXECUTIVE_HOME"
+    )
+  );
 });
 
-test("complete observations in the wrong acceptance-path order fail closed", () => {
+test("complete route observations in the wrong acceptance-path order fail closed", () => {
   const input = validInput();
   const observations = [...input.observations];
   [observations[0], observations[1]] = [observations[1], observations[0]];
@@ -133,7 +160,7 @@ test("complete observations in the wrong acceptance-path order fail closed", () 
   assert.ok(result.blockers.some((entry) => entry.code === "STEP_OUT_OF_ORDER"));
 });
 
-test("a step bound to a different release SHA cannot certify the production release", () => {
+test("a route step bound to a different release SHA cannot certify production smoke", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
     entry.stepId === "STRATEGY"
@@ -143,21 +170,31 @@ test("a step bound to a different release SHA cannot certify the production rele
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_SHA_MISMATCH" && entry.stepId === "STRATEGY"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_SHA_MISMATCH" && entry.stepId === "STRATEGY"
+    )
+  );
 });
 
-test("future-dated observations cannot become current smoke evidence", () => {
+test("future-dated route observations cannot become current smoke evidence", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
-    entry.stepId === "LEARNING" ? { ...entry, observedAt: "2026-09-18T18:01:00.000Z" } : entry
+    entry.stepId === "LEARNING"
+      ? { ...entry, observedAt: "2026-09-18T18:01:00.000Z" }
+      : entry
   );
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_FUTURE_EVIDENCE" && entry.stepId === "LEARNING"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_FUTURE_EVIDENCE" && entry.stepId === "LEARNING"
+    )
+  );
 });
 
-test("non-pass state or outstanding action remains blocking", () => {
+test("non-pass route state or outstanding action remains blocking", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
     entry.stepId === "CRM_ACTIVITY"
@@ -167,33 +204,56 @@ test("non-pass state or outstanding action remains blocking", () => {
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_NOT_PASS" && entry.stepId === "CRM_ACTIVITY"));
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_ACTION_REQUIRED" && entry.stepId === "CRM_ACTIVITY"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_NOT_PASS" && entry.stepId === "CRM_ACTIVITY"
+    )
+  );
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_ACTION_REQUIRED" && entry.stepId === "CRM_ACTIVITY"
+    )
+  );
   assert.equal(result.gateEvidence.actionRequirement, "KEEGAN");
 });
 
 test("observed paths must be privacy-safe pathnames without query strings or fragments", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
-    entry.stepId === "CRM_PERSON" ? { ...entry, observedPath: "/relationships/people/person-1?email=private@example.com" } : entry
+    entry.stepId === "CRM_PERSON"
+      ? { ...entry, observedPath: "/relationships/people/person-1?email=private@example.com" }
+      : entry
   );
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_INVALID_PATH" && entry.stepId === "CRM_PERSON"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_INVALID_PATH" && entry.stepId === "CRM_PERSON"
+    )
+  );
   assert.equal(result.steps.find((entry) => entry.stepId === "CRM_PERSON")?.observedPath, null);
 });
 
 test("arbitrary safe pathnames cannot masquerade as canonical smoke steps", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
-    entry.stepId === "EXECUTIVE_HOME" ? { ...entry, observedPath: "/smoke/executive-home" } : entry
+    entry.stepId === "EXECUTIVE_HOME"
+      ? { ...entry, observedPath: "/smoke/executive-home" }
+      : entry
   );
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "EXECUTIVE_HOME"));
-  assert.equal(result.steps.find((entry) => entry.stepId === "EXECUTIVE_HOME")?.observedPath, null);
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "EXECUTIVE_HOME"
+    )
+  );
+  assert.equal(
+    result.steps.find((entry) => entry.stepId === "EXECUTIVE_HOME")?.observedPath,
+    null
+  );
   assert.equal(result.gateEvidence.state, "BLOCKED");
 });
 
@@ -205,47 +265,172 @@ test("a canonical step cannot be satisfied by another canonical route", () => {
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "STRATEGY"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "STRATEGY"
+    )
+  );
 });
 
 test("dynamic smoke routes require one opaque identifier segment", () => {
   const missingId = validInput();
   missingId.observations = missingId.observations.map((entry) =>
-    entry.stepId === "CRM_COMPANY" ? { ...entry, observedPath: "/relationships/companies" } : entry
+    entry.stepId === "CRM_COMPANY"
+      ? { ...entry, observedPath: "/relationships/companies" }
+      : entry
   );
   const missingIdResult = compileV1ProductionSmokeV1(missingId);
   assert.equal(missingIdResult.status, "BLOCKED");
-  assert.ok(missingIdResult.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_COMPANY"));
+  assert.ok(
+    missingIdResult.blockers.some(
+      (entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_COMPANY"
+    )
+  );
 
   const unsafeId = validInput();
   unsafeId.observations = unsafeId.observations.map((entry) =>
-    entry.stepId === "CRM_PERSON" ? { ...entry, observedPath: "/relationships/people/private@example.com" } : entry
+    entry.stepId === "CRM_PERSON"
+      ? { ...entry, observedPath: "/relationships/people/private@example.com" }
+      : entry
   );
   const unsafeIdResult = compileV1ProductionSmokeV1(unsafeId);
   assert.equal(unsafeIdResult.status, "BLOCKED");
-  assert.ok(unsafeIdResult.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_PERSON"));
+  assert.ok(
+    unsafeIdResult.blockers.some(
+      (entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_PERSON"
+    )
+  );
 });
 
-test("secret-like provenance is removed and blocks certification", () => {
+test("desktop and mobile device coverage are both mandatory", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.filter(
+    (entry) => entry.deviceClass !== "MOBILE"
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "MISSING_DEVICE_COVERAGE"));
+  assert.equal(
+    result.deviceCoverage.find((entry) => entry.deviceClass === "MOBILE")?.state,
+    "MISSING"
+  );
+  assert.equal(result.gateEvidence.state, "BLOCKED");
+});
+
+test("duplicate device observations fail closed rather than choosing a winner", () => {
+  const input = validInput();
+  input.deviceObservations = [
+    ...input.deviceObservations,
+    validDeviceObservation("DESKTOP")
+  ];
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DUPLICATE_DEVICE_COVERAGE"));
+});
+
+test("device coverage is exact-SHA bound", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((entry) =>
+    entry.deviceClass === "MOBILE"
+      ? { ...entry, releaseSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_SHA_MISMATCH"));
+});
+
+test("device labels must match evidence-backed viewport classes", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((entry) =>
+    entry.deviceClass === "MOBILE" ? { ...entry, viewportWidth: 1440 } : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_VIEWPORT_MISMATCH"));
+});
+
+test("non-pass device coherence or outstanding action remains blocking", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((entry) =>
+    entry.deviceClass === "MOBILE"
+      ? { ...entry, state: "BLOCKED", actionRequirement: "KEEGAN" }
+      : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_NOT_PASS"));
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_ACTION_REQUIRED"));
+  assert.equal(result.gateEvidence.actionRequirement, "KEEGAN");
+});
+
+test("future-dated or secret-like device evidence fails closed and is sanitized", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((entry) =>
+    entry.deviceClass === "DESKTOP"
+      ? {
+          ...entry,
+          observedAt: "2026-09-18T18:01:00.000Z",
+          evidenceRefs: ["token=do-not-persist"]
+        }
+      : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_FUTURE_EVIDENCE"));
+  assert.ok(result.blockers.some((entry) => entry.code === "DEVICE_UNSAFE_PROVENANCE"));
+  assert.deepEqual(
+    result.deviceCoverage.find((entry) => entry.deviceClass === "DESKTOP")?.evidenceRefs,
+    []
+  );
+  assert.equal(JSON.stringify(result).includes("do-not-persist"), false);
+});
+
+test("secret-like route provenance is removed and blocks certification", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
-    entry.stepId === "DATA_EVIDENCE" ? { ...entry, evidenceRefs: ["token=do-not-persist"] } : entry
+    entry.stepId === "DATA_EVIDENCE"
+      ? { ...entry, evidenceRefs: ["token=do-not-persist"] }
+      : entry
   );
 
   const result = compileV1ProductionSmokeV1(input);
   const step = result.steps.find((entry) => entry.stepId === "DATA_EVIDENCE");
   assert.equal(result.status, "BLOCKED");
-  assert.ok(result.blockers.some((entry) => entry.code === "STEP_UNSAFE_PROVENANCE" && entry.stepId === "DATA_EVIDENCE"));
+  assert.ok(
+    result.blockers.some(
+      (entry) => entry.code === "STEP_UNSAFE_PROVENANCE" && entry.stepId === "DATA_EVIDENCE"
+    )
+  );
   assert.deepEqual(step?.evidenceRefs, []);
   assert.equal(JSON.stringify(result).includes("do-not-persist"), false);
 });
 
-test("runtime parsing rejects unknown steps, non-production environments, and extra truth fields", () => {
+test("runtime parsing rejects unknown steps/device classes, missing device coverage, non-production environments, and extra truth fields", () => {
   const unknownStep = JSON.parse(JSON.stringify(validInput())) as {
     observations: Array<Record<string, unknown>>;
   };
   unknownStep.observations[0] = { ...unknownStep.observations[0], stepId: "UNDECLARED_STEP" };
   assert.throws(() => parseV1ProductionSmokeInputV1(unknownStep));
+
+  const unknownDevice = JSON.parse(JSON.stringify(validInput())) as {
+    deviceObservations: Array<Record<string, unknown>>;
+  };
+  unknownDevice.deviceObservations[0] = {
+    ...unknownDevice.deviceObservations[0],
+    deviceClass: "TABLET"
+  };
+  assert.throws(() => parseV1ProductionSmokeInputV1(unknownDevice));
+
+  const missingDeviceCoverage = JSON.parse(JSON.stringify(validInput())) as Record<string, unknown>;
+  delete missingDeviceCoverage.deviceObservations;
+  assert.throws(() => parseV1ProductionSmokeInputV1(missingDeviceCoverage));
 
   const wrongEnvironment = { ...validInput(), environment: "STAGING" };
   assert.throws(() => compileRuntimeV1ProductionSmokeV1(wrongEnvironment));
