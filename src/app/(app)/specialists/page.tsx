@@ -35,13 +35,7 @@ export default function SpecialistsPage({ searchParams }: PageProps = {}) {
 
 async function ProductionSpecialistsWorkspace({ searchParams }: PageProps) {
   const hdrs = await headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "https";
   const cookie = hdrs.get("cookie");
-  const baseUrl =
-    host && /^[A-Za-z0-9.:-]+$/.test(host) && (proto === "http" || proto === "https")
-      ? `${proto}://${host}`
-      : "";
 
   const resolvedParams = (await searchParams) ?? {};
   const preset = typeof resolvedParams.range === "string" ? resolvedParams.range : undefined;
@@ -51,7 +45,7 @@ async function ProductionSpecialistsWorkspace({ searchParams }: PageProps) {
   try {
     const overview = await getDashboardOverview(
       { preset, startDate: start, endDate: end },
-      { baseUrl, cookie }
+      { cookie }
     );
     const financialCard = buildFinancialProductionSpecialistCardV1(overview);
     const productionInput: SpecialistProductionInputV1 | undefined = financialCard
