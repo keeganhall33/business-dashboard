@@ -223,7 +223,7 @@ test("renders decision-first mobile-safe content with a real Strategy destinatio
   assert.match(html, /Opportunity cost/);
   assert.match(html, /Cause attribution is not established/i);
   assert.match(html, /North Star trajectory/);
-  assert.match(html, /Unknown in this projection/);
+  assert.match(html, /Not enough evidence yet to show a reliable trajectory/);
   assert.match(html, /href="\/strategy"/);
   assert.doesNotMatch(html, /work completed/i);
 });
@@ -233,7 +233,7 @@ test("renders stale state without leaking stale next actions", () => {
   const html = renderToStaticMarkup(<AutonomousGrowthBriefingComponent briefing={briefing} />);
 
   assert.match(html, /STALE/);
-  assert.match(html, /current actions are withheld/i);
+  assert.match(html, /needs fresher data before it can confidently recommend what to do next/i);
   assert.doesNotMatch(html, /Safe next step for/);
 });
 
