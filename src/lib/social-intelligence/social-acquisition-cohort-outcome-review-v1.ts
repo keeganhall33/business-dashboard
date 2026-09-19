@@ -386,7 +386,7 @@ export function compileSocialAcquisitionCohortOutcomeReviewV1(
     if (Date.parse(windowStart) < Date.parse(cohort.acquiredEnd)) {
       throw new Error(`retentionObservations[${index}] starts before cohort acquisition completed`);
     }
-    const eligibleMemberCount = requireSafeInteger(observation.eligibleMemberCount, `retentionObservations[${index}].eligibleMemberCount`);
+    const eligibleMemberCount = requireSafeInteger(observation.eligibleMemberCount, `retentionObservations[${index}].eligibleMemberCount`, 1);
     const engagedMemberCount = requireSafeInteger(observation.engagedMemberCount, `retentionObservations[${index}].engagedMemberCount`);
     if (eligibleMemberCount > cohort.initialMemberCount) throw new Error(`retentionObservations[${index}].eligibleMemberCount exceeds initial cohort`);
     if (engagedMemberCount > eligibleMemberCount) throw new Error(`retentionObservations[${index}].engagedMemberCount exceeds eligible members`);
@@ -404,7 +404,7 @@ export function compileSocialAcquisitionCohortOutcomeReviewV1(
       windowEnd,
       eligibleMemberCount,
       engagedMemberCount,
-      observedRetentionRatio: eligibleMemberCount === 0 ? 0 : engagedMemberCount / eligibleMemberCount,
+      observedRetentionRatio: engagedMemberCount / eligibleMemberCount,
       evidenceRefs,
     };
     retentionByCohort.set(cohortId, [...(retentionByCohort.get(cohortId) ?? []), row]);
@@ -502,10 +502,10 @@ export function compileSocialAcquisitionCohortOutcomeReviewV1(
     }
 
     const qualifiedDirectOutcomeObservationCount = outcomeObservations.filter(
-      (row) => row.qualifiedBusinessOutcome && row.decisionUse === "DIRECT_EVIDENCE",
+      (row) => row.qualifiedBusinessOutcome && row.decisionUse === "DIRECT_EVIDENCE" && row.memberCount > 0 && row.eventCount > 0,
     ).length;
     const qualifiedAssociatedOutcomeObservationCount = outcomeObservations.filter(
-      (row) => row.qualifiedBusinessOutcome && row.decisionUse === "CONTEXT_ONLY",
+      (row) => row.qualifiedBusinessOutcome && row.decisionUse === "CONTEXT_ONLY" && row.memberCount > 0 && row.eventCount > 0,
     ).length;
 
     const persistentEngagementEvidence: SocialAcquisitionCohortReviewSummaryV1["persistentEngagementEvidence"] =
@@ -571,11 +571,13 @@ export function compileSocialAcquisitionCohortOutcomeReviewV1(
       ? "VERIFY_REQUIRED"
       : summaries.length === 0 || summaries.every((row) => row.status === "INSUFFICIENT_EVIDENCE")
         ? "NO_DECISION_GRADE_COHORTS"
-        : verifyCount > 0
-          ? "PARTIAL"
-          : readyCount > 0
-            ? "READY"
-            : "PARTIAL";
+        : verifyCount === summaries.length
+          ? "VERIFY_REQUIRED"
+          : verifyCount > 0
+            ? "PARTIAL"
+            : readyCount > 0
+              ? "READY"
+              : "PARTIAL";
 
   return freeze({
     contractVersion: "SocialAcquisitionCohortOutcomeReviewV1",
