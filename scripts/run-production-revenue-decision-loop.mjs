@@ -1,7 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { require as tsxRequire } from "tsx/cjs/api";
 
-import { buildFreshRevenueDecisionV1 } from "../src/lib/intelligence/production-revenue-loop/fresh-revenue-decision-v1.ts";
+const { buildFreshRevenueDecisionV1 } = tsxRequire(
+  "../src/lib/intelligence/production-revenue-loop/fresh-revenue-decision-v1.ts",
+  import.meta.url,
+);
 
 export const PRODUCTION_REVENUE_DECISION_LOOP_RUN_VERSION =
   "PRODUCTION_REVENUE_DECISION_LOOP_RUN_V2";
