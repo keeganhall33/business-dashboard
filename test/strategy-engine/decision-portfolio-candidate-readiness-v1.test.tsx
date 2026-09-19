@@ -213,6 +213,22 @@ test("requires direct evidence before a supported monetary case can enter the ca
   assert.ok(supported.evidenceRefs.includes("evidence:monetaryCase"));
 });
 
+test("does not let downstream allocator invent Keegan time for a Keegan-gated decision", () => {
+  const result = assessDecisionPortfolioCandidateReadinessV1({
+    draft: draft({
+      owner: "KEEGAN",
+      approvalClass: "KEEGAN",
+      resources: { keeganHours: 0, ioanaHours: 0, jeevesHours: 0, cashCents: 0 },
+    }),
+    evaluatedAt: now,
+    maxAgeMs,
+  });
+
+  assert.equal(result.state, "VERIFY_REQUIRED");
+  assert.equal(result.candidate, null);
+  assert.ok(result.verificationReasons.includes("KEEGAN_APPROVAL_REQUIRES_EXPLICIT_KEEGAN_TIME"));
+});
+
 test("preserves caller input and deep-freezes the readiness output", () => {
   const input = draft();
   const snapshot = structuredClone(input);
