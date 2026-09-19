@@ -137,11 +137,13 @@ function validInput(input: unknown): input is ClarityDataExportLiveRunnerInputV1
 
   const candidate = input as Partial<ClarityDataExportLiveRunnerInputV1>;
   return Boolean(
-    Number.isInteger(candidate.lookbackDays) &&
+    typeof candidate.lookbackDays === "number" &&
+      Number.isInteger(candidate.lookbackDays) &&
       Array.isArray(candidate.dimensions) &&
       candidate.dimensions.every((dimension) => typeof dimension === "string") &&
       (candidate.requestsUsedInCurrentQuotaWindow === null ||
-        Number.isSafeInteger(candidate.requestsUsedInCurrentQuotaWindow)) &&
+        (typeof candidate.requestsUsedInCurrentQuotaWindow === "number" &&
+          Number.isSafeInteger(candidate.requestsUsedInCurrentQuotaWindow))) &&
       (candidate.quotaEvidenceRef === null ||
         typeof candidate.quotaEvidenceRef === "string") &&
       typeof candidate.bearerToken === "string" &&
