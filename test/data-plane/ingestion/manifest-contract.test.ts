@@ -48,6 +48,51 @@ test("Boardroom is visible and adapter-ready without bypassing its access gate",
   assert.equal(source.legal_access.automation_suitability, "MANUAL_ONLY");
 });
 
+test("five core commerce and behavior sources declare exhaustive scope coverage", () => {
+  const manifest = loadIngestionManifest();
+  const required = [
+    "ads.meta",
+    "analytics.ga4",
+    "behavior.microsoft_clarity",
+    "commerce.funnelkit",
+    "commerce.woocommerce"
+  ];
+
+  for (const sourceId of required) {
+    const source = manifest.sources.find((candidate) => candidate.source_id === sourceId);
+    assert.ok(source, `missing ${sourceId}`);
+    assert.ok(source.coverage_scope, `missing coverage scope for ${sourceId}`);
+    assert.equal(source.coverage_scope.standard, "ALL_DECISION_USEFUL_AVAILABLE_DATA");
+
+    const classified = [
+      ...source.coverage_scope.implemented_families,
+      ...source.coverage_scope.partial_families,
+      ...source.coverage_scope.missing_families,
+      ...source.coverage_scope.provider_limited_families
+    ];
+    assert.deepEqual(
+      [...classified].sort(),
+      [...source.coverage_scope.required_families].sort(),
+      `${sourceId} must classify every required family exactly once`
+    );
+    assert.notEqual(source.coverage_scope.status, "FULL", `${sourceId} cannot claim full coverage yet`);
+  }
+});
+
+test("scope coverage fails closed when a family is omitted or double-classified", () => {
+  const omitted = clone(manifestJson);
+  const woo = omitted.sources.find((source) => source.source_id === "commerce.woocommerce");
+  assert.ok(woo?.coverage_scope);
+  woo.coverage_scope.missing_families = woo.coverage_scope.missing_families.slice(1);
+  assert.equal(IngestionManifestSchema.safeParse(omitted).success, false);
+
+  const duplicated = clone(manifestJson);
+  const ga4 = duplicated.sources.find((source) => source.source_id === "analytics.ga4");
+  assert.ok(ga4?.coverage_scope);
+  ga4.coverage_scope.partial_families.push(ga4.coverage_scope.implemented_families[0]);
+  assert.equal(IngestionManifestSchema.safeParse(duplicated).success, false);
+});
+
 test("schema rejects duplicate IDs, plaintext-looking secrets, unsupported cron lists, and unknown enums", () => {
   const duplicate = clone(manifestJson);
   duplicate.sources.push(clone(duplicate.sources[0]));
