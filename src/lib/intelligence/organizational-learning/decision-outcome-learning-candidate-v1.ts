@@ -15,11 +15,12 @@ import {
 export const DECISION_OUTCOME_LEARNING_CANDIDATE_VERSION_V1 =
   "DecisionOutcomeLearningCandidateV1" as const;
 export const DECISION_OUTCOME_LEARNING_CANDIDATE_POLICY_VERSION_V1 =
-  "decision_outcome_learning_candidate_v1.0.0" as const;
+  "decision_outcome_learning_candidate_v1.1.0" as const;
 
 export type DecisionOutcomeLearningCandidateStateV1 =
   | "READY_FOR_REVIEW"
   | "WAIT_FOR_OUTCOME"
+  | "WAIT_FOR_MEASUREMENT"
   | "NO_REUSABLE_LESSON"
   | "VERIFY_RECORD";
 
@@ -33,6 +34,14 @@ export type DecisionOutcomeLearningCandidateReasonV1 =
   | "ACTION_NOT_OBSERVED"
   | "ACTION_EVIDENCE_MISSING"
   | "INVALID_CHRONOLOGY"
+  | "MEASUREMENT_PLAN_MISSING"
+  | "MEASUREMENT_WINDOW_UNESTABLISHED"
+  | "INVALID_MEASUREMENT_WINDOW"
+  | "MEASUREMENT_WINDOW_OPEN"
+  | "MEASUREMENT_OUTCOME_MISSING"
+  | "MEASUREMENT_OUTCOME_UNBOUND"
+  | "MEASUREMENT_METRIC_MISMATCH"
+  | "MEASUREMENT_UNIT_MISMATCH"
   | "ATTRIBUTION_EVIDENCE_MISSING"
   | "CONFIDENCE_NOT_EVIDENCED"
   | "EVIDENCE_LINEAGE_MISSING"
@@ -102,6 +111,7 @@ const AUTHORITY = Object.freeze({
 const LIMITATIONS = Object.freeze([
   "A generated learning object is an INFERRED CANDIDATE for governed review, not company truth.",
   "Observed outcomes and attribution classes are preserved as evidence; this compiler never upgrades them into causal truth.",
+  "A lesson cannot enter review until every predeclared expected outcome is observed after its declared evaluation window; early observations remain preliminary evidence only.",
   "Confidence must be supplied with explicit evidence and is never inferred from a decision score, attribution class, or outcome.",
   "This compiler grants no persistence, promotion, pricing, negotiation, campaign, external-action, or approval authority."
 ] as const);
@@ -200,14 +210,80 @@ function validatedLineageMap(
   return { map, conflict };
 }
 
+type MeasurementGateV1 = Readonly<{
+  waitReasons: readonly DecisionOutcomeLearningCandidateReasonV1[];
+  verifyReasons: readonly DecisionOutcomeLearningCandidateReasonV1[];
+}>;
+
+function measurementGate(
+  record: DecisionMemoryRecordV1,
+  observedAtMs: number,
+  generatedAtMs: number
+): MeasurementGateV1 {
+  const waitReasons: DecisionOutcomeLearningCandidateReasonV1[] = [];
+  const verifyReasons: DecisionOutcomeLearningCandidateReasonV1[] = [];
+  const expected = record.expectedOutcomes;
+  const observed = record.outcomeObservation?.outcomes ?? [];
+
+  if (expected.length === 0) {
+    waitReasons.push("MEASUREMENT_PLAN_MISSING");
+    return { waitReasons, verifyReasons };
+  }
+
+  const expectedById = new Map(expected.map((item) => [item.outcomeId, item] as const));
+  const observedById = new Map(observed.map((item) => [item.outcomeId, item] as const));
+
+  if (expectedById.size !== expected.length || observedById.size !== observed.length) {
+    verifyReasons.push("MEASUREMENT_OUTCOME_UNBOUND");
+  }
+
+  for (const observedItem of observed) {
+    if (!expectedById.has(observedItem.outcomeId)) verifyReasons.push("MEASUREMENT_OUTCOME_UNBOUND");
+  }
+
+  for (const expectedItem of expected) {
+    const observedItem = observedById.get(expectedItem.outcomeId);
+    if (!observedItem) {
+      waitReasons.push("MEASUREMENT_OUTCOME_MISSING");
+    } else {
+      if (observedItem.metricRef !== expectedItem.metricRef) verifyReasons.push("MEASUREMENT_METRIC_MISMATCH");
+      const expectedUnit = expectedItem.expectedRange.value?.unit ?? null;
+      const observedUnit = observedItem.observedRange.value?.unit ?? null;
+      if (expectedUnit && observedUnit && expectedUnit !== observedUnit) {
+        verifyReasons.push("MEASUREMENT_UNIT_MISMATCH");
+      }
+    }
+
+    if (expectedItem.evaluationWindowEndsAt == null) {
+      waitReasons.push("MEASUREMENT_WINDOW_UNESTABLISHED");
+      continue;
+    }
+    const windowEndsAt = canonicalTimestamp(expectedItem.evaluationWindowEndsAt);
+    if (!windowEndsAt) {
+      verifyReasons.push("INVALID_MEASUREMENT_WINDOW");
+      continue;
+    }
+    const windowEndsAtMs = Date.parse(windowEndsAt);
+    if (windowEndsAtMs > generatedAtMs || windowEndsAtMs > observedAtMs) {
+      waitReasons.push("MEASUREMENT_WINDOW_OPEN");
+    }
+  }
+
+  return {
+    waitReasons: uniqueSorted(waitReasons) as DecisionOutcomeLearningCandidateReasonV1[],
+    verifyReasons: uniqueSorted(verifyReasons) as DecisionOutcomeLearningCandidateReasonV1[]
+  };
+}
+
 /**
  * Bridges one canonical decision/outcome observation into the organizational-
  * learning review lane without turning a single result into company truth.
  *
  * The caller must supply evidence-bound candidate confidence and explicit
  * evidence lineage. The compiler never derives either from a score, outcome,
- * attribution label, or prose. Output is always an INFERRED CANDIDATE and has
- * no promotion or action authority.
+ * attribution label, or prose. It also blocks learning until every declared
+ * measurement window has matured and its exact outcome binding is observed.
+ * Output is always an INFERRED CANDIDATE and has no promotion or action authority.
  */
 export function compileDecisionOutcomeLearningCandidateV1(
   input: DecisionOutcomeLearningCandidateInputV1
@@ -259,6 +335,16 @@ export function compileDecisionOutcomeLearningCandidateV1(
     Date.parse(observedAt) > generatedAtMs
   ) {
     reasons.push("INVALID_CHRONOLOGY");
+  }
+
+  if (observedAt) {
+    const maturity = measurementGate(input.record, Date.parse(observedAt), generatedAtMs);
+    if (maturity.verifyReasons.length > 0) {
+      return baseResult(input, generatedAt, "VERIFY_RECORD", [...reasons, ...maturity.verifyReasons], null);
+    }
+    if (maturity.waitReasons.length > 0) {
+      return baseResult(input, generatedAt, "WAIT_FOR_MEASUREMENT", [...reasons, ...maturity.waitReasons], null);
+    }
   }
 
   if (observation.attributionClass !== "UNKNOWN" && observation.attributionEvidenceRefs.length === 0) {
