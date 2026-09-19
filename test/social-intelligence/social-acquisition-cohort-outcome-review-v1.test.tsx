@@ -137,6 +137,15 @@ test("keeps aggregate outcome associations as context only", () => {
   assert.equal(result.cohorts[0].outcomeObservations[0].decisionUse, "CONTEXT_ONLY");
 });
 
+test("does not treat zero direct outcomes as positive business evidence", () => {
+  const result = compile({ outcomeObservations: [outcome({ memberCount: 0, eventCount: 0 })] });
+
+  assert.equal(result.cohorts[0].qualifiedDirectOutcomeObservationCount, 0);
+  assert.equal(result.cohorts[0].businessOutcomeEvidence, "NOT_ESTABLISHED");
+  assert.equal(result.cohorts[0].status, "OBSERVATIONAL_ONLY");
+  assert.equal(result.cohorts[0].learningCandidate, "NONE");
+});
+
 test("does not treat site sessions as qualified business outcomes", () => {
   const result = compile({ outcomeObservations: [outcome({ kind: "SITE_SESSION" })] });
 
@@ -149,14 +158,17 @@ test("fails closed on stale, partial, or future cohort evidence", () => {
   const stale = compile({
     maxEvidenceAgeMs: 1000 * 60 * 60 * 24 * 2,
   });
+  assert.equal(stale.status, "VERIFY_REQUIRED");
   assert.equal(stale.cohorts[0].status, "VERIFY_REQUIRED");
   assert.ok(stale.cohorts[0].verificationReasons.some((reason) => reason.includes("STALE_OBSERVATION")));
 
   const partial = compile({ cohorts: [cohort({ truthState: "PARTIAL" })] });
+  assert.equal(partial.status, "VERIFY_REQUIRED");
   assert.equal(partial.cohorts[0].status, "VERIFY_REQUIRED");
   assert.ok(partial.cohorts[0].verificationReasons.includes("COHORT_PARTIAL"));
 
   const future = compile({ cohorts: [cohort({ observedAt: "2026-09-20T12:00:00.000Z", completeThroughAt: "2026-09-02T00:00:00.000Z" })] });
+  assert.equal(future.status, "VERIFY_REQUIRED");
   assert.equal(future.cohorts[0].status, "VERIFY_REQUIRED");
   assert.ok(future.cohorts[0].verificationReasons.includes("COHORT_FUTURE_OBSERVATION"));
 });
@@ -208,6 +220,10 @@ test("rejects counts that could manufacture cohort membership", () => {
   assert.throws(
     () => compile({ retentionObservations: [retention({ eligibleMemberCount: 101 })] }),
     /exceeds initial cohort/,
+  );
+  assert.throws(
+    () => compile({ retentionObservations: [retention({ eligibleMemberCount: 0, engagedMemberCount: 0 })] }),
+    /safe integer >= 1/,
   );
   assert.throws(
     () => compile({ outcomeObservations: [outcome({ memberCount: 101, eventCount: 101 })] }),
