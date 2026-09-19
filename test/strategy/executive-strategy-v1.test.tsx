@@ -228,11 +228,11 @@ test("strategy workspace renders scan-first sections without inventing unsupport
   const html = renderToStaticMarkup(<ExecutiveStrategyWorkspaceV1 model={model} />);
 
   assert.match(html, /Current priorities/);
-  assert.match(html, /Active bets/);
-  assert.match(html, /Dependencies and blockers/);
-  assert.match(html, /Decision points/);
+  assert.match(html, /Ideas still worth watching/);
+  assert.match(html, /What is holding things back/);
+  assert.match(html, /Decisions to watch/);
   assert.match(html, /Next safe moves/);
-  assert.match(html, /Economics: Unknown/);
+  assert.match(html, /Financial impact: Not estimated yet/);
   assert.match(html, /current partner budget/);
   assert.match(html, /href="\/recommend"/);
   assert.match(html, /href="\/data-evidence"/);

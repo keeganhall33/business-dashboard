@@ -2,6 +2,15 @@ import Link from "next/link";
 import { AutonomousGrowthBriefingV1 } from "@/components/executive-home/AutonomousGrowthBriefingV1";
 import type { AutonomousGrowthBriefingV1 as AutonomousGrowthBriefingModelV1 } from "@/lib/executive-home/autonomous-growth-briefing-v1";
 import type { ExecutiveStrategyWorkspaceModelV1, StrategyWorkspaceRecordV1 } from "@/lib/strategy/executive-strategy-v1";
+import {
+  executiveApprovalLabel,
+  executiveBlockerCopy,
+  executiveConfidenceLabel,
+  executiveMissingDataLabels,
+  executiveSourceModeLabel,
+  executiveTruthLabel,
+  executiveUrgencyLabel,
+} from "@/lib/presentation/executive-language-v1";
 
 function badgeClass(state: StrategyWorkspaceRecordV1["epistemicState"]) {
   if (state === "KNOWN") return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -24,12 +33,40 @@ function money(cents: number | null) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
 }
 
+function laneLabel(lane: StrategyWorkspaceRecordV1["lane"]) {
+  if (lane === "DO_NOW") return "Ready now";
+  if (lane === "PREPARE") return "Prepare next";
+  if (lane === "MONITOR") return "Keep watching";
+  if (lane === "DEPRIORITIZE") return "Lower priority";
+  return "Needs more evidence";
+}
+
+function plainTitle(item: StrategyWorkspaceRecordV1) {
+  const title = item.title.toLowerCase();
+  if (title.includes("traffic-driven change")) return "Figure out what changed your website traffic";
+  if (title.includes("email telemetry missing")) return "Connect email campaign performance";
+  if (title.includes("matchback")) return "Connect ad spend to actual orders";
+  return item.title;
+}
+
+function plainAction(action: string) {
+  return action
+    .replace(/Do not scale spend yet\./gi, "Do not increase ad spend yet.")
+    .replace(/Identify which channel\(s\) changed traffic and validate attribution coverage\.?/gi, "First identify which marketing channels caused the traffic change and confirm we can reliably connect those visits to sales.")
+    .replace(/Identify which channel\(s\) increased\/decreased traffic; avoid scaling without attribution/gi, "Identify which marketing channels changed traffic before increasing ad spend.");
+}
+
+
 function Economics({ item }: { item: StrategyWorkspaceRecordV1 }) {
-  if (!item.economics) return <span className="text-slate-500">Economics: Unknown</span>;
+  if (!item.economics) return <span className="text-slate-500">Financial impact: Not estimated yet</span>;
   const { lowCents, expectedCents, highCents, horizon } = item.economics;
+  if (item.confidence === "possible" || item.confidence === "insufficient_evidence") {
+    return <span className="text-slate-500">Financial impact: Too uncertain to rely on yet</span>;
+  }
   return (
     <span className="text-slate-500">
-      Economics: {money(lowCents)} / {money(expectedCents)} / {money(highCents)} ({horizon})
+      Estimated upside: {money(lowCents)} to {money(highCents)} over {horizon}
+      {expectedCents != null ? ` (midpoint ${money(expectedCents)})` : ""}
     </span>
   );
 }
@@ -40,35 +77,35 @@ function PriorityCard({ item, compact = false }: { item: StrategyWorkspaceRecord
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap gap-2">
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${laneClass(item.lane)}`}>{item.lane.replaceAll("_", " ")}</span>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{item.epistemicState}</span>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${laneClass(item.lane)}`}>{laneLabel(item.lane)}</span>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{executiveTruthLabel(item.epistemicState)}</span>
           </div>
-          <h3 className="mt-3 text-base font-semibold text-slate-950">{item.title}</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-700">{item.recommendedAction}</p>
+          <h3 className="mt-3 text-base font-semibold text-slate-950">{plainTitle(item)}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-700">{plainAction(item.recommendedAction)}</p>
         </div>
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Existing score</div>
-          <div className="text-lg font-semibold text-slate-950">{item.priorityScore ?? "Unknown"}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Priority</div>
+          <div className="text-lg font-semibold text-slate-950">{item.priorityScore != null ? `${Math.round(item.priorityScore)}/100` : "Not scored"}</div>
         </div>
       </div>
 
       {!compact ? (
         <>
           <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
-            <span className="text-slate-500">Confidence: <strong className="text-slate-800">{item.confidence ?? "Unknown"}</strong></span>
-            <span className="text-slate-500">Urgency: <strong className="text-slate-800">{item.urgency ?? "Unknown"}</strong></span>
-            <span className="text-slate-500">Approval: <strong className="text-slate-800">{item.approvalLevel ?? "Unknown"}</strong></span>
+            <span className="text-slate-500">Evidence strength: <strong className="text-slate-800">{executiveConfidenceLabel(item.confidence)}</strong></span>
+            <span className="text-slate-500">Timing: <strong className="text-slate-800">{executiveUrgencyLabel(item.urgency)}</strong></span>
+            <span className="text-slate-500">Status: <strong className="text-slate-800">{executiveApprovalLabel(item.approvalLevel)}</strong></span>
             <Economics item={item} />
           </div>
-          {item.blocker ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Blocker: {item.blocker}</p> : null}
-          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600">Missing: {item.dataMissing.join(", ")}</p> : null}
-          {item.dependencies.length ? <p className="mt-2 text-xs text-slate-600">Dependencies: {item.dependencies.join(", ")}</p> : null}
+          {executiveBlockerCopy(item.blocker) ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><strong>Why we cannot act yet:</strong> {executiveBlockerCopy(item.blocker)}</p> : null}
+          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600"><strong>Still needed:</strong> {executiveMissingDataLabels(item.dataMissing).join(", ")}</p> : null}
+          {item.dependencies.length ? <p className="mt-2 text-xs text-slate-600"><strong>Depends on:</strong> {item.dependencies.join(", ")}</p> : null}
         </>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-        <Link href={item.reviewHref} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-800 hover:bg-slate-50">Review recommendation</Link>
-        <Link href={item.evidenceHref} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-800 hover:bg-slate-50">Inspect evidence</Link>
+        <Link href={item.reviewHref} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-800 hover:bg-slate-50">Review details</Link>
+        <Link href={item.evidenceHref} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-800 hover:bg-slate-50">See why</Link>
       </div>
     </article>
   );
@@ -93,11 +130,11 @@ export function ExecutiveStrategyWorkspaceV1({
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">What matters, what is blocked, and what is safe next</h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">A scan-first view over the existing recommendation and executive-action contracts. Unsupported owners, deadlines, economics, dependencies, and certainty stay Unknown.</p>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">A simple view of what deserves attention, what you can do next, and what still needs better data. Technical evidence stays available underneath when you want to inspect it.</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Evidence mode</div>
-              <div className="mt-1 font-semibold text-slate-900">{model.sourceMode}</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Data status</div>
+              <div className="mt-1 font-semibold text-slate-900">{executiveSourceModeLabel(model.sourceMode)}</div>
             </div>
           </div>
           <p className="mt-5 rounded-2xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700">{model.notice}</p>
@@ -112,7 +149,7 @@ export function ExecutiveStrategyWorkspaceV1({
             ["Prepare", model.counts.prepare],
             ["Monitor", model.counts.monitor],
             ["Wait", model.counts.wait],
-            ["Unknown/conflicted", model.counts.unknownOrConflicted],
+            ["Needs review", model.counts.unknownOrConflicted],
           ].map(([label, value]) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
@@ -125,9 +162,9 @@ export function ExecutiveStrategyWorkspaceV1({
           <div className="mb-3 flex items-end justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current priorities</p>
-              <h2 className="mt-1 text-2xl font-semibold">Highest existing recommendation scores</h2>
+              <h2 className="mt-1 text-2xl font-semibold">What deserves your attention now</h2>
             </div>
-            <Link href="/recommend" className="text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">Open Recommend</Link>
+            <Link href="/recommend" className="text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">See all recommendations</Link>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             {model.currentPriorities.length ? model.currentPriorities.map((item) => <PriorityCard key={item.id} item={item} />) : <EmptyState>No supported current priorities are available for this window.</EmptyState>}
@@ -136,19 +173,19 @@ export function ExecutiveStrategyWorkspaceV1({
 
         <section className="grid gap-5 xl:grid-cols-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active bets</p>
-            <h2 className="mt-1 text-xl font-semibold">Recommendations still in play</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">In progress</p>
+            <h2 className="mt-1 text-xl font-semibold">Ideas still worth watching</h2>
             <div className="mt-3 space-y-3">
               {model.activeBets.length ? model.activeBets.map((item) => <PriorityCard key={item.id} item={item} compact />) : <EmptyState>No active bet is supported by the current recommendation set.</EmptyState>}
             </div>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dependencies and blockers</p>
-            <h2 className="mt-1 text-xl font-semibold">What prevents stronger action</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">What is holding things back</p>
+            <h2 className="mt-1 text-xl font-semibold">Why we are not acting yet</h2>
             <div className="mt-3 space-y-3">
               {model.blockers.length ? model.blockers.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{item.epistemicState}</span></div>
+                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(item.epistemicState)}`}>{executiveTruthLabel(item.epistemicState)}</span></div>
                   <h3 className="mt-3 font-semibold">{item.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{item.blocker ?? item.dataMissing[0] ?? item.dependencies[0] ?? "Evidence certainty is not current."}</p>
                   <Link href={item.evidenceHref} className="mt-3 inline-block text-xs font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">Inspect evidence</Link>
@@ -157,12 +194,12 @@ export function ExecutiveStrategyWorkspaceV1({
             </div>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Decision points</p>
-            <h2 className="mt-1 text-xl font-semibold">Where judgment or new evidence matters</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Decisions to watch</p>
+            <h2 className="mt-1 text-xl font-semibold">Where your judgment or better data matters</h2>
             <div className="mt-3 space-y-3">
               {model.decisionPoints.length ? model.decisionPoints.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${laneClass(item.lane)}`}>{item.lane.replaceAll("_", " ")}</span></div>
+                  <div className="flex flex-wrap gap-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${laneClass(item.lane)}`}>{laneLabel(item.lane)}</span></div>
                   <h3 className="mt-3 font-semibold">{item.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{item.blocker ?? item.nextSafeMove}</p>
                   <Link href={item.reviewHref} className="mt-3 inline-block text-xs font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">Review recommendation</Link>
@@ -174,7 +211,7 @@ export function ExecutiveStrategyWorkspaceV1({
 
         <section className="rounded-[2rem] border border-slate-200 bg-[#ffffff] p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Next safe moves</p>
-          <h2 className="mt-1 text-2xl font-semibold">Advance evidence before certainty</h2>
+          <h2 className="mt-1 text-2xl font-semibold">Best next steps</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {model.nextSafeMoves.length ? model.nextSafeMoves.map((item, index) => (
               <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
