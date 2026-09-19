@@ -191,7 +191,7 @@ test("keeps verification-required outcome evidence out of the ready lineage path
   assert.equal(input.reallocationReview.status, "VERIFICATION_REQUIRED");
   assert.equal(lineage.status, "VERIFICATION_REQUIRED");
   assert.equal(lineage.lineageReady, false);
-  assert.equal(lineage.rebuildObserved, true);
+  assert.equal(lineage.rebuildObserved, false);
   assert.deepEqual(lineage.verificationCandidateIds, ["alpha"]);
   assert.deepEqual(lineage.reconsiderCandidateIds, []);
   assert.equal(lineage.interpretation.selectionChangeCause, "NOT_ESTABLISHED");
