@@ -54,7 +54,6 @@ export type SponsorEcosystemLinkV1 = Readonly<{
   evidenceRefs: readonly string[];
   decisionMakers: readonly SponsorEcosystemDecisionMakerV1[];
   warmAccessPaths: readonly SponsorEcosystemWarmAccessPathV1[];
-  planningWindows: readonly SponsorEcosystemPlanningWindowV1[];
 }>;
 
 export type SponsorEcosystemMapInputV1 = Readonly<{
@@ -66,6 +65,7 @@ export type SponsorEcosystemMapResultV1 = Readonly<{
   version: typeof SPONSOR_ECOSYSTEM_MAP_VERSION;
   asOf: string;
   ecosystems: readonly SponsorEcosystemLinkV1[];
+  opportunityPlanningWindows: readonly SponsorEcosystemPlanningWindowV1[];
   counts: Readonly<{
     opportunitiesReviewed: number;
     sponsorLinks: number;
@@ -204,6 +204,7 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
   const asOf = iso(input.asOf, "asOf");
   const asOfMs = Date.parse(asOf);
   const seenOpportunityIds = new Set<string>();
+  const opportunityPlanningWindows: SponsorEcosystemPlanningWindowV1[] = [];
 
   const groups = new Map<string, {
     propertyCanonicalId: string;
@@ -236,6 +237,12 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
     if (map.planningWindows.length > 0 && map.coverage.PLANNING_WINDOW !== "EVIDENCED") {
       throw new Error(`accessMaps[${mapIndex}] planning windows are not fully evidenced`);
     }
+
+    map.planningWindows.forEach((window, windowIndex) => {
+      opportunityPlanningWindows.push(
+        planningWindow(opportunityId, window, asOfMs, `accessMaps[${mapIndex}].planningWindows[${windowIndex}]`)
+      );
+    });
 
     map.sponsorshipLinks.forEach((link, linkIndex) => {
       const provenance = validateProjectedFact(link, asOfMs, `accessMaps[${mapIndex}].sponsorshipLinks[${linkIndex}]`);
@@ -275,7 +282,6 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
     const evidenceRefs = [...new Set(group.links.flatMap((item) => item.link.evidenceRefs))].sort((a, b) => a.localeCompare(b));
     const observedAt = new Date(Math.max(...group.links.map((item) => Date.parse(item.link.observedAt)))).toISOString();
     const decisionMakers: SponsorEcosystemDecisionMakerV1[] = [];
-    const planningWindows: SponsorEcosystemPlanningWindowV1[] = [];
 
     for (const opportunityId of opportunityIds) {
       const map = accessMapByOpportunity.get(opportunityId)!;
@@ -288,9 +294,6 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
             : null;
         if (side) decisionMakers.push(decisionMakerForSide(opportunityId, person, side, asOfMs, `decisionMakers[${index}]`));
       });
-      map.planningWindows.forEach((window, index) => {
-        planningWindows.push(planningWindow(opportunityId, window, asOfMs, `planningWindows[${index}]`));
-      });
     }
 
     const uniqueDecisionMakers = [...new Map(
@@ -301,7 +304,13 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
     for (const opportunityId of opportunityIds) {
       const map = accessMapByOpportunity.get(opportunityId)!;
       map.warmAccessPaths.forEach((path, index) => {
-        const projected = exactTargetedPath(opportunityId, path, uniqueDecisionMakers.filter((person) => person.opportunityId === opportunityId), asOfMs, `warmAccessPaths[${index}]`);
+        const projected = exactTargetedPath(
+          opportunityId,
+          path,
+          uniqueDecisionMakers.filter((person) => person.opportunityId === opportunityId),
+          asOfMs,
+          `warmAccessPaths[${index}]`
+        );
         if (projected) warmAccessPaths.push(projected);
       });
     }
@@ -318,24 +327,26 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
       decisionMakers: uniqueDecisionMakers,
       warmAccessPaths: [...new Map(
         warmAccessPaths.map((path) => [[path.opportunityId, path.targetSide, path.targetPersonCanonicalId, path.path.map((node) => node.canonicalId).join(">")].join("\u0000"), path] as const)
-      ).values()].sort((a, b) => a.targetSide.localeCompare(b.targetSide) || a.targetPersonCanonicalId.localeCompare(b.targetPersonCanonicalId)),
-      planningWindows: [...new Map(
-        planningWindows.map((window) => [[window.opportunityId, window.windowType, window.windowStart, window.windowEnd].join("\u0000"), window] as const)
-      ).values()].sort((a, b) => a.windowStart.localeCompare(b.windowStart) || a.windowEnd.localeCompare(b.windowEnd) || a.windowType.localeCompare(b.windowType))
+      ).values()].sort((a, b) => a.targetSide.localeCompare(b.targetSide) || a.targetPersonCanonicalId.localeCompare(b.targetPersonCanonicalId))
     });
   }).sort((a, b) => a.propertyLabel.localeCompare(b.propertyLabel) || a.sponsorLabel.localeCompare(b.sponsorLabel) || a.relationshipLabel.localeCompare(b.relationshipLabel));
+
+  const uniquePlanningWindows = [...new Map(
+    opportunityPlanningWindows.map((window) => [[window.opportunityId, window.windowType, window.windowStart, window.windowEnd].join("\u0000"), window] as const)
+  ).values()].sort((a, b) => a.opportunityId.localeCompare(b.opportunityId) || a.windowStart.localeCompare(b.windowStart) || a.windowEnd.localeCompare(b.windowEnd) || a.windowType.localeCompare(b.windowType));
 
   const result: SponsorEcosystemMapResultV1 = {
     version: SPONSOR_ECOSYSTEM_MAP_VERSION,
     asOf,
     ecosystems,
+    opportunityPlanningWindows: uniquePlanningWindows,
     counts: {
       opportunitiesReviewed: seenOpportunityIds.size,
       sponsorLinks: ecosystems.length,
       propertyDecisionMakers: ecosystems.reduce((sum, ecosystem) => sum + ecosystem.decisionMakers.filter((person) => person.side === "PROPERTY").length, 0),
       sponsorDecisionMakers: ecosystems.reduce((sum, ecosystem) => sum + ecosystem.decisionMakers.filter((person) => person.side === "SPONSOR").length, 0),
       exactWarmAccessPaths: ecosystems.reduce((sum, ecosystem) => sum + ecosystem.warmAccessPaths.length, 0),
-      explicitPlanningWindows: ecosystems.reduce((sum, ecosystem) => sum + ecosystem.planningWindows.length, 0)
+      explicitPlanningWindows: uniquePlanningWindows.length
     },
     inferredSponsorshipLinks: false,
     inferredDecisionAuthority: false,
