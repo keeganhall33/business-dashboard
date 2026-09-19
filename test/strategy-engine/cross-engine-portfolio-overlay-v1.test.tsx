@@ -90,6 +90,10 @@ function portfolio(evidenceState: DecisionEvidenceStateV1 = "KNOWN"): DecisionPo
 }
 
 function synthesis(decisionRef = "decision:seattle-campaign", generatedAt = GENERATED_AT) {
+  const generatedAtMs = Date.parse(generatedAt);
+  const socialObservedAt = new Date(generatedAtMs - 30 * 60 * 1_000).toISOString();
+  const revenueObservedAt = new Date(generatedAtMs - 20 * 60 * 1_000).toISOString();
+
   return compileCrossEngineSynthesisV1({
     generatedAt,
     signals: [
@@ -98,7 +102,7 @@ function synthesis(decisionRef = "decision:seattle-campaign", generatedAt = GENE
         domain: "SOCIAL",
         kind: "OPPORTUNITY",
         summary: "First-party social signal",
-        observedAt: "2026-09-19T02:30:00.000Z",
+        observedAt: socialObservedAt,
         truthState: "KNOWN",
         freshness: "FRESH",
         materiality: "HIGH",
@@ -113,7 +117,7 @@ function synthesis(decisionRef = "decision:seattle-campaign", generatedAt = GENE
         domain: "REVENUE",
         kind: "OPPORTUNITY",
         summary: "First-party commerce signal",
-        observedAt: "2026-09-19T02:40:00.000Z",
+        observedAt: revenueObservedAt,
         truthState: "KNOWN",
         freshness: "FRESH",
         materiality: "HIGH",
