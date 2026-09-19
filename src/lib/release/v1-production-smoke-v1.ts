@@ -51,6 +51,7 @@ export type V1ProductionSmokeBlockerCodeV1 =
   | "STEP_MISSING_PROVENANCE"
   | "STEP_UNSAFE_PROVENANCE"
   | "STEP_INVALID_PATH"
+  | "STEP_ROUTE_MISMATCH"
   | "STEP_ACTION_REQUIRED";
 
 export type V1ProductionSmokeBlockerV1 = {
@@ -91,8 +92,55 @@ export type V1ProductionSmokeResultV1 = {
 
 const SHA_40 = /^[0-9a-f]{40}$/;
 const SAFE_PATH = /^\/[^?#\s]*$/;
+const SAFE_ENTITY_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._~-]*";
 const UNSAFE_EVIDENCE_REF =
   /(?:op:\/\/|begin\s+(?:rsa\s+)?private\s+key|(?:password|passwd|secret|token|api[_-]?key)\s*[=:])/i;
+
+const CANONICAL_STEP_PATHS_V1: Record<
+  V1ProductionSmokeStepIdV1,
+  { matcher: RegExp; description: string }
+> = {
+  EXECUTIVE_HOME: {
+    matcher: /^\/dashboard\/?$/,
+    description: "/dashboard"
+  },
+  OPPORTUNITY_DETAIL: {
+    matcher: new RegExp(`^/opportunities-actions/opportunity/${SAFE_ENTITY_SEGMENT}/?$`),
+    description: "/opportunities-actions/opportunity/<opaque-id>"
+  },
+  CRM_PERSON: {
+    matcher: new RegExp(`^/relationships/people/${SAFE_ENTITY_SEGMENT}/?$`),
+    description: "/relationships/people/<opaque-id>"
+  },
+  CRM_COMPANY: {
+    matcher: new RegExp(`^/relationships/companies/${SAFE_ENTITY_SEGMENT}/?$`),
+    description: "/relationships/companies/<opaque-id>"
+  },
+  CRM_ACTIVITY: {
+    matcher: /^\/relationships\/activity\/?$/,
+    description: "/relationships/activity"
+  },
+  STRATEGY: {
+    matcher: /^\/strategy\/?$/,
+    description: "/strategy"
+  },
+  DATA_EVIDENCE: {
+    matcher: /^\/data-evidence\/?$/,
+    description: "/data-evidence"
+  },
+  LEARNING: {
+    matcher: /^\/learning\/?$/,
+    description: "/learning"
+  },
+  EVENTS: {
+    matcher: /^\/events-market-windows\/?$/,
+    description: "/events-market-windows"
+  },
+  SPECIALISTS: {
+    matcher: /^\/specialists\/?$/,
+    description: "/specialists"
+  }
+};
 
 function parsedTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -134,8 +182,8 @@ function aggregateActionRequirement(
  *
  * This compiler performs no browser automation, network requests, authentication,
  * deployment, production mutation, or secret access. Callers must supply evidence from
- * the live production run. Missing, partial, conflicted, out-of-order, or mismatched
- * observations fail closed instead of being promoted to release truth.
+ * the live production run. Missing, partial, conflicted, out-of-order, route-mismatched,
+ * or release-mismatched observations fail closed instead of being promoted to release truth.
  */
 export function compileV1ProductionSmokeV1(
   input: V1ProductionSmokeInputV1
@@ -265,6 +313,9 @@ export function compileV1ProductionSmokeV1(
     const observation = evidence[0];
     const sanitized = sanitizedEvidenceRefs(observation.evidenceRefs);
     const observedAtMs = parsedTimestamp(observation.observedAt);
+    const pathIsSafe = SAFE_PATH.test(observation.observedPath);
+    const canonicalPath = CANONICAL_STEP_PATHS_V1[stepId];
+    const pathMatchesStep = pathIsSafe && canonicalPath.matcher.test(observation.observedPath);
     let blocking = false;
 
     if (observation.state !== "PASS") {
@@ -317,12 +368,23 @@ export function compileV1ProductionSmokeV1(
       blocking = true;
     }
 
-    if (!SAFE_PATH.test(observation.observedPath)) {
+    if (!pathIsSafe) {
       blockers.push(
         blocker(
           "STEP_INVALID_PATH",
           stepId,
           `${stepId} must record a production pathname only, without query parameters, fragments, whitespace, or credentials.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    } else if (!pathMatchesStep) {
+      blockers.push(
+        blocker(
+          "STEP_ROUTE_MISMATCH",
+          stepId,
+          `${stepId} must prove the canonical production route ${canonicalPath.description}; an arbitrary safe pathname cannot satisfy this smoke step.`,
           sanitized.refs,
           observation.actionRequirement
         )
@@ -374,7 +436,7 @@ export function compileV1ProductionSmokeV1(
       status: blocking ? "BLOCKING" : "PASS",
       state: observation.state,
       observedAt: observation.observedAt,
-      observedPath: SAFE_PATH.test(observation.observedPath) ? observation.observedPath : null,
+      observedPath: pathMatchesStep ? observation.observedPath : null,
       evidenceRefs: sanitized.refs,
       releaseSha: observation.releaseSha,
       actionRequirement: observation.actionRequirement
@@ -402,7 +464,7 @@ export function compileV1ProductionSmokeV1(
     actionRequirement: status === "PASS" ? "NONE" : gateActionRequirement,
     detail:
       status === "PASS"
-        ? "All required Useful V1 production smoke steps passed in order on the exact release SHA with provenance-backed observations."
+        ? "All required Useful V1 production smoke steps passed in order on their canonical production routes for the exact release SHA with provenance-backed observations."
         : `Production smoke remains blocked by ${blockers.length} evidence-integrity or observation blocker(s).`
   };
 
