@@ -105,7 +105,7 @@ function safeText(value: unknown, maximumLength = 240): value is string {
     value.trim().length > 0 &&
     value.length <= maximumLength &&
     !/[\r\n]/.test(value) &&
-    !/(?:bearer\s+|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[=:]/i.test(
+    !/(?:bearer\s+|api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret)\s*[=:]/i.test(
       value,
     ) &&
     !/[?&](?:access_token|token|api_key|key)=/i.test(value)
