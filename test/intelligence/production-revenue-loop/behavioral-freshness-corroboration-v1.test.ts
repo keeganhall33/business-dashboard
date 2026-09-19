@@ -186,6 +186,8 @@ function gateInput(
 ): BehavioralFreshnessCorroborationInputV1 {
   return {
     revenueInput: revenueInput(),
+    evaluatedAt: "2026-09-08T12:00:00Z",
+    revenueFreshnessPolicy: { WOO: 6, GA4: 6, META: 6 },
     clarity: readyClarity(),
     checkout: readyCheckout(),
     clarityMaxAgeHours: 24,
@@ -194,12 +196,15 @@ function gateInput(
   };
 }
 
-test("evaluates corroboration only after both behavioral sources are fresh at the revenue decision instant", () => {
+test("evaluates the full Woo + GA4 + Meta + Clarity + checkout bundle at one explicit decision instant", () => {
   const result = buildFreshRevenueBehavioralCorroborationV1(gateInput());
 
+  assert.equal(result.version, "BEHAVIORAL_FRESHNESS_CORROBORATION_V2");
   assert.equal(result.status, "READY");
   assert.equal(result.reasonCode, "FRESH_BEHAVIORAL_EVIDENCE_EVALUATED");
   assert.equal(result.evaluatedAt, "2026-09-08T12:00:00Z");
+  assert.equal(result.revenueFreshness.status, "READY");
+  assert.equal(result.revenueFreshness.sourceFreshness.status, "READY");
   assert.equal(result.clarityFreshness.status, "READY");
   assert.equal(result.checkoutFreshness.status, "READY");
   assert.equal(result.clarityFreshness.ageHours, 4);
@@ -217,16 +222,43 @@ test("evaluates corroboration only after both behavioral sources are fresh at th
   assert.equal(result.approvalBypassAllowed, false);
 });
 
+test("withholds behavioral corroboration when revenue evidence has aged out even if Clarity and checkout are fresh", () => {
+  const result = buildFreshRevenueBehavioralCorroborationV1(
+    gateInput({
+      evaluatedAt: "2026-09-08T20:00:00Z",
+      clarity: readyClarity({
+        freshness: {
+          extractedAt: "2026-09-08T19:00:00Z",
+          completeThrough: "2026-09-07",
+          now: "2026-09-08T19:30:00Z",
+          maxAgeHours: 24,
+        },
+      }),
+      checkout: readyCheckout({ asOf: "2026-09-08T19:00:00Z" }),
+    }),
+  );
+
+  assert.equal(result.status, "NOT_READY");
+  assert.equal(result.reasonCode, "REVENUE_FRESHNESS_NOT_READY");
+  assert.equal(result.revenueFreshness.status, "NOT_READY");
+  assert.equal(result.revenueFreshness.sourceFreshness.reasonCode, "SOURCE_EVIDENCE_NOT_CURRENT");
+  assert.equal(result.clarityFreshness.status, "READY");
+  assert.equal(result.checkoutFreshness.status, "READY");
+  assert.equal(result.acceptedCorroboration, null);
+});
+
 test("does not promote a fresh checkout signal when Clarity has become stale", () => {
   const result = buildFreshRevenueBehavioralCorroborationV1(
     gateInput({
-      revenueInput: revenueInput({ generatedAt: "2026-09-10T12:00:00Z" }),
+      evaluatedAt: "2026-09-10T12:00:00Z",
+      revenueFreshnessPolicy: { WOO: 72, GA4: 72, META: 72 },
       checkout: readyCheckout({ asOf: "2026-09-10T11:00:00Z" }),
     }),
   );
 
   assert.equal(result.status, "NOT_READY");
   assert.equal(result.reasonCode, "CLARITY_FRESHNESS_NOT_READY");
+  assert.equal(result.revenueFreshness.status, "READY");
   assert.equal(result.clarityFreshness.status, "STALE");
   assert.equal(result.checkoutFreshness.status, "READY");
   assert.equal(result.corroborationState, null);
@@ -240,12 +272,13 @@ test("does not promote fresh Clarity when checkout diagnostics are stale", () =>
 
   assert.equal(result.status, "NOT_READY");
   assert.equal(result.reasonCode, "CHECKOUT_FRESHNESS_NOT_READY");
+  assert.equal(result.revenueFreshness.status, "READY");
   assert.equal(result.clarityFreshness.status, "READY");
   assert.equal(result.checkoutFreshness.status, "STALE");
   assert.equal(result.acceptedCorroboration, null);
 });
 
-test("missing or invalid freshness evidence remains fail-closed instead of degrading to one-source corroboration", () => {
+test("missing or invalid freshness evidence remains fail-closed instead of degrading to a partial-source recommendation", () => {
   const missing = buildFreshRevenueBehavioralCorroborationV1(
     gateInput({ clarity: null }),
   );
@@ -255,22 +288,46 @@ test("missing or invalid freshness evidence remains fail-closed instead of degra
   assert.equal(missing.acceptedCorroboration, null);
 
   const invalidPolicy = buildFreshRevenueBehavioralCorroborationV1(
-    gateInput({ clarityMaxAgeHours: 0, checkoutMaxAgeHours: Number.NaN }),
+    gateInput({
+      revenueFreshnessPolicy: { WOO: 0, GA4: 6, META: 6 },
+      clarityMaxAgeHours: 0,
+      checkoutMaxAgeHours: Number.NaN,
+    }),
   );
   assert.equal(invalidPolicy.status, "NOT_READY");
-  assert.equal(invalidPolicy.reasonCode, "MULTIPLE_BEHAVIORAL_SOURCES_NOT_READY");
+  assert.equal(invalidPolicy.reasonCode, "MULTIPLE_SOURCES_NOT_READY");
+  assert.equal(
+    invalidPolicy.revenueFreshness.sourceFreshness.reasonCode,
+    "INVALID_FRESHNESS_POLICY",
+  );
   assert.equal(invalidPolicy.clarityFreshness.reasonCode, "INVALID_FRESHNESS_POLICY");
   assert.equal(invalidPolicy.checkoutFreshness.reasonCode, "INVALID_FRESHNESS_POLICY");
   assert.equal(invalidPolicy.acceptedCorroboration, null);
 });
 
-test("conflicted source chronology blocks corroboration even when the companion source is fresh", () => {
+test("future revenue packet chronology blocks the complete closed loop", () => {
+  const result = buildFreshRevenueBehavioralCorroborationV1(
+    gateInput({ evaluatedAt: "2026-09-08T11:59:59Z" }),
+  );
+
+  assert.equal(result.status, "CONFLICTED");
+  assert.equal(result.reasonCode, "CROSS_SOURCE_FRESHNESS_CONFLICTED");
+  assert.equal(result.revenueFreshness.status, "CONFLICTED");
+  assert.equal(
+    result.revenueFreshness.sourceFreshness.reasonCode,
+    "FUTURE_PACKET_GENERATION",
+  );
+  assert.equal(result.acceptedCorroboration, null);
+});
+
+test("conflicted behavioral source chronology blocks corroboration even when revenue evidence is fresh", () => {
   const result = buildFreshRevenueBehavioralCorroborationV1(
     gateInput({ checkout: readyCheckout({ asOf: "2026-09-08T12:00:01Z" }) }),
   );
 
   assert.equal(result.status, "CONFLICTED");
-  assert.equal(result.reasonCode, "BEHAVIORAL_FRESHNESS_CONFLICTED");
+  assert.equal(result.reasonCode, "CROSS_SOURCE_FRESHNESS_CONFLICTED");
+  assert.equal(result.revenueFreshness.status, "READY");
   assert.equal(result.checkoutFreshness.reasonCode, "FUTURE_AS_OF");
   assert.equal(result.corroborationState, null);
   assert.equal(result.acceptedCorroboration, null);
@@ -282,6 +339,7 @@ test("fresh timestamps cannot override exact date-range mismatch", () => {
     gateInput({ checkout: readyCheckout({ currentRange: mismatchedRange }) }),
   );
 
+  assert.equal(result.revenueFreshness.status, "READY");
   assert.equal(result.clarityFreshness.status, "READY");
   assert.equal(result.checkoutFreshness.status, "READY");
   assert.equal(result.status, "NOT_READY");
@@ -291,9 +349,10 @@ test("fresh timestamps cannot override exact date-range mismatch", () => {
   assert.equal(result.acceptedCorroboration, null);
 });
 
-test("uses generatedAt as the only decision-time freshness instant and does not mutate inputs", () => {
+test("uses explicit evaluatedAt rather than packet generatedAt for every source and does not mutate inputs", () => {
   const input = gateInput({
-    revenueInput: revenueInput({ generatedAt: "2026-09-08T20:00:00Z" }),
+    evaluatedAt: "2026-09-08T20:00:00Z",
+    revenueFreshnessPolicy: { WOO: 24, GA4: 24, META: 24 },
     clarityMaxAgeHours: 11,
     checkoutMaxAgeHours: 13,
   });
@@ -301,10 +360,17 @@ test("uses generatedAt as the only decision-time freshness instant and does not 
 
   const result = buildFreshRevenueBehavioralCorroborationV1(input);
 
-  assert.equal(result.evaluatedAt, input.revenueInput.generatedAt);
+  assert.equal(result.evaluatedAt, input.evaluatedAt);
+  assert.equal(result.revenueFreshness.evaluatedAt, input.evaluatedAt);
+  assert.equal(result.clarityFreshness.evaluatedAt, input.evaluatedAt);
+  assert.equal(result.checkoutFreshness.evaluatedAt, input.evaluatedAt);
+  assert.equal(result.revenueFreshness.status, "READY");
   assert.equal(result.clarityFreshness.status, "STALE");
   assert.equal(result.checkoutFreshness.status, "READY");
   assert.equal(result.status, "NOT_READY");
+  assert.equal(result.reasonCode, "CLARITY_FRESHNESS_NOT_READY");
   assert.equal(result.acceptedCorroboration, null);
+  assert.equal(result.externalMutationAllowed, false);
+  assert.equal(result.metaWriteAllowed, false);
   assert.equal(JSON.stringify(input), before);
 });
