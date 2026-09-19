@@ -284,7 +284,7 @@ test("never upgrades a source causal label into calibration authority", () => {
   assert.equal(result.authority.promotePolicy, false);
 });
 
-test("is deterministic, immutable, and rejects duplicate calibration targets", () => {
+test("is deterministic, immutable, and rejects duplicate or empty calibration scope", () => {
   const record = observedRecord("decision-a");
   const before = structuredClone(record);
   const first = review([record]);
@@ -305,5 +305,16 @@ test("is deterministic, immutable, and rejects duplicate calibration targets", (
       }),
     (error: unknown) =>
       error instanceof DecisionOutcomeCalibrationError && error.code === "DUPLICATE_TARGET"
+  );
+
+  assert.throws(
+    () =>
+      reviewDecisionOutcomeCalibrationV1({
+        targets: [],
+        generatedAt,
+        minimumDistinctDecisions: 2
+      }),
+    (error: unknown) =>
+      error instanceof DecisionOutcomeCalibrationError && error.code === "TARGET_BOUND"
   );
 });
