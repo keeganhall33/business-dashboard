@@ -4,6 +4,7 @@ import {
   type SocialHistoryWindowV1,
   type SocialMetricKeyV1
 } from "./social-canonical-v1";
+import type { SocialPlatformConnectorStateV1 } from "./social-connector-proof-v1";
 
 export const SOCIAL_HISTORY_COMPARABILITY_STATES_V1 = [
   "READY",
@@ -61,6 +62,7 @@ export type SocialHistoryComparabilityReviewV1 = {
   accountId: string;
   evaluatedAt: string;
   sourceDecisionGrade: boolean;
+  connectorProofBound: boolean;
   sourceIssues: readonly string[];
   windows: readonly SocialHistoryWindowComparabilityV1[];
   decisionGradeWindows: readonly SocialHistoryWindowV1[];
@@ -73,6 +75,7 @@ export type SocialHistoryComparabilityReviewV1 = {
 
 export type CompileSocialHistoryComparabilityOptionsV1 = {
   now: string;
+  connectorState: SocialPlatformConnectorStateV1;
   staleAfterHours?: number;
   windows?: readonly SocialHistoryWindowV1[];
 };
@@ -96,6 +99,16 @@ function requireIso(value: string, field: string): string {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function preserveOrderUniqueWindows(values: readonly SocialHistoryWindowV1[]): SocialHistoryWindowV1[] {
+  return values.filter((value, index) => values.indexOf(value) === index);
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  const normalizedLeft = unique(left);
+  const normalizedRight = unique(right);
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((value, index) => value === normalizedRight[index]);
 }
 
 function namedWindowDurationValid(window: SocialHistoryWindowV1, startAt: string, endAt: string): boolean {
@@ -124,13 +137,16 @@ export function compileSocialHistoryComparabilityV1(
   if (!snapshot || snapshot.contractVersion !== "CanonicalSocialAccountSnapshotV1") {
     throw new Error("snapshot must be CanonicalSocialAccountSnapshotV1");
   }
+  if (!options?.connectorState || typeof options.connectorState !== "object") {
+    throw new Error("connectorState is required to prove live first-party history");
+  }
 
   const now = requireIso(options.now, "now");
   const nowMs = Date.parse(now);
   const staleAfterHours = options.staleAfterHours ?? 48;
   if (!Number.isFinite(staleAfterHours) || staleAfterHours <= 0) throw new Error("staleAfterHours must be positive");
 
-  const windows = unique(options.windows ?? DEFAULT_WINDOWS) as SocialHistoryWindowV1[];
+  const windows = preserveOrderUniqueWindows(options.windows ?? DEFAULT_WINDOWS);
   for (const window of windows) {
     if (!DEFAULT_WINDOWS.includes(window)) throw new Error(`unsupported social history window: ${String(window)}`);
   }
@@ -158,7 +174,29 @@ export function compileSocialHistoryComparabilityV1(
   }
   if (snapshot.writesPerformed !== false) sourceIssues.push("canonical social snapshot does not prove read-only behavior");
 
-  const sourceDecisionGrade = !futureEvidence && !staleSource && sourceConnectedAndComplete && snapshot.writesPerformed === false;
+  const connector = options.connectorState;
+  const connectorPlatformMatches = connector.platform === snapshot.platform;
+  const connectorLiveProven = connector.readiness === "LIVE_PROVEN" && connector.liveFirstPartyDataProven === true;
+  const connectorReadOnly = connector.readOnly === true;
+  const connectorProofMatches = connector.proof?.snapshotId === snapshot.snapshotId && connector.proof?.retrievedAt === retrievedAt;
+  const connectorEvidenceMatches = connector.proof != null && sameStringSet(connector.proof.canonicalEvidenceRefs, snapshot.evidenceRefs);
+  const supportedMetricSet = new Set(connector.supportedMetrics);
+  const connectorCoverageMatches = snapshot.sourceCoverage.metricCoverage.every((metric) => supportedMetricSet.has(metric));
+  const connectorProofBound = connectorPlatformMatches && connectorLiveProven && connectorReadOnly && connectorProofMatches && connectorEvidenceMatches && connectorCoverageMatches;
+
+  if (!connectorPlatformMatches) sourceIssues.push("connector platform does not match canonical snapshot platform");
+  if (!connectorLiveProven) sourceIssues.push(`connector readiness is ${connector.readiness}, not LIVE_PROVEN`);
+  if (!connectorReadOnly) sourceIssues.push("connector does not prove read-only behavior");
+  if (!connectorProofMatches) sourceIssues.push("connector proof does not bind to the exact canonical snapshot and retrieval timestamp");
+  if (!connectorEvidenceMatches) sourceIssues.push("connector canonical evidence refs do not match the exact snapshot evidence set");
+  if (!connectorCoverageMatches) sourceIssues.push("canonical metric coverage exceeds connector-declared supported metrics");
+
+  const sourceDecisionGrade =
+    !futureEvidence &&
+    !staleSource &&
+    sourceConnectedAndComplete &&
+    snapshot.writesPerformed === false &&
+    connectorProofBound;
   const coverage = new Set(snapshot.sourceCoverage.metricCoverage);
 
   const windowReviews = windows.map((window): SocialHistoryWindowComparabilityV1 => {
@@ -221,11 +259,11 @@ export function compileSocialHistoryComparabilityV1(
 
     if (futureEvidence) state = "FUTURE_EVIDENCE";
     else if (staleSource) state = "STALE_SOURCE";
-    else if (!sourceConnectedAndComplete || snapshot.writesPerformed !== false) state = "SOURCE_NOT_DECISION_GRADE";
+    else if (!sourceConnectedAndComplete || snapshot.writesPerformed !== false || !connectorProofBound) state = "SOURCE_NOT_DECISION_GRADE";
     else if (!current || !prior) state = "NEEDS_HISTORY";
     else if (!rangeValid) state = "VERIFY_RANGE";
     else if (missingProvenance) state = "VERIFY_PROVENANCE";
-    else if (unknownCoveredMetric) state = "PARTIAL";
+    else if (coveredMetrics.length === 0 || unknownCoveredMetric) state = "PARTIAL";
     else state = "READY";
 
     const decisionGradeMetrics = metricReviews.filter((metric) => metric.decisionGrade).map((metric) => metric.key);
@@ -256,6 +294,7 @@ export function compileSocialHistoryComparabilityV1(
     accountId: snapshot.accountId,
     evaluatedAt: now,
     sourceDecisionGrade,
+    connectorProofBound,
     sourceIssues: unique(sourceIssues),
     windows: windowReviews,
     decisionGradeWindows: windowReviews.filter((window) => window.state === "READY").map((window) => window.window),
