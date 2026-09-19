@@ -135,6 +135,35 @@
         "CREATIVE_PERFORMANCE",
         "ATTRIBUTION"
       ],
+      "coverage_scope": {
+        "standard": "ALL_DECISION_USEFUL_AVAILABLE_DATA",
+        "status": "PARTIAL",
+        "required_families": [
+          "account_structure",
+          "campaign_delivery",
+          "ad_set_delivery",
+          "ad_delivery",
+          "creative_assets",
+          "actions_and_values",
+          "attribution_windows",
+          "audience_breakdowns",
+          "placement_device_geo_breakdowns",
+          "budget_and_delivery_status"
+        ],
+        "implemented_families": ["campaign_delivery"],
+        "partial_families": ["actions_and_values"],
+        "missing_families": [
+          "account_structure",
+          "ad_set_delivery",
+          "ad_delivery",
+          "creative_assets",
+          "attribution_windows",
+          "audience_breakdowns",
+          "placement_device_geo_breakdowns",
+          "budget_and_delivery_status"
+        ],
+        "provider_limited_families": []
+      },
       "decisions_supported": [
         "SPEND_ALLOCATION",
         "CREATIVE_ITERATION"
@@ -224,6 +253,32 @@
         "FUNNEL",
         "LANDING_PAGE_PERFORMANCE"
       ],
+      "coverage_scope": {
+        "standard": "ALL_DECISION_USEFUL_AVAILABLE_DATA",
+        "status": "PARTIAL",
+        "required_families": [
+          "traffic_acquisition",
+          "content_and_landing_pages",
+          "events_and_conversions",
+          "ecommerce_items_transactions_refunds",
+          "sessions_users_engagement",
+          "device_geo_technology",
+          "campaign_attribution",
+          "audiences",
+          "realtime"
+        ],
+        "implemented_families": ["events_and_conversions"],
+        "partial_families": [
+          "traffic_acquisition",
+          "content_and_landing_pages",
+          "ecommerce_items_transactions_refunds",
+          "sessions_users_engagement",
+          "device_geo_technology",
+          "campaign_attribution"
+        ],
+        "missing_families": ["audiences", "realtime"],
+        "provider_limited_families": []
+      },
       "decisions_supported": [
         "CHANNEL_ALLOCATION",
         "CRO_PRIORITIZATION",
@@ -395,6 +450,31 @@
         "SESSION_BEHAVIOR",
         "FRICTION_SIGNALS"
       ],
+      "coverage_scope": {
+        "standard": "ALL_DECISION_USEFUL_AVAILABLE_DATA",
+        "status": "UNAVAILABLE",
+        "required_families": [
+          "traffic_and_session_aggregates",
+          "friction_metrics",
+          "device_browser_geo_breakdowns",
+          "pages_and_referrers",
+          "recording_metadata",
+          "heatmap_metadata",
+          "custom_tags_and_smart_events"
+        ],
+        "implemented_families": [],
+        "partial_families": [],
+        "missing_families": [
+          "traffic_and_session_aggregates",
+          "friction_metrics",
+          "device_browser_geo_breakdowns",
+          "pages_and_referrers",
+          "recording_metadata",
+          "heatmap_metadata",
+          "custom_tags_and_smart_events"
+        ],
+        "provider_limited_families": []
+      },
       "decisions_supported": [
         "CRO_PRIORITIZATION"
       ],
@@ -552,7 +632,7 @@
       "registry_source_id": null,
       "registry_source_set_ids": [],
       "source_tier": "TIER_A_FIRST_PARTY_OR_OFFICIAL_API",
-      "connection_state": "AVAILABLE_NEEDS_IMPLEMENTATION",
+      "connection_state": "CONNECTED_PARTIAL",
       "business_domains": [
         "commerce",
         "lifecycle"
@@ -562,19 +642,47 @@
         "ABANDONMENT",
         "EMAIL_AUTOMATION"
       ],
+      "coverage_scope": {
+        "standard": "ALL_DECISION_USEFUL_AVAILABLE_DATA",
+        "status": "PARTIAL",
+        "required_families": [
+          "checkout_funnel_steps",
+          "contacts_lists_tags_segments",
+          "automations_and_workflows",
+          "broadcasts_and_campaigns",
+          "email_delivery_open_click_events",
+          "bounce_unsubscribe_complaint_events",
+          "abandoned_carts",
+          "orders_and_attributed_revenue",
+          "forms_and_optins"
+        ],
+        "implemented_families": ["checkout_funnel_steps"],
+        "partial_families": [],
+        "missing_families": [
+          "contacts_lists_tags_segments",
+          "automations_and_workflows",
+          "broadcasts_and_campaigns",
+          "email_delivery_open_click_events",
+          "bounce_unsubscribe_complaint_events",
+          "abandoned_carts",
+          "orders_and_attributed_revenue",
+          "forms_and_optins"
+        ],
+        "provider_limited_families": []
+      },
       "decisions_supported": [
         "CHECKOUT_REPAIR",
         "LIFECYCLE_FOLLOWUP"
       ],
       "adapter": {
-        "identity": "funnelkit-native-adapter",
-        "state": "UNIMPLEMENTED",
-        "version": "v1"
+        "identity": "scripts/run-funnelkit-telemetry.mjs",
+        "state": "READY",
+        "version": "v2"
       },
-      "execution_venue": "DISABLED",
+      "execution_venue": "GITHUB_ACTIONS",
       "cadence": {
-        "mode": "DISABLED",
-        "expression": null,
+        "mode": "CRON",
+        "expression": "45 10 * * *",
         "timezone": "America/Los_Angeles"
       },
       "expected_source_latency_seconds": 300,
@@ -590,7 +698,10 @@
         "priority": "LOW"
       },
       "secret_refs": [
-        "FUNNELKIT_API_CREDENTIAL_REF"
+        "FUNNELKIT_BASE_URL",
+        "FUNNELKIT_USERNAME",
+        "FUNNELKIT_PASSWORD",
+        "OP_SERVICE_ACCOUNT_TOKEN"
       ],
       "legal_access": {
         "status": "INTERNAL_AUTHORIZED",
@@ -611,7 +722,7 @@
         "source_record_id"
       ],
       "retry": {
-        "max_attempts": 0,
+        "max_attempts": 5,
         "base_delay_seconds": 60,
         "max_delay_seconds": 3600,
         "dead_letter": true
@@ -646,6 +757,31 @@
         "PRODUCT_PERFORMANCE",
         "CUSTOMER_COHORTS"
       ],
+      "coverage_scope": {
+        "standard": "ALL_DECISION_USEFUL_AVAILABLE_DATA",
+        "status": "PARTIAL",
+        "required_families": [
+          "orders_and_status_history",
+          "order_line_items",
+          "refunds",
+          "coupons_and_discounts",
+          "shipping_and_tax",
+          "products_variations_categories",
+          "inventory",
+          "customers_and_cohorts",
+          "payment_and_fulfillment_methods"
+        ],
+        "implemented_families": ["orders_and_status_history"],
+        "partial_families": ["refunds", "coupons_and_discounts", "shipping_and_tax"],
+        "missing_families": [
+          "order_line_items",
+          "products_variations_categories",
+          "inventory",
+          "customers_and_cohorts",
+          "payment_and_fulfillment_methods"
+        ],
+        "provider_limited_families": []
+      },
       "decisions_supported": [
         "PRICING",
         "INVENTORY",

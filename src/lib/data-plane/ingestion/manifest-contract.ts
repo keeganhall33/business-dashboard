@@ -49,6 +49,44 @@ const LegalStatusSchema = z.enum([
 ]);
 const AutomationSuitabilitySchema = z.enum(["ALLOWED", "METADATA_ONLY", "MANUAL_ONLY", "PROHIBITED"]);
 
+export const SourceScopeStatusSchema = z.enum(["FULL", "PARTIAL", "UNAVAILABLE"]);
+
+const SourceCoverageScopeSchema = z
+  .object({
+    standard: z.literal("ALL_DECISION_USEFUL_AVAILABLE_DATA"),
+    status: SourceScopeStatusSchema,
+    required_families: z.array(z.string().regex(/^[a-z0-9][a-z0-9_]{2,79}$/)).min(1),
+    implemented_families: z.array(z.string()),
+    partial_families: z.array(z.string()),
+    missing_families: z.array(z.string()),
+    provider_limited_families: z.array(z.string())
+  })
+  .strict()
+  .superRefine((scope, ctx) => {
+    const required = new Set(scope.required_families);
+    const classified = [
+      ...scope.implemented_families,
+      ...scope.partial_families,
+      ...scope.missing_families,
+      ...scope.provider_limited_families
+    ];
+    const seen = new Set<string>();
+    for (const family of classified) {
+      if (!required.has(family)) ctx.addIssue({ code: "custom", message: `unrequired coverage family: ${family}` });
+      if (seen.has(family)) ctx.addIssue({ code: "custom", message: `coverage family classified more than once: ${family}` });
+      seen.add(family);
+    }
+    for (const family of required) {
+      if (!seen.has(family)) ctx.addIssue({ code: "custom", message: `coverage family is unclassified: ${family}` });
+    }
+    if (scope.status === "FULL" && (scope.partial_families.length > 0 || scope.missing_families.length > 0)) {
+      ctx.addIssue({ code: "custom", message: "FULL source scope cannot contain partial or missing families" });
+    }
+    if (scope.status === "UNAVAILABLE" && (scope.implemented_families.length > 0 || scope.partial_families.length > 0)) {
+      ctx.addIssue({ code: "custom", message: "UNAVAILABLE source scope cannot contain implemented or partial families" });
+    }
+  });
+
 const CadenceSchema = z
   .object({
     mode: z.enum(["EVENT_DRIVEN", "INTERVAL", "CRON", "MANUAL", "DISABLED"]),
@@ -81,6 +119,7 @@ export const IngestionManifestEntrySchema = z
     connection_state: IngestionConnectionStateSchema,
     business_domains: z.array(z.string()).min(1),
     capabilities: z.array(z.string()).min(1),
+    coverage_scope: SourceCoverageScopeSchema.optional(),
     decisions_supported: z.array(z.string()).min(1),
     adapter: z
       .object({
@@ -118,6 +157,16 @@ export const IngestionManifestEntrySchema = z
   })
   .strict()
   .superRefine((entry, ctx) => {
+    const comprehensiveSources = new Set([
+      "ads.meta",
+      "analytics.ga4",
+      "behavior.microsoft_clarity",
+      "commerce.funnelkit",
+      "commerce.woocommerce"
+    ]);
+    if (comprehensiveSources.has(entry.source_id) && !entry.coverage_scope) {
+      ctx.addIssue({ code: "custom", message: "comprehensive first-party source requires coverage_scope", path: ["coverage_scope"] });
+    }
     const executable = ["DASHBOARD_WORKER", "GITHUB_ACTIONS", "LOCAL_AUTHORIZED_WORKER"].includes(entry.execution_venue);
     if (executable && ["UNIMPLEMENTED", "BLOCKED"].includes(entry.adapter.state)) {
       ctx.addIssue({ code: "custom", message: "executable source requires a usable adapter", path: ["adapter", "state"] });
