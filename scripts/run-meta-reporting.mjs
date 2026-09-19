@@ -12,7 +12,9 @@ import {
 import {
   buildMetaAdFixedWindowPlanV1,
   META_AD_INSIGHT_FIELDS_V1,
+  META_CAMPAIGN_INSIGHT_FIELDS_V1,
   summarizeMetaAdInsightV1,
+  summarizeMetaCampaignInsightV1,
 } from './lib/meta-ad-fixed-window-v1.mjs';
 
 const REQUIRED_ENV_VARS = ['META_ACCESS_TOKEN'];
@@ -49,18 +51,6 @@ const repoRoot = process.cwd();
 const outputPath = path.join(repoRoot, 'dashboard', 'data', 'meta', 'latest.json');
 const logPath = path.join(repoRoot, 'dashboard', 'logs', 'meta_ads_agent.log');
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const CAMPAIGN_FIELDS = Object.freeze([
-  'campaign_id',
-  'campaign_name',
-  'spend',
-  'impressions',
-  'clicks',
-  'ctr',
-  'cpc',
-  'cpm',
-  'actions',
-  'action_values',
-]);
 
 function appendLog(payload) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...payload });
@@ -81,41 +71,6 @@ async function sendSchedulerAlert(payload) {
   } catch (error) {
     console.warn('[meta-agent] Failed to send scheduler alert:', error instanceof Error ? error.message : error);
   }
-}
-
-function summarizeCampaign(row) {
-  const spend = Number(row.spend ?? 0);
-  const impressions = Number(row.impressions ?? 0);
-  const clicks = Number(row.clicks ?? 0);
-  const ctr = Number(row.ctr ?? 0);
-  const cpc = Number(row.cpc ?? 0);
-  const cpm = Number(row.cpm ?? 0);
-
-  const purchases = getActionValue(row.actions, 'offsite_conversion.purchase');
-  const purchaseValue = getActionValue(row.action_values, 'offsite_conversion.purchase');
-  const roas = purchaseValue && spend ? purchaseValue / spend : null;
-
-  return {
-    campaignId: row.campaign_id,
-    campaignName: row.campaign_name,
-    spend,
-    impressions,
-    clicks,
-    ctr,
-    cpc,
-    cpm,
-    purchases,
-    purchaseValue,
-    roas
-  };
-}
-
-function getActionValue(actions, target) {
-  if (!Array.isArray(actions)) return null;
-  const match = actions.find((action) => action?.action_type === target);
-  if (!match) return null;
-  const value = Number(match.value ?? match.action_value ?? match.inline_value ?? 0);
-  return Number.isFinite(value) ? value : null;
 }
 
 function rangeEndingOnCompleteDate(days, completeThrough) {
@@ -174,7 +129,7 @@ async function fetchCampaignInsights(adAccountId, reportingRange) {
   return fetchInsightRange({
     adAccountId,
     level: 'campaign',
-    fields: CAMPAIGN_FIELDS,
+    fields: META_CAMPAIGN_INSIGHT_FIELDS_V1,
     reportingRange,
   });
 }
@@ -207,31 +162,50 @@ async function fetchAdFixedWindows(adAccountId, plan) {
   return Object.freeze(windows);
 }
 
+function aggregateCampaigns(campaigns) {
+  const totals = campaigns.reduce(
+    (acc, campaign) => {
+      acc.spend += campaign.spend;
+      acc.impressions += campaign.impressions;
+      acc.clicks += campaign.clicks;
+      if (campaign.purchases === null) acc.purchasesComplete = false;
+      else acc.purchases += campaign.purchases;
+      if (campaign.purchaseValue === null) acc.purchaseValueComplete = false;
+      else acc.purchaseValue += campaign.purchaseValue;
+      return acc;
+    },
+    {
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      purchases: 0,
+      purchasesComplete: true,
+      purchaseValue: 0,
+      purchaseValueComplete: true,
+    }
+  );
+
+  const purchases = totals.purchasesComplete ? totals.purchases : null;
+  const purchaseValue = totals.purchaseValueComplete ? totals.purchaseValue : null;
+  return Object.freeze({
+    spend: totals.spend,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    purchases,
+    purchaseValue,
+    roas: purchaseValue !== null && totals.spend > 0 ? purchaseValue / totals.spend : null,
+  });
+}
+
 async function main() {
   try {
     const fixedWindowPlan = buildMetaAdFixedWindowPlanV1(new Date());
     const adAccountId = await resolveAccountId();
     const reportingRange = rangeEndingOnCompleteDate(reportDays, fixedWindowPlan.completeThrough);
     const campaignResult = await fetchCampaignInsights(adAccountId, reportingRange);
-    const campaigns = campaignResult.data.map(summarizeCampaign);
+    const campaigns = campaignResult.data.map(summarizeMetaCampaignInsightV1);
     const adFixedWindows = await fetchAdFixedWindows(adAccountId, fixedWindowPlan);
-
-    const totals = campaigns.reduce(
-      (acc, campaign) => {
-        acc.spend += campaign.spend ?? 0;
-        acc.impressions += campaign.impressions ?? 0;
-        acc.clicks += campaign.clicks ?? 0;
-        acc.purchases += campaign.purchases ?? 0;
-        acc.purchaseValue += campaign.purchaseValue ?? 0;
-        return acc;
-      },
-      { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchaseValue: 0 }
-    );
-
-    const summary = {
-      ...totals,
-      roas: totals.spend ? totals.purchaseValue / totals.spend : null
-    };
+    const summary = aggregateCampaigns(campaigns);
 
     const generatedAt = new Date().toISOString();
     const sourceCompleteness = {
@@ -241,11 +215,6 @@ async function main() {
       completeThrough: reportingRange.endDate,
       completedUtcDaysOnly: true,
     };
-    const adFixedWindowEvidence = {
-      generatedAt: fixedWindowPlan.generatedAt,
-      completeThrough: fixedWindowPlan.completeThrough,
-      windows: adFixedWindows,
-    };
     const snapshot = {
       generatedAt,
       accountId: `act_${adAccountId}`,
@@ -253,7 +222,11 @@ async function main() {
       reportingRange,
       sourceCompleteness,
       campaigns,
-      adFixedWindows: adFixedWindowEvidence,
+      adFixedWindows: {
+        generatedAt: fixedWindowPlan.generatedAt,
+        completeThrough: fixedWindowPlan.completeThrough,
+        windows: adFixedWindows,
+      },
       summary,
       status: 'LIVE',
     };
