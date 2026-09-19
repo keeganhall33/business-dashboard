@@ -15,6 +15,7 @@ concurrency:
 
 permissions:
   contents: read
+  statuses: read
 
 jobs:
   validate:
@@ -65,6 +66,7 @@ jobs:
     env:
       SMOKE_BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL }}
       EXPECTED_RELEASE_SHA: ${{ github.sha }}
+      GITHUB_TOKEN: ${{ github.token }}
     timeout-minutes: 20
     steps:
       - name: Checkout exact validated commit
@@ -73,6 +75,23 @@ jobs:
         shell: bash
         run: |
           for attempt in $(seq 1 30); do
+            deployment_gate_rc=0
+            node ./scripts/check-vercel-deployment-gate-v1.mjs || deployment_gate_rc=$?
+            if [ "$deployment_gate_rc" -eq 2 ]; then
+              {
+                echo "## Vercel production proof"
+                echo "- State: BLOCKED"
+                echo "- Expected release: $EXPECTED_RELEASE_SHA"
+                echo "- Reason: terminal Vercel deployment status"
+                echo "- Attempts: $attempt"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            if [ "$deployment_gate_rc" -ne 0 ]; then
+              echo "Could not prove Vercel deployment status for $EXPECTED_RELEASE_SHA" >&2
+              exit "$deployment_gate_rc"
+            fi
+
             if SMOKE_CURL_RETRIES=1 ./scripts/smoke-check.sh; then
               {
                 echo "## Vercel production proof"
@@ -92,4 +111,5 @@ jobs:
 # - Pull requests and main both receive the same GitHub-native typecheck/test/build validation.
 # - Superseded validation/smoke runs are cancelled because only the newest ref can be the current release candidate.
 # - Production smoke checks run only after a validated push to main.
+# - Terminal exact-SHA Vercel deployment failures fail fast instead of consuming the propagation timeout.
 # - Retired provider deployment tooling and deploy hooks are intentionally absent.
