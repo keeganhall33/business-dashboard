@@ -232,7 +232,7 @@ test("strategy workspace renders scan-first sections without inventing unsupport
   assert.match(html, /What is holding things back/);
   assert.match(html, /Decisions to watch/);
   assert.match(html, /Next safe moves/);
-  assert.match(html, /Economics: Unknown/);
+  assert.match(html, /Financial impact: Not estimated yet/);
   assert.match(html, /current partner budget/);
   assert.match(html, /href="\/recommend"/);
   assert.match(html, /href="\/data-evidence"/);
