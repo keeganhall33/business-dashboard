@@ -1,6 +1,7 @@
 import { evaluateExecutiveApprovalEvidenceV1 } from "@/lib/executive-home/approval-truth-guard-v1";
 import type { ExecutiveHomeDecisionRoomDrilldownV1 } from "@/lib/executive-home/decision-room-drilldown";
 import type { ExecutiveHomeFixtureV1 } from "@/lib/executive-home/fixtures";
+import { buildExecutiveHomeFromDashboardOverviewV1 } from "@/lib/executive-home/live-adapter";
 import type { V1ReleaseGateEvidenceV1 } from "@/lib/release/v1-release-certificate-v1";
 import type { DashboardOverviewResponse } from "@/lib/types/dashboard";
 
@@ -33,6 +34,7 @@ export type V1ExecutiveHomeTruthBlockerCodeV1 =
   | "OVERVIEW_PROJECTION_TIMESTAMP_MISMATCH"
   | "MISSING_EXPECTED_SURFACE"
   | "DUPLICATE_EXPECTED_SURFACE"
+  | "BUSINESS_PULSE_TRUTH_MISMATCH"
   | "FIXTURE_PROVENANCE"
   | "NON_LIVE_DECISION_ROOM"
   | "UNAVAILABLE_VALUE_OVERSTATED"
@@ -154,6 +156,37 @@ function validateExpectedSurfaces(
       "DUPLICATE_EXPECTED_SURFACE",
       `Executive Home contains duplicate decision section(s): ${duplicateCardSections.join(", ")}.`
     );
+  }
+}
+
+function validateBusinessPulseTruth(
+  input: V1ExecutiveHomeTruthEvidenceInputV1,
+  blockers: V1ExecutiveHomeTruthBlockerV1[]
+) {
+  let canonicalPulse: ExecutiveHomeFixtureV1["command_center"]["business_pulse"];
+  try {
+    canonicalPulse = buildExecutiveHomeFromDashboardOverviewV1(input.overview).home.command_center.business_pulse;
+  } catch {
+    push(
+      blockers,
+      "BUSINESS_PULSE_TRUTH_MISMATCH",
+      "Executive Home business pulse could not be reproduced from the supplied canonical overview."
+    );
+    return;
+  }
+
+  for (const id of EXPECTED_PULSE_IDS) {
+    const expected = canonicalPulse.find((entry) => entry.id === id);
+    const actual = input.projection.home.command_center.business_pulse.find((entry) => entry.id === id);
+    if (!expected || !actual) continue;
+
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      push(
+        blockers,
+        "BUSINESS_PULSE_TRUTH_MISMATCH",
+        `${id} differs from the canonical business-pulse projection for the supplied overview.`
+      );
+    }
   }
 }
 
@@ -303,6 +336,7 @@ export function compileV1ExecutiveHomeTruthEvidenceV1(
   }
 
   validateExpectedSurfaces(input.projection, blockers);
+  validateBusinessPulseTruth(input, blockers);
   validateUnavailableSemantics(input.projection.home, blockers);
   validateApprovalTruth(input, blockers);
 
@@ -345,7 +379,7 @@ export function compileV1ExecutiveHomeTruthEvidenceV1(
       releaseSha: releaseShaValid ? input.releaseSha : null,
       actionRequirement: "NONE",
       detail: status === "PASS"
-        ? "Observed production Executive Home preserved canonical truth, unavailable states, approval uncertainty, live provenance, and fixture isolation."
+        ? "Observed production Executive Home matched the canonical business pulse and preserved unavailable states, approval uncertainty, live provenance, and fixture isolation."
         : "Executive Home release truth remains blocked until every production-truth verification passes."
     },
     authority: {
