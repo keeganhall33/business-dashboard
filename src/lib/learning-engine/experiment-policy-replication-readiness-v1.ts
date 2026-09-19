@@ -41,6 +41,7 @@ export type ExperimentPolicyReplicationReadinessReasonV1 =
   | "SOURCE_FROM_FUTURE"
   | "SOURCE_STALE"
   | "TARGET_EXPERIMENT_NOT_FOUND"
+  | "TARGET_EXPERIMENT_NOT_DECISION_GRADE"
   | "NO_SHADOW_POLICY_CANDIDATE"
   | "POLICY_METADATA_INVALID"
   | "REPLICATION_FROM_TARGET_EXPERIMENT"
@@ -54,6 +55,8 @@ export type ExperimentPolicyReplicationReadinessReasonV1 =
   | "REPLICATION_STALE"
   | "REPLICATION_NOT_KNOWN"
   | "REPLICATION_CONFLICTED"
+  | "INVALID_REPLICATION_ASSESSMENT"
+  | "INVALID_ATTRIBUTION_CLASS"
   | "CONTRADICTORY_REPLICATION_OBSERVED"
   | "INCONCLUSIVE_REPLICATION_OBSERVED"
   | "MINIMUM_DISTINCT_SUPPORT_NOT_MET";
@@ -138,6 +141,7 @@ const VERIFY_REASONS = new Set<ExperimentPolicyReplicationReadinessReasonV1>([
   "SOURCE_AUTHORITY_WIDENED",
   "SOURCE_FROM_FUTURE",
   "TARGET_EXPERIMENT_NOT_FOUND",
+  "TARGET_EXPERIMENT_NOT_DECISION_GRADE",
   "POLICY_METADATA_INVALID",
   "REPLICATION_FROM_TARGET_EXPERIMENT",
   "DUPLICATE_REPLICATION_EXPERIMENT",
@@ -147,7 +151,26 @@ const VERIFY_REASONS = new Set<ExperimentPolicyReplicationReadinessReasonV1>([
   "REPLICATION_EVIDENCE_NOT_BOUND_TO_PORTFOLIO",
   "REPLICATION_PROVENANCE_MISSING",
   "REPLICATION_FROM_FUTURE",
-  "REPLICATION_CONFLICTED"
+  "REPLICATION_CONFLICTED",
+  "INVALID_REPLICATION_ASSESSMENT",
+  "INVALID_ATTRIBUTION_CLASS"
+]);
+
+const WAIT_REASONS = new Set<ExperimentPolicyReplicationReadinessReasonV1>([
+  "SOURCE_STALE",
+  "REPLICATION_STALE",
+  "REPLICATION_NOT_KNOWN"
+]);
+
+const ASSESSMENTS = new Set<ExperimentPolicyReplicationAssessmentV1>([
+  "SUPPORTS_POLICY",
+  "CONTRADICTS_POLICY",
+  "INCONCLUSIVE"
+]);
+const ATTRIBUTION_CLASSES = new Set<ExperimentAttributionClassV1>([
+  "NOT_ESTABLISHED",
+  "CORRELATIONAL",
+  "CAUSAL_SUPPORTED"
 ]);
 
 function deepFreeze<T>(value: T): T {
@@ -190,7 +213,9 @@ function stateFor(
 ): ExperimentPolicyReplicationReadinessStateV1 {
   if (reasons.some((reason) => VERIFY_REASONS.has(reason))) return "VERIFY_REQUIRED";
   if (!hasPolicy) return "NOT_APPLICABLE";
+  if (reasons.includes("SOURCE_STALE")) return "WAIT_FOR_REPLICATIONS";
   if (contradictionCount > 0) return "CONTRADICTION_REVIEW";
+  if (reasons.some((reason) => WAIT_REASONS.has(reason))) return "WAIT_FOR_REPLICATIONS";
   if (minimum !== null && supportCount >= minimum) return "READY_FOR_INDEPENDENT_REVIEW";
   return "WAIT_FOR_REPLICATIONS";
 }
@@ -207,9 +232,9 @@ function nextStepFor(
 
 /**
  * Re-audits a shadow-only experiment policy candidate using explicit,
- * distinct-experiment evidence. The source portfolio's legacy replication-ref
- * count is intentionally not treated as proof that independent replications
- * exist. This projection can only prepare governed review.
+ * distinct-experiment evidence. The source portfolio's replication-ref count
+ * is intentionally not treated as proof that independent replications exist.
+ * This projection can only prepare governed review.
  */
 export function reviewExperimentPolicyReplicationReadinessV1(
   input: ExperimentPolicyReplicationReadinessInputV1
@@ -252,6 +277,13 @@ export function reviewExperimentPolicyReplicationReadinessV1(
 
   const target = portfolio?.items?.find((item) => item.experimentId === targetExperimentId) ?? null;
   if (!target) pushReason(reasons, "TARGET_EXPERIMENT_NOT_FOUND");
+  if (
+    target &&
+    (target.preRegistrationState !== "VALID" ||
+      !new Set(["SUCCESS_REVIEW", "SCALE_REVIEW"]).has(target.reviewState))
+  ) {
+    pushReason(reasons, "TARGET_EXPERIMENT_NOT_DECISION_GRADE");
+  }
 
   const hasPolicy = target?.policyUpdate?.mode === "SHADOW_ONLY";
   if (target && !hasPolicy) pushReason(reasons, "NO_SHADOW_POLICY_CANDIDATE");
@@ -299,8 +331,10 @@ export function reviewExperimentPolicyReplicationReadinessV1(
       pushReason(reasons, "REPLICATION_PROVENANCE_MISSING");
       continue;
     }
+
+    const duplicateExperiment = seenExperimentIds.has(experimentId);
     if (experimentId === targetExperimentId) pushReason(reasons, "REPLICATION_FROM_TARGET_EXPERIMENT");
-    if (seenExperimentIds.has(experimentId)) pushReason(reasons, "DUPLICATE_REPLICATION_EXPERIMENT");
+    if (duplicateExperiment) pushReason(reasons, "DUPLICATE_REPLICATION_EXPERIMENT");
     seenExperimentIds.add(experimentId);
 
     if (policyStatement && statement !== policyStatement) pushReason(reasons, "POLICY_STATEMENT_MISMATCH");
@@ -313,14 +347,15 @@ export function reviewExperimentPolicyReplicationReadinessV1(
 
     if (raw.truthState === "CONFLICTED") pushReason(reasons, "REPLICATION_CONFLICTED");
     else if (raw.truthState !== "KNOWN") pushReason(reasons, "REPLICATION_NOT_KNOWN");
+    if (!ASSESSMENTS.has(raw.assessment)) pushReason(reasons, "INVALID_REPLICATION_ASSESSMENT");
+    if (!ATTRIBUTION_CLASSES.has(raw.attributionClass)) pushReason(reasons, "INVALID_ATTRIBUTION_CLASS");
 
     if (recordEvidenceRefs.some((ref) => !portfolioEvidenceRefs.has(ref))) {
       pushReason(reasons, "REPLICATION_EVIDENCE_NOT_BOUND_TO_PORTFOLIO");
     }
-    for (const ref of recordEvidenceRefs) {
-      if (seenEvidenceRefs.has(ref)) pushReason(reasons, "DUPLICATE_REPLICATION_EVIDENCE");
-      seenEvidenceRefs.add(ref);
-    }
+    const duplicateEvidence = recordEvidenceRefs.some((ref) => seenEvidenceRefs.has(ref));
+    if (duplicateEvidence) pushReason(reasons, "DUPLICATE_REPLICATION_EVIDENCE");
+    for (const ref of recordEvidenceRefs) seenEvidenceRefs.add(ref);
 
     consideredExperimentIds.push(experimentId);
     evidenceRefs.push(...recordEvidenceRefs);
@@ -328,7 +363,11 @@ export function reviewExperimentPolicyReplicationReadinessV1(
     confounders.push(...recordConfounders);
 
     const recordUsable =
+      !duplicateExperiment &&
+      !duplicateEvidence &&
       raw.truthState === "KNOWN" &&
+      ASSESSMENTS.has(raw.assessment) &&
+      ATTRIBUTION_CLASSES.has(raw.attributionClass) &&
       Date.parse(observedAt) <= reviewedAtMs &&
       reviewedAtMs - Date.parse(observedAt) <= input.maxEvidenceAgeMs &&
       statement === policyStatement &&
