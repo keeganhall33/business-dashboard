@@ -282,6 +282,14 @@ function proposalIssues(
   return Object.freeze([...issues].sort((a, b) => a.localeCompare(b)));
 }
 
+function decisionEvidenceRefs(proposal: RelationshipGraphRoleEdgeProposalV1): readonly string[] {
+  try {
+    return uniqueSafeTexts(proposal.evidenceRefs, "proposal.evidenceRefs");
+  } catch {
+    return Object.freeze([]);
+  }
+}
+
 function decision(
   proposal: RelationshipGraphRoleEdgeProposalV1,
   disposition: RelationshipGraphCanonicalReviewDispositionV1,
@@ -293,7 +301,7 @@ function decision(
     disposition,
     handoffId,
     reasonCodes: [...new Set(reasonCodes)].sort((a, b) => a.localeCompare(b)),
-    evidenceRefs: [...uniqueSafeTexts(proposal.evidenceRefs, "proposal.evidenceRefs")]
+    evidenceRefs: [...decisionEvidenceRefs(proposal)]
   });
 }
 
