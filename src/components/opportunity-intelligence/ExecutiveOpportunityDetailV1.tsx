@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { OpportunityEditorV1, type EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
+import { OpportunityAccessIntelligenceV1 } from "@/components/opportunity-intelligence/OpportunityAccessIntelligenceV1";
 
 import type {
   ExecutiveCommandCenterOpportunityV1,
@@ -11,6 +12,7 @@ import {
   type OpportunityRelationshipEvidenceV1,
   type OpportunityRelationshipLinksV1
 } from "@/lib/opportunity-intelligence/opportunity-relationship-links-v1";
+import type { OpportunityAccessMapV1 } from "@/lib/opportunity-intelligence/opportunity-access-map-v1";
 
 const EVIDENCE_TONE: Record<ExecutiveCommandCenterTruthStateV1, string> = {
   KNOWN: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -74,12 +76,14 @@ export function ExecutiveOpportunityDetailV1({
   opportunity,
   generatedAt,
   relationshipEvidence = null,
+  accessMap,
   editableOpportunity,
   primaryContacts = []
 }: {
   opportunity: ExecutiveCommandCenterOpportunityV1;
   generatedAt?: string | null;
   relationshipEvidence?: readonly OpportunityRelationshipEvidenceV1[] | null;
+  accessMap?: OpportunityAccessMapV1 | null;
   editableOpportunity?: EditableOpportunityV1 | null;
   primaryContacts?: readonly { canonicalId: string; label: string; href: string }[];
 }) {
@@ -169,6 +173,8 @@ export function ExecutiveOpportunityDetailV1({
             </div>
           </section>
         ) : null}
+
+        {accessMap ? <OpportunityAccessIntelligenceV1 accessMap={accessMap} /> : null}
 
         <details className="rounded-3xl border border-slate-200 bg-[#ffffff] shadow-sm">
           <summary className="cursor-pointer list-none p-5 text-sm font-semibold text-slate-900">When this was last updated</summary>

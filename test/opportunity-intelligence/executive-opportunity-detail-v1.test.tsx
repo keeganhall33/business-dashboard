@@ -17,6 +17,7 @@ import {
   EXECUTIVE_HOME_FIXTURE_V1,
   type ExecutiveCommandCenterOpportunityV1
 } from "@/lib/executive-home/fixtures";
+import { projectOpportunityAccessMapV1 } from "@/lib/opportunity-intelligence/opportunity-access-map-v1";
 
 const ROUTE_PATH = "src/app/(app)/opportunities-actions/opportunity/[id]/page.tsx";
 
@@ -50,6 +51,11 @@ test("canonical Home opportunity cards navigate to the real dedicated route", ()
 });
 
 test("known opportunity renders meaningful scan-first decision detail without invented economics or source verification", () => {
+  const accessMap = projectOpportunityAccessMapV1({
+    opportunityId: knownOpportunity.id,
+    asOf: "2026-09-19T12:00:00.000Z",
+    evidence: []
+  });
   const html = renderToString(
     <ExecutiveOpportunityDetailV1
       opportunity={knownOpportunity}
@@ -73,6 +79,7 @@ test("known opportunity renders meaningful scan-first decision detail without in
           href: "/relationships/people/person%3Aalex-example"
         }
       ]}
+      accessMap={accessMap}
     />
   );
 
@@ -95,10 +102,43 @@ test("known opportunity renders meaningful scan-first decision detail without in
   assert.doesNotMatch(html, />Verified</);
   assert.doesNotMatch(html, /Verified from connected records/);
   assert.match(html, /Relationships \/ CRM/);
+  assert.match(html, /Opportunity access/);
+  assert.match(html, /0 of 4 areas evidenced/);
+  assert.match(html, /Access intelligence has not yet been evidenced/);
+  assert.match(html, /Identify who can approve the opportunity/);
   assert.match(html, /All opportunities/);
   assert.doesNotMatch(html, /Next step status|Business fit|Decision Room|Data &amp; Evidence/);
   assert.match(html, /grid-cols-2|lg:grid-cols/);
   assert.doesNotMatch(html, /\$0(?:\.00)?|revenue estimate|guaranteed value/i);
+});
+
+test("opportunity access renders only a current source-backed warm path", () => {
+  const accessMap = projectOpportunityAccessMapV1({
+    opportunityId: knownOpportunity.id,
+    asOf: "2026-09-19T12:00:00.000Z",
+    evidence: [{
+      evidenceId: "access:alex:boeing",
+      opportunityId: knownOpportunity.id,
+      kind: "WARM_ACCESS_PATH",
+      truthState: "KNOWN",
+      freshnessState: "CURRENT",
+      observedAt: "2026-09-18T12:00:00.000Z",
+      evidenceRefs: ["crm:relationship:42"],
+      path: [
+        { entityType: "PERSON", canonicalId: "person:alex-example", label: "Alex Example" },
+        { entityType: "COMPANY", canonicalId: "organization:boeing", label: "Boeing" }
+      ],
+      reasonForIntroduction: "CRM records Alex Example as a referrer for this opportunity and Boeing as a connected organization."
+    }]
+  });
+  const html = renderToString(<ExecutiveOpportunityDetailV1 opportunity={knownOpportunity} accessMap={accessMap} />);
+
+  assert.match(html, /1 of 4 areas evidenced/);
+  assert.match(html, /Verified warm paths/);
+  assert.match(html, /href="\/relationships\/people\/person%3Aalex-example"/);
+  assert.match(html, /href="\/relationships\/companies\/organization%3Aboeing"/);
+  assert.match(html, /CRM records Alex Example as a referrer/);
+  assert.doesNotMatch(html, /Access intelligence has not yet been evidenced/);
 });
 
 test("UNKNOWN STALE and CONFLICTED opportunity states remain explicitly verification-gated", () => {
@@ -137,6 +177,9 @@ test("route loads the exact editable opportunity without waiting on the full das
   assert.match(source, /getOpportunityById\(id\.trim\(\)\)/);
   assert.match(source, /getOpportunityRelationshipContextV1\(editable\.id\)/);
   assert.match(source, /relationshipEvidence=\{relationshipContext\.evidence\}/);
+  assert.match(source, /projectOpportunityAccessMapV1\(\{/);
+  assert.match(source, /evidence: relationshipContext\.accessEvidence/);
+  assert.match(source, /accessMap=\{accessMap\}/);
   assert.match(source, /primaryContacts=\{relationshipContext\.primaryContacts\}/);
   assert.match(source, /editableOpportunity=\{editable\}/);
   assert.match(source, /catch \{\s*notFound\(\)/);
