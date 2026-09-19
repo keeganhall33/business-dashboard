@@ -70,7 +70,7 @@ type ProviderMetricBlock = {
 };
 
 const MAX_PROVIDER_METRIC_BLOCKS = 100;
-const MAX_PROVIDER_ROWS_PER_METRIC = 1_000;
+const MAX_PROVIDER_RESPONSE_ROWS = 1_000;
 const MAX_PROVIDER_ROW_KEYS = 64;
 const ALLOWED_SOURCE_TRUTHS = new Set<ClarityEvidenceTruthState>([
   "COMPLETE",
@@ -147,6 +147,7 @@ function parseProviderResponse(value: unknown): ProviderMetricBlock[] | null {
   if (!Array.isArray(value) || value.length > MAX_PROVIDER_METRIC_BLOCKS) return null;
 
   const blocks: ProviderMetricBlock[] = [];
+  let responseRows = 0;
   for (const entry of value) {
     if (!isPlainObject(entry)) return null;
     if (
@@ -154,10 +155,13 @@ function parseProviderResponse(value: unknown): ProviderMetricBlock[] | null {
       entry.metricName.trim().length === 0 ||
       entry.metricName.length > 120 ||
       !Array.isArray(entry.information) ||
-      entry.information.length > MAX_PROVIDER_ROWS_PER_METRIC
+      entry.information.length > MAX_PROVIDER_RESPONSE_ROWS
     ) {
       return null;
     }
+
+    responseRows += entry.information.length;
+    if (responseRows > MAX_PROVIDER_RESPONSE_ROWS) return null;
 
     const rows: Record<string, unknown>[] = [];
     for (const row of entry.information) {
@@ -208,7 +212,7 @@ function validReadyPlan(plan: ClarityDataExportRequestPlanV1): boolean {
       plan.expectedUtcWindow &&
       plan.lookbackDays &&
       [1, 2, 3].includes(plan.lookbackDays) &&
-      plan.providerLimits.maximumRows === MAX_PROVIDER_ROWS_PER_METRIC &&
+      plan.providerLimits.maximumRows === MAX_PROVIDER_RESPONSE_ROWS &&
       plan.providerLimits.maximumLookbackDays === 3 &&
       plan.providerLimits.paginationSupported === false &&
       plan.providerLimits.responseTimezone === "UTC" &&
@@ -349,13 +353,8 @@ export function adaptClarityDataExportResponseV1(
     trafficRowIssue = true;
   }
 
-  const maxInformationRows = blocks.reduce(
-    (maximum, block) => Math.max(maximum, block.information.length),
-    0,
-  );
-  const rowLimitReached = blocks.some(
-    (block) => block.information.length === MAX_PROVIDER_ROWS_PER_METRIC,
-  );
+  const responseRows = blocks.reduce((total, block) => total + block.information.length, 0);
+  const rowLimitReached = responseRows === MAX_PROVIDER_RESPONSE_ROWS;
   const effectiveSourceTruth: ClarityEvidenceTruthState =
     input.sourceTruth === "COMPLETE" && trafficRowIssue ? "PARTIAL" : input.sourceTruth;
 
@@ -369,7 +368,7 @@ export function adaptClarityDataExportResponseV1(
     now: input.now,
     maxAgeHours: input.maxAgeHours,
     dimensions: [...input.plan.dimensions],
-    responseRows: maxInformationRows,
+    responseRows,
     rowLimitReached,
     evidenceRefs: [input.evidenceRef.trim()],
     metrics: observations,
