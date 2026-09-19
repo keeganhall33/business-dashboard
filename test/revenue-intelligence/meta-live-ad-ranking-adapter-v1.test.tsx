@@ -167,7 +167,7 @@ test("supports CTR and CPC without changing directional semantics", () => {
   assert.equal(ctr.ranking?.entries[0]?.classification, "WINNER_CANDIDATE");
   assert.equal(ctr.ranking?.entries[0]?.metricDirection, "HIGHER_IS_BETTER");
 
-  const cpc = rank(source, { metric: "CPC" });
+  const cpc = rank(source, { metric: "CPC", minimumSampleSize: 20 });
   assert.equal(cpc.status, "READY");
   assert.equal(cpc.ranking?.entries[0]?.classification, "WINNER_CANDIDATE");
   assert.equal(cpc.ranking?.entries[0]?.metricDirection, "LOWER_IS_BETTER");
