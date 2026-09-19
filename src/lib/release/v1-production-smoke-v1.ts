@@ -18,6 +18,14 @@ export const V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1 = [
 
 export const V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1 = ["DESKTOP", "MOBILE"] as const;
 
+/**
+ * Production smoke is release-time evidence, not durable health evidence.
+ * Keeping every observation within one hour of artifact generation prevents an
+ * old exact-SHA smoke from being replayed as CURRENT if the same SHA remains
+ * deployed or is later redeployed.
+ */
+export const V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1 = 60 * 60 * 1_000;
+
 export type V1ProductionSmokeStepIdV1 =
   (typeof V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1)[number];
 export type V1ProductionSmokeDeviceClassV1 =
@@ -65,6 +73,7 @@ export type V1ProductionSmokeBlockerCodeV1 =
   | "STEP_SHA_MISMATCH"
   | "STEP_INVALID_TIMESTAMP"
   | "STEP_FUTURE_EVIDENCE"
+  | "STEP_STALE_EVIDENCE"
   | "STEP_MISSING_PROVENANCE"
   | "STEP_UNSAFE_PROVENANCE"
   | "STEP_INVALID_PATH"
@@ -76,6 +85,7 @@ export type V1ProductionSmokeBlockerCodeV1 =
   | "DEVICE_SHA_MISMATCH"
   | "DEVICE_INVALID_TIMESTAMP"
   | "DEVICE_FUTURE_EVIDENCE"
+  | "DEVICE_STALE_EVIDENCE"
   | "DEVICE_INVALID_VIEWPORT"
   | "DEVICE_VIEWPORT_MISMATCH"
   | "DEVICE_MISSING_PROVENANCE"
@@ -222,9 +232,9 @@ function viewportMatchesDeviceClass(
  *
  * This compiler performs no browser automation, network requests, authentication,
  * deployment, production mutation, or secret access. Callers must supply evidence from
- * the live production run. Missing, partial, conflicted, out-of-order, route-mismatched,
- * device-incomplete, or release-mismatched observations fail closed instead of being
- * promoted to release truth.
+ * the live production run. Missing, partial, conflicted, stale, out-of-order,
+ * route-mismatched, device-incomplete, or release-mismatched observations fail closed
+ * instead of being promoted to release truth.
  */
 export function compileV1ProductionSmokeV1(
   input: V1ProductionSmokeInputV1
@@ -402,6 +412,20 @@ export function compileV1ProductionSmokeV1(
           "STEP_FUTURE_EVIDENCE",
           stepId,
           `${stepId} is dated after the smoke artifact generation time.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
+    } else if (
+      generatedAtMs != null &&
+      generatedAtMs - observedAtMs > V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1
+    ) {
+      blockers.push(
+        blocker(
+          "STEP_STALE_EVIDENCE",
+          stepId,
+          `${stepId} is older than the one-hour production-smoke freshness window. Re-observe the live route for this release.`,
           sanitized.refs,
           observation.actionRequirement
         )
@@ -621,6 +645,20 @@ export function compileV1ProductionSmokeV1(
         )
       );
       blocking = true;
+    } else if (
+      generatedAtMs != null &&
+      generatedAtMs - observedAtMs > V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1
+    ) {
+      blockers.push(
+        blocker(
+          "DEVICE_STALE_EVIDENCE",
+          null,
+          `${deviceClass} evidence is older than the one-hour production-smoke freshness window. Re-observe live device coherence for this release.`,
+          sanitized.refs,
+          observation.actionRequirement
+        )
+      );
+      blocking = true;
     }
 
     if (!validViewport) {
@@ -729,7 +767,7 @@ export function compileV1ProductionSmokeV1(
     actionRequirement: status === "PASS" ? "NONE" : gateActionRequirement,
     detail:
       status === "PASS"
-        ? "All required Useful V1 production smoke steps passed in order on canonical routes, with explicit desktop and mobile coherence proof, for the exact release SHA using provenance-backed observations."
+        ? "All required Useful V1 production smoke steps passed in order on canonical routes, with fresh explicit desktop and mobile coherence proof, for the exact release SHA using provenance-backed observations."
         : `Production smoke remains blocked by ${blockers.length} evidence-integrity or observation blocker(s).`
   };
 
