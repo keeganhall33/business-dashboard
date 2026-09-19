@@ -351,8 +351,11 @@ export function reviewDecisionOutcomeCalibrationV1(input: {
   generatedAt: string;
   minimumDistinctDecisions: number;
 }): Readonly<DecisionOutcomeCalibrationReviewV1> {
-  if (!Array.isArray(input.targets) || input.targets.length > MAX_TARGETS) {
-    throw new DecisionOutcomeCalibrationError("TARGET_BOUND", `at most ${MAX_TARGETS} targets may be reviewed`);
+  if (!Array.isArray(input.targets) || input.targets.length === 0 || input.targets.length > MAX_TARGETS) {
+    throw new DecisionOutcomeCalibrationError(
+      "TARGET_BOUND",
+      `between 1 and ${MAX_TARGETS} targets must be reviewed`
+    );
   }
   if (
     !Number.isInteger(input.minimumDistinctDecisions) ||
