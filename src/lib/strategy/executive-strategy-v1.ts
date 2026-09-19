@@ -200,7 +200,7 @@ export function buildExecutiveStrategyWorkspaceV1(input: {
       unknownOrConflicted: records.filter((item) => item.epistemicState === "UNKNOWN" || item.epistemicState === "CONFLICTED").length,
     },
     notice: state === "AVAILABLE"
-      ? "Priorities preserve the existing recommendation score and executive-action lanes. No new strategy ranking is introduced here."
-      : "Strategy is using partial or non-live evidence. UNKNOWN and review-required states remain visible and action certainty is withheld.",
+      ? "These priorities use the latest available recommendation evidence. Open any item to see the underlying data and reasoning."
+      : "Some supporting data is still missing or not current, so recommendations that need stronger evidence are clearly held back.",
   };
 }
