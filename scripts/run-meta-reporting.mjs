@@ -9,6 +9,13 @@ import {
   fetchAllMetaInsightPagesV1,
   META_GRAPH_API_VERSION_V1,
 } from './lib/meta-insights-pagination-v1.mjs';
+import {
+  buildMetaAdFixedWindowPlanV1,
+  META_AD_INSIGHT_FIELDS_V1,
+  META_CAMPAIGN_INSIGHT_FIELDS_V1,
+  summarizeMetaAdInsightV1,
+  summarizeMetaCampaignInsightV1,
+} from './lib/meta-ad-fixed-window-v1.mjs';
 
 const REQUIRED_ENV_VARS = ['META_ACCESS_TOKEN'];
 for (const key of REQUIRED_ENV_VARS) {
@@ -20,7 +27,12 @@ for (const key of REQUIRED_ENV_VARS) {
 
 const accessToken = process.env.META_ACCESS_TOKEN.trim();
 const configuredAccountId = process.env.META_AD_ACCOUNT_ID?.trim();
-const reportDays = Math.max(1, Number(process.env.META_REPORT_DAYS ?? 7));
+const rawReportDays = Number(process.env.META_REPORT_DAYS ?? 7);
+if (!Number.isSafeInteger(rawReportDays) || rawReportDays < 1 || rawReportDays > 365) {
+  console.error('[meta-agent] META_REPORT_DAYS must be a safe integer between 1 and 365');
+  process.exit(1);
+}
+const reportDays = rawReportDays;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 const supabaseEnabled = Boolean(supabaseUrl && supabaseServiceRoleKey);
@@ -38,6 +50,7 @@ if (!supabaseEnabled) {
 const repoRoot = process.cwd();
 const outputPath = path.join(repoRoot, 'dashboard', 'data', 'meta', 'latest.json');
 const logPath = path.join(repoRoot, 'dashboard', 'logs', 'meta_ads_agent.log');
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 function appendLog(payload) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...payload });
@@ -60,43 +73,15 @@ async function sendSchedulerAlert(payload) {
   }
 }
 
-function iso(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function summarizeCampaign(row) {
-  const spend = Number(row.spend ?? 0);
-  const impressions = Number(row.impressions ?? 0);
-  const clicks = Number(row.clicks ?? 0);
-  const ctr = Number(row.ctr ?? 0);
-  const cpc = Number(row.cpc ?? 0);
-  const cpm = Number(row.cpm ?? 0);
-
-  const purchases = getActionValue(row.actions, 'offsite_conversion.purchase');
-  const purchaseValue = getActionValue(row.action_values, 'offsite_conversion.purchase');
-  const roas = purchaseValue && spend ? purchaseValue / spend : null;
-
-  return {
-    campaignId: row.campaign_id,
-    campaignName: row.campaign_name,
-    spend,
-    impressions,
-    clicks,
-    ctr,
-    cpc,
-    cpm,
-    purchases,
-    purchaseValue,
-    roas
-  };
-}
-
-function getActionValue(actions, target) {
-  if (!Array.isArray(actions)) return null;
-  const match = actions.find((action) => action?.action_type === target);
-  if (!match) return null;
-  const value = Number(match.value ?? match.action_value ?? match.inline_value ?? 0);
-  return Number.isFinite(value) ? value : null;
+function rangeEndingOnCompleteDate(days, completeThrough) {
+  const endMs = Date.parse(`${completeThrough}T00:00:00.000Z`);
+  if (!Number.isFinite(endMs)) {
+    throw new Error('Meta complete-through date is invalid');
+  }
+  return Object.freeze({
+    startDate: new Date(endMs - (days - 1) * DAY_MS).toISOString().slice(0, 10),
+    endDate: completeThrough,
+  });
 }
 
 async function resolveAccountId() {
@@ -123,20 +108,14 @@ async function resolveAccountId() {
   return String(accountId).replace(/^act_/, '');
 }
 
-async function fetchInsights(adAccountId) {
-  const end = new Date();
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - (reportDays - 1));
-  const reportingRange = Object.freeze({ startDate: iso(start), endDate: iso(end) });
-
+async function fetchInsightRange({ adAccountId, level, fields, reportingRange }) {
   const url = buildMetaGraphUrlV1(`/act_${adAccountId}/insights`);
+  url.searchParams.set('fields', fields.join(','));
+  url.searchParams.set('level', level);
   url.searchParams.set(
-    'fields',
-    ['campaign_id', 'campaign_name', 'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'actions', 'action_values'].join(',')
+    'time_range',
+    JSON.stringify({ since: reportingRange.startDate, until: reportingRange.endDate })
   );
-  url.searchParams.set('level', 'campaign');
-  url.searchParams.set('time_range', JSON.stringify({ since: reportingRange.startDate, until: reportingRange.endDate }));
-  url.searchParams.set('time_increment', `${reportDays}`);
 
   const result = await fetchAllMetaInsightPagesV1({
     initialUrl: url.toString(),
@@ -146,70 +125,130 @@ async function fetchInsights(adAccountId) {
   return { ...result, reportingRange };
 }
 
+async function fetchCampaignInsights(adAccountId, reportingRange) {
+  return fetchInsightRange({
+    adAccountId,
+    level: 'campaign',
+    fields: META_CAMPAIGN_INSIGHT_FIELDS_V1,
+    reportingRange,
+  });
+}
+
+async function fetchAdFixedWindows(adAccountId, plan) {
+  const windows = [];
+  for (const window of plan.windows) {
+    const result = await fetchInsightRange({
+      adAccountId,
+      level: 'ad',
+      fields: META_AD_INSIGHT_FIELDS_V1,
+      reportingRange: window.range,
+    });
+    const ads = result.data.map(summarizeMetaAdInsightV1);
+    windows.push({
+      key: window.key,
+      role: window.role,
+      days: window.days,
+      reportingRange: window.range,
+      sourceCompleteness: {
+        apiVersion: META_GRAPH_API_VERSION_V1,
+        paginationComplete: result.paginationComplete,
+        pagesFetched: result.pagesFetched,
+        completeThrough: window.range.endDate,
+        completedUtcDaysOnly: true,
+      },
+      ads,
+    });
+  }
+  return Object.freeze(windows);
+}
+
+function aggregateCampaigns(campaigns) {
+  const totals = campaigns.reduce(
+    (acc, campaign) => {
+      acc.spend += campaign.spend;
+      acc.impressions += campaign.impressions;
+      acc.clicks += campaign.clicks;
+      if (campaign.purchases === null) acc.purchasesComplete = false;
+      else acc.purchases += campaign.purchases;
+      if (campaign.purchaseValue === null) acc.purchaseValueComplete = false;
+      else acc.purchaseValue += campaign.purchaseValue;
+      return acc;
+    },
+    {
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      purchases: 0,
+      purchasesComplete: true,
+      purchaseValue: 0,
+      purchaseValueComplete: true,
+    }
+  );
+
+  const purchases = totals.purchasesComplete ? totals.purchases : null;
+  const purchaseValue = totals.purchaseValueComplete ? totals.purchaseValue : null;
+  return Object.freeze({
+    spend: totals.spend,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    purchases,
+    purchaseValue,
+    roas: purchaseValue !== null && totals.spend > 0 ? purchaseValue / totals.spend : null,
+  });
+}
+
 async function main() {
   try {
+    const fixedWindowPlan = buildMetaAdFixedWindowPlanV1(new Date());
     const adAccountId = await resolveAccountId();
-    const { data, pagesFetched, paginationComplete, reportingRange } = await fetchInsights(adAccountId);
-    const campaigns = data.map(summarizeCampaign);
-
-    const totals = campaigns.reduce(
-      (acc, campaign) => {
-        acc.spend += campaign.spend ?? 0;
-        acc.impressions += campaign.impressions ?? 0;
-        acc.clicks += campaign.clicks ?? 0;
-        acc.purchases += campaign.purchases ?? 0;
-        acc.purchaseValue += campaign.purchaseValue ?? 0;
-        return acc;
-      },
-      { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchaseValue: 0 }
-    );
-
-    const summary = {
-      ...totals,
-      roas: totals.spend ? totals.purchaseValue / totals.spend : null
-    };
+    const reportingRange = rangeEndingOnCompleteDate(reportDays, fixedWindowPlan.completeThrough);
+    const campaignResult = await fetchCampaignInsights(adAccountId, reportingRange);
+    const campaigns = campaignResult.data.map(summarizeMetaCampaignInsightV1);
+    const adFixedWindows = await fetchAdFixedWindows(adAccountId, fixedWindowPlan);
+    const summary = aggregateCampaigns(campaigns);
 
     const generatedAt = new Date().toISOString();
     const sourceCompleteness = {
       apiVersion: META_GRAPH_API_VERSION_V1,
-      paginationComplete,
-      pagesFetched,
+      paginationComplete: campaignResult.paginationComplete,
+      pagesFetched: campaignResult.pagesFetched,
+      completeThrough: reportingRange.endDate,
+      completedUtcDaysOnly: true,
     };
-
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(
-      outputPath,
-      JSON.stringify(
-        {
-          generatedAt,
-          accountId: `act_${adAccountId}`,
-          range: reportDays,
-          reportingRange,
-          sourceCompleteness,
-          campaigns,
-          summary
-        },
-        null,
-        2
-      )
-    );
-
-    await upsertSupabaseSnapshot({
+    const snapshot = {
       generatedAt,
       accountId: `act_${adAccountId}`,
       range: reportDays,
       reportingRange,
       sourceCompleteness,
       campaigns,
+      adFixedWindows: {
+        generatedAt: fixedWindowPlan.generatedAt,
+        completeThrough: fixedWindowPlan.completeThrough,
+        windows: adFixedWindows,
+      },
       summary,
-      status: summary.spend > 0 ? 'LIVE' : 'PARTIAL'
-    });
+      status: 'LIVE',
+    };
 
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, JSON.stringify(snapshot, null, 2));
+    await upsertSupabaseSnapshot(snapshot);
+
+    const adRows = adFixedWindows.reduce((count, window) => count + window.ads.length, 0);
+    const adPagesFetched = adFixedWindows.reduce(
+      (count, window) => count + window.sourceCompleteness.pagesFetched,
+      0
+    );
     await appendLog({
       status: 'success',
       campaigns: campaigns.length,
+      adRows,
+      adFixedWindows: adFixedWindows.length,
       spend: summary.spend,
-      pagesFetched,
+      pagesFetched: campaignResult.pagesFetched,
+      adPagesFetched,
+      completeThrough: fixedWindowPlan.completeThrough,
       apiVersion: META_GRAPH_API_VERSION_V1,
     });
     await sendSchedulerAlert({ status: 'success', message: 'Meta reporting agent completed', spend: summary.spend });
