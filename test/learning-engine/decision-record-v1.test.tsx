@@ -52,7 +52,7 @@ test("decision learning snapshot is dashboard-consumable and deterministic", () 
   assert.equal(snapshot.summary.missed_predictions, 1);
   assert.equal(snapshot.summary.low_attribution_outcomes, 1);
   assert.equal(snapshot.summary.unknown_outcomes, 1);
-  assert.equal(snapshot.summary.policy_update_candidates, 1);
+  assert.equal(snapshot.summary.policy_update_candidates, 0);
   assert.equal(snapshot.summary.review_required_decisions, 0);
   assert.equal(snapshot.summary.superseded_decisions, 0);
 
@@ -62,14 +62,47 @@ test("decision learning snapshot is dashboard-consumable and deterministic", () 
   );
 });
 
-test("successful prediction can produce strong causal learning and a policy candidate", () => {
+test("successful observational prediction remains directional and cannot silently become causal policy", () => {
   const card = toDecisionLearningRecordCard(decisionLearningFixturesV1[0]);
 
   assert.equal(card.dashboard_flags.is_successful_prediction, true);
+  assert.equal(card.resolved_attribution_class, "CORRELATIONAL");
+  assert.equal(card.dashboard_flags.learning_strength, "DIRECTIONAL_LEARNING");
+  assert.equal(card.dashboard_flags.can_update_policy, false);
+  assert.equal(card.POLICY_UPDATE_CANDIDATE, null);
+  assert.equal(card.CALIBRATION_ERROR, "LOW");
+});
+
+test("strong causal learning requires explicit causal support plus current approved governance", () => {
+  const causal = governedRecord({
+    id: "causal-governed",
+    base: {
+      ...decisionLearningFixturesV1[0],
+      ATTRIBUTION_CLASS: "CAUSAL_SUPPORTED"
+    }
+  });
+  const card = toDecisionLearningRecordCard(causal, {
+    as_of: "2026-08-20T12:00:00.000Z",
+    current_evidence_fingerprint: "evidence-v1"
+  });
+
+  assert.equal(card.resolved_attribution_class, "CAUSAL_SUPPORTED");
+  assert.equal(card.ATTRIBUTION_CONFIDENCE, "HIGH");
   assert.equal(card.dashboard_flags.learning_strength, "STRONG_CAUSAL_LEARNING");
   assert.equal(card.dashboard_flags.can_update_policy, true);
   assert.match(card.POLICY_UPDATE_CANDIDATE ?? "", /conservative traffic recovery ranges/i);
-  assert.equal(card.CALIBRATION_ERROR, "LOW");
+});
+
+test("legacy records without an attribution class fail closed instead of gaining causal status", () => {
+  const legacy = {
+    ...decisionLearningFixturesV1[0],
+    ATTRIBUTION_CLASS: undefined
+  } satisfies DecisionLearningRecordInputV1;
+  const card = toDecisionLearningRecordCard(legacy);
+
+  assert.equal(card.resolved_attribution_class, "NOT_ESTABLISHED");
+  assert.equal(card.dashboard_flags.learning_strength, "DIRECTIONAL_LEARNING");
+  assert.equal(card.dashboard_flags.can_update_policy, false);
 });
 
 test("missed prediction is visible without inventing a policy update", () => {
@@ -87,6 +120,7 @@ test("low attribution outcomes cannot be represented as strong causal learning",
   const card = toDecisionLearningRecordCard(decisionLearningFixturesV1[2]);
 
   assert.equal(card.ATTRIBUTION_CONFIDENCE, "LOW");
+  assert.equal(card.resolved_attribution_class, "NOT_ESTABLISHED");
   assert.equal(card.dashboard_flags.is_low_attribution, true);
   assert.equal(card.dashboard_flags.learning_strength, "WEAK_SIGNAL_ONLY");
   assert.equal(card.dashboard_flags.can_update_policy, false);
@@ -223,10 +257,19 @@ test("governance cannot promote UNKNOWN or low-attribution outcomes into policy"
   assert.equal(card.POLICY_UPDATE_CANDIDATE, null);
 });
 
-test("unapproved or review-required governed decisions cannot update policy", () => {
-  const reviewedOnly = governedRecord({ governance: { review_state: "REVIEWED" } });
-  const staleApproval = governedRecord({ governance: { valid_until: "2026-08-18T12:00:00.000Z" } });
+test("unapproved review-required or ungoverned learning cannot update policy", () => {
+  const causalBase = {
+    ...decisionLearningFixturesV1[0],
+    ATTRIBUTION_CLASS: "CAUSAL_SUPPORTED" as const
+  };
+  const ungoverned = causalBase;
+  const reviewedOnly = governedRecord({ base: causalBase, governance: { review_state: "REVIEWED" } });
+  const staleApproval = governedRecord({ base: causalBase, governance: { valid_until: "2026-08-18T12:00:00.000Z" } });
 
+  assert.equal(
+    toDecisionLearningRecordCard(ungoverned, { as_of: "2026-08-20T12:00:00.000Z" }).dashboard_flags.can_update_policy,
+    false
+  );
   assert.equal(
     toDecisionLearningRecordCard(reviewedOnly, { as_of: "2026-08-20T12:00:00.000Z" }).dashboard_flags.can_update_policy,
     false
@@ -265,6 +308,17 @@ test("malformed governance fails closed for timestamps rationale evidence and re
   for (const [label, input, expected] of cases) {
     assert.throws(() => validateDecisionGovernance(input), expected, label);
   }
+});
+
+test("invalid attribution class fails closed before snapshot promotion", () => {
+  const invalid = {
+    ...decisionLearningFixturesV1[0],
+    ATTRIBUTION_CLASS: "ASSERTED_CAUSAL" as DecisionLearningRecordInputV1["ATTRIBUTION_CLASS"]
+  };
+  assert.throws(
+    () => buildDecisionLearningSnapshot([invalid], "2026-08-20T12:00:00.000Z"),
+    /ATTRIBUTION_CLASS is invalid/
+  );
 });
 
 test("supersession fails closed for self reference missing successor and circular chains", () => {
