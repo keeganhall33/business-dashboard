@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 
+import {
+  normalizeFunnelKitStepRecordsV1,
+  normalizeFunnelKitWrittenRowCountV1
+} from './lib/funnelkit-step-normalization-v1.mjs';
+
 const SOURCE = 'funnelkit_data_api_v2';
 const FUNNEL_ID = 1;
 const MAX_BACKFILL_DAYS = 120;
@@ -40,10 +45,6 @@ function pacificMidnightIso(dateStr) {
   }).formatToParts(noonUtc);
   const offsetPart = tzParts.find(p => p.type === 'timeZoneName')?.value || 'GMT-07:00';
   return `${dateStr}T00:00:00${offsetPart.replace('GMT', '')}`;
-}
-function int(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.round(n) : fallback;
 }
 function errorMessage(err) {
   if (err instanceof Error) return err.message;
@@ -114,21 +115,14 @@ async function main() {
 
       const funnelData = payload.data.funnel_data || {};
       const records = payload.data.records;
-      const rows = records.map((r, index) => ({
-        funnel_id: Number(funnelData.id || FUNNEL_ID),
-        funnel_name: String(funnelData.title || 'Minimal store checkout funnel'),
-        step_id: Number(r.object_id),
-        step_name: String(r.object_name || r.type || `Step ${index + 1}`),
-        step_index: index + 1,
-        entries: int(r.views),
-        completions: int(r.conversions),
-        avg_time_seconds: null,
-        upsell_offers: 0,
-        upsell_accepts: 0
-      })).filter(r => Number.isFinite(r.step_id));
-
-      const activityEntries = rows.reduce((s, r) => s + r.entries, 0);
-      const activityCompletions = rows.reduce((s, r) => s + r.completions, 0);
+      const normalized = normalizeFunnelKitStepRecordsV1({
+        records,
+        funnelData,
+        requestedFunnelId: FUNNEL_ID
+      });
+      const rows = normalized.rows;
+      const activityEntries = normalized.activityEntries;
+      const activityCompletions = normalized.activityCompletions;
       const written = await rpcOrThrow(db, 'ingest_funnelkit_day_v2', {
         p_rows: rows,
         p_coverage_date: day,
@@ -140,10 +134,11 @@ async function main() {
           activity_completions: activityCompletions
         }
       });
+      const writtenCount = normalizeFunnelKitWrittenRowCountV1(written);
 
-      totalSteps += Number(written || 0);
+      totalSteps += writtenCount;
       processedDays += 1;
-      console.log(JSON.stringify({ source: SOURCE, day, rows: Number(written || 0), entries: activityEntries, completions: activityCompletions }));
+      console.log(JSON.stringify({ source: SOURCE, day, rows: writtenCount, entries: activityEntries, completions: activityCompletions }));
     }
 
     await rpcOrThrow(db, 'log_funnelkit_ingest_run_v2', {
