@@ -40,6 +40,7 @@ export type CompanyBrainDecisionRevisitLaneV1 =
 export type CompanyBrainDecisionRevisitReasonV1 =
   | "TRIGGER_OBSERVATION_MISSING"
   | "DUPLICATE_TRIGGER_OBSERVATIONS"
+  | "DUPLICATE_OBSERVATION_ID"
   | "TRIGGER_IDENTITY_MISMATCH"
   | "OBSERVATION_ID_INVALID"
   | "OBSERVATION_TIMESTAMP_INVALID"
@@ -343,12 +344,14 @@ function normalizeObservation(
 }
 
 type ValidSource = Readonly<{
-  brief: DecisionMemoryBriefV1;
   sourceBriefId: string;
   decisionId: string;
+  decisionClass: DecisionMemoryBriefV1["decisionClass"];
   decidedAt: string;
   sourceGeneratedAt: string;
   sourceAgeMs: number;
+  sourceFreshnessState: DecisionMemoryBriefV1["freshnessState"];
+  rationale: DecisionMemoryBriefV1["rationale"];
   provenanceRefs: readonly string[];
   triggers: readonly DecisionMemoryRevisitSignalV1[];
 }>;
@@ -373,8 +376,13 @@ function validateSource(
   if (!exactSourceAuthority(brief?.actionAuthority)) reasons.add("SOURCE_AUTHORITY_WIDENED");
   if (brief?.outcome?.causalityClaimedByBrief !== false) reasons.add("SOURCE_CAUSALITY_INVARIANT_FAILED");
   if (brief?.state === "VERIFY_INTEGRITY" || brief?.state === "VERIFY_LINEAGE") reasons.add("SOURCE_REQUIRES_VERIFICATION");
-  if (Array.isArray(brief?.integrityFlags) && brief.integrityFlags.length > 0) reasons.add("SOURCE_INTEGRITY_FLAGGED");
+  if (!Array.isArray(brief?.integrityFlags) || brief.integrityFlags.length > MAX_SIGNALS) {
+    reasons.add("SOURCE_INTEGRITY_FLAGS_INVALID");
+  } else if (brief.integrityFlags.length > 0) {
+    reasons.add("SOURCE_INTEGRITY_FLAGGED");
+  }
   if (brief?.freshnessState === "FUTURE_RECORD") reasons.add("SOURCE_FUTURE_RECORD");
+  if (brief?.freshnessState === "EXPIRED") reasons.add("SOURCE_DECISION_EXPIRED_REVIEW_REQUIRED");
 
   const sourceGeneratedAt = canonicalTimestamp(brief?.generatedAt);
   const decidedAt = canonicalTimestamp(brief?.decidedAt);
@@ -396,8 +404,24 @@ function validateSource(
   if (!Array.isArray(brief?.revisitSignals) || brief.revisitSignals.length > MAX_SIGNALS) {
     reasons.add("SOURCE_REVISIT_SIGNALS_INVALID");
   }
+
+  const rationaleState = brief?.rationale?.state;
+  const rationaleValue = text(brief?.rationale?.value);
   const rationaleEvidenceRefs = boundedUniqueStrings(brief?.rationale?.evidenceRefs);
-  if (!rationaleEvidenceRefs) reasons.add("SOURCE_RATIONALE_EVIDENCE_INVALID");
+  if (!TRUTH_STATES.has(rationaleState) || !rationaleEvidenceRefs) {
+    reasons.add("SOURCE_RATIONALE_INVALID");
+  } else if (
+    (rationaleState === "KNOWN" || rationaleState === "INFERRED")
+    && (!rationaleValue || rationaleEvidenceRefs.length === 0)
+  ) {
+    reasons.add("SOURCE_RATIONALE_INVALID");
+  } else if (
+    rationaleState !== "KNOWN"
+    && rationaleState !== "INFERRED"
+    && brief.rationale.value !== null
+  ) {
+    reasons.add("SOURCE_RATIONALE_INVALID");
+  }
 
   const triggers = Array.isArray(brief?.revisitSignals) ? explicitTriggers(brief) : [];
   const triggerRefs = new Set<string>();
@@ -434,21 +458,35 @@ function validateSource(
     || !decidedAt
     || sourceAgeMs === null
     || !provenanceRefs
+    || !rationaleEvidenceRefs
+    || !TRUTH_STATES.has(rationaleState)
   ) {
     return { health, source: null };
   }
 
+  const rationale: DecisionMemoryBriefV1["rationale"] = {
+    state: rationaleState,
+    value: brief.rationale.value,
+    evidenceRefs: Object.freeze([...rationaleEvidenceRefs])
+  };
+  const clonedTriggers = Object.freeze(triggers.map((trigger) => Object.freeze({
+    ...trigger,
+    evidenceRefs: Object.freeze([...trigger.evidenceRefs])
+  })));
+
   return {
     health,
-    source: deepFreeze({
-      brief,
+    source: Object.freeze({
       sourceBriefId,
       decisionId,
+      decisionClass: brief.decisionClass,
       decidedAt,
       sourceGeneratedAt,
       sourceAgeMs,
-      provenanceRefs,
-      triggers: Object.freeze([...triggers])
+      sourceFreshnessState: brief.freshnessState,
+      rationale: Object.freeze(rationale),
+      provenanceRefs: Object.freeze([...provenanceRefs]),
+      triggers: clonedTriggers
     })
   };
 }
@@ -457,9 +495,10 @@ function projectItem(args: Readonly<{
   source: ValidSource;
   trigger: DecisionMemoryRevisitSignalV1;
   observations: readonly NormalizedObservation[];
+  duplicateObservationIds: ReadonlySet<string>;
   generatedAtMs: number;
 }>): CompanyBrainDecisionRevisitItemV1 {
-  const { source, trigger, observations, generatedAtMs } = args;
+  const { source, trigger, observations, duplicateObservationIds, generatedAtMs } = args;
   const triggerRef = String(trigger.ref).trim();
   const triggerText = String(trigger.text).trim();
   const reasons = new Set<CompanyBrainDecisionRevisitReasonV1>();
@@ -475,6 +514,9 @@ function projectItem(args: Readonly<{
   } else {
     observation = observations[0];
     for (const reason of observation.reasons) reasons.add(reason);
+    if (observation.observationId && duplicateObservationIds.has(observation.observationId)) {
+      reasons.add("DUPLICATE_OBSERVATION_ID");
+    }
     if (observation.triggerText !== triggerText) reasons.add("TRIGGER_IDENTITY_MISMATCH");
     if (observation.observedAt && Date.parse(observation.observedAt) < Date.parse(source.decidedAt)) {
       reasons.add("OBSERVATION_BEFORE_DECISION");
@@ -494,7 +536,7 @@ function projectItem(args: Readonly<{
     }
   }
 
-  const evidenceRefs = observation?.evidenceRefs ?? Object.freeze([]);
+  const evidenceRefs = Object.freeze([...(observation?.evidenceRefs ?? [])]);
   const sourceRefs = Object.freeze([
     ...new Set([
       ...source.provenanceRefs,
@@ -502,19 +544,24 @@ function projectItem(args: Readonly<{
     ])
   ].sort((a, b) => a.localeCompare(b)));
   const observedAt = observation?.observedAt ?? null;
+  const rationale: DecisionMemoryBriefV1["rationale"] = Object.freeze({
+    state: source.rationale.state,
+    value: source.rationale.value,
+    evidenceRefs: Object.freeze([...source.rationale.evidenceRefs])
+  });
 
   return deepFreeze({
     itemId: stableId([source.sourceBriefId, source.decisionId, triggerRef]),
     sourceBriefId: source.sourceBriefId,
     decisionId: source.decisionId,
-    decisionClass: source.brief.decisionClass,
+    decisionClass: source.decisionClass,
     decidedAt: source.decidedAt,
     sourceGeneratedAt: source.sourceGeneratedAt,
     sourceAgeMs: source.sourceAgeMs,
-    sourceFreshnessState: source.brief.freshnessState,
+    sourceFreshnessState: source.sourceFreshnessState,
     triggerRef,
     triggerText,
-    rationale: source.brief.rationale,
+    rationale,
     observationId: observation?.observationId ?? null,
     observedAt,
     observationAgeMs: observedAt ? generatedAtMs - Date.parse(observedAt) : null,
@@ -610,7 +657,13 @@ export function compileCompanyBrainDecisionRevisitReviewV1(
       const key = observationKey(source.decisionId, triggerRef);
       expectedTriggerKeys.add(key);
       const observations = observationsByKey.get(key) ?? [];
-      const item = projectItem({ source, trigger, observations, generatedAtMs });
+      const item = projectItem({
+        source,
+        trigger,
+        observations,
+        duplicateObservationIds,
+        generatedAtMs
+      });
       timeline.push(item);
       if (item.lane === "VERIFY_TRIGGER_EVIDENCE") {
         verificationReasons.add(`TRIGGER_EVIDENCE_REQUIRES_VERIFICATION:${source.decisionId}:${triggerRef}`);
