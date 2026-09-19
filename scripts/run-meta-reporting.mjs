@@ -4,6 +4,11 @@ import path from 'node:path';
 import process from 'node:process';
 import fetch from 'node-fetch';
 import { createClient } from '@supabase/supabase-js';
+import {
+  buildMetaGraphUrlV1,
+  fetchAllMetaInsightPagesV1,
+  META_GRAPH_API_VERSION_V1,
+} from './lib/meta-insights-pagination-v1.mjs';
 
 const REQUIRED_ENV_VARS = ['META_ACCESS_TOKEN'];
 for (const key of REQUIRED_ENV_VARS) {
@@ -99,7 +104,9 @@ async function resolveAccountId() {
     return configuredAccountId.replace(/^act_/, '');
   }
 
-  const response = await fetch('https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name', {
+  const url = buildMetaGraphUrlV1('/me/adaccounts');
+  url.searchParams.set('fields', 'id,name');
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
 
@@ -120,34 +127,29 @@ async function fetchInsights(adAccountId) {
   const end = new Date();
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (reportDays - 1));
+  const reportingRange = Object.freeze({ startDate: iso(start), endDate: iso(end) });
 
-  const url = new URL(`https://graph.facebook.com/v19.0/act_${adAccountId}/insights`);
+  const url = buildMetaGraphUrlV1(`/act_${adAccountId}/insights`);
   url.searchParams.set(
     'fields',
     ['campaign_id', 'campaign_name', 'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'actions', 'action_values'].join(',')
   );
   url.searchParams.set('level', 'campaign');
-  url.searchParams.set('time_range', JSON.stringify({ since: iso(start), until: iso(end) }));
+  url.searchParams.set('time_range', JSON.stringify({ since: reportingRange.startDate, until: reportingRange.endDate }));
   url.searchParams.set('time_increment', `${reportDays}`);
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` }
+  const result = await fetchAllMetaInsightPagesV1({
+    initialUrl: url.toString(),
+    accessToken,
+    fetchImpl: fetch,
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Meta insights API failed (${response.status} ${response.statusText}): ${text}`);
-  }
-
-  const json = await response.json();
-  return { data: json.data ?? [], paging: json.paging ?? null };
+  return { ...result, reportingRange };
 }
 
 async function main() {
   try {
     const adAccountId = await resolveAccountId();
-    const { data } = await fetchInsights(adAccountId);
+    const { data, pagesFetched, paginationComplete, reportingRange } = await fetchInsights(adAccountId);
     const campaigns = data.map(summarizeCampaign);
 
     const totals = campaigns.reduce(
@@ -167,14 +169,23 @@ async function main() {
       roas: totals.spend ? totals.purchaseValue / totals.spend : null
     };
 
+    const generatedAt = new Date().toISOString();
+    const sourceCompleteness = {
+      apiVersion: META_GRAPH_API_VERSION_V1,
+      paginationComplete,
+      pagesFetched,
+    };
+
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(
       outputPath,
       JSON.stringify(
         {
-          generatedAt: new Date().toISOString(),
+          generatedAt,
           accountId: `act_${adAccountId}`,
           range: reportDays,
+          reportingRange,
+          sourceCompleteness,
           campaigns,
           summary
         },
@@ -184,15 +195,23 @@ async function main() {
     );
 
     await upsertSupabaseSnapshot({
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       accountId: `act_${adAccountId}`,
       range: reportDays,
+      reportingRange,
+      sourceCompleteness,
       campaigns,
       summary,
       status: summary.spend > 0 ? 'LIVE' : 'PARTIAL'
     });
 
-    await appendLog({ status: 'success', campaigns: campaigns.length, spend: summary.spend });
+    await appendLog({
+      status: 'success',
+      campaigns: campaigns.length,
+      spend: summary.spend,
+      pagesFetched,
+      apiVersion: META_GRAPH_API_VERSION_V1,
+    });
     await sendSchedulerAlert({ status: 'success', message: 'Meta reporting agent completed', spend: summary.spend });
     console.log('[meta-agent] Updated Meta insights snapshot');
   } catch (error) {
