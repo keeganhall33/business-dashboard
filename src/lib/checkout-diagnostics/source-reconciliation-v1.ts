@@ -1,7 +1,11 @@
 export const CHECKOUT_SOURCE_RECONCILIATION_VERSION =
   "CHECKOUT_SOURCE_RECONCILIATION_V1" as const;
 
-export type CheckoutReconciliationSourceV1 = "FUNNELKIT" | "WOO" | "GA4";
+export type CheckoutReconciliationSourceV1 =
+  | "FUNNELKIT"
+  | "WOO"
+  | "GA4"
+  | "META";
 export type CheckoutReconciliationTruthV1 =
   | "COMPLETE"
   | "PARTIAL"
@@ -65,7 +69,8 @@ export type CheckoutSourceReconciliationV1 = {
 const SOURCES: readonly CheckoutReconciliationSourceV1[] = [
   "FUNNELKIT",
   "WOO",
-  "GA4"
+  "GA4",
+  "META"
 ];
 const TRUTH_STATES: readonly CheckoutReconciliationTruthV1[] = [
   "COMPLETE",
