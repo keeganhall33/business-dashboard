@@ -59,6 +59,7 @@ export type V1ReleaseBlockerCodeV1 =
   | "GATE_FUTURE_EVIDENCE"
   | "GATE_MISSING_PROVENANCE"
   | "GATE_UNSAFE_PROVENANCE"
+  | "GATE_UNRESOLVED_ACTION_REQUIREMENT"
   | "FINAL_ACCEPTANCE_REJECTED"
   | "FINAL_ACCEPTANCE_SHA_MISMATCH"
   | "FINAL_ACCEPTANCE_INVALID_TIMESTAMP"
@@ -343,6 +344,19 @@ export function compileV1ReleaseCertificateV1(
           "GATE_FUTURE_EVIDENCE",
           gateId,
           `${gateId} evidence is dated after the certificate generation time.`,
+          refs,
+          gate.actionRequirement
+        )
+      );
+      gateBlocking = true;
+    }
+
+    if (gate.state === "PASS" && gate.actionRequirement !== "NONE") {
+      blockers.push(
+        blocker(
+          "GATE_UNRESOLVED_ACTION_REQUIREMENT",
+          gateId,
+          `${gateId} claims PASS while actionRequirement is ${gate.actionRequirement}; unresolved or unknown action requirements cannot certify a release gate.`,
           refs,
           gate.actionRequirement
         )
