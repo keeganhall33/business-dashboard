@@ -5,26 +5,23 @@ import type {
 } from "./social-canonical-v1";
 import type {
   SocialChannelDrilldownV1,
-  SocialChannelMetricV1
+  SocialChannelMetricStateV1
 } from "./social-channel-drilldown-v1";
 import type {
   SocialConnectorHealthPlatformV1,
   SocialConnectorHealthReviewV1
 } from "./social-connector-health-review-v1";
 import type {
-  SocialContentPerformanceItemV1,
   SocialContentPerformanceReviewV1
 } from "./social-content-performance-review-v1";
 import type {
-  SocialContentBusinessValueReviewItemV1,
   SocialContentBusinessValueReviewV1
 } from "./social-content-business-value-review-v1";
 import type {
-  SocialContentOpportunityQueueV1,
-  SocialContentOpportunityV1
+  SocialContentOpportunityPriorityV1,
+  SocialContentOpportunityQueueV1
 } from "./social-content-opportunity-queue-v1";
 import type {
-  SocialMaterialAlertReadinessItemV1,
   SocialMaterialAlertReadinessV1
 } from "./social-material-alert-readiness-v1";
 
@@ -34,7 +31,7 @@ export const SOCIAL_EXECUTIVE_OVERVIEW_MAX_ALERT_REVIEWS_V1 = 20;
 export const SOCIAL_EXECUTIVE_OVERVIEW_MAX_ACTIONS_V1 = 5;
 
 export type SocialExecutiveOverviewStatusV1 = "READY" | "PARTIAL" | "VERIFY_REQUIRED";
-
+export type SocialExecutiveOverviewComponentStateV1 = "CURRENT" | "PARTIAL" | "VERIFY_REQUIRED";
 export type SocialExecutiveOverviewReasonV1 =
   | "CHANNEL_NOT_DECISION_GRADE"
   | "CHANNEL_CONNECTOR_HEALTH_MISSING"
@@ -50,29 +47,21 @@ export type SocialExecutiveOverviewReasonV1 =
   | "ALERT_READINESS_STALE"
   | "ALERT_READINESS_NOT_READY";
 
-export type SocialExecutiveOverviewComponentStateV1 = "CURRENT" | "PARTIAL" | "VERIFY_REQUIRED";
-
 export type SocialExecutiveOverviewComponentV1 = Readonly<{
-  component:
-    | "CONNECTOR_HEALTH"
-    | "CHANNEL_DRILLDOWNS"
-    | "CONTENT_PERFORMANCE"
-    | "BUSINESS_VALUE"
-    | "OPPORTUNITY_QUEUE"
-    | "ALERT_READINESS";
+  component: "CONNECTOR_HEALTH" | "CHANNEL_DRILLDOWNS" | "CONTENT_PERFORMANCE" | "BUSINESS_VALUE" | "OPPORTUNITY_QUEUE" | "ALERT_READINESS";
   state: SocialExecutiveOverviewComponentStateV1;
   observedAt: string | null;
   reasons: readonly SocialExecutiveOverviewReasonV1[];
 }>;
 
 export type SocialExecutiveAudienceMetricV1 = Readonly<{
-  metric: Extract<SocialMetricKeyV1, "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE">;
+  metric: "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE";
   value: number | null;
   priorValue: number | null;
   absoluteDelta: number | null;
   percentageDelta: number | null;
-  direction: SocialChannelMetricV1["direction"];
-  state: SocialChannelMetricV1["state"];
+  direction: "UP" | "DOWN" | "FLAT" | "UNKNOWN";
+  state: SocialChannelMetricStateV1;
   decisionGrade: boolean;
   evidenceRefs: readonly string[];
 }>;
@@ -82,9 +71,9 @@ export type SocialExecutiveChannelCardV1 = Readonly<{
   accountId: string;
   handle: string | null;
   window: SocialHistoryWindowV1;
-  availability: SocialChannelDrilldownV1["availability"];
-  sourceState: SocialChannelDrilldownV1["sourceHealth"]["state"];
-  sourceFreshness: SocialChannelDrilldownV1["sourceHealth"]["freshness"];
+  availability: "READY" | "PARTIAL" | "NEEDS_CONNECTION" | "NEEDS_IMPLEMENTATION" | "UNAVAILABLE";
+  sourceState: string;
+  sourceFreshness: "FRESH" | "STALE" | "NEVER_SYNCED";
   connectorSourceHealth: SocialConnectorHealthPlatformV1["sourceHealth"] | null;
   canonicalDataState: SocialConnectorHealthPlatformV1["canonicalDataState"] | null;
   liveFirstPartyDataProven: boolean;
@@ -101,8 +90,8 @@ export type SocialExecutiveContentHighlightV1 = Readonly<{
   platform: SocialPlatformV1;
   accountId: string;
   contentId: string;
-  metric: SocialContentPerformanceItemV1["metric"];
-  classification: SocialContentPerformanceItemV1["classification"];
+  metric: SocialMetricKeyV1;
+  classification: "OUTPERFORMING";
   ratioToComparableMedian: number;
   evidenceRefs: readonly string[];
   interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY";
@@ -116,10 +105,10 @@ export type SocialExecutiveBusinessValueHighlightV1 = Readonly<{
   accountId: string;
   contentId: string;
   contentRef: string;
-  businessValueState: SocialContentBusinessValueReviewItemV1["businessValueState"];
+  businessValueState: "TRACKED_BUSINESS_SIGNAL" | "HIGH_INTENT_PLATFORM_SIGNAL";
   directTrackedOutcomeCount: number;
   linkedOutcomeCount: number;
-  highIntentMetrics: SocialContentBusinessValueReviewItemV1["highIntentMetrics"];
+  highIntentMetrics: readonly SocialMetricKeyV1[];
   evidenceRefs: readonly string[];
   crossPlatformWinnerClaim: false;
   causalClaim: false;
@@ -130,7 +119,7 @@ export type SocialExecutiveBusinessValueHighlightV1 = Readonly<{
 export type SocialExecutiveRecommendedActionV1 = Readonly<{
   opportunityId: string;
   rank: number;
-  priority: SocialContentOpportunityV1["priority"];
+  priority: SocialContentOpportunityPriorityV1;
   targetPlatform: SocialPlatformV1;
   sourcePlatform: SocialPlatformV1;
   observedMechanism: string;
@@ -207,24 +196,18 @@ export type SocialExecutiveOverviewInputV1 = Readonly<{
   maxRecommendedActions?: number;
 }>;
 
-function freeze<T>(value: T): T {
+function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
-    for (const child of Object.values(value)) freeze(child);
+    for (const child of Object.values(value)) deepFreeze(child);
   }
   return value;
 }
 
-function iso(value: string, field: string): string {
+function requireIso(value: string, field: string): string {
   const parsed = Date.parse(value);
   if (!value || Number.isNaN(parsed)) throw new Error(`${field} must be a valid timestamp`);
   return new Date(parsed).toISOString();
-}
-
-function nonEmpty(value: string, field: string): string {
-  const normalized = value.trim();
-  if (!normalized) throw new Error(`${field} must be non-empty`);
-  return normalized;
 }
 
 function unique(values: readonly string[]): string[] {
@@ -235,235 +218,218 @@ function uniqueReasons(values: readonly SocialExecutiveOverviewReasonV1[]): Soci
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function componentAge(
+function evidenceAge(
   observedAt: string,
   generatedAtMs: number,
-  maxEvidenceAgeHours: number,
-  staleReason: SocialExecutiveOverviewReasonV1,
+  maxAgeHours: number,
   field: string
-): { observedAt: string; stale: boolean; staleReason: SocialExecutiveOverviewReasonV1 | null } {
-  const normalized = iso(observedAt, field);
+): { observedAt: string; stale: boolean } {
+  const normalized = requireIso(observedAt, field);
   const observedMs = Date.parse(normalized);
   if (observedMs > generatedAtMs) throw new Error(`${field} cannot be in the future`);
-  const stale = generatedAtMs - observedMs > maxEvidenceAgeHours * 3_600_000;
-  return { observedAt: normalized, stale, staleReason: stale ? staleReason : null };
+  return { observedAt: normalized, stale: generatedAtMs - observedMs > maxAgeHours * 3_600_000 };
 }
 
-function assertChannelAuthority(channel: SocialChannelDrilldownV1): void {
-  if (channel.contractVersion !== "SocialChannelDrilldownV1") throw new Error("channelDrilldown contractVersion is invalid");
-  if (
-    channel.crossPlatformAggregationPerformed !== false ||
-    channel.causalAttributionClaimed !== false ||
-    channel.externalAccessPerformed !== false ||
-    channel.writesPerformed !== false
-  ) throw new Error("channelDrilldown widens interpretation or action authority");
-}
-
-function assertConnectorAuthority(review: SocialConnectorHealthReviewV1): void {
-  if (review.contractVersion !== "SocialConnectorHealthReviewV1") throw new Error("connectorHealth contractVersion is invalid");
-  if (review.externalAccessPerformed !== false || review.writesPerformed !== false) {
-    throw new Error("connectorHealth widens action authority");
-  }
-  for (const row of review.platforms) {
+function assertAuthority(input: SocialExecutiveOverviewInputV1): void {
+  if (input.connectorHealth.contractVersion !== "SocialConnectorHealthReviewV1") throw new Error("connectorHealth contractVersion is invalid");
+  if (input.connectorHealth.externalAccessPerformed !== false || input.connectorHealth.writesPerformed !== false) throw new Error("connectorHealth widens action authority");
+  for (const row of input.connectorHealth.platforms) {
     if (row.readOnly !== true || row.writesPerformed !== false) throw new Error("connectorHealth platform widens action authority");
   }
-}
-
-function assertPerformanceAuthority(review: SocialContentPerformanceReviewV1): void {
-  if (review.contractVersion !== "SocialContentPerformanceReviewV1") throw new Error("performanceReview contractVersion is invalid");
-  if (
-    review.interpretation !== "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" ||
-    review.causalClaim !== false ||
-    review.attributionClaim !== false ||
-    review.competitorPerformanceClaim !== false ||
-    review.endorsementClaim !== false ||
-    review.crossPlatformPerformanceComparisonAuthority !== "NONE" ||
-    review.recommendationAuthority !== "NONE" ||
-    review.providerWriteAuthority !== "NONE" ||
-    review.notificationAuthority !== "NONE" ||
-    review.externalAccessPerformed !== false ||
-    review.writesPerformed !== false
-  ) throw new Error("performanceReview widens interpretation or action authority");
-}
-
-function assertBusinessValueAuthority(review: SocialContentBusinessValueReviewV1): void {
-  if (review.contractVersion !== "SocialContentBusinessValueReviewV1") throw new Error("businessValueReview contractVersion is invalid");
-  if (
-    review.causalClaim !== false ||
-    review.revenueAttributionClaim !== false ||
-    review.monetaryValue !== null ||
-    review.competitorPerformanceClaim !== false ||
-    review.endorsementClaim !== false ||
-    review.recommendationAuthority !== "NONE" ||
-    review.providerWriteAuthority !== "NONE" ||
-    review.notificationAuthority !== "NONE" ||
-    review.externalAccessPerformed !== false ||
-    review.writesPerformed !== false
-  ) throw new Error("businessValueReview widens interpretation or action authority");
-}
-
-function assertQueueAuthority(queue: SocialContentOpportunityQueueV1): void {
+  for (const channel of input.channelDrilldowns) {
+    if (channel.contractVersion !== "SocialChannelDrilldownV1") throw new Error("channelDrilldown contractVersion is invalid");
+    if (channel.crossPlatformAggregationPerformed !== false || channel.causalAttributionClaimed !== false || channel.externalAccessPerformed !== false || channel.writesPerformed !== false) {
+      throw new Error("channelDrilldown widens interpretation or action authority");
+    }
+  }
+  const performance = input.performanceReview;
+  if (performance.contractVersion !== "SocialContentPerformanceReviewV1") throw new Error("performanceReview contractVersion is invalid");
+  if (performance.interpretation !== "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" || performance.causalClaim !== false || performance.attributionClaim !== false || performance.competitorPerformanceClaim !== false || performance.endorsementClaim !== false || performance.crossPlatformPerformanceComparisonAuthority !== "NONE" || performance.recommendationAuthority !== "NONE" || performance.providerWriteAuthority !== "NONE" || performance.notificationAuthority !== "NONE" || performance.externalAccessPerformed !== false || performance.writesPerformed !== false) {
+    throw new Error("performanceReview widens interpretation or action authority");
+  }
+  const business = input.businessValueReview;
+  if (business.contractVersion !== "SocialContentBusinessValueReviewV1") throw new Error("businessValueReview contractVersion is invalid");
+  if (business.causalClaim !== false || business.revenueAttributionClaim !== false || business.monetaryValue !== null || business.competitorPerformanceClaim !== false || business.endorsementClaim !== false || business.recommendationAuthority !== "NONE" || business.providerWriteAuthority !== "NONE" || business.notificationAuthority !== "NONE" || business.externalAccessPerformed !== false || business.writesPerformed !== false) {
+    throw new Error("businessValueReview widens interpretation or action authority");
+  }
+  const queue = input.opportunityQueue;
   if (queue.contractVersion !== "SocialContentOpportunityQueueV1") throw new Error("opportunityQueue contractVersion is invalid");
-  if (queue.postingAuthority !== "NONE" || queue.externalAccessPerformed !== false || queue.writesPerformed !== false) {
-    throw new Error("opportunityQueue widens action authority");
+  if (queue.postingAuthority !== "NONE" || queue.externalAccessPerformed !== false || queue.writesPerformed !== false || queue.opportunities.some((item) => item.executionAuthority !== "NONE" || item.publicPostingRequiresApproval !== true || item.confidence !== null)) {
+    throw new Error("opportunityQueue widens action authority or confidence");
   }
-  if (queue.opportunities.some((item) =>
-    item.executionAuthority !== "NONE" || item.publicPostingRequiresApproval !== true || item.confidence !== null
-  )) throw new Error("opportunityQueue item widens action authority or confidence");
-}
-
-function assertAlertAuthority(review: SocialMaterialAlertReadinessV1): void {
-  if (review.contractVersion !== "SocialMaterialAlertReadinessV1") throw new Error("alertReadiness contractVersion is invalid");
-  if (review.notificationAuthority !== "NONE" || review.externalAccessPerformed !== false || review.writesPerformed !== false) {
-    throw new Error("alertReadiness widens action authority");
-  }
-  if (review.items.some((item) => item.eligibleForNotification !== false)) {
-    throw new Error("alertReadiness item widens notification authority");
+  for (const review of input.alertReadiness) {
+    if (review.contractVersion !== "SocialMaterialAlertReadinessV1") throw new Error("alertReadiness contractVersion is invalid");
+    if (review.notificationAuthority !== "NONE" || review.externalAccessPerformed !== false || review.writesPerformed !== false || review.items.some((item) => item.eligibleForNotification !== false)) {
+      throw new Error("alertReadiness widens action authority");
+    }
   }
 }
 
-function audienceMetric(
-  channel: SocialChannelDrilldownV1,
-  key: "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE"
-): SocialExecutiveAudienceMetricV1 {
-  const metric = channel.metrics.find((row) => row.key === key);
-  if (!metric) {
-    return freeze<SocialExecutiveAudienceMetricV1>({
-      metric: key,
-      value: null,
-      priorValue: null,
-      absoluteDelta: null,
-      percentageDelta: null,
-      direction: "UNKNOWN",
-      state: "UNKNOWN",
-      decisionGrade: false,
-      evidenceRefs: []
-    });
+function audienceMetric(channel: SocialChannelDrilldownV1, key: "AUDIENCE_TOTAL" | "NET_NEW_AUDIENCE"): SocialExecutiveAudienceMetricV1 {
+  const row = channel.metrics.find((metric) => metric.key === key);
+  if (!row) {
+    return deepFreeze({ metric: key, value: null, priorValue: null, absoluteDelta: null, percentageDelta: null, direction: "UNKNOWN", state: "UNKNOWN", decisionGrade: false, evidenceRefs: [] });
   }
-  return freeze<SocialExecutiveAudienceMetricV1>({
+  return deepFreeze({
     metric: key,
-    value: metric.value,
-    priorValue: metric.priorValue,
-    absoluteDelta: metric.absoluteDelta,
-    percentageDelta: metric.percentageDelta,
-    direction: metric.direction,
-    state: metric.state,
-    decisionGrade: metric.decisionGrade,
-    evidenceRefs: unique(metric.evidenceRefs)
+    value: row.value,
+    priorValue: row.priorValue,
+    absoluteDelta: row.absoluteDelta,
+    percentageDelta: row.percentageDelta,
+    direction: row.direction,
+    state: row.state,
+    decisionGrade: row.decisionGrade,
+    evidenceRefs: unique(row.evidenceRefs)
   });
 }
 
-function connectorByPlatform(review: SocialConnectorHealthReviewV1): Map<SocialPlatformV1, SocialConnectorHealthPlatformV1> {
-  const result = new Map<SocialPlatformV1, SocialConnectorHealthPlatformV1>();
-  for (const row of review.platforms) {
-    if (result.has(row.platform)) throw new Error(`duplicate connector health platform: ${row.platform}`);
-    result.set(row.platform, row);
-  }
-  return result;
+function component(name: SocialExecutiveOverviewComponentV1["component"], state: SocialExecutiveOverviewComponentStateV1, observedAt: string | null, reasons: readonly SocialExecutiveOverviewReasonV1[]): SocialExecutiveOverviewComponentV1 {
+  return deepFreeze({ component: name, state, observedAt, reasons: uniqueReasons(reasons) });
 }
 
-function channelCard(
-  channel: SocialChannelDrilldownV1,
-  connector: SocialConnectorHealthPlatformV1 | null,
-  reasons: SocialExecutiveOverviewReasonV1[]
-): SocialExecutiveChannelCardV1 {
-  const connectorCurrent = connector?.canonicalDataState === "CURRENT" && connector.liveFirstPartyDataProven === true;
-  const channelCurrent = channel.availability === "READY" && channel.sourceHealth.freshness === "FRESH";
-  if (!connector) reasons.push("CHANNEL_CONNECTOR_HEALTH_MISSING");
-  else if (channelCurrent !== connectorCurrent) reasons.push("CHANNEL_CONNECTOR_TRUTH_MISMATCH");
-  const decisionGrade = channelCurrent && connectorCurrent && connector?.sourceHealth === "HEALTHY";
-  if (!decisionGrade) reasons.push("CHANNEL_NOT_DECISION_GRADE");
+export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewInputV1): SocialExecutiveOverviewV1 {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("input must be an object");
+  if (!Array.isArray(input.channelDrilldowns) || input.channelDrilldowns.length > SOCIAL_EXECUTIVE_OVERVIEW_MAX_CHANNELS_V1) throw new Error("channelDrilldowns are invalid");
+  if (!Array.isArray(input.alertReadiness) || input.alertReadiness.length > SOCIAL_EXECUTIVE_OVERVIEW_MAX_ALERT_REVIEWS_V1) throw new Error("alertReadiness is invalid");
+  if (!Number.isFinite(input.maxEvidenceAgeHours) || input.maxEvidenceAgeHours <= 0) throw new Error("maxEvidenceAgeHours must be a finite positive number");
+  const maxActions = input.maxRecommendedActions ?? 3;
+  if (!Number.isInteger(maxActions) || maxActions < 1 || maxActions > SOCIAL_EXECUTIVE_OVERVIEW_MAX_ACTIONS_V1) throw new Error("maxRecommendedActions is invalid");
 
-  return freeze<SocialExecutiveChannelCardV1>({
-    platform: channel.platform,
-    accountId: nonEmpty(channel.accountId, "channel.accountId"),
-    handle: channel.handle,
-    window: channel.window,
-    availability: channel.availability,
-    sourceState: channel.sourceHealth.state,
-    sourceFreshness: channel.sourceHealth.freshness,
-    connectorSourceHealth: connector?.sourceHealth ?? null,
-    canonicalDataState: connector?.canonicalDataState ?? null,
-    liveFirstPartyDataProven: connector?.liveFirstPartyDataProven ?? false,
-    decisionGrade,
-    audience: audienceMetric(channel, "AUDIENCE_TOTAL"),
-    netNewAudience: audienceMetric(channel, "NET_NEW_AUDIENCE"),
-    warningCodes: unique(channel.warnings.map((warning) => warning.code)),
-    limitations: unique([...(channel.sourceHealth.limitations ?? []), ...(connector?.limitations ?? [])]),
-    evidenceRefs: unique([...(channel.evidenceRefs ?? []), ...(connector?.evidenceRefs ?? [])]),
-    uniqueAudienceClaim: false
-  });
-}
+  const generatedAt = requireIso(input.generatedAt, "generatedAt");
+  const generatedAtMs = Date.parse(generatedAt);
+  assertAuthority(input);
 
-function topOutperformerPerPlatform(review: SocialContentPerformanceReviewV1): SocialExecutiveContentHighlightV1[] {
-  const groups = new Map<SocialPlatformV1, SocialContentPerformanceItemV1[]>();
-  for (const item of review.outperformers) {
-    const rows = groups.get(item.platform) ?? [];
-    rows.push(item);
-    groups.set(item.platform, rows);
+  const reasons: SocialExecutiveOverviewReasonV1[] = [];
+  const components: SocialExecutiveOverviewComponentV1[] = [];
+
+  const connectorAge = evidenceAge(input.connectorHealth.generatedAt, generatedAtMs, input.maxEvidenceAgeHours, "connectorHealth.generatedAt");
+  const connectorReasons: SocialExecutiveOverviewReasonV1[] = [];
+  if (connectorAge.stale) connectorReasons.push("CONNECTOR_HEALTH_STALE");
+  if (input.connectorHealth.platforms.some((row) => row.sourceHealth !== "HEALTHY" && row.sourceHealth !== "NOT_APPLICABLE")) connectorReasons.push("CONNECTOR_HEALTH_NOT_FULLY_OPERATIONAL");
+  reasons.push(...connectorReasons);
+  components.push(component("CONNECTOR_HEALTH", connectorAge.stale ? "VERIFY_REQUIRED" : connectorReasons.length ? "PARTIAL" : "CURRENT", connectorAge.observedAt, connectorReasons));
+
+  const connectorByPlatform = new Map<SocialPlatformV1, SocialConnectorHealthPlatformV1>();
+  for (const row of input.connectorHealth.platforms) {
+    if (connectorByPlatform.has(row.platform)) throw new Error(`duplicate connector health platform: ${row.platform}`);
+    connectorByPlatform.set(row.platform, row);
   }
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([platform, rows]) => {
-      const top = [...rows].sort((a, b) =>
-        b.ratioToComparableMedian - a.ratioToComparableMedian ||
-        a.contentId.localeCompare(b.contentId) ||
-        a.metric.localeCompare(b.metric)
-      )[0];
-      return freeze<SocialExecutiveContentHighlightV1>({
-        platform,
+
+  const channelReasons: SocialExecutiveOverviewReasonV1[] = [];
+  const seenChannels = new Set<string>();
+  const channelCards: SocialExecutiveChannelCardV1[] = [];
+  for (const channel of input.channelDrilldowns) {
+    if (channel.window !== input.window) throw new Error(`channel ${channel.platform}:${channel.accountId} window mismatch`);
+    const identity = `${channel.platform}\u0000${channel.accountId}`;
+    if (seenChannels.has(identity)) throw new Error(`duplicate channel identity: ${channel.platform}:${channel.accountId}`);
+    seenChannels.add(identity);
+    const connector = connectorByPlatform.get(channel.platform) ?? null;
+    const channelCurrent = channel.availability === "READY" && channel.sourceHealth.freshness === "FRESH";
+    const connectorCurrent = connector !== null && connector.canonicalDataState === "CURRENT" && connector.liveFirstPartyDataProven === true;
+    if (!connector) channelReasons.push("CHANNEL_CONNECTOR_HEALTH_MISSING");
+    else if (channelCurrent !== connectorCurrent) channelReasons.push("CHANNEL_CONNECTOR_TRUTH_MISMATCH");
+    const decisionGrade = channelCurrent && connectorCurrent && connector?.sourceHealth === "HEALTHY";
+    if (!decisionGrade) channelReasons.push("CHANNEL_NOT_DECISION_GRADE");
+    channelCards.push(deepFreeze({
+      platform: channel.platform,
+      accountId: channel.accountId,
+      handle: channel.handle,
+      window: channel.window,
+      availability: channel.availability,
+      sourceState: channel.sourceHealth.state,
+      sourceFreshness: channel.sourceHealth.freshness,
+      connectorSourceHealth: connector?.sourceHealth ?? null,
+      canonicalDataState: connector?.canonicalDataState ?? null,
+      liveFirstPartyDataProven: connector?.liveFirstPartyDataProven ?? false,
+      decisionGrade,
+      audience: audienceMetric(channel, "AUDIENCE_TOTAL"),
+      netNewAudience: audienceMetric(channel, "NET_NEW_AUDIENCE"),
+      warningCodes: unique(channel.warnings.map((warning) => warning.code)),
+      limitations: unique([...(channel.sourceHealth.limitations ?? []), ...(connector?.limitations ?? [])]),
+      evidenceRefs: unique([...(channel.evidenceRefs ?? []), ...(connector?.evidenceRefs ?? [])]),
+      uniqueAudienceClaim: false as const
+    }));
+  }
+  channelCards.sort((a, b) => a.platform.localeCompare(b.platform) || a.accountId.localeCompare(b.accountId));
+  reasons.push(...channelReasons);
+  const channelState: SocialExecutiveOverviewComponentStateV1 = channelReasons.includes("CHANNEL_CONNECTOR_HEALTH_MISSING") || channelReasons.includes("CHANNEL_CONNECTOR_TRUTH_MISMATCH") ? "VERIFY_REQUIRED" : channelCards.every((card) => card.decisionGrade) ? "CURRENT" : "PARTIAL";
+  components.push(component("CHANNEL_DRILLDOWNS", channelState, null, channelReasons));
+
+  const performanceAge = evidenceAge(input.performanceReview.evaluatedAt, generatedAtMs, input.maxEvidenceAgeHours, "performanceReview.evaluatedAt");
+  const performanceReasons: SocialExecutiveOverviewReasonV1[] = [];
+  if (performanceAge.stale) performanceReasons.push("CONTENT_PERFORMANCE_STALE");
+  if (input.performanceReview.status !== "READY") performanceReasons.push("CONTENT_PERFORMANCE_NOT_READY");
+  const performanceState: SocialExecutiveOverviewComponentStateV1 = performanceAge.stale || input.performanceReview.status === "VERIFY_REQUIRED" ? "VERIFY_REQUIRED" : input.performanceReview.status === "READY" ? "CURRENT" : "PARTIAL";
+  reasons.push(...performanceReasons);
+  components.push(component("CONTENT_PERFORMANCE", performanceState, performanceAge.observedAt, performanceReasons));
+
+  const contentHighlightsByPlatform: SocialExecutiveContentHighlightV1[] = [];
+  if (performanceState === "CURRENT") {
+    const platforms = [...new Set(input.performanceReview.outperformers.map((row) => row.platform))].sort();
+    for (const platform of platforms) {
+      const top = input.performanceReview.outperformers.filter((row) => row.platform === platform).sort((a, b) => b.ratioToComparableMedian - a.ratioToComparableMedian || a.contentId.localeCompare(b.contentId))[0];
+      if (!top) continue;
+      contentHighlightsByPlatform.push(deepFreeze({
+        platform: top.platform,
         accountId: top.accountId,
         contentId: top.contentId,
         metric: top.metric,
-        classification: top.classification,
+        classification: "OUTPERFORMING" as const,
         ratioToComparableMedian: top.ratioToComparableMedian,
         evidenceRefs: unique(top.evidenceRefs),
-        interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY",
-        crossPlatformWinnerClaim: false,
-        causalClaim: false,
-        attributionClaim: false
-      });
-    });
-}
-
-function businessValuePerPlatform(review: SocialContentBusinessValueReviewV1): SocialExecutiveBusinessValueHighlightV1[] {
-  const groups = new Map<SocialPlatformV1, SocialContentBusinessValueReviewItemV1[]>();
-  for (const item of review.items.filter((row) => row.businessValueState !== "NOT_ESTABLISHED")) {
-    const rows = groups.get(item.platform) ?? [];
-    rows.push(item);
-    groups.set(item.platform, rows);
+        interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" as const,
+        crossPlatformWinnerClaim: false as const,
+        causalClaim: false as const,
+        attributionClaim: false as const
+      }));
+    }
   }
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([platform, rows]) => {
-      const top = [...rows].sort((a, b) =>
-        b.directTrackedOutcomeCount - a.directTrackedOutcomeCount ||
-        b.linkedOutcomeCount - a.linkedOutcomeCount ||
-        a.contentRef.localeCompare(b.contentRef)
-      )[0];
-      return freeze<SocialExecutiveBusinessValueHighlightV1>({
-        platform,
+
+  const businessAge = evidenceAge(input.businessValueReview.evaluatedAt, generatedAtMs, input.maxEvidenceAgeHours, "businessValueReview.evaluatedAt");
+  const businessReasons: SocialExecutiveOverviewReasonV1[] = [];
+  if (businessAge.stale) businessReasons.push("BUSINESS_VALUE_STALE");
+  if (input.businessValueReview.status !== "READY") businessReasons.push("BUSINESS_VALUE_NOT_READY");
+  const businessState: SocialExecutiveOverviewComponentStateV1 = businessAge.stale || input.businessValueReview.status === "VERIFY_REQUIRED" ? "VERIFY_REQUIRED" : input.businessValueReview.status === "READY" ? "CURRENT" : "PARTIAL";
+  reasons.push(...businessReasons);
+  components.push(component("BUSINESS_VALUE", businessState, businessAge.observedAt, businessReasons));
+
+  const businessValueHighlightsByPlatform: SocialExecutiveBusinessValueHighlightV1[] = [];
+  if (businessState === "CURRENT") {
+    const established = input.businessValueReview.items.filter((row) => row.businessValueState !== "NOT_ESTABLISHED");
+    const platforms = [...new Set(established.map((row) => row.platform))].sort();
+    for (const platform of platforms) {
+      const top = established.filter((row) => row.platform === platform).sort((a, b) => b.directTrackedOutcomeCount - a.directTrackedOutcomeCount || b.linkedOutcomeCount - a.linkedOutcomeCount || a.contentRef.localeCompare(b.contentRef))[0];
+      if (!top || top.businessValueState === "NOT_ESTABLISHED") continue;
+      businessValueHighlightsByPlatform.push(deepFreeze({
+        platform: top.platform,
         accountId: top.accountId,
         contentId: top.contentId,
         contentRef: top.contentRef,
         businessValueState: top.businessValueState,
         directTrackedOutcomeCount: top.directTrackedOutcomeCount,
         linkedOutcomeCount: top.linkedOutcomeCount,
-        highIntentMetrics: freeze([...top.highIntentMetrics]),
+        highIntentMetrics: [...top.highIntentMetrics],
         evidenceRefs: unique([...top.performanceEvidenceRefs, ...top.outcomeEvidenceRefs]),
-        crossPlatformWinnerClaim: false,
-        causalClaim: false,
-        revenueAttributionClaim: false,
+        crossPlatformWinnerClaim: false as const,
+        causalClaim: false as const,
+        revenueAttributionClaim: false as const,
         monetaryValue: null
-      });
-    });
-}
+      }));
+    }
+  }
 
-function recommendedActions(queue: SocialContentOpportunityQueueV1, limit: number): SocialExecutiveRecommendedActionV1[] {
-  return [...queue.opportunities]
+  const queueAge = evidenceAge(input.opportunityQueue.generatedAt, generatedAtMs, input.maxEvidenceAgeHours, "opportunityQueue.generatedAt");
+  const queueReasons: SocialExecutiveOverviewReasonV1[] = [];
+  if (queueAge.stale) queueReasons.push("OPPORTUNITY_QUEUE_STALE");
+  if (input.opportunityQueue.status !== "READY") queueReasons.push("OPPORTUNITY_QUEUE_NOT_READY");
+  const queueState: SocialExecutiveOverviewComponentStateV1 = queueAge.stale ? "VERIFY_REQUIRED" : input.opportunityQueue.status === "READY" ? "CURRENT" : "PARTIAL";
+  reasons.push(...queueReasons);
+  components.push(component("OPPORTUNITY_QUEUE", queueState, queueAge.observedAt, queueReasons));
+
+  const recommendedActions: SocialExecutiveRecommendedActionV1[] = queueState === "CURRENT" ? [...input.opportunityQueue.opportunities]
     .sort((a, b) => a.rank - b.rank || a.opportunityId.localeCompare(b.opportunityId))
-    .slice(0, limit)
-    .map((item) => freeze<SocialExecutiveRecommendedActionV1>({
+    .slice(0, maxActions)
+    .map((item) => deepFreeze({
       opportunityId: item.opportunityId,
       rank: item.rank,
       priority: item.priority,
@@ -473,221 +439,75 @@ function recommendedActions(queue: SocialContentOpportunityQueueV1, limit: numbe
       experimentPlan: item.experimentPlan,
       successMetricPlan: item.successMetricPlan,
       evidenceRefs: unique(item.firstPartyEvidenceRefs),
-      requiresApprovalForPosting: true,
-      executionAuthority: "NONE",
+      requiresApprovalForPosting: true as const,
+      executionAuthority: "NONE" as const,
       confidence: null,
-      causalClaim: false,
-      revenueAttributionClaim: false,
-      competitorPerformanceClaim: false
-    }));
-}
-
-function alertCandidate(item: SocialMaterialAlertReadinessItemV1): SocialExecutiveAlertReviewV1 {
-  return freeze<SocialExecutiveAlertReviewV1>({
-    signalId: item.signalId,
-    platform: item.platform,
-    accountId: item.accountId,
-    metric: item.metric,
-    window: item.window,
-    direction: item.direction,
-    independentSupportingSourceCount: item.independentSupportingSourceCount,
-    evidenceRefs: unique(item.evidenceRefs),
-    eligibleForNotification: false,
-    notificationAuthority: "NONE",
-    causalClaim: false,
-    attributionClaim: false,
-    competitorPerformanceClaim: false,
-    relationshipClaim: false,
-    endorsementClaim: false
-  });
-}
-
-function component(
-  name: SocialExecutiveOverviewComponentV1["component"],
-  state: SocialExecutiveOverviewComponentStateV1,
-  observedAt: string | null,
-  reasons: readonly SocialExecutiveOverviewReasonV1[]
-): SocialExecutiveOverviewComponentV1 {
-  return freeze<SocialExecutiveOverviewComponentV1>({ component: name, state, observedAt, reasons: uniqueReasons(reasons) });
-}
-
-export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewInputV1): SocialExecutiveOverviewV1 {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("input must be an object");
-  if (!Array.isArray(input.channelDrilldowns)) throw new Error("channelDrilldowns must be an array");
-  if (!Array.isArray(input.alertReadiness)) throw new Error("alertReadiness must be an array");
-  if (input.channelDrilldowns.length > SOCIAL_EXECUTIVE_OVERVIEW_MAX_CHANNELS_V1) throw new Error("too many channel drilldowns");
-  if (input.alertReadiness.length > SOCIAL_EXECUTIVE_OVERVIEW_MAX_ALERT_REVIEWS_V1) throw new Error("too many alert readiness reviews");
-  if (!Number.isFinite(input.maxEvidenceAgeHours) || input.maxEvidenceAgeHours <= 0) {
-    throw new Error("maxEvidenceAgeHours must be a finite positive number");
-  }
-  const maxRecommendedActions = input.maxRecommendedActions ?? 3;
-  if (!Number.isInteger(maxRecommendedActions) || maxRecommendedActions < 1 || maxRecommendedActions > SOCIAL_EXECUTIVE_OVERVIEW_MAX_ACTIONS_V1) {
-    throw new Error(`maxRecommendedActions must be an integer between 1 and ${SOCIAL_EXECUTIVE_OVERVIEW_MAX_ACTIONS_V1}`);
-  }
-
-  const generatedAt = iso(input.generatedAt, "generatedAt");
-  const generatedAtMs = Date.parse(generatedAt);
-  assertConnectorAuthority(input.connectorHealth);
-  assertPerformanceAuthority(input.performanceReview);
-  assertBusinessValueAuthority(input.businessValueReview);
-  assertQueueAuthority(input.opportunityQueue);
-  input.channelDrilldowns.forEach(assertChannelAuthority);
-  input.alertReadiness.forEach(assertAlertAuthority);
-
-  const reasons: SocialExecutiveOverviewReasonV1[] = [];
-  const components: SocialExecutiveOverviewComponentV1[] = [];
-
-  const connectorObserved = componentAge(
-    input.connectorHealth.generatedAt,
-    generatedAtMs,
-    input.maxEvidenceAgeHours,
-    "CONNECTOR_HEALTH_STALE",
-    "connectorHealth.generatedAt"
-  );
-  const connectorReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (connectorObserved.staleReason) connectorReasons.push(connectorObserved.staleReason);
-  const connectorOperationalGap = input.connectorHealth.platforms.some((row) =>
-    row.sourceHealth !== "HEALTHY" && row.sourceHealth !== "NOT_APPLICABLE"
-  );
-  if (connectorOperationalGap) connectorReasons.push("CONNECTOR_HEALTH_NOT_FULLY_OPERATIONAL");
-  reasons.push(...connectorReasons);
-  components.push(component(
-    "CONNECTOR_HEALTH",
-    connectorObserved.stale ? "VERIFY_REQUIRED" : connectorOperationalGap ? "PARTIAL" : "CURRENT",
-    connectorObserved.observedAt,
-    connectorReasons
-  ));
-
-  const connectorMap = connectorByPlatform(input.connectorHealth);
-  const seenChannel = new Set<string>();
-  const channelReasons: SocialExecutiveOverviewReasonV1[] = [];
-  const cards = input.channelDrilldowns
-    .map((channel) => {
-      if (channel.window !== input.window) throw new Error(`channel ${channel.platform}:${channel.accountId} window mismatch`);
-      const identity = `${channel.platform}\u0000${channel.accountId}`;
-      if (seenChannel.has(identity)) throw new Error(`duplicate channel identity: ${channel.platform}:${channel.accountId}`);
-      seenChannel.add(identity);
-      return channelCard(channel, connectorMap.get(channel.platform) ?? null, channelReasons);
-    })
-    .sort((a, b) => a.platform.localeCompare(b.platform) || a.accountId.localeCompare(b.accountId));
-  reasons.push(...channelReasons);
-  const channelState: SocialExecutiveOverviewComponentStateV1 = channelReasons.includes("CHANNEL_CONNECTOR_TRUTH_MISMATCH") || channelReasons.includes("CHANNEL_CONNECTOR_HEALTH_MISSING")
-    ? "VERIFY_REQUIRED"
-    : cards.every((card) => card.decisionGrade)
-      ? "CURRENT"
-      : "PARTIAL";
-  components.push(component("CHANNEL_DRILLDOWNS", channelState, null, channelReasons));
-
-  const performanceObserved = componentAge(
-    input.performanceReview.evaluatedAt,
-    generatedAtMs,
-    input.maxEvidenceAgeHours,
-    "CONTENT_PERFORMANCE_STALE",
-    "performanceReview.evaluatedAt"
-  );
-  const performanceReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (performanceObserved.staleReason) performanceReasons.push(performanceObserved.staleReason);
-  if (input.performanceReview.status !== "READY") performanceReasons.push("CONTENT_PERFORMANCE_NOT_READY");
-  reasons.push(...performanceReasons);
-  const performanceState: SocialExecutiveOverviewComponentStateV1 = performanceObserved.stale || input.performanceReview.status === "VERIFY_REQUIRED"
-    ? "VERIFY_REQUIRED"
-    : input.performanceReview.status === "READY"
-      ? "CURRENT"
-      : "PARTIAL";
-  components.push(component("CONTENT_PERFORMANCE", performanceState, performanceObserved.observedAt, performanceReasons));
-  const performanceCurrent = performanceState === "CURRENT";
-
-  const businessObserved = componentAge(
-    input.businessValueReview.evaluatedAt,
-    generatedAtMs,
-    input.maxEvidenceAgeHours,
-    "BUSINESS_VALUE_STALE",
-    "businessValueReview.evaluatedAt"
-  );
-  const businessReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (businessObserved.staleReason) businessReasons.push(businessObserved.staleReason);
-  if (input.businessValueReview.status !== "READY") businessReasons.push("BUSINESS_VALUE_NOT_READY");
-  reasons.push(...businessReasons);
-  const businessState: SocialExecutiveOverviewComponentStateV1 = businessObserved.stale || input.businessValueReview.status === "VERIFY_REQUIRED"
-    ? "VERIFY_REQUIRED"
-    : input.businessValueReview.status === "READY"
-      ? "CURRENT"
-      : "PARTIAL";
-  components.push(component("BUSINESS_VALUE", businessState, businessObserved.observedAt, businessReasons));
-  const businessCurrent = businessState === "CURRENT";
-
-  const queueObserved = componentAge(
-    input.opportunityQueue.generatedAt,
-    generatedAtMs,
-    input.maxEvidenceAgeHours,
-    "OPPORTUNITY_QUEUE_STALE",
-    "opportunityQueue.generatedAt"
-  );
-  const queueReasons: SocialExecutiveOverviewReasonV1[] = [];
-  if (queueObserved.staleReason) queueReasons.push(queueObserved.staleReason);
-  if (input.opportunityQueue.status !== "READY") queueReasons.push("OPPORTUNITY_QUEUE_NOT_READY");
-  reasons.push(...queueReasons);
-  const queueState: SocialExecutiveOverviewComponentStateV1 = queueObserved.stale
-    ? "VERIFY_REQUIRED"
-    : input.opportunityQueue.status === "READY"
-      ? "CURRENT"
-      : "PARTIAL";
-  components.push(component("OPPORTUNITY_QUEUE", queueState, queueObserved.observedAt, queueReasons));
-  const queueCurrent = queueState === "CURRENT";
+      causalClaim: false as const,
+      revenueAttributionClaim: false as const,
+      competitorPerformanceClaim: false as const
+    })) : [];
 
   const alertReasons: SocialExecutiveOverviewReasonV1[] = [];
+  const alertReviewCandidates: SocialExecutiveAlertReviewV1[] = [];
   let newestAlertAt: string | null = null;
   let alertState: SocialExecutiveOverviewComponentStateV1 = "CURRENT";
-  const alertCandidates: SocialExecutiveAlertReviewV1[] = [];
   for (const [index, review] of input.alertReadiness.entries()) {
-    const observed = componentAge(
-      review.evaluatedAt,
-      generatedAtMs,
-      input.maxEvidenceAgeHours,
-      "ALERT_READINESS_STALE",
-      `alertReadiness[${index}].evaluatedAt`
-    );
-    if (!newestAlertAt || Date.parse(observed.observedAt) > Date.parse(newestAlertAt)) newestAlertAt = observed.observedAt;
-    if (observed.staleReason) {
-      alertReasons.push(observed.staleReason);
+    const age = evidenceAge(review.evaluatedAt, generatedAtMs, input.maxEvidenceAgeHours, `alertReadiness[${index}].evaluatedAt`);
+    if (!newestAlertAt || Date.parse(age.observedAt) > Date.parse(newestAlertAt)) newestAlertAt = age.observedAt;
+    if (age.stale) {
+      alertReasons.push("ALERT_READINESS_STALE");
       alertState = "VERIFY_REQUIRED";
     }
     if (review.status === "VERIFY_REQUIRED") {
       alertReasons.push("ALERT_READINESS_NOT_READY");
       alertState = "VERIFY_REQUIRED";
     }
-    if (!observed.stale && review.status !== "VERIFY_REQUIRED") {
-      for (const item of review.items.filter((row) => row.state === "READY_FOR_ALERT_REVIEW")) {
-        alertCandidates.push(alertCandidate(item));
+    if (!age.stale && review.status !== "VERIFY_REQUIRED") {
+      for (const item of review.items) {
+        if (item.state !== "READY_FOR_ALERT_REVIEW") continue;
+        alertReviewCandidates.push(deepFreeze({
+          signalId: item.signalId,
+          platform: item.platform,
+          accountId: item.accountId,
+          metric: item.metric,
+          window: item.window,
+          direction: item.direction,
+          independentSupportingSourceCount: item.independentSupportingSourceCount,
+          evidenceRefs: unique(item.evidenceRefs),
+          eligibleForNotification: false as const,
+          notificationAuthority: "NONE" as const,
+          causalClaim: false as const,
+          attributionClaim: false as const,
+          competitorPerformanceClaim: false as const,
+          relationshipClaim: false as const,
+          endorsementClaim: false as const
+        }));
       }
     }
   }
   reasons.push(...alertReasons);
   components.push(component("ALERT_READINESS", alertState, newestAlertAt, alertReasons));
+  alertReviewCandidates.sort((a, b) => a.platform.localeCompare(b.platform) || a.signalId.localeCompare(b.signalId));
 
-  const status: SocialExecutiveOverviewStatusV1 = components.some((row) => row.state === "VERIFY_REQUIRED")
-    ? "VERIFY_REQUIRED"
-    : components.some((row) => row.state === "PARTIAL")
-      ? "PARTIAL"
-      : "READY";
+  const status: SocialExecutiveOverviewStatusV1 = components.some((row) => row.state === "VERIFY_REQUIRED") ? "VERIFY_REQUIRED" : components.some((row) => row.state === "PARTIAL") ? "PARTIAL" : "READY";
 
-  return freeze<SocialExecutiveOverviewV1>({
+  return deepFreeze({
     contractVersion: SOCIAL_EXECUTIVE_OVERVIEW_V1_VERSION,
     generatedAt,
     window: input.window,
     status,
     reasons: uniqueReasons(reasons),
     components,
-    channelCards: cards,
+    channelCards,
     audienceTotalAcrossPlatforms: null,
-    audienceOverlapKnown: false,
-    audienceRollupState: "NOT_ESTABLISHED",
-    contentHighlightsByPlatform: performanceCurrent ? topOutperformerPerPlatform(input.performanceReview) : [],
+    audienceOverlapKnown: false as const,
+    audienceRollupState: "NOT_ESTABLISHED" as const,
+    contentHighlightsByPlatform,
     strongestContentWinnerAcrossPlatforms: null,
-    businessValueHighlightsByPlatform: businessCurrent ? businessValuePerPlatform(input.businessValueReview) : [],
+    businessValueHighlightsByPlatform,
     strongestBusinessValueContentAcrossPlatforms: null,
-    recommendedActions: queueCurrent ? recommendedActions(input.opportunityQueue, maxRecommendedActions) : [],
-    alertReviewCandidates: freeze(alertCandidates.sort((a, b) => a.platform.localeCompare(b.platform) || a.signalId.localeCompare(b.signalId))),
+    recommendedActions,
+    alertReviewCandidates,
     guardrails: [
       "Platform-native audience totals are never summed into a unique cross-platform audience because overlap is unknown.",
       "Content performance highlights are selected only within each platform from the canonical age/format/amplification-normalized review; no cross-platform winner is inferred.",
@@ -696,16 +516,16 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
       "Alert candidates remain internal review candidates; this overview grants no notification authority.",
       "Stale, future-dated, authority-widened, connector-mismatched, or non-ready evidence is withheld or marked for verification rather than converted to zero or certainty."
     ],
-    crossPlatformMetricAggregationPerformed: false,
-    crossPlatformPerformanceRankingPerformed: false,
-    causalClaim: false,
-    attributionClaim: false,
-    competitorPerformanceClaim: false,
-    relationshipClaim: false,
-    endorsementClaim: false,
-    notificationAuthority: "NONE",
-    postingAuthority: "NONE",
-    externalAccessPerformed: false,
-    writesPerformed: false
+    crossPlatformMetricAggregationPerformed: false as const,
+    crossPlatformPerformanceRankingPerformed: false as const,
+    causalClaim: false as const,
+    attributionClaim: false as const,
+    competitorPerformanceClaim: false as const,
+    relationshipClaim: false as const,
+    endorsementClaim: false as const,
+    notificationAuthority: "NONE" as const,
+    postingAuthority: "NONE" as const,
+    externalAccessPerformed: false as const,
+    writesPerformed: false as const
   });
 }
