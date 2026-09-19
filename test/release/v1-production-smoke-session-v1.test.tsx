@@ -45,23 +45,27 @@ function validInput(): V1ProductionSmokeSessionInputV1 {
       releaseSha: RELEASE_SHA,
       actionRequirement: "NONE" as const
     })),
-    deviceObservations: V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1.map((deviceClass) => ({
-      smokeRunId: SMOKE_RUN_ID,
-      deviceClass,
-      state: "PASS" as const,
-      observedAt: OBSERVED_AT,
-      viewportWidth: deviceClass === "DESKTOP" ? 1440 : 390,
-      viewportHeight: deviceClass === "DESKTOP" ? 900 : 844,
-      evidenceRefs: [
-        `github://production-smoke/${SMOKE_RUN_ID}/device/${deviceClass.toLowerCase()}`
-      ],
-      releaseSha: RELEASE_SHA,
-      actionRequirement: "NONE" as const
-    }))
+    deviceObservations: V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1.flatMap((deviceClass) =>
+      V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1.map((stepId) => ({
+        smokeRunId: SMOKE_RUN_ID,
+        stepId,
+        deviceClass,
+        state: "PASS" as const,
+        observedAt: OBSERVED_AT,
+        observedPath: TEST_PATHS[stepId],
+        viewportWidth: deviceClass === "DESKTOP" ? 1440 : 390,
+        viewportHeight: deviceClass === "DESKTOP" ? 900 : 844,
+        evidenceRefs: [
+          `github://production-smoke/${SMOKE_RUN_ID}/device/${deviceClass.toLowerCase()}/${stepId.toLowerCase()}`
+        ],
+        releaseSha: RELEASE_SHA,
+        actionRequirement: "NONE" as const
+      }))
+    )
   };
 }
 
-test("one coherent exact-SHA production smoke session can satisfy the existing smoke gate", () => {
+test("one coherent exact-SHA production smoke session with full desktop/mobile route coverage can pass", () => {
   const result = compileSessionBoundV1ProductionSmokeV1(validInput());
 
   assert.equal(result.status, "PASS");
@@ -69,6 +73,8 @@ test("one coherent exact-SHA production smoke session can satisfy the existing s
   assert.equal(result.gateEvidence.state, "PASS");
   assert.equal(result.gateEvidence.releaseSha, RELEASE_SHA);
   assert.equal(result.blockers.length, 0);
+  assert.equal(result.deviceCoverage.length, 2);
+  assert.ok(result.deviceCoverage.every((entry) => entry.status === "PASS"));
 });
 
 test("route evidence from another smoke session fails closed before certification", () => {
@@ -88,14 +94,83 @@ test("route evidence from another smoke session fails closed before certificatio
 test("device evidence from another smoke session fails closed before certification", () => {
   const input = validInput();
   input.deviceObservations = input.deviceObservations.map((observation) =>
-    observation.deviceClass === "MOBILE"
+    observation.deviceClass === "MOBILE" && observation.stepId === "LEARNING"
       ? { ...observation, smokeRunId: "smoke-run-other-session" }
       : observation
   );
 
   assert.throws(
     () => compileSessionBoundV1ProductionSmokeV1(input),
-    /SMOKE_RUN_ID_MISMATCH: MOBILE/
+    /SMOKE_RUN_ID_MISMATCH: MOBILE LEARNING/
+  );
+});
+
+test("missing mobile coverage for one required route cannot be hidden by other mobile passes", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.filter(
+    (observation) =>
+      !(observation.deviceClass === "MOBILE" && observation.stepId === "DATA_EVIDENCE")
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_DEVICE_ROUTE_MISSING: MOBILE has no DATA_EVIDENCE/
+  );
+});
+
+test("duplicate device coverage for a route fails closed instead of choosing a passing observation", () => {
+  const input = validInput();
+  const duplicate = input.deviceObservations.find(
+    (observation) => observation.deviceClass === "DESKTOP" && observation.stepId === "STRATEGY"
+  );
+  assert.ok(duplicate);
+  input.deviceObservations = [...input.deviceObservations, { ...duplicate }];
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_DEVICE_ROUTE_DUPLICATE: DESKTOP has multiple STRATEGY/
+  );
+});
+
+test("device route evidence must prove the same canonical pathname as the route observation", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((observation) =>
+    observation.deviceClass === "MOBILE" && observation.stepId === "STRATEGY"
+      ? { ...observation, observedPath: "/learning" }
+      : observation
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_DEVICE_ROUTE_MISMATCH: MOBILE STRATEGY/
+  );
+});
+
+test("one stale device-route observation blocks the whole final smoke session", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((observation) =>
+    observation.deviceClass === "DESKTOP" && observation.stepId === "EVENTS"
+      ? { ...observation, observedAt: "2026-09-18T16:30:00.000Z" }
+      : observation
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_DEVICE_ROUTE_STALE_EVIDENCE: DESKTOP EVENTS/
+  );
+});
+
+test("one device-route observation with unresolved action cannot be averaged away", () => {
+  const input = validInput();
+  input.deviceObservations = input.deviceObservations.map((observation) =>
+    observation.deviceClass === "MOBILE" && observation.stepId === "CRM_COMPANY"
+      ? { ...observation, actionRequirement: "KEEGAN" as const }
+      : observation
+  );
+
+  assert.throws(
+    () => compileSessionBoundV1ProductionSmokeV1(input),
+    /SMOKE_DEVICE_ROUTE_ACTION_REQUIRED: MOBILE CRM_COMPANY/
   );
 });
 
@@ -110,6 +185,11 @@ test("run identifiers are opaque, bounded correlation metadata rather than secre
 test("session binding does not weaken canonical route truth", () => {
   const input = validInput();
   input.observations = input.observations.map((observation) =>
+    observation.stepId === "STRATEGY"
+      ? { ...observation, observedPath: "/learning" }
+      : observation
+  );
+  input.deviceObservations = input.deviceObservations.map((observation) =>
     observation.stepId === "STRATEGY"
       ? { ...observation, observedPath: "/learning" }
       : observation
