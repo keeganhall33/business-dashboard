@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { evaluateVercelDeploymentGateV1 } from "../../src/lib/release/vercel-deployment-gate-v1";
+import { evaluateVercelDeploymentGateV1 } from "../../scripts/check-vercel-deployment-gate-v1.mjs";
 
 const SHA = "abc123";
 
