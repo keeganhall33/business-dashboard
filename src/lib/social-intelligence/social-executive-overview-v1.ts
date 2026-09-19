@@ -328,7 +328,7 @@ function audienceMetric(
 ): SocialExecutiveAudienceMetricV1 {
   const metric = channel.metrics.find((row) => row.key === key);
   if (!metric) {
-    return freeze({
+    return freeze<SocialExecutiveAudienceMetricV1>({
       metric: key,
       value: null,
       priorValue: null,
@@ -340,7 +340,7 @@ function audienceMetric(
       evidenceRefs: []
     });
   }
-  return freeze({
+  return freeze<SocialExecutiveAudienceMetricV1>({
     metric: key,
     value: metric.value,
     priorValue: metric.priorValue,
@@ -374,7 +374,7 @@ function channelCard(
   const decisionGrade = channelCurrent && connectorCurrent && connector?.sourceHealth === "HEALTHY";
   if (!decisionGrade) reasons.push("CHANNEL_NOT_DECISION_GRADE");
 
-  return freeze({
+  return freeze<SocialExecutiveChannelCardV1>({
     platform: channel.platform,
     accountId: nonEmpty(channel.accountId, "channel.accountId"),
     handle: channel.handle,
@@ -410,7 +410,7 @@ function topOutperformerPerPlatform(review: SocialContentPerformanceReviewV1): S
         a.contentId.localeCompare(b.contentId) ||
         a.metric.localeCompare(b.metric)
       )[0];
-      return freeze({
+      return freeze<SocialExecutiveContentHighlightV1>({
         platform,
         accountId: top.accountId,
         contentId: top.contentId,
@@ -418,10 +418,10 @@ function topOutperformerPerPlatform(review: SocialContentPerformanceReviewV1): S
         classification: top.classification,
         ratioToComparableMedian: top.ratioToComparableMedian,
         evidenceRefs: unique(top.evidenceRefs),
-        interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY" as const,
-        crossPlatformWinnerClaim: false as const,
-        causalClaim: false as const,
-        attributionClaim: false as const
+        interpretation: "WITHIN_PLATFORM_ACCOUNT_AGE_FORMAT_AMPLIFICATION_BASELINE_ONLY",
+        crossPlatformWinnerClaim: false,
+        causalClaim: false,
+        attributionClaim: false
       });
     });
 }
@@ -441,7 +441,7 @@ function businessValuePerPlatform(review: SocialContentBusinessValueReviewV1): S
         b.linkedOutcomeCount - a.linkedOutcomeCount ||
         a.contentRef.localeCompare(b.contentRef)
       )[0];
-      return freeze({
+      return freeze<SocialExecutiveBusinessValueHighlightV1>({
         platform,
         accountId: top.accountId,
         contentId: top.contentId,
@@ -451,9 +451,9 @@ function businessValuePerPlatform(review: SocialContentBusinessValueReviewV1): S
         linkedOutcomeCount: top.linkedOutcomeCount,
         highIntentMetrics: freeze([...top.highIntentMetrics]),
         evidenceRefs: unique([...top.performanceEvidenceRefs, ...top.outcomeEvidenceRefs]),
-        crossPlatformWinnerClaim: false as const,
-        causalClaim: false as const,
-        revenueAttributionClaim: false as const,
+        crossPlatformWinnerClaim: false,
+        causalClaim: false,
+        revenueAttributionClaim: false,
         monetaryValue: null
       });
     });
@@ -463,7 +463,7 @@ function recommendedActions(queue: SocialContentOpportunityQueueV1, limit: numbe
   return [...queue.opportunities]
     .sort((a, b) => a.rank - b.rank || a.opportunityId.localeCompare(b.opportunityId))
     .slice(0, limit)
-    .map((item) => freeze({
+    .map((item) => freeze<SocialExecutiveRecommendedActionV1>({
       opportunityId: item.opportunityId,
       rank: item.rank,
       priority: item.priority,
@@ -473,17 +473,17 @@ function recommendedActions(queue: SocialContentOpportunityQueueV1, limit: numbe
       experimentPlan: item.experimentPlan,
       successMetricPlan: item.successMetricPlan,
       evidenceRefs: unique(item.firstPartyEvidenceRefs),
-      requiresApprovalForPosting: true as const,
-      executionAuthority: "NONE" as const,
+      requiresApprovalForPosting: true,
+      executionAuthority: "NONE",
       confidence: null,
-      causalClaim: false as const,
-      revenueAttributionClaim: false as const,
-      competitorPerformanceClaim: false as const
+      causalClaim: false,
+      revenueAttributionClaim: false,
+      competitorPerformanceClaim: false
     }));
 }
 
 function alertCandidate(item: SocialMaterialAlertReadinessItemV1): SocialExecutiveAlertReviewV1 {
-  return freeze({
+  return freeze<SocialExecutiveAlertReviewV1>({
     signalId: item.signalId,
     platform: item.platform,
     accountId: item.accountId,
@@ -508,7 +508,7 @@ function component(
   observedAt: string | null,
   reasons: readonly SocialExecutiveOverviewReasonV1[]
 ): SocialExecutiveOverviewComponentV1 {
-  return freeze({ component: name, state, observedAt, reasons: uniqueReasons(reasons) });
+  return freeze<SocialExecutiveOverviewComponentV1>({ component: name, state, observedAt, reasons: uniqueReasons(reasons) });
 }
 
 export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewInputV1): SocialExecutiveOverviewV1 {
@@ -671,7 +671,7 @@ export function compileSocialExecutiveOverviewV1(input: SocialExecutiveOverviewI
       ? "PARTIAL"
       : "READY";
 
-  return freeze({
+  return freeze<SocialExecutiveOverviewV1>({
     contractVersion: SOCIAL_EXECUTIVE_OVERVIEW_V1_VERSION,
     generatedAt,
     window: input.window,
