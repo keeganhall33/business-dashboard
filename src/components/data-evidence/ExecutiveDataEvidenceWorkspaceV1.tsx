@@ -2,6 +2,8 @@ import type {
   DataEvidenceTruthStateV1,
   ExecutiveDataEvidenceViewV1
 } from "@/lib/data-evidence/executive-data-evidence-v1";
+import { SocialConnectorHealthPanelV1 } from "@/components/data-evidence/SocialConnectorHealthPanelV1";
+import type { SocialConnectorHealthSurfaceV1 } from "@/lib/social-intelligence/load-social-connector-health-v1";
 
 const STATE_TONE: Record<DataEvidenceTruthStateV1, string> = {
   LIVE: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -28,9 +30,11 @@ function displayTimestamp(value: string | null): string {
 }
 
 export function ExecutiveDataEvidenceWorkspaceV1({
-  view
+  view,
+  socialConnectorHealth
 }: {
   view: ExecutiveDataEvidenceViewV1;
+  socialConnectorHealth?: SocialConnectorHealthSurfaceV1 | null;
 }) {
   return (
     <main className="min-h-screen bg-[#f4f7fb] px-4 py-6 text-slate-950 sm:px-6 lg:px-8" data-testid="executive-data-evidence-workspace-v1">
@@ -107,6 +111,8 @@ export function ExecutiveDataEvidenceWorkspaceV1({
             ))}
           </div>
         </section>
+
+        {socialConnectorHealth ? <SocialConnectorHealthPanelV1 surface={socialConnectorHealth} /> : null}
 
         <section className="grid gap-5 lg:grid-cols-2">
           <article className="rounded-3xl border border-slate-200 bg-[#ffffff] p-5 shadow-sm">
