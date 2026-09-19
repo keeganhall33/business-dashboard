@@ -159,7 +159,10 @@ test("competitor storefront leakage fails closed to SKIP", () => {
         competitorStorefrontOutboundLinks: ["https://competitor.example/shop"],
         competitorLeakageRisk: "HIGH"
       }),
-      candidate("keegan-safe")
+      candidate("keegan-safe-1"),
+      candidate("keegan-safe-2"),
+      candidate("keegan-safe-3"),
+      candidate("keegan-safe-4")
     ],
     now: NOW
   });
@@ -198,7 +201,9 @@ test("unknown gap references remain verification work rather than fabricated aut
 });
 
 test("scorecard chronology cannot be replayed from the future", () => {
-  const future = scorecard();
+  const future = scorecard() as unknown as {
+    coverage: { evaluatedAt: string };
+  } & AISearchAuthorityScorecardV1;
   future.coverage.evaluatedAt = "2026-09-20T00:00:00.000Z";
   assert.throws(
     () => buildAISearchContentAuthorityPlanV1({ scorecard: future, candidates: [], now: NOW }),
