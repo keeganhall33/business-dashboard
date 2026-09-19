@@ -99,7 +99,7 @@ test("fails closed on stale, partial, future, under-sized or evidence-free candi
     candidates: [
       candidate("valid", 800),
       candidate("partial", 800, 50, { sourceState: "PARTIAL" }),
-      candidate("stale", 800, 50, { observedAt: "2026-09-01T12:00:00.000Z" }),
+      candidate("stale", 800, 50, { publishedAt: "2026-08-31T12:00:00.000Z", observedAt: "2026-09-01T12:00:00.000Z" }),
       candidate("future", 800, 50, { publishedAt: "2026-09-20T12:00:00.000Z", observedAt: "2026-09-20T13:00:00.000Z" }),
       candidate("small-cohort", 800, 50, { comparableCohortSize: 2 }),
       candidate("missing-evidence", 800, 50, { metricEvidenceRefs: [] })
@@ -173,6 +173,6 @@ test("is deterministic, preserves caller input and deep-freezes returned review"
   assert.ok(Object.isFrozen(first.items[0]));
   assert.ok(Object.isFrozen(first.items[0]?.evidenceRefs));
   assert.throws(() => {
-    (first.items as SocialContentPerformanceCandidateInputV1[]).push(candidate("mutation", 800));
+    (first.items as unknown as unknown[]).push(candidate("mutation", 800));
   });
 });
