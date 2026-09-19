@@ -302,7 +302,10 @@ test("keeps whitespace bounded to the explicit window rather than making a unive
 
   assert.equal(result.status, "READY_FOR_RESEARCH");
   assert.ok(result.candidates.some((candidate) => candidate.dimension === "FORMAT" && candidate.value === "process reel"));
-  assert.ok(result.candidates.every((candidate) => candidate.windowStartAt === startAt && candidate.windowEndAt === endAt));
+  assert.ok(result.candidates.every((candidate) => (
+    candidate.windowStartAt === new Date(startAt).toISOString()
+    && candidate.windowEndAt === new Date(endAt).toISOString()
+  )));
   assert.match(result.guardrails.join(" "), /bounded observation gap is not competitor performance/i);
 });
 
