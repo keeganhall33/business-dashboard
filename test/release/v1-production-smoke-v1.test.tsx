@@ -22,16 +22,16 @@ const GENERATED_AT = "2026-09-18T18:00:00.000Z";
 const OBSERVED_AT = "2026-09-18T17:55:00.000Z";
 
 const TEST_PATHS: Record<(typeof V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1)[number], string> = {
-  EXECUTIVE_HOME: "/smoke/executive-home",
-  OPPORTUNITY_DETAIL: "/smoke/opportunity-detail",
-  CRM_PERSON: "/smoke/crm-person",
-  CRM_COMPANY: "/smoke/crm-company",
-  CRM_ACTIVITY: "/smoke/crm-activity",
-  STRATEGY: "/smoke/strategy",
-  DATA_EVIDENCE: "/smoke/data-evidence",
-  LEARNING: "/smoke/learning",
-  EVENTS: "/smoke/events",
-  SPECIALISTS: "/smoke/specialists"
+  EXECUTIVE_HOME: "/dashboard",
+  OPPORTUNITY_DETAIL: "/opportunities-actions/opportunity/opportunity-smoke-1",
+  CRM_PERSON: "/relationships/people/person-smoke-1",
+  CRM_COMPANY: "/relationships/companies/company-smoke-1",
+  CRM_ACTIVITY: "/relationships/activity",
+  STRATEGY: "/strategy",
+  DATA_EVIDENCE: "/data-evidence",
+  LEARNING: "/learning",
+  EVENTS: "/events-market-windows",
+  SPECIALISTS: "/specialists"
 };
 
 function validObservation(
@@ -57,7 +57,7 @@ function validInput(): V1ProductionSmokeInputV1 {
   };
 }
 
-test("all required exact-SHA production observations compile to canonical PRODUCTION_SMOKE PASS evidence", () => {
+test("all required exact-SHA canonical production observations compile to canonical PRODUCTION_SMOKE PASS evidence", () => {
   const result = compileV1ProductionSmokeV1(validInput());
 
   assert.equal(result.status, "PASS");
@@ -175,13 +175,55 @@ test("non-pass state or outstanding action remains blocking", () => {
 test("observed paths must be privacy-safe pathnames without query strings or fragments", () => {
   const input = validInput();
   input.observations = input.observations.map((entry) =>
-    entry.stepId === "CRM_PERSON" ? { ...entry, observedPath: "/crm/person?email=private@example.com" } : entry
+    entry.stepId === "CRM_PERSON" ? { ...entry, observedPath: "/relationships/people/person-1?email=private@example.com" } : entry
   );
 
   const result = compileV1ProductionSmokeV1(input);
   assert.equal(result.status, "BLOCKED");
   assert.ok(result.blockers.some((entry) => entry.code === "STEP_INVALID_PATH" && entry.stepId === "CRM_PERSON"));
   assert.equal(result.steps.find((entry) => entry.stepId === "CRM_PERSON")?.observedPath, null);
+});
+
+test("arbitrary safe pathnames cannot masquerade as canonical smoke steps", () => {
+  const input = validInput();
+  input.observations = input.observations.map((entry) =>
+    entry.stepId === "EXECUTIVE_HOME" ? { ...entry, observedPath: "/smoke/executive-home" } : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "EXECUTIVE_HOME"));
+  assert.equal(result.steps.find((entry) => entry.stepId === "EXECUTIVE_HOME")?.observedPath, null);
+  assert.equal(result.gateEvidence.state, "BLOCKED");
+});
+
+test("a canonical step cannot be satisfied by another canonical route", () => {
+  const input = validInput();
+  input.observations = input.observations.map((entry) =>
+    entry.stepId === "STRATEGY" ? { ...entry, observedPath: "/learning" } : entry
+  );
+
+  const result = compileV1ProductionSmokeV1(input);
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(result.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "STRATEGY"));
+});
+
+test("dynamic smoke routes require one opaque identifier segment", () => {
+  const missingId = validInput();
+  missingId.observations = missingId.observations.map((entry) =>
+    entry.stepId === "CRM_COMPANY" ? { ...entry, observedPath: "/relationships/companies" } : entry
+  );
+  const missingIdResult = compileV1ProductionSmokeV1(missingId);
+  assert.equal(missingIdResult.status, "BLOCKED");
+  assert.ok(missingIdResult.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_COMPANY"));
+
+  const unsafeId = validInput();
+  unsafeId.observations = unsafeId.observations.map((entry) =>
+    entry.stepId === "CRM_PERSON" ? { ...entry, observedPath: "/relationships/people/private@example.com" } : entry
+  );
+  const unsafeIdResult = compileV1ProductionSmokeV1(unsafeId);
+  assert.equal(unsafeIdResult.status, "BLOCKED");
+  assert.ok(unsafeIdResult.blockers.some((entry) => entry.code === "STEP_ROUTE_MISMATCH" && entry.stepId === "CRM_PERSON"));
 });
 
 test("secret-like provenance is removed and blocks certification", () => {
