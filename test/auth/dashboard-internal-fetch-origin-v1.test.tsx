@@ -59,6 +59,7 @@ test("Executive Home ignores request-controlled origins for authenticated intern
   const headers = new Headers(capturedInit?.headers);
   assert.equal(headers.get("x-dashboard-secret"), "test-dashboard-admin-token");
   assert.equal(headers.get("cookie"), "kh_session=sensitive-session");
+  assert.equal(capturedInit?.redirect, "error", "auth-bearing server fetches must not follow redirects");
 });
 
 test("Executive Home page does not derive an internal API origin from request host headers", () => {
