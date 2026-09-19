@@ -238,13 +238,13 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
       throw new Error(`accessMaps[${mapIndex}] planning windows are not fully evidenced`);
     }
 
-    map.planningWindows.forEach((window, windowIndex) => {
+    map.planningWindows.forEach((window: OpportunityPlanningWindowV1, windowIndex: number) => {
       opportunityPlanningWindows.push(
         planningWindow(opportunityId, window, asOfMs, `accessMaps[${mapIndex}].planningWindows[${windowIndex}]`)
       );
     });
 
-    map.sponsorshipLinks.forEach((link, linkIndex) => {
+    map.sponsorshipLinks.forEach((link: OpportunitySponsorshipLinkV1, linkIndex: number) => {
       const provenance = validateProjectedFact(link, asOfMs, `accessMaps[${mapIndex}].sponsorshipLinks[${linkIndex}]`);
       const propertyCanonicalId = requiredText(link.propertyCanonicalId, `accessMaps[${mapIndex}].sponsorshipLinks[${linkIndex}].propertyCanonicalId`);
       const sponsorCanonicalId = requiredText(link.sponsorCanonicalId, `accessMaps[${mapIndex}].sponsorshipLinks[${linkIndex}].sponsorCanonicalId`);
@@ -285,7 +285,7 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
 
     for (const opportunityId of opportunityIds) {
       const map = accessMapByOpportunity.get(opportunityId)!;
-      map.decisionMakers.forEach((person, index) => {
+      map.decisionMakers.forEach((person: OpportunityDecisionMakerV1, index: number) => {
         const organizationId = requiredText(person.organizationCanonicalId, `decisionMakers[${index}].organizationCanonicalId`);
         const side = organizationId === group.propertyCanonicalId
           ? "PROPERTY"
@@ -303,7 +303,7 @@ export function buildSponsorEcosystemMapV1(input: SponsorEcosystemMapInputV1): S
     const warmAccessPaths: SponsorEcosystemWarmAccessPathV1[] = [];
     for (const opportunityId of opportunityIds) {
       const map = accessMapByOpportunity.get(opportunityId)!;
-      map.warmAccessPaths.forEach((path, index) => {
+      map.warmAccessPaths.forEach((path: OpportunityWarmAccessPathV1, index: number) => {
         const projected = exactTargetedPath(
           opportunityId,
           path,
