@@ -49,7 +49,7 @@ test("canonical Home opportunity cards navigate to the real dedicated route", ()
   assert.doesNotMatch(html, /href="#decision-private-collector-room"[^>]*>\s*<div[^>]*>\s*<h3[^>]*>Elite network optionality/);
 });
 
-test("known opportunity renders meaningful scan-first decision detail without invented economics", () => {
+test("known opportunity renders meaningful scan-first decision detail without invented economics or source verification", () => {
   const html = renderToString(
     <ExecutiveOpportunityDetailV1
       opportunity={knownOpportunity}
@@ -90,6 +90,10 @@ test("known opportunity renders meaningful scan-first decision detail without in
   assert.match(html, /Useful background/);
   assert.match(html, /Edit opportunity/);
   assert.match(html, /When this was last updated/);
+  assert.match(html, />Recorded</);
+  assert.match(html, /Recorded in the current opportunity record/);
+  assert.doesNotMatch(html, />Verified</);
+  assert.doesNotMatch(html, /Verified from connected records/);
   assert.match(html, /Relationships \/ CRM/);
   assert.match(html, /All opportunities/);
   assert.doesNotMatch(html, /Next step status|Business fit|Decision Room|Data &amp; Evidence/);
