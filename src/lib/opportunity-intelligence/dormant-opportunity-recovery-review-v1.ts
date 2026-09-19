@@ -45,6 +45,7 @@ export type DormantOpportunityHistoryV1 = Readonly<{
 export type DormantOpportunityRecoveryDispositionV1 =
   | "RECOVERY_CANDIDATE"
   | "VERIFY_REQUIRED"
+  | "DORMANT_NO_RECOVERY_SIGNAL"
   | "NOT_DORMANT"
   | "SUPPRESSED"
   | "UNAVAILABLE";
@@ -83,17 +84,15 @@ export type DormantOpportunityRecoveryReviewV1 = Readonly<{
   }>;
 }>;
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
+const DAY_MS = 86_400_000;
 const DEFAULT_DORMANCY_MS = 60 * DAY_MS;
 const DEFAULT_SIGNAL_MAX_AGE_MS = 30 * DAY_MS;
-
 const TERMINAL_STATES = new Set<DormantOpportunityLifecycleStateV1>([
   "DECLINED",
   "CLOSED_WON",
   "CLOSED_LOST",
   "WITHDRAWN",
 ]);
-
 const AUTHORITY = Object.freeze({
   analysisOnly: true as const,
   internalReviewAllowed: true as const,
@@ -107,7 +106,6 @@ const AUTHORITY = Object.freeze({
   approvalBypassAllowed: false as const,
   externalActionAllowed: false as const,
 });
-
 const LIMITATIONS = Object.freeze([
   "Recovery candidates are evidence-review prompts only. They do not establish renewed interest, available budget, buyer authority, introduction willingness, or opportunity certainty.",
   "A planning-window or market signal records only the supplied observation. It does not establish a sponsorship link, commitment, or timing certainty.",
@@ -121,7 +119,7 @@ function timestamp(value: string, label: string): number {
   return parsed;
 }
 
-function boundedDuration(value: number | undefined, fallback: number, label: string, maximum: number): number {
+function duration(value: number | undefined, fallback: number, label: string, maximum: number): number {
   if (value == null) return fallback;
   if (!Number.isFinite(value) || value <= 0 || value > maximum) {
     throw new Error(`${label} must be finite, positive, and no greater than ${maximum}ms`);
@@ -133,7 +131,7 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
-function result(input: Readonly<{
+function build(input: Readonly<{
   status: DormantOpportunityRecoveryReviewV1["status"];
   opportunityId: string | null;
   evaluatedAt: string;
@@ -166,11 +164,7 @@ function result(input: Readonly<{
   });
 }
 
-/**
- * Reviews an already-canonical historical opportunity for evidence-backed
- * recovery. It intentionally cannot create opportunities, relationships,
- * contacts, sponsorship links, timing claims, or outreach authority.
- */
+/** Reviews already-canonical historical opportunities for evidence-backed recovery. */
 export function reviewDormantOpportunityRecoveryV1(input: Readonly<{
   history: DormantOpportunityHistoryV1 | null;
   signals: readonly DormantOpportunityRecoverySignalV1[];
@@ -180,175 +174,94 @@ export function reviewDormantOpportunityRecoveryV1(input: Readonly<{
 }>): DormantOpportunityRecoveryReviewV1 {
   const evaluatedAtMs = timestamp(input.evaluatedAt, "evaluatedAt");
   const evaluatedAt = new Date(evaluatedAtMs).toISOString();
-  const dormancyMs = boundedDuration(input.dormancyMs, DEFAULT_DORMANCY_MS, "dormancyMs", 365 * DAY_MS);
-  const signalMaxAgeMs = boundedDuration(input.signalMaxAgeMs, DEFAULT_SIGNAL_MAX_AGE_MS, "signalMaxAgeMs", 180 * DAY_MS);
+  const dormancyMs = duration(input.dormancyMs, DEFAULT_DORMANCY_MS, "dormancyMs", 365 * DAY_MS);
+  const signalMaxAgeMs = duration(input.signalMaxAgeMs, DEFAULT_SIGNAL_MAX_AGE_MS, "signalMaxAgeMs", 180 * DAY_MS);
 
   if (!input.history) {
-    return result({
-      status: "UNAVAILABLE",
-      opportunityId: null,
-      evaluatedAt,
-      disposition: "UNAVAILABLE",
-      dormantForDays: null,
-      reasonCodes: ["CANONICAL_OPPORTUNITY_HISTORY_UNAVAILABLE"],
-    });
+    return build({ status: "UNAVAILABLE", opportunityId: null, evaluatedAt, disposition: "UNAVAILABLE", dormantForDays: null, reasonCodes: ["CANONICAL_OPPORTUNITY_HISTORY_UNAVAILABLE"] });
   }
 
   const history = input.history;
   const opportunityId = history.opportunityId.trim();
   if (!opportunityId) {
-    return result({
-      status: "BLOCKED",
-      opportunityId: null,
-      evaluatedAt,
-      disposition: "UNAVAILABLE",
-      dormantForDays: null,
-      reasonCodes: ["CANONICAL_OPPORTUNITY_ID_MISSING"],
-    });
+    return build({ status: "BLOCKED", opportunityId: null, evaluatedAt, disposition: "UNAVAILABLE", dormantForDays: null, reasonCodes: ["CANONICAL_OPPORTUNITY_ID_MISSING"] });
   }
 
   const lastActivityMs = timestamp(history.lastMeaningfulActivityAt, "history.lastMeaningfulActivityAt");
   const recordObservedAtMs = timestamp(history.recordObservedAt, "history.recordObservedAt");
   if (lastActivityMs > evaluatedAtMs || recordObservedAtMs > evaluatedAtMs) {
-    return result({
-      status: "BLOCKED",
-      opportunityId,
-      evaluatedAt,
-      disposition: "VERIFY_REQUIRED",
-      dormantForDays: null,
-      evidenceRefs: history.evidenceRefs,
-      reasonCodes: ["HISTORY_FUTURE_DATED"],
-    });
+    return build({ status: "BLOCKED", opportunityId, evaluatedAt, disposition: "VERIFY_REQUIRED", dormantForDays: null, evidenceRefs: history.evidenceRefs, reasonCodes: ["HISTORY_FUTURE_DATED"] });
   }
 
   const dormantForMs = evaluatedAtMs - lastActivityMs;
   const dormantForDays = Math.floor(dormantForMs / DAY_MS);
-
   if (history.doNotContact || TERMINAL_STATES.has(history.lifecycleState)) {
-    return result({
-      status: "LIVE",
-      opportunityId,
-      evaluatedAt,
-      disposition: "SUPPRESSED",
-      dormantForDays,
-      evidenceRefs: history.evidenceRefs,
-      reasonCodes: [history.doNotContact ? "DO_NOT_CONTACT" : "TERMINAL_OPPORTUNITY_STATE"],
-    });
+    return build({ status: "LIVE", opportunityId, evaluatedAt, disposition: "SUPPRESSED", dormantForDays, evidenceRefs: history.evidenceRefs, reasonCodes: [history.doNotContact ? "DO_NOT_CONTACT" : "TERMINAL_OPPORTUNITY_STATE"] });
   }
-
   if (history.integrity !== "SUPPORTED" || history.evidenceRefs.length === 0) {
-    return result({
-      status: "BLOCKED",
-      opportunityId,
-      evaluatedAt,
-      disposition: "VERIFY_REQUIRED",
-      dormantForDays,
-      evidenceRefs: history.evidenceRefs,
-      reasonCodes: [
-        history.integrity === "CONFLICTED" ? "HISTORY_EVIDENCE_CONFLICTED" : "HISTORY_EVIDENCE_INCOMPLETE",
-      ],
-    });
+    return build({ status: "BLOCKED", opportunityId, evaluatedAt, disposition: "VERIFY_REQUIRED", dormantForDays, evidenceRefs: history.evidenceRefs, reasonCodes: [history.integrity === "CONFLICTED" ? "HISTORY_EVIDENCE_CONFLICTED" : "HISTORY_EVIDENCE_INCOMPLETE"] });
   }
-
   if (dormantForMs < dormancyMs) {
-    return result({
-      status: "LIVE",
-      opportunityId,
-      evaluatedAt,
-      disposition: "NOT_DORMANT",
-      dormantForDays,
-      evidenceRefs: history.evidenceRefs,
-      reasonCodes: ["DORMANCY_THRESHOLD_NOT_MET"],
-    });
+    return build({ status: "LIVE", opportunityId, evaluatedAt, disposition: "NOT_DORMANT", dormantForDays, evidenceRefs: history.evidenceRefs, reasonCodes: ["DORMANCY_THRESHOLD_NOT_MET"] });
   }
 
   const exactSignals = input.signals.filter((signal) => signal.opportunityId.trim() === opportunityId);
-  const wrongOpportunitySignalPresent = input.signals.some(
-    (signal) => signal.opportunityId.trim() !== opportunityId,
-  );
-
+  const wrongOpportunitySignalPresent = input.signals.some((signal) => signal.opportunityId.trim() !== opportunityId);
   const qualifying: DormantOpportunityRecoverySignalV1[] = [];
-  let staleSignalPresent = false;
-  let futureSignalPresent = false;
-  let verificationSignalPresent = false;
-  let conflictedSignalPresent = false;
-  let incompleteSignalPresent = false;
+  let stale = false;
+  let future = false;
+  let verify = false;
+  let conflicted = false;
+  let incomplete = false;
 
   for (const signal of exactSignals) {
     const observedAtMs = timestamp(signal.observedAt, `signal.${signal.signalId}.observedAt`);
-    if (observedAtMs > evaluatedAtMs) {
-      futureSignalPresent = true;
-      continue;
-    }
-    if (evaluatedAtMs - observedAtMs > signalMaxAgeMs) {
-      staleSignalPresent = true;
-      continue;
-    }
-    if (signal.integrity === "CONFLICTED") {
-      conflictedSignalPresent = true;
-      continue;
-    }
-    if (signal.integrity !== "SUPPORTED" || !signal.sourceRef.trim() || signal.evidenceRefs.length === 0) {
-      incompleteSignalPresent = true;
-      continue;
-    }
-    if (signal.requiresVerification) {
-      verificationSignalPresent = true;
-      continue;
-    }
+    if (observedAtMs > evaluatedAtMs) { future = true; continue; }
+    if (evaluatedAtMs - observedAtMs > signalMaxAgeMs) { stale = true; continue; }
+    if (signal.integrity === "CONFLICTED") { conflicted = true; continue; }
+    if (signal.integrity !== "SUPPORTED" || !signal.sourceRef.trim() || signal.evidenceRefs.length === 0) { incomplete = true; continue; }
+    if (signal.requiresVerification) { verify = true; continue; }
     qualifying.push(signal);
   }
 
-  const combinedEvidence = unique([
+  const evidenceRefs = unique([
     ...history.evidenceRefs,
     ...qualifying.flatMap((signal) => signal.evidenceRefs),
     ...qualifying.map((signal) => signal.sourceRef),
   ]);
 
-  if (futureSignalPresent || conflictedSignalPresent || verificationSignalPresent) {
-    return result({
+  if (future || conflicted || verify) {
+    return build({
       status: "BLOCKED",
       opportunityId,
       evaluatedAt,
       disposition: "VERIFY_REQUIRED",
       dormantForDays,
-      evidenceRefs: combinedEvidence,
-      reasonCodes: [
-        futureSignalPresent ? "RECOVERY_SIGNAL_FUTURE_DATED" : "",
-        conflictedSignalPresent ? "RECOVERY_SIGNAL_CONFLICTED" : "",
-        verificationSignalPresent ? "RECOVERY_SIGNAL_REQUIRES_VERIFICATION" : "",
-      ],
+      evidenceRefs,
+      reasonCodes: [future ? "RECOVERY_SIGNAL_FUTURE_DATED" : "", conflicted ? "RECOVERY_SIGNAL_CONFLICTED" : "", verify ? "RECOVERY_SIGNAL_REQUIRES_VERIFICATION" : ""],
     });
   }
 
   if (qualifying.length === 0) {
-    return result({
-      status: "LIVE",
+    return build({
+      status: incomplete ? "BLOCKED" : "LIVE",
       opportunityId,
       evaluatedAt,
-      disposition: incompleteSignalPresent ? "VERIFY_REQUIRED" : "NOT_DORMANT",
+      disposition: incomplete ? "VERIFY_REQUIRED" : "DORMANT_NO_RECOVERY_SIGNAL",
       dormantForDays,
       evidenceRefs: history.evidenceRefs,
-      reasonCodes: [
-        incompleteSignalPresent ? "RECOVERY_SIGNAL_EVIDENCE_INCOMPLETE" : "NO_FRESH_SUPPORTED_RECOVERY_SIGNAL",
-        staleSignalPresent ? "STALE_RECOVERY_SIGNAL_IGNORED" : "",
-        wrongOpportunitySignalPresent ? "OTHER_OPPORTUNITY_SIGNAL_IGNORED" : "",
-      ],
+      reasonCodes: [incomplete ? "RECOVERY_SIGNAL_EVIDENCE_INCOMPLETE" : "NO_FRESH_SUPPORTED_RECOVERY_SIGNAL", stale ? "STALE_RECOVERY_SIGNAL_IGNORED" : "", wrongOpportunitySignalPresent ? "OTHER_OPPORTUNITY_SIGNAL_IGNORED" : ""],
     });
   }
 
-  return result({
+  return build({
     status: "LIVE",
     opportunityId,
     evaluatedAt,
     disposition: "RECOVERY_CANDIDATE",
     dormantForDays,
     qualifyingSignalIds: qualifying.map((signal) => signal.signalId),
-    evidenceRefs: combinedEvidence,
-    reasonCodes: [
-      "FRESH_SUPPORTED_RECOVERY_SIGNAL",
-      staleSignalPresent ? "STALE_RECOVERY_SIGNAL_IGNORED" : "",
-      wrongOpportunitySignalPresent ? "OTHER_OPPORTUNITY_SIGNAL_IGNORED" : "",
-    ],
+    evidenceRefs,
+    reasonCodes: ["FRESH_SUPPORTED_RECOVERY_SIGNAL", stale ? "STALE_RECOVERY_SIGNAL_IGNORED" : "", wrongOpportunitySignalPresent ? "OTHER_OPPORTUNITY_SIGNAL_IGNORED" : ""],
   });
 }
