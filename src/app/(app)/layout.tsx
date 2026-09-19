@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/dashboard-session";
 
 const NAV_ITEMS = EXECUTIVE_WORKSPACE_NAV_V1;
-const PRIMARY_NAV_IDS = new Set(["EXECUTIVE_HOME", "ASK_JEEVES", "OPPORTUNITIES_ACTIONS", "RELATIONSHIPS_CRM"]);
+const PRIMARY_NAV_IDS = new Set(["EXECUTIVE_HOME", "ASK_JEEVES", "STRATEGY", "OPPORTUNITIES_ACTIONS", "RELATIONSHIPS_CRM"]);
 const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter((item) => PRIMARY_NAV_IDS.has(item.id));
 const DATA_STATUS_ITEM = NAV_ITEMS.find((item) => item.id === "DATA_EVIDENCE");
 
