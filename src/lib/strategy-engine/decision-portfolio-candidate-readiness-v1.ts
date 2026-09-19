@@ -106,6 +106,16 @@ const ALL_FIELDS: readonly DecisionCandidateScoringFieldV1[] = [...VALUE_FIELDS,
 const MAX_REFS = 100;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 
+const CANDIDATE_TYPES = new Set<DecisionCandidateV1["candidateType"]>([
+  "OPPORTUNITY",
+  "CAMPAIGN",
+  "EXPERIMENT",
+  "RELATIONSHIP",
+  "DECISION",
+]);
+const OWNERS = new Set<DecisionOwnerV1>(["KEEGAN", "IOANA", "JEEVES"]);
+const APPROVAL_CLASSES = new Set<DecisionApprovalClassV1>(["NONE", "REVIEW", "KEEGAN"]);
+
 const AUTHORITY = Object.freeze({
   persistPortfolio: false,
   selectWork: false,
@@ -144,9 +154,9 @@ function freshness(value: number): number {
   return value;
 }
 
-function refs(values: readonly string[], label: string, allowEmpty = false): string[] {
-  if (!Array.isArray(values) || values.length > MAX_REFS || (!allowEmpty && values.length === 0)) {
-    throw new DecisionCandidateReadinessError("INVALID_REFS", `${label} must be a bounded reference list`);
+function refs(values: readonly string[], label: string): string[] {
+  if (!Array.isArray(values) || values.length === 0 || values.length > MAX_REFS) {
+    throw new DecisionCandidateReadinessError("INVALID_REFS", `${label} must be a non-empty bounded reference list`);
   }
   const normalized = values.map((value) => text(value, label));
   return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
@@ -183,6 +193,13 @@ function evidenceStateReason(prefix: string, state: DecisionEvidenceStateV1): st
   if (state === "UNKNOWN") return `${prefix}_UNKNOWN`;
   if (state === "STALE") return `${prefix}_STALE`;
   return `${prefix}_CONFLICTED`;
+}
+
+function fieldMaximum(field: DecisionCandidateScoringFieldV1): number {
+  if (field === "cashCents") return 100_000_000_000;
+  if (field === "keeganHours" || field === "ioanaHours") return 10_000;
+  if (field === "jeevesHours") return 100_000;
+  return 100;
 }
 
 function validateFieldEvidence(
@@ -260,6 +277,16 @@ export function assessDecisionPortfolioCandidateReadinessV1(input: Readonly<{
   text(draft.title, "draft.title");
   text(draft.safeNextStep, "draft.safeNextStep");
   text(draft.successMetric, "draft.successMetric");
+  if (!CANDIDATE_TYPES.has(draft.candidateType)) {
+    throw new DecisionCandidateReadinessError("INVALID_TYPE", "draft.candidateType is invalid");
+  }
+  if (!OWNERS.has(draft.owner)) {
+    throw new DecisionCandidateReadinessError("INVALID_OWNER", "draft.owner is invalid");
+  }
+  if (!APPROVAL_CLASSES.has(draft.approvalClass)) {
+    throw new DecisionCandidateReadinessError("INVALID_APPROVAL", "draft.approvalClass is invalid");
+  }
+
   const start = timestamp(draft.evaluationWindow.start, "draft.evaluationWindow.start");
   const end = timestamp(draft.evaluationWindow.end, "draft.evaluationWindow.end");
   if (Date.parse(end) < Date.parse(start)) {
@@ -288,8 +315,7 @@ export function assessDecisionPortfolioCandidateReadinessV1(input: Readonly<{
       : isRisk
         ? draft.risk[field as DecisionCandidateRiskFieldV1]
         : draft.resources[field as DecisionCandidateResourceFieldV1];
-    const maximum = field === "cashCents" ? 100_000_000_000 : field.endsWith("Hours") ? 100_000 : 100;
-    const normalized = finite(raw, `draft.${field}`, 0, maximum, field === "cashCents");
+    const normalized = finite(raw, `draft.${field}`, 0, fieldMaximum(field), field === "cashCents");
     if (normalized == null) missingFields.push(field);
     validateFieldEvidence(
       field,
@@ -306,6 +332,10 @@ export function assessDecisionPortfolioCandidateReadinessV1(input: Readonly<{
       else if (isRisk) risks[field as DecisionCandidateRiskFieldV1] = normalized;
       else resources[field as DecisionCandidateResourceFieldV1] = normalized;
     }
+  }
+
+  if (draft.approvalClass === "KEEGAN" && resources.keeganHours === 0) {
+    verificationReasons.push("KEEGAN_APPROVAL_REQUIRES_EXPLICIT_KEEGAN_TIME");
   }
 
   let monetaryCase: SupportedMonetaryCaseV1 | null = null;
