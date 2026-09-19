@@ -245,25 +245,16 @@ test("fails closed when query classes drift even if engine/queryRef keys match",
 });
 
 test("withholds gaps when target or peer evidence exceeds the caller freshness policy", () => {
-  const staleTarget = evaluation(
-    "person:keegan-hall",
-    [{ ...q1Base, resultState: "MENTIONED" }],
-    {
-      asOf: "2026-09-18T02:00:00Z",
-      window: { startAt: "2026-09-18T00:00:00Z", endAt: "2026-09-18T01:30:00Z" }
-    }
-  );
-  const stalePeer = evaluation(
-    "person:peer-a",
-    [{ ...q1Base, resultState: "MENTIONED_WITH_CITATION", citedSourceRefs: ["source:gap"] }],
-    {
-      asOf: "2026-09-18T02:00:00Z",
-      window: { startAt: "2026-09-18T00:00:00Z", endAt: "2026-09-18T01:30:00Z" }
-    }
-  );
+  const target = evaluation("person:keegan-hall", [
+    { ...q1Base, resultState: "MENTIONED" }
+  ]);
+  const peer = evaluation("person:peer-a", [
+    { ...q1Base, resultState: "MENTIONED_WITH_CITATION", citedSourceRefs: ["source:gap"] }
+  ]);
 
-  const result = compileAiSearchCitationGapReviewV1(reviewInput(staleTarget, [stalePeer], {
-    policy: { maxEvaluationAgeHours: 1, minDistinctPeerEntitiesForGap: 1 }
+  const result = compileAiSearchCitationGapReviewV1(reviewInput(target, [peer], {
+    policy: { maxEvaluationAgeHours: 1, minDistinctPeerEntitiesForGap: 1 },
+    evaluatedAt: "2026-09-19T08:30:00Z"
   }));
 
   assert.equal(result.status, "VERIFY_REQUIRED");
