@@ -47,6 +47,42 @@ test("runtime JSON parsing preserves explicit release evidence without auto-acce
   assert.equal(certificate.authority.canBypassApproval, false);
 });
 
+test("production-facing live evidence must be observed after exact-SHA production propagation", () => {
+  const candidate = validInput();
+  const propagationObservedAt = new Date(Date.now() - 2 * 60 * 1_000).toISOString();
+  candidate.gates = candidate.gates.map((gate) =>
+    gate.gateId === "PRODUCTION_PROPAGATION"
+      ? { ...gate, observedAt: propagationObservedAt }
+      : gate
+  );
+
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
+  const postPropagationGateIds = [
+    "PRODUCTION_SMOKE",
+    "EXECUTIVE_HOME_TRUTH",
+    "CRM_DIRECTORY_READS"
+  ] as const;
+
+  assert.equal(certificate.mechanicalState, "BLOCKED");
+  for (const gateId of postPropagationGateIds) {
+    const gate = certificate.gates.find((entry) => entry.gateId === gateId);
+    assert.equal(gate?.freshness, "UNKNOWN");
+    assert.equal(gate?.status, "BLOCKING");
+    assert.ok(
+      certificate.blockers.some(
+        (blocker) => blocker.code === "GATE_NOT_CURRENT" && blocker.gateId === gateId
+      )
+    );
+  }
+  assert.equal(certificate.certifiedClaims.productionSmoke, false);
+  assert.equal(certificate.certifiedClaims.executiveHomeTruth, false);
+  assert.equal(certificate.certifiedClaims.crmDirectoryReads, false);
+
+  const ionos = certificate.gates.find((gate) => gate.gateId === "IONOS_THREE_MAILBOX_PROOF");
+  assert.equal(ionos?.freshness, "CURRENT");
+  assert.equal(ionos?.status, "PASS");
+});
+
 test("runtime parsing rejects unknown release gates instead of silently ignoring them", () => {
   const candidate = validInput() as unknown as { gates: Array<Record<string, unknown>> };
   candidate.gates = [
