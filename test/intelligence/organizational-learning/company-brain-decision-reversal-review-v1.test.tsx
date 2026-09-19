@@ -152,7 +152,7 @@ test("preserves a decision-grade observed outcome only as historical context", (
   assert.equal(result.causalInterpretation, "NOT_ESTABLISHED");
   assert.equal(result.nextInternalStep, "REVIEW_REVERSAL_WITH_OUTCOME_CONTEXT");
   assert.equal(result.authority.causalAttributionAuthorized, false);
-  assert.equal(result.authority.learningPromotionAuthorized, undefined);
+  assert.equal(result.authority.lessonPromotionAuthorized, false);
 });
 
 test("returns not applicable for a decision that is not recorded as reversed", () => {
