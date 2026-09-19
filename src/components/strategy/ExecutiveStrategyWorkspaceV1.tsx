@@ -49,11 +49,13 @@ function confidenceLabel(confidence: StrategyWorkspaceRecordV1["confidence"]) {
 }
 
 function approvalLabel(level: StrategyWorkspaceRecordV1["approvalLevel"]) {
+  if (level === "L5_EXECUTED_AND_MEASURED") return "Completed and measured";
   if (level === "L4_APPROVED_FOR_EXECUTION") return "Approved to execute";
-  if (level === "L3_APPROVED_FOR_ACTION") return "Approved for action";
+  if (level === "L3_READY_FOR_APPROVAL") return "Ready for your approval";
   if (level === "L2_DRAFT_PREPARED") return "Draft prepared";
   if (level === "L1_RECOMMENDATION") return "Idea for review";
-  return "No approval needed yet";
+  if (level === "L0_INSIGHT") return "Insight only";
+  return "Not assessed";
 }
 
 function plainTitle(item: StrategyWorkspaceRecordV1) {
@@ -69,6 +71,15 @@ function plainAction(action: string) {
     .replace(/Do not scale spend yet\./gi, "Do not increase ad spend yet.")
     .replace(/Identify which channel\(s\) changed traffic and validate attribution coverage\.?/gi, "First identify which marketing channels caused the traffic change and confirm we can reliably connect those visits to sales.")
     .replace(/Identify which channel\(s\) increased\/decreased traffic; avoid scaling without attribution/gi, "Identify which marketing channels changed traffic before increasing ad spend.");
+}
+
+function plainMissing(items: string[]) {
+  return items.map((item) => {
+    const value = item.toLowerCase();
+    if (value === "email" || value.includes("email")) return "email campaign performance";
+    if (value === "matchback" || value.includes("matchback")) return "ad-to-order attribution";
+    return item.replaceAll("_", " ");
+  });
 }
 
 function plainBlocker(blocker: string | null) {
@@ -108,7 +119,7 @@ function PriorityCard({ item, compact = false }: { item: StrategyWorkspaceRecord
         </div>
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Priority</div>
-          <div className="text-lg font-semibold text-slate-950">{item.priorityScore ?? "Unknown"}</div>
+          <div className="text-lg font-semibold text-slate-950">{item.priorityScore != null ? `${Math.round(item.priorityScore)}/100` : "Not scored"}</div>
         </div>
       </div>
 
@@ -121,7 +132,7 @@ function PriorityCard({ item, compact = false }: { item: StrategyWorkspaceRecord
             <Economics item={item} />
           </div>
           {plainBlocker(item.blocker) ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><strong>Why we cannot act yet:</strong> {plainBlocker(item.blocker)}</p> : null}
-          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600"><strong>Still needed:</strong> {item.dataMissing.join(", ")}</p> : null}
+          {item.dataMissing.length ? <p className="mt-2 text-xs text-slate-600"><strong>Still needed:</strong> {plainMissing(item.dataMissing).join(", ")}</p> : null}
           {item.dependencies.length ? <p className="mt-2 text-xs text-slate-600"><strong>Depends on:</strong> {item.dependencies.join(", ")}</p> : null}
         </>
       ) : null}
