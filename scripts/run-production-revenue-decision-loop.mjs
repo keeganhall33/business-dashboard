@@ -1,19 +1,26 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { require as tsxRequire } from "tsx/cjs/api";
 
-import { buildRevenueDecisionPacketV1 } from "../src/lib/intelligence/production-revenue-loop/decision-packet-v1.ts";
+const { buildFreshRevenueDecisionV1 } = tsxRequire(
+  "../src/lib/intelligence/production-revenue-loop/fresh-revenue-decision-v1.ts",
+  import.meta.url,
+);
 
 export const PRODUCTION_REVENUE_DECISION_LOOP_RUN_VERSION =
-  "PRODUCTION_REVENUE_DECISION_LOOP_RUN_V1";
+  "PRODUCTION_REVENUE_DECISION_LOOP_RUN_V2";
 export const MAX_REVENUE_DECISION_INPUT_BYTES = 1024 * 1024;
 
 const TOP_LEVEL_KEYS = [
   "comparisonRange",
   "currentRange",
+  "evaluatedAt",
+  "freshnessPolicy",
   "generatedAt",
   "observations",
 ];
 const RANGE_KEYS = ["endDate", "startDate"];
+const FRESHNESS_POLICY_KEYS = ["GA4", "META", "WOO"];
 const OBSERVATION_KEYS = [
   "current",
   "evidenceRefs",
@@ -48,6 +55,8 @@ function hasBoundedShape(input) {
   if (!hasExactKeys(input, TOP_LEVEL_KEYS)) return false;
   if (!hasExactKeys(input.currentRange, RANGE_KEYS)) return false;
   if (!hasExactKeys(input.comparisonRange, RANGE_KEYS)) return false;
+  if (!hasExactKeys(input.freshnessPolicy, FRESHNESS_POLICY_KEYS)) return false;
+  if (typeof input.evaluatedAt !== "string") return false;
   if (!Array.isArray(input.observations) || input.observations.length > 3) return false;
 
   return input.observations.every(
@@ -58,41 +67,82 @@ function hasBoundedShape(input) {
   );
 }
 
-function invalidPacket(generatedAt = "UNKNOWN") {
-  return buildRevenueDecisionPacketV1({
-    generatedAt,
-    currentRange: { startDate: "INVALID", endDate: "INVALID" },
-    comparisonRange: { startDate: "INVALID", endDate: "INVALID" },
-    observations: [],
-  });
+function freezeRun(run) {
+  Object.freeze(run.limitations);
+  Object.freeze(run.authority);
+  return Object.freeze(run);
 }
 
-function freezeRun(run) {
-  return Object.freeze(run);
+function rejectedRun(input) {
+  return freezeRun({
+    contractVersion: PRODUCTION_REVENUE_DECISION_LOOP_RUN_VERSION,
+    status: "NOT_READY",
+    reasonCode: "INPUT_REJECTED",
+    evaluatedAt:
+      isRecord(input) && typeof input.evaluatedAt === "string"
+        ? input.evaluatedAt
+        : "UNKNOWN",
+    sourceFreshness: null,
+    packet: null,
+    limitations: [
+      "The production runner requires only canonical WooCommerce, GA4, and Meta decision input plus an explicit evaluation instant and explicit per-source freshness limits.",
+      "Rejected input cannot produce a revenue decision packet or execution authority.",
+    ],
+    authority: {
+      causalClaimAllowed: false,
+      revenueAttributionAllowed: false,
+      externalMutationAllowed: false,
+      metaWriteAllowed: false,
+      approvalBypassAllowed: false,
+    },
+    externalMutationPerformed: false,
+  });
 }
 
 /**
  * Executes the read-only production revenue decision seam.
  *
- * The caller must provide canonical Woo, GA4, and Meta observations. The run
- * never writes evidence, changes spend, edits pricing, mutates checkout, or
- * performs outreach. It only returns a bounded decision packet for review.
+ * The caller must provide canonical Woo, GA4, and Meta observations plus the
+ * exact decision evaluation instant and explicit source-specific freshness
+ * limits. A source that was once labelled CURRENT is revalidated at that
+ * instant before it can contribute to a decision. Missing, partial,
+ * conflicted, future, or stale evidence produces no packet.
+ *
+ * The run never writes evidence, changes spend, edits pricing, mutates
+ * checkout, or performs outreach. A READY packet is bounded decision support
+ * only and preserves the canonical Keegan approval policy for consequential
+ * action.
  */
 export function runProductionRevenueDecisionLoopV1(input) {
-  const boundedInput = hasBoundedShape(input)
-    ? structuredClone(input)
-    : null;
-  const packet = boundedInput
-    ? buildRevenueDecisionPacketV1(boundedInput)
-    : invalidPacket(
-        isRecord(input) && typeof input.generatedAt === "string"
-          ? input.generatedAt
-          : "UNKNOWN",
-      );
+  if (!hasBoundedShape(input)) return rejectedRun(input);
+
+  const boundedInput = structuredClone(input);
+  const freshDecision = buildFreshRevenueDecisionV1({
+    revenueInput: {
+      generatedAt: boundedInput.generatedAt,
+      currentRange: boundedInput.currentRange,
+      comparisonRange: boundedInput.comparisonRange,
+      observations: boundedInput.observations,
+    },
+    evaluatedAt: boundedInput.evaluatedAt,
+    freshnessPolicy: boundedInput.freshnessPolicy,
+  });
 
   return freezeRun({
     contractVersion: PRODUCTION_REVENUE_DECISION_LOOP_RUN_VERSION,
-    packet,
+    status: freshDecision.status,
+    reasonCode: freshDecision.reasonCode,
+    evaluatedAt: freshDecision.evaluatedAt,
+    sourceFreshness: freshDecision.sourceFreshness,
+    packet: freshDecision.acceptedDecision,
+    limitations: [...freshDecision.limitations],
+    authority: {
+      causalClaimAllowed: freshDecision.causalClaim,
+      revenueAttributionAllowed: freshDecision.revenueAttributionClaim,
+      externalMutationAllowed: freshDecision.externalMutationAllowed,
+      metaWriteAllowed: freshDecision.metaWriteAllowed,
+      approvalBypassAllowed: freshDecision.approvalBypassAllowed,
+    },
     externalMutationPerformed: false,
   });
 }
@@ -143,7 +193,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
     const run = runProductionRevenueDecisionLoopV1(JSON.parse(rawInput));
     process.stdout.write(`${JSON.stringify(run, null, 2)}\n`);
-    process.exitCode = run.packet.status === "INVALID_INPUT" ? 2 : 0;
+    process.exitCode = run.reasonCode === "INPUT_REJECTED" ? 2 : 0;
   } catch (error) {
     const reasonCode =
       error instanceof Error && error.message === "INPUT_TOO_LARGE"

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1,
   compileV1ProductionSmokeV1,
   type V1ProductionSmokeInputV1,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/release/v1-production-smoke-v1";
 
 const stepIdSchema = z.enum(V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1);
+const deviceClassSchema = z.enum(V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1);
 const stepStateSchema = z.enum(["PASS", "FAIL", "BLOCKED", "UNKNOWN"]);
 const actionRequirementSchema = z.enum(["NONE", "KEEGAN", "UNKNOWN"]);
 
@@ -31,14 +33,32 @@ export const V1_PRODUCTION_SMOKE_INPUT_SCHEMA_V1 = z
           })
           .strict()
       )
+      .readonly(),
+    deviceObservations: z
+      .array(
+        z
+          .object({
+            deviceClass: deviceClassSchema,
+            state: stepStateSchema,
+            observedAt: z.string(),
+            viewportWidth: z.number().int(),
+            viewportHeight: z.number().int(),
+            evidenceRefs: z.array(z.string()).readonly(),
+            releaseSha: z.string(),
+            actionRequirement: actionRequirementSchema,
+            detail: z.string().nullable().optional()
+          })
+          .strict()
+      )
       .readonly()
   })
   .strict();
 
 /**
  * Parses untrusted production-smoke JSON before it can contribute release evidence.
- * Unknown steps, extra truth-like fields, malformed records, or non-production inputs
- * fail closed here rather than being silently ignored by the compiler.
+ * Unknown steps/device classes, extra truth-like fields, malformed records, missing
+ * device coverage, or non-production inputs fail closed here rather than being silently
+ * ignored by the compiler.
  */
 export function parseV1ProductionSmokeInputV1(value: unknown): V1ProductionSmokeInputV1 {
   return V1_PRODUCTION_SMOKE_INPUT_SCHEMA_V1.parse(value);
