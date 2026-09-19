@@ -32,6 +32,13 @@ function laneLabel(lane: StrategyWorkspaceRecordV1["lane"]) {
   return "Needs more evidence";
 }
 
+function sourceModeLabel(mode: ExecutiveStrategyWorkspaceModelV1["sourceMode"]) {
+  if (mode === "LIVE_DATA") return "Live data";
+  if (mode === "PARTIAL_LIVE_DATA") return "Some sources still connecting";
+  if (mode === "SEED_DATA") return "Setup data only";
+  return "Data still connecting";
+}
+
 function truthLabel(state: StrategyWorkspaceRecordV1["epistemicState"]) {
   if (state === "KNOWN") return "Evidence verified";
   if (state === "CONFLICTED") return "Evidence conflicts";
@@ -168,7 +175,7 @@ export function ExecutiveStrategyWorkspaceV1({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Data status</div>
-              <div className="mt-1 font-semibold text-slate-900">{model.sourceMode}</div>
+              <div className="mt-1 font-semibold text-slate-900">{sourceModeLabel(model.sourceMode)}</div>
             </div>
           </div>
           <p className="mt-5 rounded-2xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700">{model.notice}</p>
