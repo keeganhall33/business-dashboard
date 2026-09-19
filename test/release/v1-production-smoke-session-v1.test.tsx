@@ -12,8 +12,9 @@ import {
 } from "@/lib/release/v1-production-smoke-session-v1";
 
 const RELEASE_SHA = "be7110186228ef54ae3c0a15637f30025aada5da";
-const GENERATED_AT = "2026-09-18T18:00:00.000Z";
-const OBSERVED_AT = "2026-09-18T17:55:00.000Z";
+const TEST_NOW_MS = Date.now();
+const GENERATED_AT = new Date(TEST_NOW_MS - 60_000).toISOString();
+const OBSERVED_AT = new Date(TEST_NOW_MS - 5 * 60_000).toISOString();
 const SMOKE_RUN_ID = "smoke-run-20260918-1755";
 
 const TEST_PATHS: Record<(typeof V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1)[number], string> = {
@@ -75,6 +76,29 @@ test("one coherent exact-SHA production smoke session with full desktop/mobile r
   assert.equal(result.blockers.length, 0);
   assert.equal(result.deviceCoverage.length, 2);
   assert.ok(result.deviceCoverage.every((entry) => entry.status === "PASS"));
+});
+
+test("an old internally coherent session cannot be replayed as current production smoke", () => {
+  const input = validInput();
+  const staleGeneratedAt = new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString();
+  const staleObservedAt = new Date(Date.now() - (2 * 60 + 5) * 60 * 1_000).toISOString();
+  input.generatedAt = staleGeneratedAt;
+  input.observations = input.observations.map((observation) => ({
+    ...observation,
+    observedAt: staleObservedAt
+  }));
+  input.deviceObservations = input.deviceObservations.map((observation) => ({
+    ...observation,
+    observedAt: staleObservedAt
+  }));
+
+  const result = compileSessionBoundV1ProductionSmokeV1(input);
+
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.gateEvidence.state, "BLOCKED");
+  assert.equal(result.gateEvidence.freshness, "UNKNOWN");
+  assert.ok(result.blockers.some((blocker) => blocker.code === "STEP_STALE_EVIDENCE"));
+  assert.ok(result.blockers.some((blocker) => blocker.code === "DEVICE_STALE_EVIDENCE"));
 });
 
 test("route evidence from another smoke session fails closed before certification", () => {
@@ -148,9 +172,10 @@ test("device route evidence must prove the same canonical pathname as the route 
 
 test("one stale device-route observation blocks the whole final smoke session", () => {
   const input = validInput();
+  const staleObservedAt = new Date(TEST_NOW_MS - 2 * 60 * 60 * 1_000).toISOString();
   input.deviceObservations = input.deviceObservations.map((observation) =>
     observation.deviceClass === "DESKTOP" && observation.stepId === "EVENTS"
-      ? { ...observation, observedAt: "2026-09-18T16:30:00.000Z" }
+      ? { ...observation, observedAt: staleObservedAt }
       : observation
   );
 

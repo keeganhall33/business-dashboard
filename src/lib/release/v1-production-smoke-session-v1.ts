@@ -4,11 +4,11 @@ import {
   V1_PRODUCTION_SMOKE_MAX_OBSERVATION_AGE_MS_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_DEVICE_CLASSES_V1,
   V1_PRODUCTION_SMOKE_REQUIRED_STEPS_V1,
-  compileV1ProductionSmokeV1,
   type V1ProductionSmokeDeviceObservationV1,
   type V1ProductionSmokeInputV1,
   type V1ProductionSmokeResultV1
 } from "@/lib/release/v1-production-smoke-v1";
+import { compileRuntimeV1ProductionSmokeV1 } from "@/lib/release/v1-production-smoke-runtime-v1";
 
 const smokeRunIdSchema = z
   .string()
@@ -236,7 +236,9 @@ function stripSessionTags(input: V1ProductionSmokeSessionInputV1): V1ProductionS
  * and approval state. This boundary additionally requires every route and every
  * desktop/mobile route observation to belong to one explicit smoke run. Device
  * coherence is therefore proven across the complete V1 acceptance path rather than
- * by one unrelated viewport observation per device class.
+ * by one unrelated viewport observation per device class. The completed session is
+ * then evaluated by the runtime smoke boundary so a caller-controlled generatedAt
+ * cannot replay an old but internally coherent session as current production truth.
  *
  * This function performs no browser automation, network access, deployment,
  * mutation, approval, or inference. The run identifier is correlation metadata
@@ -247,5 +249,5 @@ export function compileSessionBoundV1ProductionSmokeV1(
 ): V1ProductionSmokeResultV1 {
   const parsed = V1_PRODUCTION_SMOKE_SESSION_INPUT_SCHEMA_V1.parse(value);
   assertSingleRun(parsed);
-  return compileV1ProductionSmokeV1(stripSessionTags(parsed));
+  return compileRuntimeV1ProductionSmokeV1(stripSessionTags(parsed));
 }
