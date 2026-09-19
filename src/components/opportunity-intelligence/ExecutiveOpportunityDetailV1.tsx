@@ -96,7 +96,7 @@ export function ExecutiveOpportunityDetailV1({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${EVIDENCE_TONE[opportunity.evidence]}`}>
-                {opportunity.evidence === "KNOWN" ? "Verified" : opportunity.evidence === "INFERRED" ? "Needs confirmation" : "Needs review"}
+                {opportunity.evidence === "KNOWN" ? "Recorded" : opportunity.evidence === "INFERRED" ? "Needs confirmation" : "Needs review"}
               </span>
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${view.verificationRequired ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
                 {view.verificationRequired ? "Needs your input" : "Current"}
@@ -175,7 +175,7 @@ export function ExecutiveOpportunityDetailV1({
           <div className="border-t border-slate-200 p-5">
             <dl className="grid gap-3 md:grid-cols-2">
               <Detail label="Last refreshed" value={formatTimestamp(generatedAt)} />
-              <Detail label="Record status" value={opportunity.evidence === "KNOWN" ? "Verified from connected records" : "Needs confirmation from you or a connected source"} />
+              <Detail label="Record status" value={opportunity.evidence === "KNOWN" ? "Recorded in the current opportunity record" : "Needs confirmation from you or a connected source"} />
             </dl>
           </div>
         </details>
