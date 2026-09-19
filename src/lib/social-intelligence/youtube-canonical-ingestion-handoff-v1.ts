@@ -127,8 +127,14 @@ function allIncluded(haystack: readonly string[], needles: readonly string[]): b
 }
 
 function assertReportIntegrity(report: YouTubeAnalyticsChannelLiveRunV1, nowMs: number): void {
-  if (!report || typeof report !== "object" || Array.isArray(report)) throw new Error("report must be a YouTube Analytics live-run artifact");
-  if (report.contractVersion !== "YouTubeAnalyticsChannelLiveRunV1" || report.provider !== "YOUTUBE_ANALYTICS" || report.platform !== "YOUTUBE") {
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    throw new Error("report must be a YouTube Analytics live-run artifact");
+  }
+  if (
+    report.contractVersion !== "YouTubeAnalyticsChannelLiveRunV1" ||
+    report.provider !== "YOUTUBE_ANALYTICS" ||
+    report.platform !== "YOUTUBE"
+  ) {
     throw new Error("report must be an exact YouTubeAnalyticsChannelLiveRunV1 artifact");
   }
   if (report.authorizationBoundary !== "READ_ONLY_REQUIRED_SCOPES_ONLY" || report.providerWritesPerformed !== false) {
@@ -149,6 +155,7 @@ function assertReportIntegrity(report: YouTubeAnalyticsChannelLiveRunV1, nowMs: 
   if (providerRun.externalAccessPerformed !== true || providerRun.writesPerformed !== false) {
     throw new Error("YouTube provider run must attest provider access with zero provider writes");
   }
+
   const startedAt = requireIso(providerRun.startedAt, "report.providerRun.startedAt");
   const retrievedAt = requireIso(providerRun.retrievedAt, "report.providerRun.retrievedAt");
   if (Date.parse(startedAt) > Date.parse(retrievedAt)) throw new Error("provider run startedAt cannot be after retrievedAt");
@@ -160,28 +167,27 @@ function assertReportIntegrity(report: YouTubeAnalyticsChannelLiveRunV1, nowMs: 
     throw new Error("report evidence must preserve every provider page evidence reference");
   }
 
-  if (report.normalization) {
-    const normalization = report.normalization;
-    if (normalization.contractVersion !== "SocialProviderMetricNormalizationV1") {
-      throw new Error("report normalization must be SocialProviderMetricNormalizationV1");
-    }
-    if (
-      normalization.platform !== "YOUTUBE" ||
-      normalization.connectorId !== report.connectorId ||
-      normalization.runId !== report.runId ||
-      normalization.sourceKind !== "OFFICIAL_API"
-    ) {
-      throw new Error("YouTube normalization identity must match the provider report exactly");
-    }
-    if (requireIso(normalization.retrievedAt, "report.normalization.retrievedAt") !== retrievedAt) {
-      throw new Error("YouTube normalization retrieval time must match the provider run exactly");
-    }
-    if (normalization.externalAccessPerformed !== false || normalization.writesPerformed !== false) {
-      throw new Error("canonical normalization must remain a zero-action projection");
-    }
-    if (normalization.causalAttributionClaimed !== false || normalization.crossPlatformAggregationPerformed !== false) {
-      throw new Error("canonical normalization cannot widen attribution or cross-platform claims");
-    }
+  if (!report.normalization) return;
+  const normalization = report.normalization;
+  if (normalization.contractVersion !== "SocialProviderMetricNormalizationV1") {
+    throw new Error("report normalization must be SocialProviderMetricNormalizationV1");
+  }
+  if (
+    normalization.platform !== "YOUTUBE" ||
+    normalization.connectorId !== report.connectorId ||
+    normalization.runId !== report.runId ||
+    normalization.sourceKind !== "OFFICIAL_API"
+  ) {
+    throw new Error("YouTube normalization identity must match the provider report exactly");
+  }
+  if (requireIso(normalization.retrievedAt, "report.normalization.retrievedAt") !== retrievedAt) {
+    throw new Error("YouTube normalization retrieval time must match the provider run exactly");
+  }
+  if (normalization.externalAccessPerformed !== false || normalization.writesPerformed !== false) {
+    throw new Error("canonical normalization must remain a zero-action projection");
+  }
+  if (normalization.causalAttributionClaimed !== false || normalization.crossPlatformAggregationPerformed !== false) {
+    throw new Error("canonical normalization cannot widen attribution or cross-platform claims");
   }
 }
 
@@ -200,7 +206,6 @@ function baseResult(input: {
     ...providerEvidenceRefs,
     ...(input.projection?.snapshot.evidenceRefs ?? []),
     ...(input.syncAcceptance?.providerEvidenceRefs ?? []),
-    ...(input.appendPlan ? [input.appendPlan.canonicalKey] : []),
     ...(input.projectedLedger?.accounts.flatMap((account) => account.evidenceRefs) ?? [])
   ]);
   return freeze({
@@ -262,7 +267,9 @@ export function compileYouTubeCanonicalIngestionHandoffV1(
   if (report.httpStatus == null || report.httpStatus < 200 || report.httpStatus >= 300) {
     throw new Error("complete YouTube provider report must carry a successful HTTP status");
   }
-  if (providerRun.pageCount !== 1) throw new Error("YouTube Analytics channel handoff expects the single evidenced report response emitted by the live runner");
+  if (providerRun.pageCount !== 1) {
+    throw new Error("YouTube Analytics channel handoff expects the single evidenced report response emitted by the live runner");
+  }
   if (report.observedStartDate !== report.requestedStartDate || report.observedEndDate !== report.requestedEndDate) {
     throw new Error("complete YouTube daily coverage must bind exactly to the requested date range");
   }
