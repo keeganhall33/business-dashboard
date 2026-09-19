@@ -7,6 +7,7 @@ export type LearningActionStatusV1 = Extract<
 >;
 
 export type AttributionConfidenceV1 = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+export type OutcomeAttributionClassV1 = "NOT_ESTABLISHED" | "CORRELATIONAL" | "CAUSAL_SUPPORTED";
 export type ResultVsPredictionV1 = "WITHIN_RANGE" | "MISSED_HIGH" | "MISSED_LOW" | "INCONCLUSIVE" | "UNKNOWN";
 export type CalibrationErrorV1 = "NONE" | "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
 export type LearningStrengthV1 = "STRONG_CAUSAL_LEARNING" | "DIRECTIONAL_LEARNING" | "WEAK_SIGNAL_ONLY" | "UNKNOWN";
@@ -68,6 +69,12 @@ export type DecisionLearningRecordInputV1 = {
   ACTION_STATUS: LearningActionStatusV1;
   OBSERVED_OUTCOME: ObservedOutcomeV1;
   ATTRIBUTION_CONFIDENCE: AttributionConfidenceV1;
+  /**
+   * Explicit evidence class for what the observed outcome can support.
+   * Missing legacy values fail closed to NOT_ESTABLISHED rather than being
+   * upgraded to causal merely because attribution confidence is HIGH.
+   */
+  ATTRIBUTION_CLASS?: OutcomeAttributionClassV1;
   RESULT_VS_PREDICTION: ResultVsPredictionV1;
   LESSON: string;
   CALIBRATION_ERROR: CalibrationErrorV1;
@@ -76,6 +83,7 @@ export type DecisionLearningRecordInputV1 = {
 };
 
 export type DecisionLearningRecordCardV1 = DecisionLearningRecordInputV1 & {
+  resolved_attribution_class: OutcomeAttributionClassV1;
   decision_review: DecisionReviewEvaluationV1 | null;
   dashboard_flags: {
     is_successful_prediction: boolean;
@@ -106,6 +114,11 @@ export type DecisionLearningSnapshotV1 = {
 };
 
 const DECISION_REVIEW_STATES = new Set<DecisionGovernanceReviewStateV1>(["DRAFT", "REVIEWED", "APPROVED"]);
+const ATTRIBUTION_CLASSES = new Set<OutcomeAttributionClassV1>([
+  "NOT_ESTABLISHED",
+  "CORRELATIONAL",
+  "CAUSAL_SUPPORTED"
+]);
 
 function assertNonEmptyString(value: unknown, label: string): asserts value is string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
@@ -129,6 +142,14 @@ function assertStringList(value: unknown, label: string, { allowEmpty = false } 
     if (seen.has(item)) throw new Error(`${label} contains duplicate reference ${item}`);
     seen.add(item);
   }
+}
+
+export function attributionClassFor(input: DecisionLearningRecordInputV1): OutcomeAttributionClassV1 {
+  const attributionClass = input.ATTRIBUTION_CLASS ?? "NOT_ESTABLISHED";
+  if (!ATTRIBUTION_CLASSES.has(attributionClass)) {
+    throw new Error("ATTRIBUTION_CLASS is invalid");
+  }
+  return attributionClass;
 }
 
 export function validateDecisionGovernance(input: DecisionLearningRecordInputV1): DecisionGovernanceV1 | null {
@@ -226,6 +247,7 @@ function validateSupersessionGraph(inputs: DecisionLearningRecordInputV1[]) {
   for (const input of inputs) {
     assertNonEmptyString(input.id, "decision id");
     if (byId.has(input.id)) throw new Error(`Duplicate decision id ${input.id}`);
+    attributionClassFor(input);
     validateDecisionGovernance(input);
     byId.set(input.id, input);
   }
@@ -253,10 +275,12 @@ function validateSupersessionGraph(inputs: DecisionLearningRecordInputV1[]) {
 }
 
 export function learningStrengthFor(input: DecisionLearningRecordInputV1): LearningStrengthV1 {
+  const attributionClass = attributionClassFor(input);
   if (input.ATTRIBUTION_CONFIDENCE === "LOW") return "WEAK_SIGNAL_ONLY";
   if (input.ATTRIBUTION_CONFIDENCE === "UNKNOWN" || input.RESULT_VS_PREDICTION === "UNKNOWN") return "UNKNOWN";
   if (input.RESULT_VS_PREDICTION === "INCONCLUSIVE") return "DIRECTIONAL_LEARNING";
-  if (input.ATTRIBUTION_CONFIDENCE === "MEDIUM") return "DIRECTIONAL_LEARNING";
+  if (attributionClass !== "CAUSAL_SUPPORTED") return "DIRECTIONAL_LEARNING";
+  if (input.ATTRIBUTION_CONFIDENCE !== "HIGH") return "DIRECTIONAL_LEARNING";
   return "STRONG_CAUSAL_LEARNING";
 }
 
@@ -264,11 +288,13 @@ export function toDecisionLearningRecordCard(
   input: DecisionLearningRecordInputV1,
   reviewContext: DecisionReviewContextV1 = {}
 ): DecisionLearningRecordCardV1 {
+  const resolved_attribution_class = attributionClassFor(input);
   const learning_strength = learningStrengthFor(input);
   const decision_review = decisionReviewStateFor(input, reviewContext);
   const governanceAllowsPolicyUpdate =
-    !input.DECISION_GOVERNANCE ||
-    (input.DECISION_GOVERNANCE.review_state === "APPROVED" && decision_review?.state === "CURRENT");
+    Boolean(input.DECISION_GOVERNANCE) &&
+    input.DECISION_GOVERNANCE?.review_state === "APPROVED" &&
+    decision_review?.state === "CURRENT";
   const canUpdatePolicy =
     learning_strength === "STRONG_CAUSAL_LEARNING" &&
     Boolean(input.POLICY_UPDATE_CANDIDATE) &&
@@ -276,6 +302,7 @@ export function toDecisionLearningRecordCard(
 
   return {
     ...input,
+    resolved_attribution_class,
     POLICY_UPDATE_CANDIDATE: canUpdatePolicy ? input.POLICY_UPDATE_CANDIDATE : null,
     decision_review,
     dashboard_flags: {
@@ -344,6 +371,7 @@ export const decisionLearningFixturesV1: DecisionLearningRecordInputV1[] = [
       unknown_reason: null
     },
     ATTRIBUTION_CONFIDENCE: "HIGH",
+    ATTRIBUTION_CLASS: "CORRELATIONAL",
     RESULT_VS_PREDICTION: "WITHIN_RANGE",
     LESSON: "When traffic quality is stable, the traffic-driver recommendation can be trusted within a conservative range.",
     CALIBRATION_ERROR: "LOW",
@@ -375,6 +403,7 @@ export const decisionLearningFixturesV1: DecisionLearningRecordInputV1[] = [
       unknown_reason: null
     },
     ATTRIBUTION_CONFIDENCE: "MEDIUM",
+    ATTRIBUTION_CLASS: "CORRELATIONAL",
     RESULT_VS_PREDICTION: "MISSED_LOW",
     LESSON: "Missing email telemetry was a data-quality issue, but it was not the main driver in this window.",
     CALIBRATION_ERROR: "MEDIUM",
@@ -406,6 +435,7 @@ export const decisionLearningFixturesV1: DecisionLearningRecordInputV1[] = [
       unknown_reason: "Meta delivery is visible, but purchase attribution conflicts with commerce-source evidence."
     },
     ATTRIBUTION_CONFIDENCE: "LOW",
+    ATTRIBUTION_CLASS: "NOT_ESTABLISHED",
     RESULT_VS_PREDICTION: "UNKNOWN",
     LESSON: "Treat the paid-media result as a weak signal only; do not update causal policy until attribution is defensible.",
     CALIBRATION_ERROR: "UNKNOWN",
