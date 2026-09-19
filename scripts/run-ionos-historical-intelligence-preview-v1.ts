@@ -207,7 +207,16 @@ function validSuccessfulTelemetry(telemetry: IonosHistoricalPreviewResultV1["tel
   if (!Array.isArray(telemetry.mailboxes) || telemetry.mailboxes.length !== IONOS_MAILBOX_ROLES_V1.length) return false;
   const actualRoles = telemetry.mailboxes.map((mailbox) => mailbox.role).sort();
   const expectedRoles = [...IONOS_MAILBOX_ROLES_V1].sort();
-  return actualRoles.every((role, index) => role === expectedRoles[index]);
+  if (!actualRoles.every((role, index) => role === expectedRoles[index])) return false;
+
+  const endToEndCounts = [
+    telemetry.candidateCount,
+    telemetry.envelopeCount,
+    telemetry.canonicalRecordCount,
+    telemetry.crmActivityCount,
+    telemetry.relationshipProjectionCount
+  ];
+  return endToEndCounts.every((count) => Number.isSafeInteger(count) && count > 0);
 }
 
 async function persistProductionEvidence({
@@ -269,6 +278,7 @@ async function persistProductionEvidence({
     checks: [
       { id: "three_mailbox_roles_verified", passed: true },
       { id: "failed_mailbox_count_zero", passed: true },
+      { id: "historical_correspondence_chain_verified", passed: true },
       { id: "body_policy_none_enforced", passed: true },
       { id: "attachment_bytes_not_requested", passed: true },
       { id: "mailbox_read_only_smtp_disabled", passed: true },
