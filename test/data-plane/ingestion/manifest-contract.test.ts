@@ -48,14 +48,15 @@ test("Boardroom is visible and adapter-ready without bypassing its access gate",
   assert.equal(source.legal_access.automation_suitability, "MANUAL_ONLY");
 });
 
-test("five core commerce and behavior sources declare exhaustive scope coverage", () => {
+test("core commerce, behavior, and owned-social sources declare exhaustive scope coverage", () => {
   const manifest = loadIngestionManifest();
   const required = [
     "ads.meta",
     "analytics.ga4",
     "behavior.microsoft_clarity",
     "commerce.funnelkit",
-    "commerce.woocommerce"
+    "commerce.woocommerce",
+    "social.owned_channels"
   ];
 
   for (const sourceId of required) {
@@ -79,6 +80,23 @@ test("five core commerce and behavior sources declare exhaustive scope coverage"
   }
 });
 
+test("owned social classifies every supported channel and every decision-useful data family", () => {
+  const source = loadIngestionManifest().sources.find((candidate) => candidate.source_id === "social.owned_channels");
+  assert.ok(source?.coverage_scope?.channel_scope);
+  assert.deepEqual(source.coverage_scope.channel_scope.required, [
+    "instagram",
+    "facebook",
+    "youtube",
+    "tiktok",
+    "x",
+    "threads",
+    "linkedin"
+  ]);
+  assert.equal(source.coverage_scope.required_families.length, 19);
+  assert.equal(source.coverage_scope.status, "UNAVAILABLE");
+  assert.deepEqual(source.downstream.decision_eligible_states, []);
+});
+
 test("scope coverage fails closed when a family is omitted or double-classified", () => {
   const omitted = clone(manifestJson);
   const woo = omitted.sources.find((source) => source.source_id === "commerce.woocommerce");
@@ -91,6 +109,12 @@ test("scope coverage fails closed when a family is omitted or double-classified"
   assert.ok(ga4?.coverage_scope);
   ga4.coverage_scope.partial_families.push(ga4.coverage_scope.implemented_families[0]);
   assert.equal(IngestionManifestSchema.safeParse(duplicated).success, false);
+
+  const missingSocialChannel = clone(manifestJson);
+  const social = missingSocialChannel.sources.find((source) => source.source_id === "social.owned_channels");
+  assert.ok(social?.coverage_scope?.channel_scope);
+  social.coverage_scope.channel_scope.missing = social.coverage_scope.channel_scope.missing.slice(1);
+  assert.equal(IngestionManifestSchema.safeParse(missingSocialChannel).success, false);
 });
 
 test("schema rejects duplicate IDs, plaintext-looking secrets, unsupported cron lists, and unknown enums", () => {

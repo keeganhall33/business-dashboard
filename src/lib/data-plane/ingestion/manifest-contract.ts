@@ -51,6 +51,34 @@ const AutomationSuitabilitySchema = z.enum(["ALLOWED", "METADATA_ONLY", "MANUAL_
 
 export const SourceScopeStatusSchema = z.enum(["FULL", "PARTIAL", "UNAVAILABLE"]);
 
+const CoverageClassificationSchema = z
+  .object({
+    required: z.array(z.string().regex(/^[a-z0-9][a-z0-9_]{0,79}$/)).min(1),
+    implemented: z.array(z.string()),
+    partial: z.array(z.string()),
+    missing: z.array(z.string()),
+    provider_limited: z.array(z.string())
+  })
+  .strict()
+  .superRefine((classification, ctx) => {
+    const required = new Set(classification.required);
+    const classified = [
+      ...classification.implemented,
+      ...classification.partial,
+      ...classification.missing,
+      ...classification.provider_limited
+    ];
+    const seen = new Set<string>();
+    for (const item of classified) {
+      if (!required.has(item)) ctx.addIssue({ code: "custom", message: `unrequired coverage item: ${item}` });
+      if (seen.has(item)) ctx.addIssue({ code: "custom", message: `coverage item classified more than once: ${item}` });
+      seen.add(item);
+    }
+    for (const item of required) {
+      if (!seen.has(item)) ctx.addIssue({ code: "custom", message: `coverage item is unclassified: ${item}` });
+    }
+  });
+
 const SourceCoverageScopeSchema = z
   .object({
     standard: z.literal("ALL_DECISION_USEFUL_AVAILABLE_DATA"),
@@ -59,7 +87,8 @@ const SourceCoverageScopeSchema = z
     implemented_families: z.array(z.string()),
     partial_families: z.array(z.string()),
     missing_families: z.array(z.string()),
-    provider_limited_families: z.array(z.string())
+    provider_limited_families: z.array(z.string()),
+    channel_scope: CoverageClassificationSchema.optional()
   })
   .strict()
   .superRefine((scope, ctx) => {
@@ -162,10 +191,14 @@ export const IngestionManifestEntrySchema = z
       "analytics.ga4",
       "behavior.microsoft_clarity",
       "commerce.funnelkit",
-      "commerce.woocommerce"
+      "commerce.woocommerce",
+      "social.owned_channels"
     ]);
     if (comprehensiveSources.has(entry.source_id) && !entry.coverage_scope) {
       ctx.addIssue({ code: "custom", message: "comprehensive first-party source requires coverage_scope", path: ["coverage_scope"] });
+    }
+    if (entry.source_id === "social.owned_channels" && !entry.coverage_scope?.channel_scope) {
+      ctx.addIssue({ code: "custom", message: "owned social coverage requires exhaustive channel_scope", path: ["coverage_scope", "channel_scope"] });
     }
     const executable = ["DASHBOARD_WORKER", "GITHUB_ACTIONS", "LOCAL_AUTHORIZED_WORKER"].includes(entry.execution_venue);
     if (executable && ["UNIMPLEMENTED", "BLOCKED"].includes(entry.adapter.state)) {
