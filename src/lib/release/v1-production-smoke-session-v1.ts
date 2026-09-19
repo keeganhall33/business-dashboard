@@ -29,6 +29,7 @@ const taggedStepSchema = z
     state: stepStateSchema,
     observedAt: z.string(),
     observedPath: z.string(),
+    observedUrl: z.string(),
     evidenceRefs: z.array(z.string()).readonly(),
     releaseSha: z.string(),
     actionRequirement: actionRequirementSchema,
@@ -44,6 +45,7 @@ const taggedDeviceSchema = z
     state: stepStateSchema,
     observedAt: z.string(),
     observedPath: z.string(),
+    observedUrl: z.string(),
     viewportWidth: z.number().int(),
     viewportHeight: z.number().int(),
     evidenceRefs: z.array(z.string()).readonly(),
@@ -73,6 +75,99 @@ type TaggedDeviceObservationV1 = V1ProductionSmokeSessionInputV1["deviceObservat
 function parsedTimestamp(value: string): number | null {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function configuredProductionOrigin(): string {
+  const configured =
+    process.env.DASHBOARD_PRODUCTION_URL?.trim() || process.env.SMOKE_BASE_URL?.trim();
+  if (!configured) {
+    throw new Error(
+      "SMOKE_PRODUCTION_ORIGIN_UNAVAILABLE: DASHBOARD_PRODUCTION_URL or SMOKE_BASE_URL must identify the governed production origin."
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(configured);
+  } catch {
+    throw new Error(
+      "SMOKE_PRODUCTION_ORIGIN_INVALID: the configured production origin is not a valid URL."
+    );
+  }
+
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== "" ||
+    parsed.pathname !== "/"
+  ) {
+    throw new Error(
+      "SMOKE_PRODUCTION_ORIGIN_INVALID: the configured production origin must be an HTTPS origin without credentials, path, query, or fragment."
+    );
+  }
+
+  return parsed.origin;
+}
+
+function assertObservedProductionUrl(
+  observedUrl: string,
+  observedPath: string,
+  expectedOrigin: string,
+  label: string
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(observedUrl);
+  } catch {
+    throw new Error(`SMOKE_PRODUCTION_URL_INVALID: ${label} did not record a valid absolute URL.`);
+  }
+
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error(
+      `SMOKE_PRODUCTION_URL_INVALID: ${label} must record a clean HTTPS production URL without credentials, query, or fragment.`
+    );
+  }
+  if (parsed.origin !== expectedOrigin) {
+    throw new Error(
+      `SMOKE_PRODUCTION_ORIGIN_MISMATCH: ${label} was observed on a non-production origin.`
+    );
+  }
+  if (parsed.pathname !== observedPath) {
+    throw new Error(
+      `SMOKE_PRODUCTION_PATH_MISMATCH: ${label} absolute URL does not match its declared observedPath.`
+    );
+  }
+}
+
+function assertProductionOriginBinding(
+  input: V1ProductionSmokeSessionInputV1,
+  expectedOrigin: string
+): void {
+  for (const observation of input.observations) {
+    assertObservedProductionUrl(
+      observation.observedUrl,
+      observation.observedPath,
+      expectedOrigin,
+      observation.stepId
+    );
+  }
+
+  for (const observation of input.deviceObservations) {
+    assertObservedProductionUrl(
+      observation.observedUrl,
+      observation.observedPath,
+      expectedOrigin,
+      `${observation.deviceClass} ${observation.stepId}`
+    );
+  }
 }
 
 function assertSingleRun(input: V1ProductionSmokeSessionInputV1): void {
@@ -224,7 +319,9 @@ function stripSessionTags(input: V1ProductionSmokeSessionInputV1): V1ProductionS
     releaseSha: input.releaseSha,
     generatedAt: input.generatedAt,
     environment: input.environment,
-    observations: input.observations.map(({ smokeRunId: _smokeRunId, ...observation }) => observation),
+    observations: input.observations.map(
+      ({ smokeRunId: _smokeRunId, observedUrl: _observedUrl, ...observation }) => observation
+    ),
     deviceObservations: compileCompleteDeviceRouteCoverage(input)
   };
 }
@@ -234,20 +331,24 @@ function stripSessionTags(input: V1ProductionSmokeSessionInputV1): V1ProductionS
  *
  * The lower-level smoke compiler verifies routes, release SHA, freshness, provenance,
  * and approval state. This boundary additionally requires every route and every
- * desktop/mobile route observation to belong to one explicit smoke run. Device
- * coherence is therefore proven across the complete V1 acceptance path rather than
- * by one unrelated viewport observation per device class. The completed session is
- * then evaluated by the runtime smoke boundary so a caller-controlled generatedAt
- * cannot replay an old but internally coherent session as current production truth.
+ * desktop/mobile route observation to belong to one explicit smoke run and to the
+ * configured HTTPS production origin. Device coherence is therefore proven across
+ * the complete V1 acceptance path rather than by one unrelated viewport observation
+ * per device class. The completed session is then evaluated by the runtime smoke
+ * boundary so a caller-controlled generatedAt cannot replay an old but internally
+ * coherent session as current production truth.
  *
  * This function performs no browser automation, network access, deployment,
  * mutation, approval, or inference. The run identifier is correlation metadata
- * only and does not make an observation true.
+ * only and does not make an observation true. The production-origin binding is
+ * resolved from the governed runtime environment and fails closed when unavailable.
  */
 export function compileSessionBoundV1ProductionSmokeV1(
   value: unknown
 ): V1ProductionSmokeResultV1 {
   const parsed = V1_PRODUCTION_SMOKE_SESSION_INPUT_SCHEMA_V1.parse(value);
+  const expectedProductionOrigin = configuredProductionOrigin();
   assertSingleRun(parsed);
+  assertProductionOriginBinding(parsed, expectedProductionOrigin);
   return compileRuntimeV1ProductionSmokeV1(stripSessionTags(parsed));
 }
