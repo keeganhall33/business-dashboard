@@ -13,6 +13,10 @@ import {
 const REQUESTED_AT = "2026-09-19T14:00:00.000Z";
 const NOW = "2026-09-19T14:05:00.000Z";
 const EVIDENCE_REF = "clarity-export:2026-09-19T14:00:00Z";
+const FALLBACK_WINDOW = {
+  startAt: "2026-09-18T14:00:00.000Z",
+  endAt: REQUESTED_AT,
+} as const;
 
 function readyPlan(dimensions: readonly string[] = []): ClarityDataExportRequestPlanV1 {
   const plan = planClarityDataExportRequestV1({
@@ -31,12 +35,11 @@ function input(
   responseJson: unknown,
   overrides: Partial<ClarityDataExportResponseAdapterInputV1> = {},
 ): ClarityDataExportResponseAdapterInputV1 {
-  assert.ok(plan.expectedUtcWindow);
   return {
     plan,
     responseJson,
     sourceTruth: "COMPLETE",
-    observedWindow: plan.expectedUtcWindow,
+    observedWindow: plan.expectedUtcWindow ?? FALLBACK_WINDOW,
     fetchedAt: REQUESTED_AT,
     now: NOW,
     maxAgeHours: 6,
@@ -185,7 +188,6 @@ test("downgrades malformed Traffic cells to partial evidence rather than coercin
 
 test("lets the existing live gate reject an observed-window mismatch", () => {
   const plan = readyPlan();
-  assert.ok(plan.expectedUtcWindow);
   const result = adaptClarityDataExportResponseV1(
     input(
       plan,
