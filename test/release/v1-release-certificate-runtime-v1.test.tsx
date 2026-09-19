@@ -12,9 +12,9 @@ import {
 } from "@/lib/release/v1-release-certificate-runtime-v1";
 
 const RELEASE_SHA = "be7110186228ef54ae3c0a15637f30025aada5da";
-const GENERATED_AT = "2026-09-18T17:30:00.000Z";
-const OBSERVED_AT = "2026-09-18T17:25:00.000Z";
-const RUNTIME_NOW_MS = Date.parse(GENERATED_AT);
+const FIXTURE_NOW_MS = Date.now();
+const GENERATED_AT = new Date(FIXTURE_NOW_MS).toISOString();
+const OBSERVED_AT = new Date(FIXTURE_NOW_MS - 5 * 60 * 1_000).toISOString();
 
 function validInput(): V1ReleaseCertificationInputV1 {
   return {
@@ -33,13 +33,9 @@ function validInput(): V1ReleaseCertificationInputV1 {
   };
 }
 
-function compileAtFixtureTime(value: unknown) {
-  return compileRuntimeV1ReleaseCertificateV1(value, RUNTIME_NOW_MS);
-}
-
 test("runtime JSON parsing preserves explicit release evidence without auto-accepting V1", () => {
   const parsed = parseV1ReleaseCertificationInputV1(JSON.parse(JSON.stringify(validInput())) as unknown);
-  const certificate = compileAtFixtureTime(parsed);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(parsed);
 
   assert.equal(parsed.releaseSha, RELEASE_SHA);
   assert.equal(certificate.mechanicalState, "READY");
@@ -84,7 +80,7 @@ test("runtime parsing rejects malformed evidence before certificate compilation"
     index === 0 ? { ...gate, evidenceRefs: "not-an-array" } : gate
   );
 
-  assert.throws(() => compileAtFixtureTime(candidate));
+  assert.throws(() => compileRuntimeV1ReleaseCertificateV1(candidate));
 });
 
 test("explicit acceptance still must be bound to the exact release SHA", () => {
@@ -92,11 +88,11 @@ test("explicit acceptance still must be bound to the exact release SHA", () => {
   candidate.finalAcceptance = {
     state: "ACCEPTED",
     releaseSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    observedAt: "2026-09-18T17:29:00.000Z",
+    observedAt: new Date(FIXTURE_NOW_MS - 60 * 1_000).toISOString(),
     evidenceRefs: ["github://release-evidence/keegan-acceptance"]
   };
 
-  const certificate = compileAtFixtureTime(candidate);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
   assert.equal(certificate.releaseState, "BLOCKED");
   assert.ok(certificate.blockers.some((blocker) => blocker.code === "FINAL_ACCEPTANCE_SHA_MISMATCH"));
 });
@@ -108,13 +104,13 @@ test("runtime certification demotes stale live evidence even when the caller lab
       ? {
           ...gate,
           observedAt: new Date(
-            RUNTIME_NOW_MS - V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 - 1
+            Date.now() - V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 - 60 * 1_000
           ).toISOString()
         }
       : gate
   );
 
-  const certificate = compileAtFixtureTime(candidate);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
   const executiveHome = certificate.gates.find((gate) => gate.gateId === "EXECUTIVE_HOME_TRUTH");
 
   assert.equal(certificate.mechanicalState, "BLOCKED");
@@ -132,9 +128,15 @@ test("runtime certification demotes stale live evidence even when the caller lab
 
 test("runtime freshness cannot be replayed by freezing the caller-supplied generatedAt timestamp", () => {
   const candidate = validInput();
-  const replayedAtMs = Date.parse(OBSERVED_AT) + V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 + 1;
+  const replayGeneratedAtMs = Date.now() - V1_RELEASE_LIVE_GATE_MAX_AGE_MS_V1 - 10 * 60 * 1_000;
+  const replayObservedAt = new Date(replayGeneratedAtMs - 5 * 60 * 1_000).toISOString();
+  candidate.generatedAt = new Date(replayGeneratedAtMs).toISOString();
+  candidate.gates = candidate.gates.map((gate) => ({
+    ...gate,
+    observedAt: replayObservedAt
+  }));
 
-  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate, replayedAtMs);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
   const liveGates = certificate.gates.filter((gate) =>
     [
       "PRODUCTION_PROPAGATION",
@@ -145,18 +147,25 @@ test("runtime freshness cannot be replayed by freezing the caller-supplied gener
     ].includes(gate.gateId)
   );
 
-  assert.equal(certificate.generatedAt, GENERATED_AT);
+  assert.equal(certificate.generatedAt, candidate.generatedAt);
   assert.equal(certificate.mechanicalState, "BLOCKED");
   assert.ok(liveGates.length > 0);
   assert.ok(liveGates.every((gate) => gate.freshness === "STALE"));
   assert.ok(liveGates.every((gate) => gate.status === "BLOCKING"));
+  assert.equal(certificate.certifiedClaims.integratedCode, true);
 });
 
 test("future-dated live evidence relative to the runtime clock cannot remain CURRENT", () => {
   const candidate = validInput();
-  const runtimeBeforeObservationMs = Date.parse(OBSERVED_AT) - 1;
+  const futureObservedAt = new Date(Date.now() + 5 * 60 * 1_000).toISOString();
+  candidate.generatedAt = new Date(Date.now() + 10 * 60 * 1_000).toISOString();
+  candidate.gates = candidate.gates.map((gate) =>
+    gate.gateId === "EXECUTIVE_HOME_TRUTH"
+      ? { ...gate, observedAt: futureObservedAt }
+      : gate
+  );
 
-  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate, runtimeBeforeObservationMs);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
   const executiveHome = certificate.gates.find((gate) => gate.gateId === "EXECUTIVE_HOME_TRUTH");
 
   assert.equal(certificate.mechanicalState, "BLOCKED");
@@ -165,22 +174,15 @@ test("future-dated live evidence relative to the runtime clock cannot remain CUR
   assert.equal(certificate.certifiedClaims.executiveHomeTruth, false);
 });
 
-test("runtime certification rejects an invalid injected wall clock", () => {
-  assert.throws(
-    () => compileRuntimeV1ReleaseCertificateV1(validInput(), Number.NaN),
-    /runtimeNowMs must be a finite Unix timestamp/
-  );
-});
-
 test("exact-SHA static release gates are not expired by the live-runtime freshness window", () => {
   const candidate = validInput();
   candidate.gates = candidate.gates.map((gate) =>
     gate.gateId === "INTEGRATED_CODE"
-      ? { ...gate, observedAt: "2026-09-17T17:25:00.000Z" }
+      ? { ...gate, observedAt: new Date(FIXTURE_NOW_MS - 24 * 60 * 60 * 1_000).toISOString() }
       : gate
   );
 
-  const certificate = compileAtFixtureTime(candidate);
+  const certificate = compileRuntimeV1ReleaseCertificateV1(candidate);
 
   assert.equal(certificate.mechanicalState, "READY");
   assert.equal(certificate.certifiedClaims.integratedCode, true);
