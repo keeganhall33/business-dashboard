@@ -27,7 +27,7 @@ function target(): RelationshipUniverseTargetV1 {
   return {
     targetId: "brand:priority-partner",
     canonicalEntityRef: "org:priority-partner",
-    domain: "BRAND_PARTNERSHIP",
+    domain: "BRAND_CORPORATE",
     priorityTier: "TIER_1",
     observedAt: "2026-09-19T00:50:00.000Z",
     evidenceRefs: ["evidence:target"],
