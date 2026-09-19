@@ -339,7 +339,8 @@ function validAdapterInput(input: MetaLiveAdRankingAdapterInputV1): boolean {
     input &&
       canonicalInstant(input.generatedAt) &&
       (input.windowDays === 7 || input.windowDays === 14) &&
-      input.metric in METRICS &&
+      typeof input.metric === "string" &&
+      Object.prototype.hasOwnProperty.call(METRICS, input.metric) &&
       typeof input.maximumEvidenceAgeHours === "number" &&
       Number.isFinite(input.maximumEvidenceAgeHours) &&
       input.maximumEvidenceAgeHours > 0 &&
