@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-[1fr_auto_1fr] items-center px-4 py-3 sm:px-6 lg:px-8">
           <span aria-hidden="true" />
           <Link href="/dashboard" aria-label="Keegan Hall dashboard" className="shrink-0 justify-self-center">
             <Image
@@ -45,34 +45,59 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               className="h-10 w-auto sm:h-11"
             />
           </Link>
-          <nav className="hidden items-center justify-self-end gap-2 overflow-x-auto lg:flex" aria-label="Primary workspaces">
-            {PRIMARY_NAV_ITEMS.map((item) => (
-              <Suspense key={item.href} fallback={<Link href={item.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">{item.short_label}</Link>}>
-                <RangeAwareLink href={item.href} title={item.summary} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
-                  {item.short_label}
-                </RangeAwareLink>
-              </Suspense>
-            ))}
-            {DATA_STATUS_ITEM ? <Suspense fallback={<Link href={DATA_STATUS_ITEM.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">Data status</Link>}><RangeAwareLink href={DATA_STATUS_ITEM.href} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Data status</RangeAwareLink></Suspense> : null}
-            <form action="/api/auth/logout" method="post">
-              <button type="submit" className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Sign out</button>
-            </form>
-          </nav>
+          <form action="/api/auth/logout" method="post" className="justify-self-end">
+            <button type="submit" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:text-xs">
+              Sign out
+            </button>
+          </form>
         </div>
-        <div className="mx-auto w-full max-w-[1600px] px-4 pb-3 sm:px-6 lg:hidden lg:px-8">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+
+        <div className="border-t border-slate-100">
+          <nav
+            className="mx-auto flex w-full max-w-[1600px] gap-2 overflow-x-auto px-4 py-2.5 sm:px-6 lg:justify-center lg:px-8 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Primary workspaces"
+          >
             {PRIMARY_NAV_ITEMS.map((item) => (
-              <Suspense key={item.href} fallback={<Link href={item.href} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">{item.short_label}</Link>}>
-                <RangeAwareLink href={item.href} title={item.summary} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
+              <Suspense
+                key={item.href}
+                fallback={
+                  <Link
+                    href={item.href}
+                    className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-sm"
+                  >
+                    {item.short_label}
+                  </Link>
+                }
+              >
+                <RangeAwareLink
+                  href={item.href}
+                  title={item.summary}
+                  className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                >
                   {item.short_label}
                 </RangeAwareLink>
               </Suspense>
             ))}
-            {DATA_STATUS_ITEM ? <Suspense fallback={<Link href={DATA_STATUS_ITEM.href} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">Data status</Link>}><RangeAwareLink href={DATA_STATUS_ITEM.href} className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Data status</RangeAwareLink></Suspense> : null}
-            <form action="/api/auth/logout" method="post">
-              <button type="submit" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[11px] font-semibold text-slate-800 shadow-sm">Sign out</button>
-            </form>
-          </div>
+            {DATA_STATUS_ITEM ? (
+              <Suspense
+                fallback={
+                  <Link
+                    href={DATA_STATUS_ITEM.href}
+                    className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-sm"
+                  >
+                    Data status
+                  </Link>
+                }
+              >
+                <RangeAwareLink
+                  href={DATA_STATUS_ITEM.href}
+                  className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                >
+                  Data status
+                </RangeAwareLink>
+              </Suspense>
+            ) : null}
+          </nav>
         </div>
       </header>
 
