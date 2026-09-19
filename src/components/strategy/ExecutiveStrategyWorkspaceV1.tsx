@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AutonomousGrowthBriefingV1 } from "@/components/executive-home/AutonomousGrowthBriefingV1";
+import type { AutonomousGrowthBriefingV1 as AutonomousGrowthBriefingModelV1 } from "@/lib/executive-home/autonomous-growth-briefing-v1";
 import type { ExecutiveStrategyWorkspaceModelV1, StrategyWorkspaceRecordV1 } from "@/lib/strategy/executive-strategy-v1";
 
 function badgeClass(state: StrategyWorkspaceRecordV1["epistemicState"]) {
@@ -76,7 +78,13 @@ function EmptyState({ children }: { children: string }) {
   return <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-5 text-sm text-slate-600">{children}</div>;
 }
 
-export function ExecutiveStrategyWorkspaceV1({ model }: { model: ExecutiveStrategyWorkspaceModelV1 }) {
+export function ExecutiveStrategyWorkspaceV1({
+  model,
+  chiefOfStaffBriefing,
+}: {
+  model: ExecutiveStrategyWorkspaceModelV1;
+  chiefOfStaffBriefing?: AutonomousGrowthBriefingModelV1 | null;
+}) {
   return (
     <main className="min-h-screen bg-[#f4f7fb] py-6 text-slate-950">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -94,6 +102,8 @@ export function ExecutiveStrategyWorkspaceV1({ model }: { model: ExecutiveStrate
           </div>
           <p className="mt-5 rounded-2xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700">{model.notice}</p>
         </header>
+
+        {chiefOfStaffBriefing ? <AutonomousGrowthBriefingV1 briefing={chiefOfStaffBriefing} embedded /> : null}
 
         <section aria-label="Strategy status" className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
