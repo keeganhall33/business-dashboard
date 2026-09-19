@@ -252,7 +252,12 @@ export function evaluateAutonomousGrowthCanaryV1(input: AutonomousGrowthCanaryIn
     const proof = provided.get(stage);
     if (!proof) {
       globalReasons.push("STAGE_MISSING");
-      return Object.freeze({ stage, state: "MISSING", reason_codes: Object.freeze(["STAGE_MISSING"]), evidence_ref: null });
+      return Object.freeze({
+        stage,
+        state: "MISSING",
+        reason_codes: Object.freeze(["STAGE_MISSING"] as AutonomousGrowthCanaryReasonCodeV1[]),
+        evidence_ref: null
+      });
     }
 
     const reasons: AutonomousGrowthCanaryReasonCodeV1[] = [];
