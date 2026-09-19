@@ -29,9 +29,8 @@ export async function POST(request: Request) {
             }
           : undefined;
     const requestedRange = resolveAskQuestionRangeV1(question, new Date(), selectedRange);
-    const url = new URL(request.url);
     const [overview, crm] = await Promise.all([
-      getDashboardOverview(requestedRange, { baseUrl: url.origin, cookie: request.headers.get("cookie") }),
+      getDashboardOverview(requestedRange, { cookie: request.headers.get("cookie") }),
       loadCrmDirectoryIndexV1()
     ]);
     const home = buildExecutiveHomeFromDashboardOverviewV1(overview).home;
