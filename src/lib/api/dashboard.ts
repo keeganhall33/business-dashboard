@@ -1,25 +1,40 @@
 import { DashboardOverviewResponse } from "@/lib/types/dashboard";
 import type { AgentDashboardResponse } from "@/lib/types/agent";
 
+function normalizeOrigin(value: string | undefined, defaultProtocol: "https:" | "http:"): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  const candidate = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(trimmed)
+    ? trimmed
+    : `${defaultProtocol}//${trimmed}`;
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 function getAppUrl() {
   // Client-side: use relative fetches.
   if (typeof window !== "undefined") {
     return "";
   }
 
-  // Server-side: prefer explicit public URL, otherwise fall back to Vercel host.
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
-  }
+  // Server-side: bind internal fetches to the deployment-owned origin first.
+  // Never derive this origin from request Host / X-Forwarded-Host headers.
+  const vercelOrigin = normalizeOrigin(process.env.VERCEL_URL, "https:");
+  if (vercelOrigin) return vercelOrigin;
 
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
+  const publicOrigin = normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL, "https:");
+  if (publicOrigin) return publicOrigin;
 
   // Next.js dev server origin (includes port) when available.
-  if (process.env.__NEXT_PRIVATE_ORIGIN) {
-    return process.env.__NEXT_PRIVATE_ORIGIN;
-  }
+  const privateOrigin = normalizeOrigin(process.env.__NEXT_PRIVATE_ORIGIN, "http:");
+  if (privateOrigin) return privateOrigin;
 
   // Local dev fallback.
   const port = process.env.PORT?.trim() || "3000";
@@ -41,7 +56,33 @@ function getServerAuthHeaders(): HeadersInit | null {
   return { "x-dashboard-secret": token };
 }
 
+function assertTrustedServerFetchTarget(input: RequestInfo | URL): void {
+  if (typeof window !== "undefined") return;
+
+  const trustedBase = getAppUrl();
+  const trustedUrl = new URL(trustedBase);
+
+  let targetUrl: URL;
+  try {
+    if (input instanceof URL) {
+      targetUrl = input;
+    } else if (typeof input === "string") {
+      targetUrl = new URL(input, trustedBase);
+    } else {
+      targetUrl = new URL(input.url, trustedBase);
+    }
+  } catch {
+    throw new Error("[dashboard] refusing malformed server fetch target");
+  }
+
+  if (targetUrl.origin !== trustedUrl.origin) {
+    throw new Error(`[dashboard] refusing server fetch to untrusted origin for ${targetUrl.pathname}`);
+  }
+}
+
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  assertTrustedServerFetchTarget(input);
+
   const headers = new Headers(init?.headers ?? {});
   const serverHeaders = getServerAuthHeaders();
   if (serverHeaders) {
@@ -88,12 +129,11 @@ type OverviewParams = {
 };
 
 type ServerRequestContext = {
-  baseUrl: string;
   cookie: string | null;
 };
 
 export async function getDashboardOverview(params: OverviewParams = {}, ctx?: ServerRequestContext): Promise<DashboardOverviewResponse> {
-  const base = ctx?.baseUrl ?? getAppUrl();
+  const base = getAppUrl();
   const search = new URLSearchParams();
 
   if (params.preset) {
