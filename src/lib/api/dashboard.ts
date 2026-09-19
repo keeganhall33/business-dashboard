@@ -81,6 +81,7 @@ function assertTrustedServerFetchTarget(input: RequestInfo | URL): void {
 }
 
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const isServer = typeof window === "undefined";
   assertTrustedServerFetchTarget(input);
 
   const headers = new Headers(init?.headers ?? {});
@@ -95,7 +96,13 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
 
   let res: Response;
   try {
-    res = await fetch(input, { ...init, headers, cache: "no-store" });
+    res = await fetch(input, {
+      ...init,
+      headers,
+      cache: "no-store",
+      // Auth-bearing internal server fetches must never follow a redirect to another origin.
+      redirect: isServer ? "error" : init?.redirect,
+    });
   } catch (error) {
     throw new Error(`[dashboard] fetch failed for ${String(input)}: ${error instanceof Error ? error.message : String(error)}`);
   }
