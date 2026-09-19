@@ -62,7 +62,7 @@ jobs:
     name: Prove Vercel production propagation
     needs: validate
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' && vars.DASHBOARD_PRODUCTION_URL != '' }}
+    if: ${{ github.event_name == 'push' }}
     env:
       SMOKE_BASE_URL: ${{ vars.DASHBOARD_PRODUCTION_URL }}
       EXPECTED_RELEASE_SHA: ${{ github.sha }}
@@ -71,6 +71,35 @@ jobs:
     steps:
       - name: Checkout exact validated commit
         uses: actions/checkout@v4
+
+      - name: Require configured production URL
+        shell: bash
+        run: |
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            {
+              echo "## Vercel production proof"
+              echo "- State: BLOCKED"
+              echo "- Expected release: $EXPECTED_RELEASE_SHA"
+              echo "- Reason: DASHBOARD_PRODUCTION_URL is not configured"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "DASHBOARD_PRODUCTION_URL is required to prove production propagation for $EXPECTED_RELEASE_SHA" >&2
+            exit 1
+          fi
+
+          case "$SMOKE_BASE_URL" in
+            https://*) ;;
+            *)
+              {
+                echo "## Vercel production proof"
+                echo "- State: BLOCKED"
+                echo "- Expected release: $EXPECTED_RELEASE_SHA"
+                echo "- Reason: DASHBOARD_PRODUCTION_URL must use HTTPS"
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "DASHBOARD_PRODUCTION_URL must be an HTTPS production origin" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Wait for configured production URL
         shell: bash
         run: |
@@ -110,6 +139,6 @@ jobs:
 # - Vercel Git integration is the only production deployment path.
 # - Pull requests and main both receive the same GitHub-native typecheck/test/build validation.
 # - Superseded validation/smoke runs are cancelled because only the newest ref can be the current release candidate.
-# - Production smoke checks run only after a validated push to main.
+# - Production smoke runs after every validated push to main and fails closed if the production URL is missing or non-HTTPS.
 # - Terminal exact-SHA Vercel deployment failures fail fast instead of consuming the propagation timeout.
 # - Retired provider deployment tooling and deploy hooks are intentionally absent.
