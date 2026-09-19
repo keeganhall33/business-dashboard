@@ -256,7 +256,9 @@ function relevantRecord(
   return Boolean(observedAt && inClosedPeriod(observedAt, startMs, endMs));
 }
 
-function decisionGradeAssessment(record: DecisionMemoryRecordV1): DecisionOutcomeAssessmentV1 | null {
+function decisionGradeAssessment(
+  record: DecisionMemoryRecordV1
+): Exclude<DecisionOutcomeAssessmentV1, "UNKNOWN"> | null {
   const assessment = record.outcomeObservation?.assessment;
   if (
     !assessment
