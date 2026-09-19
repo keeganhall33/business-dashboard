@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   buildMetaAdFixedWindowPlanV1,
   META_AD_INSIGHT_FIELDS_V1,
+  META_CAMPAIGN_INSIGHT_FIELDS_V1,
   summarizeMetaAdInsightV1,
+  summarizeMetaCampaignInsightV1,
 } from "../../../scripts/lib/meta-ad-fixed-window-v1.mjs";
 
 test("builds complete fixed Meta windows from the last fully completed UTC day", () => {
@@ -72,6 +74,7 @@ test("requests exact ad identity plus observed performance fields", () => {
   assert.ok(META_AD_INSIGHT_FIELDS_V1.includes("clicks"));
   assert.ok(META_AD_INSIGHT_FIELDS_V1.includes("actions"));
   assert.ok(META_AD_INSIGHT_FIELDS_V1.includes("action_values"));
+  assert.deepEqual(META_CAMPAIGN_INSIGHT_FIELDS_V1.slice(0, 2), ["campaign_id", "campaign_name"]);
 });
 
 test("normalizes a Meta ad row without manufacturing omitted conversion evidence", () => {
@@ -121,7 +124,22 @@ test("preserves directly reported purchase evidence and derives ROAS only when s
   assert.equal(row.adName, null);
 });
 
-test("fails closed on missing or malformed required ad evidence", () => {
+test("keeps omitted campaign conversion evidence unknown instead of coercing it to zero", () => {
+  const row = summarizeMetaCampaignInsightV1({
+    campaign_id: "campaign-1",
+    campaign_name: "Campaign One",
+    spend: "0",
+    impressions: "20",
+    clicks: "0",
+  });
+
+  assert.equal(row.spend, 0);
+  assert.equal(row.purchases, null);
+  assert.equal(row.purchaseValue, null);
+  assert.equal(row.roas, null);
+});
+
+test("fails closed on missing or malformed required performance evidence", () => {
   assert.throws(
     () => summarizeMetaAdInsightV1({ campaign_id: "c", adset_id: "s", ad_id: "a", impressions: "1", clicks: "0" }),
     /missing spend/,
@@ -131,7 +149,7 @@ test("fails closed on missing or malformed required ad evidence", () => {
     /invalid impressions/,
   );
   assert.throws(
-    () => summarizeMetaAdInsightV1({ campaign_id: "c", adset_id: "s", ad_id: "a", spend: "-1", impressions: "1", clicks: "0" }),
+    () => summarizeMetaCampaignInsightV1({ campaign_id: "c", spend: "-1", impressions: "1", clicks: "0" }),
     /invalid spend/,
   );
 });
