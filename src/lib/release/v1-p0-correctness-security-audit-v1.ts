@@ -68,6 +68,7 @@ export type V1P0CorrectnessSecurityBlockerCodeV1 =
   | "MANIFEST_STALE_EVIDENCE"
   | "MANIFEST_MISSING_PROVENANCE"
   | "MANIFEST_UNSAFE_PROVENANCE"
+  | "INVALID_MANIFEST_ISSUE_NUMBER"
   | "DUPLICATE_MANIFEST_ISSUE"
   | "MISSING_ISSUE_ASSESSMENT"
   | "UNEXPECTED_ISSUE_ASSESSMENT"
@@ -196,6 +197,7 @@ function freshnessFromBlockers(
         "MANIFEST_FUTURE_EVIDENCE",
         "MANIFEST_MISSING_PROVENANCE",
         "MANIFEST_UNSAFE_PROVENANCE",
+        "INVALID_MANIFEST_ISSUE_NUMBER",
         "DUPLICATE_MANIFEST_ISSUE",
         "MISSING_ISSUE_ASSESSMENT",
         "UNEXPECTED_ISSUE_ASSESSMENT",
@@ -327,6 +329,20 @@ export function compileV1P0CorrectnessSecurityAuditV1(
         "MANIFEST_UNSAFE_PROVENANCE",
         "The open-P0 manifest contains secret/reference material that cannot enter release evidence.",
         [],
+        "UNKNOWN"
+      )
+    );
+  }
+
+  const invalidManifestIssueNumbers = input.issueManifest.issueNumbers.filter(
+    (issueNumber) => !Number.isInteger(issueNumber) || issueNumber <= 0
+  );
+  if (invalidManifestIssueNumbers.length > 0) {
+    blockers.push(
+      blocker(
+        "INVALID_MANIFEST_ISSUE_NUMBER",
+        "The open-P0 manifest contains a non-positive or non-integer issue identifier. Invalid identifiers cannot be discarded from release evidence.",
+        manifestEvidence.refs,
         "UNKNOWN"
       )
     );
