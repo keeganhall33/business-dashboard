@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from "./server";
 import { canTransitionTaskStatus } from "@/lib/domain/taskStatus";
+import { buildOpportunityAccessEvidenceFromRelationshipRowsV1 } from "@/lib/opportunity-intelligence/opportunity-access-evidence-adapter-v1";
 import type {
   AgentKey,
   OpportunityStatus,
@@ -2122,19 +2123,19 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
   const supabase = getSupabaseServerClient();
   const { data: links, error: linksError } = await supabase
     .from("crm_opportunity_entities_v1")
-    .select("entity_id,role,truth_state,freshness_state,evidence_refs,created_at")
+    .select("entity_id,role,truth_state,freshness_state,evidence_refs,observed_at,created_at")
     .eq("opportunity_id", opportunityId)
     .order("created_at", { ascending: true });
 
   if (linksError) {
     if (isMissingTableError(linksError, "crm_opportunity_entities_v1")) {
-      return { evidence: [], primaryContacts: [] };
+      return { evidence: [], primaryContacts: [], accessEvidence: [] };
     }
     throw linksError;
   }
 
   const entityIds = [...new Set((links ?? []).map((row) => row.entity_id).filter(Boolean))];
-  if (!entityIds.length) return { evidence: [], primaryContacts: [] };
+  if (!entityIds.length) return { evidence: [], primaryContacts: [], accessEvidence: [] };
 
   const { data: entities, error: entitiesError } = await supabase
     .from("entities_v1")
@@ -2143,7 +2144,7 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
 
   if (entitiesError) {
     if (isMissingTableError(entitiesError, "entities_v1")) {
-      return { evidence: [], primaryContacts: [] };
+      return { evidence: [], primaryContacts: [], accessEvidence: [] };
     }
     throw entitiesError;
   }
@@ -2161,6 +2162,8 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
     evidenceState: "KNOWN" | "INFERRED" | "UNKNOWN" | "STALE" | "CONFLICTED";
     evidenceRefs: string[];
     role: string | null;
+    freshnessState: "CURRENT" | "STALE" | "UNKNOWN";
+    observedAt: string | null;
   }> = (links ?? []).map((row) => {
     const entity = entityById.get(row.entity_id);
     const isPerson = entity?.entity_type === "person";
@@ -2191,12 +2194,29 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
       evidenceRefs: Array.isArray(row.evidence_refs)
         ? row.evidence_refs.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
         : [],
-      role: typeof row.role === "string" ? row.role.toUpperCase() : null
+      role: typeof row.role === "string" ? row.role.toUpperCase() : null,
+      freshnessState: ["CURRENT", "STALE", "UNKNOWN"].includes(String(row.freshness_state ?? "").toUpperCase())
+        ? (String(row.freshness_state).toUpperCase() as "CURRENT" | "STALE" | "UNKNOWN")
+        : "UNKNOWN",
+      observedAt: typeof row.observed_at === "string" && Number.isFinite(Date.parse(row.observed_at))
+        ? new Date(row.observed_at).toISOString()
+        : null
     };
   });
 
+  const accessEvidence = buildOpportunityAccessEvidenceFromRelationshipRowsV1({ opportunityId, entries: evidence });
+
   return {
-    evidence: evidence.map(({ role: _role, ...entry }) => entry),
+    evidence: evidence.map((entry) => ({
+      opportunityId: entry.opportunityId,
+      entityType: entry.entityType,
+      canonicalId: entry.canonicalId,
+      label: entry.label,
+      href: entry.href,
+      resolution: entry.resolution,
+      evidenceState: entry.evidenceState,
+      evidenceRefs: entry.evidenceRefs
+    })),
     primaryContacts: evidence
       .filter(
         (entry) =>
@@ -2211,6 +2231,7 @@ export async function getOpportunityRelationshipContextV1(opportunityId: string)
         canonicalId: entry.canonicalId as string,
         label: entry.label as string,
         href: entry.href as string
-      }))
+      })),
+    accessEvidence
   };
 }

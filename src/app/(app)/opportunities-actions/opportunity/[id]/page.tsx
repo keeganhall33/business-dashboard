@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ExecutiveOpportunityDetailV1 } from "@/components/opportunity-intelligence/ExecutiveOpportunityDetailV1";
 import type { EditableOpportunityV1 } from "@/components/opportunity-intelligence/OpportunityEditorV1";
 import type { ExecutiveCommandCenterOpportunityV1 } from "@/lib/executive-home/fixtures";
+import { projectOpportunityAccessMapV1 } from "@/lib/opportunity-intelligence/opportunity-access-map-v1";
 import { getOpportunityById, getOpportunityRelationshipContextV1 } from "@/lib/supabase/queries";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,11 @@ export default async function ExecutiveOpportunityDetailPage({ params }: PagePro
   };
 
   const relationshipContext = await getOpportunityRelationshipContextV1(editable.id);
+  const accessMap = projectOpportunityAccessMapV1({
+    opportunityId: editable.id,
+    asOf: new Date(),
+    evidence: relationshipContext.accessEvidence
+  });
 
   return (
     <ExecutiveOpportunityDetailV1
@@ -65,6 +71,7 @@ export default async function ExecutiveOpportunityDetailPage({ params }: PagePro
       generatedAt={text(row.updated_at)}
       editableOpportunity={editable}
       relationshipEvidence={relationshipContext.evidence}
+      accessMap={accessMap}
       primaryContacts={relationshipContext.primaryContacts}
     />
   );
